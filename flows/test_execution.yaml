@@ -1,0 +1,7 @@
+name: test_execution
+steps:
+  - identify_intent
+  - parse_execution_target
+  - run_pytest
+  - analyze_pytest_result
+  - format_output
