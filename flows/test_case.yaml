@@ -1,0 +1,6 @@
+name: test_case
+steps:
+  - identify_intent
+  - load_rule
+  - generate_test_cases
+  - format_output
