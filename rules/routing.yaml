@@ -1,0 +1,25 @@
+intents:
+  requirement_analysis:
+    rule_file: rules/intent/requirement.md
+    primary_skill: analyze_requirement
+    flow: requirement
+
+  test_case_generation:
+    rule_file: rules/intent/test_case.md
+    primary_skill: generate_test_cases
+    flow: test_case
+
+  test_execution:
+    rule_file: rules/intent/pytest.md
+    primary_skill: run_pytest
+    flow: test_execution
+
+  result_analysis:
+    rule_file: rules/intent/result.md
+    primary_skill: analyze_pytest_result
+    flow: result_analysis
+
+  log_analysis:
+    rule_file: rules/intent/log.md
+    primary_skill: search_logs
+    flow: log_analysis
