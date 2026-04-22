@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 import yaml
 
 from runtime.intent_matcher import match_intent
@@ -8,6 +9,11 @@ from runtime.skill_registry import get_skill
 from runtime.flow_engine import load_flow
 
 ROOT = Path(__file__).resolve().parents[1]
+LOW_RISK_INTENTS = {
+    'requirement_analysis',
+    'test_case_generation',
+    'result_analysis',
+}
 
 
 def load_routing() -> dict:
@@ -18,6 +24,14 @@ def load_routing() -> dict:
 def route_intent(intent_name: str) -> dict:
     routing = load_routing()
     return routing['intents'][intent_name]
+
+
+def build_skill_kwargs(intent_name: str, user_text: str) -> dict[str, Any]:
+    if intent_name in {'requirement_analysis', 'test_case_generation'}:
+        return {'text': user_text}
+    if intent_name == 'result_analysis':
+        return {'raw_text': user_text}
+    return {}
 
 
 def handle_user_input(user_text: str) -> dict:
@@ -34,7 +48,7 @@ def handle_user_input(user_text: str) -> dict:
     skill_name = intent_config['primary_skill']
     skill = get_skill(skill_name)
 
-    return {
+    result: dict[str, Any] = {
         'ok': True,
         'intent': intent_name,
         'flow': flow,
@@ -43,7 +57,29 @@ def handle_user_input(user_text: str) -> dict:
         'user_text': user_text,
     }
 
+    if skill is None:
+        result['ok'] = False
+        result['error'] = 'skill_not_found'
+        return result
+
+    if intent_name in LOW_RISK_INTENTS:
+        kwargs = build_skill_kwargs(intent_name, user_text)
+        result['executed'] = True
+        result['skill_result'] = skill(**kwargs)
+    else:
+        result['executed'] = False
+        result['execution_mode'] = 'planned_only'
+
+    return result
+
 
 if __name__ == '__main__':
-    demo = '执行 pytest 冒烟并分析失败原因'
-    print(handle_user_input(demo))
+    demos = [
+        '请分析这个需求并输出测试点和风险点',
+        '请帮我写测试用例，输出 markdown 表格',
+        '分析这段 pytest 失败结果，AssertionError: status code mismatch',
+        '执行 pytest 冒烟并分析失败原因',
+    ]
+    for demo in demos:
+        print('---')
+        print(handle_user_input(demo))
