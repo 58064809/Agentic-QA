@@ -34,6 +34,26 @@ def build_skill_kwargs(intent_name: str, user_text: str) -> dict[str, Any]:
     return {}
 
 
+def build_test_execution_kwargs(user_text: str) -> dict[str, Any]:
+    text = user_text.lower()
+    target = 'tests'
+    marker = ''
+    keyword = ''
+
+    if 'smoke' in text or '冒烟' in user_text:
+        marker = 'smoke'
+    if 'router' in text:
+        keyword = 'router'
+    if 'intent' in text:
+        keyword = 'intent'
+
+    return {
+        'target': target,
+        'marker': marker,
+        'keyword': keyword,
+    }
+
+
 def handle_user_input(user_text: str) -> dict:
     intent_name = match_intent(user_text)
     if not intent_name:
@@ -66,10 +86,26 @@ def handle_user_input(user_text: str) -> dict:
         kwargs = build_skill_kwargs(intent_name, user_text)
         result['executed'] = True
         result['skill_result'] = skill(**kwargs)
-    else:
-        result['executed'] = False
-        result['execution_mode'] = 'planned_only'
+        return result
 
+    if intent_name == 'test_execution':
+        test_kwargs = build_test_execution_kwargs(user_text)
+        execution_result = skill(**test_kwargs)
+        analyze_skill = get_skill('analyze_pytest_result')
+        analysis_result = None
+        if analyze_skill is not None:
+            raw_text = f"{execution_result.get('stdout', '')}\n{execution_result.get('stderr', '')}".strip()
+            analysis_result = analyze_skill(raw_text=raw_text)
+
+        result['executed'] = True
+        result['execution_mode'] = 'run_and_analyze'
+        result['execution_kwargs'] = test_kwargs
+        result['skill_result'] = execution_result
+        result['analysis_result'] = analysis_result
+        return result
+
+    result['executed'] = False
+    result['execution_mode'] = 'planned_only'
     return result
 
 
@@ -78,7 +114,7 @@ if __name__ == '__main__':
         '请分析这个需求并输出测试点和风险点',
         '请帮我写测试用例，输出 markdown 表格',
         '分析这段 pytest 失败结果，AssertionError: status code mismatch',
-        '执行 pytest 冒烟并分析失败原因',
+        '执行 pytest router 相关用例并分析失败原因',
     ]
     for demo in demos:
         print('---')
