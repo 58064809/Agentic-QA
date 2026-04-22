@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+import re
 import yaml
 
 from runtime.intent_matcher import match_intent
@@ -42,10 +43,20 @@ def build_test_execution_kwargs(user_text: str) -> dict[str, Any]:
 
     if 'smoke' in text or '冒烟' in user_text:
         marker = 'smoke'
-    if 'router' in text:
-        keyword = 'router'
-    if 'intent' in text:
-        keyword = 'intent'
+
+    explicit_keyword_patterns = [
+        r'-k\s+([\w\-]+)',
+        r'关键字[：: ]+([\w\-]+)',
+        r'关键词[：: ]+([\w\-]+)',
+        r'用例名[：: ]+([\w\-]+)',
+        r'test_[\w\-]+',
+    ]
+
+    for pattern in explicit_keyword_patterns:
+        match = re.search(pattern, text)
+        if match:
+            keyword = match.group(1) if match.groups() else match.group(0)
+            break
 
     return {
         'target': target,
@@ -114,7 +125,7 @@ if __name__ == '__main__':
         '请分析这个需求并输出测试点和风险点',
         '请帮我写测试用例，输出 markdown 表格',
         '分析这段 pytest 失败结果，AssertionError: status code mismatch',
-        '执行 pytest router 相关用例并分析失败原因',
+        '执行 pytest 相关用例并分析失败原因',
     ]
     for demo in demos:
         print('---')
