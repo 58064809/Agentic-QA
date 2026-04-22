@@ -20,6 +20,6 @@ intents:
     flow: result_analysis
 
   log_analysis:
-    rule_file: rules/intent/log.md
+    rule_file: rules/intent/log-analysis.md
     primary_skill: search_logs
     flow: log_analysis
