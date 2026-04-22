@@ -1,0 +1,7 @@
+name: log_analysis
+steps:
+  - identify_intent
+  - parse_log_query
+  - search_logs
+  - summarize_root_cause
+  - format_output
