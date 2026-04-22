@@ -1,0 +1,6 @@
+name: result_analysis
+steps:
+  - identify_intent
+  - load_rule
+  - analyze_pytest_result
+  - format_output
