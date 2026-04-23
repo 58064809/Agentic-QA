@@ -1,6 +1,0 @@
-name: requirement
-steps:
-  - identify_intent
-  - load_rule
-  - analyze_requirement
-  - format_output

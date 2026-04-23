@@ -1,25 +1,46 @@
+assistant:
+  name: senior_test_engineer_assistant
+  agent_file: agents/senior_test_engineer/AGENT.md
+
 intents:
   requirement_analysis:
-    rule_file: rules/intent/requirement.md
+    rule_file: rules/intents/requirement_analysis.md
     primary_skill: analyze_requirement
-    flow: requirement
+    skill_doc: skills/requirement_analysis/SKILL.md
+    flow: requirement_analysis
+    requires_requirement_context: true
 
   test_case_generation:
-    rule_file: rules/intent/test_case.md
+    rule_file: rules/intents/test_case_generation.md
     primary_skill: generate_test_cases
-    flow: test_case
+    skill_doc: skills/test_case_generation/SKILL.md
+    flow: test_case_generation
+    requires_requirement_context: true
+
+  script_generation:
+    rule_file: rules/intents/script_generation.md
+    primary_skill: generate_test_script
+    skill_doc: skills/script_generation/SKILL.md
+    flow: script_generation
+    requires_requirement_context: true
 
   test_execution:
-    rule_file: rules/intent/pytest.md
+    rule_file: rules/intents/test_execution.md
     primary_skill: run_pytest
+    skill_doc: skills/test_execution/SKILL.md
     flow: test_execution
+    requires_requirement_context: false
 
   result_analysis:
-    rule_file: rules/intent/result.md
+    rule_file: rules/intents/result_analysis.md
     primary_skill: analyze_pytest_result
+    skill_doc: skills/result_analysis/SKILL.md
     flow: result_analysis
+    requires_requirement_context: false
 
   log_analysis:
-    rule_file: rules/intent/log-analysis.md
+    rule_file: rules/intents/log_analysis.md
     primary_skill: search_logs
+    skill_doc: skills/log_analysis/SKILL.md
     flow: log_analysis
+    requires_requirement_context: false

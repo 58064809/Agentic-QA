@@ -1,0 +1,9 @@
+name: requirement_analysis
+steps:
+  - load_agent
+  - load_intent_rule
+  - discover_requirement_docs
+  - discover_prototype_assets
+  - load_skill_doc
+  - analyze_requirement
+  - format_result

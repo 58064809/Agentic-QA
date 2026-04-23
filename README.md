@@ -1,22 +1,65 @@
 # AI-Assistant
 
-个人 AI 助手仓库。
+个人 AI 测试助手。目标不是平台、知识库或多 Agent 系统，而是在 IDE / 终端里直接对话，让助手按短规则识别意图、加载最少上下文并执行测试相关工作。
 
-目标：
-- 根据对话命中规则
-- 按需加载最少上下文
-- 调用技能完成任务
-- 支持轻量任务流
+## 能力
 
-设计原则：
-- 短规则
-- 小技能
-- 小流程
-- runtime 按需加载
+- 需求分析：读取需求包中的 PRD 和原型，输出测试视角分析。
+- 测试用例生成：生成可执行 Markdown 表格，包含测试数据、步骤、预期和校验点。
+- pytest 脚本生成：基于需求生成 pytest 骨架。
+- pytest 执行：从自然语言提取 target / marker / keyword 并执行。
+- pytest 结果分析：识别失败类型并给出排查建议。
+- 日志分析：按文件或关键字搜索日志。
 
-当前 V1 范围：
-- 需求分析
-- 写测试用例
-- 执行 pytest
-- 分析 pytest 结果
-- 分析日志
+## 目录
+
+- `agents/`: 助手角色定义。
+- `rules/`: 意图规则和路由配置。
+- `flows/`: 轻量流程定义。
+- `skills/`: 技能说明，只放 `SKILL.md`。
+- `actions/`: 技能对应的 Python 动作实现。
+- `runtime/`: 意图识别、资源加载、文档发现、路由执行、结果保存。
+- `tests/`: 回归测试。
+- `workspace/requirements/`: 需求资料工作区。
+
+## 需求资料放置
+
+每个新需求一个独立目录：
+
+```text
+workspace/requirements/<requirement-name>/
+  docs/        # PRD、需求说明
+  prototype/   # 原型、截图、设计稿
+  logs/        # 需求相关日志
+  tests/       # 需求相关 pytest
+  outputs/     # 助手自动保存的结果
+```
+
+当前示例需求在：
+
+```text
+workspace/requirements/deposit-management/
+```
+
+## 使用
+
+```bash
+python -m runtime.cli "帮我分析保证金需求，看看 PRD 和原型图"
+python -m runtime.cli "帮我根据保证金需求生成测试用例"
+python -m runtime.cli "执行 pytest tests"
+python -m runtime.cli "分析日志 logs/app.log 关键字 timeout"
+```
+
+默认使用项目下的 `workspace/`。如果要指定其他工作区：
+
+```bash
+python -m runtime.cli "帮我分析需求" D:\your-workspace
+```
+
+默认输出人可读 Markdown 摘要，并把完整结果保存到对应需求包的 `outputs/`。需要结构化结果时加 `--json`。
+
+## 验证
+
+```bash
+pytest -q
+```

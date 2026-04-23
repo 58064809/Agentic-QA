@@ -1,7 +1,8 @@
 name: test_execution
 steps:
-  - identify_intent
-  - parse_execution_target
+  - load_agent
+  - load_intent_rule
+  - parse_pytest_target
   - run_pytest
   - analyze_pytest_result
-  - format_output
+  - format_result

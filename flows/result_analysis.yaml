@@ -1,6 +1,7 @@
 name: result_analysis
 steps:
-  - identify_intent
-  - load_rule
+  - load_agent
+  - load_intent_rule
+  - load_skill_doc
   - analyze_pytest_result
-  - format_output
+  - format_result

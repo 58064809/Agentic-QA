@@ -1,0 +1,9 @@
+name: script_generation
+steps:
+  - load_agent
+  - load_intent_rule
+  - discover_requirement_docs
+  - discover_prototype_assets
+  - load_skill_doc
+  - generate_test_script
+  - format_result

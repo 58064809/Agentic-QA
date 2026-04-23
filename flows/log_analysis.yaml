@@ -1,7 +1,8 @@
 name: log_analysis
 steps:
-  - identify_intent
-  - parse_log_query
+  - load_agent
+  - load_intent_rule
+  - parse_log_target
+  - load_skill_doc
   - search_logs
-  - summarize_root_cause
-  - format_output
+  - format_result
