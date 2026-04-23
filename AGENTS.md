@@ -93,3 +93,25 @@ Make the assistant useful for daily personal testing work:
 - Smarter pytest execution.
 - Practical log analysis.
 - Later extensions: read-only DB query, Feishu notification, WeCom notification.
+
+## Known Gaps
+
+These are accepted current limitations and should guide future work:
+
+- Intent recognition is still rule-based and brittle. It needs better scoring, negative signals, ambiguity handling, and possibly a lightweight LLM fallback later.
+- Flows are lightweight execution traces, not a heavy orchestration framework. Keep them small, but ensure each runtime step is recorded and debuggable.
+- Action input/output should follow the `ActionResult` protocol. Existing actions may still expose domain fields directly for formatters, but protocol metadata should be preserved.
+- Pytest execution is still basic. Improve target discovery, marker validation, collection-only preview, rerun behavior, timeout handling, and environment diagnostics.
+- Pytest result analysis is currently evidence-based classification, not full root-cause analysis. Improve by extracting failing node IDs, assertion diffs, fixture/setup failures, dependency errors, and linking log clues.
+
+## Borrowed QA Automation Standards
+
+Useful ideas are adapted from `fugazi/test-automation-skills-agents`, but this project must not become a copied knowledge base.
+
+Apply these standards when generating or reviewing tests:
+
+- Prefer risk-based planning and test design techniques: equivalence classes, boundary values, decision tables, state transitions, and scenario testing.
+- API tests should cover status codes, auth/permission failures, schema/contract checks, pagination/filtering/sorting, idempotency, and invalid payloads.
+- Playwright tests should use stable locators, web-first assertions, `test.step`, trace/screenshots/video on failure, and avoid hard waits.
+- Flaky test triage should look for timing, environment differences, shared state, race conditions, browser differences, and retry-only passes.
+- Avoid anti-patterns: happy-path-only coverage, brittle selectors, hard waits, shared mutable state, over-mocking, implementation-detail assertions, and missing schema validation.

@@ -15,6 +15,12 @@ def test_build_test_execution_kwargs_with_path_marker_and_keyword() -> None:
     assert kwargs["keyword"] == "smoke_path"
 
 
+def test_build_test_execution_kwargs_with_requirement_tests_path() -> None:
+    kwargs = build_test_execution_kwargs("执行 pytest requirements/deposit-management/tests")
+
+    assert kwargs["target"] == "requirements/deposit-management/tests"
+
+
 def test_build_log_analysis_kwargs_extracts_file_and_keyword() -> None:
     kwargs = build_log_analysis_kwargs(r'分析 "logs/app.log" 关键字 timeout')
 
@@ -41,8 +47,11 @@ def test_handle_requirement_analysis_saves_output(tmp_path: Path) -> None:
     assert result["loaded_resources"]["agent"]["loaded"] is True
     assert result["loaded_resources"]["rule"]["loaded"] is True
     assert result["loaded_resources"]["skill"]["loaded"] is True
+    assert result["flow_run"]["executed_steps"]
+    assert any(step["step"] == "discover_requirement_context" for step in result["flow_run"]["executed_steps"])
     assert result["requirement_context"]["selected_requirement_docs"]
     assert result["skill_result"]["analysis_basis"]["requirement_docs"]
+    assert result["action_result"]["ok"] is True
     assert result["formatted_output"]
     assert result["saved_output"]["files"]
 
@@ -103,5 +112,25 @@ def test_handle_test_execution_uses_workspace_root_and_saves_output(tmp_path: Pa
     assert result["intent"] == "test_execution"
     assert result["skill_result"]["exit_code"] == 0
     assert result["skill_result"]["cwd"] == str(tmp_path)
+    assert result["skill_result"]["duration_seconds"] >= 0
+    assert result["analysis_result"]["confidence"] > 0
+    assert any(step["step"] == "run_pytest" for step in result["flow_run"]["executed_steps"])
     assert result["formatted_output"]
     assert Path(result["saved_output"]["files"][0]["path"]).exists()
+
+
+def test_handle_test_execution_saves_into_requirement_package_when_target_is_package_scoped(tmp_path: Path) -> None:
+    package = tmp_path / "requirements" / "deposit-management"
+    tests_dir = package / "tests"
+    tests_dir.mkdir(parents=True)
+    (tests_dir / "test_demo.py").write_text(
+        "def test_demo():\n    assert 1 == 1\n",
+        encoding="utf-8",
+    )
+
+    result = handle_user_input("执行 pytest requirements/deposit-management/tests", workspace_root=tmp_path)
+
+    assert result["ok"] is True
+    saved_path = Path(result["saved_output"]["files"][0]["path"])
+    assert saved_path.exists()
+    assert saved_path.parent == package / "outputs"

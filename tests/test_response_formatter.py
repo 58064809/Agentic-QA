@@ -53,6 +53,10 @@ def test_format_test_cases_includes_markdown_table() -> None:
             "analysis_basis": {"requirement_docs": ["docs/a.md"], "prototype_assets": []},
             "generation_strategy": ["按风险生成"],
             "case_groups": ["主流程"],
+            "automation_guidance": {
+                "automation_candidate_rules": ["P0 优先自动化"],
+                "testing_anti_patterns": ["不要只测 happy path"],
+            },
             "open_questions": [],
             "case_count": 1,
             "columns": ["用例ID", "用例标题", "优先级"],
@@ -63,6 +67,7 @@ def test_format_test_cases_includes_markdown_table() -> None:
     assert "# 测试用例" in output
     assert "共 1 条" in output
     assert "| 用例ID | 用例标题 | 优先级 |" in output
+    assert "P0 优先自动化" in output
 
 
 def test_format_test_cases_summary_limits_table() -> None:
@@ -71,6 +76,7 @@ def test_format_test_cases_summary_limits_table() -> None:
             "analysis_basis": {"requirement_docs": ["docs/a.md"], "prototype_assets": []},
             "generation_strategy": [],
             "case_groups": [],
+            "automation_guidance": {},
             "open_questions": [],
             "case_count": 13,
             "columns": ["用例ID", "用例标题"],

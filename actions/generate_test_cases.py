@@ -6,6 +6,7 @@ from actions.requirement_parser import derive_business_rules
 from actions.requirement_parser import derive_risks
 from actions.requirement_parser import extract_requirement_items
 from actions.requirement_parser import split_questions
+from actions.automation_standards import automation_guidance
 from actions.test_model_builder import build_test_model
 
 COLUMNS = ["用例ID", "模块", "优先级", "用例标题", "前置条件", "测试数据", "测试步骤", "预期结果", "校验点", "需求来源"]
@@ -390,6 +391,11 @@ def generate_test_cases(user_text: str, requirement_context: dict[str, Any]) -> 
         ]
 
     return {
+        "_ok": True,
+        "_metadata": {
+            "case_count": len(cases),
+            "strategy": "deposit_domain" if _contains(text, "保证金") else "generic_rules",
+        },
         "task": "test_case_generation",
         "analysis_basis": {
             "requirement_package": requirement_context.get("requirement_package"),
@@ -399,8 +405,10 @@ def generate_test_cases(user_text: str, requirement_context: dict[str, Any]) -> 
         "generation_strategy": [
             "按资金系统测试模型生成用例：金额、状态、权限、审核、冻结、扣罚、退店、报表",
             "P0 优先覆盖资金副作用、状态机、权限、幂等和服务端兜底",
+            "按等价类、边界值、判定表、状态迁移和场景法组织覆盖",
             "每条用例保留测试数据、步骤、预期结果和校验点，便于直接转入用例管理表",
         ],
+        "automation_guidance": automation_guidance(),
         "case_groups": model.get("case_groups", []),
         "open_questions": model.get("open_questions", parser_questions),
         "columns": COLUMNS,

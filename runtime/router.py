@@ -6,8 +6,10 @@ from typing import Any
 
 import yaml
 
+from runtime.action_protocol import normalize_action_result
 from runtime.document_discovery import discover_requirement_context
 from runtime.flow_engine import load_flow
+from runtime.flow_engine import start_flow
 from runtime.intent_matcher import match_intent_details
 from runtime.resource_loader import load_markdown_resource
 from runtime.resource_loader import summarize_resource
@@ -47,8 +49,9 @@ def _first_match(patterns: list[str], text: str, flags: int = 0) -> str:
 def build_test_execution_kwargs(user_text: str) -> dict[str, str]:
     target = _first_match(
         [
+            r"pytest\s+([A-Za-z0-9_.\\/][A-Za-z0-9_./\\-]*(?:::[A-Za-z0-9_]+)*)",
             r"([A-Za-z0-9_./\\-]+\.py(?:::[A-Za-z0-9_]+)*)",
-            r"\b(tests(?:[/\\][A-Za-z0-9_.\\/-]+)?)\b",
+            r"\b([A-Za-z0-9_./\\-]*tests(?:[/\\][A-Za-z0-9_.\\/-]+)?)\b",
         ],
         user_text,
         flags=re.IGNORECASE,
@@ -138,6 +141,22 @@ def _resolve_output_root(default_root: Path, kwargs: dict[str, Any]) -> Path:
     return default_root
 
 
+def _resolve_test_execution_output_root(default_root: Path, execution_kwargs: dict[str, Any]) -> Path:
+    target = str(execution_kwargs.get("target") or "")
+    normalized = target.replace("\\", "/")
+    marker = "requirements/"
+    if marker not in normalized:
+        return default_root
+
+    after_marker = normalized.split(marker, 1)[1]
+    package_name = after_marker.split("/", 1)[0]
+    if not package_name:
+        return default_root
+
+    package_root = default_root / "requirements" / package_name
+    return package_root if package_root.exists() else default_root
+
+
 def handle_user_input(user_text: str, workspace_root: str | Path | None = None) -> dict[str, Any]:
     match = match_intent_details(user_text)
     if match is None:
@@ -153,11 +172,16 @@ def handle_user_input(user_text: str, workspace_root: str | Path | None = None) 
     assistant_config = routing["assistant"]
     intent_config = route_intent(intent_name)
     flow = load_flow(intent_config["flow"])
+    flow_run = start_flow(flow)
+    flow_run.record("match_intent", intent=intent_name, matched_keywords=list(match.matched_keywords))
     skill = get_skill(intent_config["primary_skill"])
 
     agent_resource = load_markdown_resource(assistant_config["agent_file"])
+    flow_run.record("load_agent", loaded=agent_resource.get("loaded", False), path=assistant_config["agent_file"])
     rule_resource = load_markdown_resource(intent_config["rule_file"])
+    flow_run.record("load_intent_rule", loaded=rule_resource.get("loaded", False), path=intent_config["rule_file"])
     skill_doc_resource = load_markdown_resource(intent_config["skill_doc"])
+    flow_run.record("load_skill_doc", loaded=skill_doc_resource.get("loaded", False), path=intent_config["skill_doc"])
 
     result: dict[str, Any] = {
         "ok": skill is not None,
@@ -165,6 +189,7 @@ def handle_user_input(user_text: str, workspace_root: str | Path | None = None) 
         "intent": intent_name,
         "matched_keywords": list(match.matched_keywords),
         "flow": flow,
+        "flow_run": flow_run.to_dict(),
         "user_text": user_text,
         "loaded_resources": {
             "agent": summarize_resource(agent_resource),
@@ -175,35 +200,85 @@ def handle_user_input(user_text: str, workspace_root: str | Path | None = None) 
 
     if skill is None:
         result["error"] = "skill_not_found"
+        flow_run.record("resolve_skill", "error", skill=intent_config["primary_skill"])
+        result["flow_run"] = flow_run.to_dict()
         return result
 
     kwargs = build_skill_kwargs(intent_name, user_text, current_workspace, intent_config)
+    if "requirement_context" in kwargs:
+        context = kwargs["requirement_context"]
+        flow_run.record(
+            "discover_requirement_context",
+            docs=len(context.get("selected_requirement_docs", [])),
+            prototypes=len(context.get("selected_prototypes", [])),
+            package=(context.get("requirement_package") or {}).get("name"),
+        )
+    else:
+        flow_run.record("build_action_input", intent=intent_name, keys=sorted(kwargs.keys()))
 
     if intent_name == "test_execution":
-        execution_result = skill(**kwargs)
+        execution_action_result = normalize_action_result(skill(**kwargs))
+        execution_result = execution_action_result.data
+        flow_run.record(
+            "run_pytest",
+            "ok" if execution_action_result.ok else "error",
+            exit_code=execution_result.get("exit_code"),
+            error=execution_action_result.error,
+        )
         analyze_skill = get_skill("analyze_pytest_result")
         analysis_result = None
+        analysis_action_result = None
         if analyze_skill is not None:
             raw_text = f"{execution_result.get('stdout', '')}\n{execution_result.get('stderr', '')}".strip()
-            analysis_result = analyze_skill(raw_text=raw_text)
+            analysis_action_result = normalize_action_result(analyze_skill(raw_text=raw_text, execution_result=execution_result))
+            analysis_result = analysis_action_result.data
+            flow_run.record(
+                "analyze_pytest_result",
+                "ok" if analysis_action_result.ok else "error",
+                error_type=analysis_result.get("error_type"),
+                confidence=analysis_result.get("confidence"),
+            )
         result["executed"] = True
         result["execution_kwargs"] = kwargs
         result["skill_result"] = execution_result
+        result["action_result"] = {
+            "ok": execution_action_result.ok,
+            "error": execution_action_result.error,
+            "warnings": list(execution_action_result.warnings),
+            "metadata": execution_action_result.metadata,
+        }
         result["analysis_result"] = analysis_result
         result["formatted_output"] = format_skill_result(intent_name, execution_result, analysis_result)
         result["saved_formatted_output"] = format_skill_result(intent_name, execution_result, analysis_result, full=True)
+        output_root = _resolve_test_execution_output_root(current_workspace, kwargs)
         result["saved_output"] = save_assistant_output(
-            current_workspace,
+            output_root,
             intent_name,
             result["saved_formatted_output"],
             execution_result,
         )
+        flow_run.record("save_output", files=len(result["saved_output"].get("files", [])))
+        result["flow_run"] = flow_run.to_dict()
         return result
 
-    skill_result = skill(**kwargs)
+    action_result = normalize_action_result(skill(**kwargs))
+    skill_result = action_result.data
+    flow_run.record(
+        intent_config["primary_skill"],
+        "ok" if action_result.ok else "error",
+        error=action_result.error,
+        warnings=list(action_result.warnings),
+    )
     output_root = _resolve_output_root(current_workspace, kwargs)
-    result["executed"] = True
+    result["ok"] = action_result.ok
+    result["executed"] = action_result.ok
     result["skill_result"] = skill_result
+    result["action_result"] = {
+        "ok": action_result.ok,
+        "error": action_result.error,
+        "warnings": list(action_result.warnings),
+        "metadata": action_result.metadata,
+    }
     result["formatted_output"] = format_skill_result(intent_name, skill_result)
     result["saved_formatted_output"] = format_skill_result(intent_name, skill_result, full=True)
     result["saved_output"] = save_assistant_output(
@@ -212,6 +287,8 @@ def handle_user_input(user_text: str, workspace_root: str | Path | None = None) 
         result["saved_formatted_output"],
         skill_result,
     )
+    flow_run.record("save_output", files=len(result["saved_output"].get("files", [])))
     if "requirement_context" in kwargs:
         result["requirement_context"] = kwargs["requirement_context"]
+    result["flow_run"] = flow_run.to_dict()
     return result

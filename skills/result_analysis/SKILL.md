@@ -5,5 +5,9 @@
 
 输出：
 - error_type
+- confidence
+- evidence
+- failure_locations
+- flaky_signals
 - possible_causes
 - next_actions

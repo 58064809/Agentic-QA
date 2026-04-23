@@ -42,6 +42,11 @@ def analyze_requirement(user_text: str, requirement_context: dict[str, Any]) -> 
         next_actions.append("下一步可直接生成测试用例表，按 P0/P1/P2 和页面/接口/数据层分组")
 
     return {
+        "_ok": True,
+        "_metadata": {
+            "requirement_item_count": len(requirement_items),
+            "open_question_count": len(model["open_questions"]),
+        },
         "task": "requirement_analysis",
         "summary": normalize_text(user_text)[:200],
         "analysis_basis": {

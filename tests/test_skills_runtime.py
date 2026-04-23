@@ -1,8 +1,10 @@
 from pathlib import Path
 
 from actions.analyze_requirement import analyze_requirement
+from actions.analyze_pytest_result import analyze_pytest_result
 from actions.generate_test_cases import generate_test_cases
 from actions.generate_test_script import generate_test_script
+from actions.run_pytest import run_pytest
 from actions.search_logs import search_logs
 
 
@@ -75,6 +77,7 @@ def test_generate_test_cases_returns_markdown_table() -> None:
     assert result["case_count"] >= 1
     assert "| 用例ID | 模块 | 优先级 | 用例标题 | 前置条件 | 测试数据 | 测试步骤 | 预期结果 | 校验点 | 需求来源 |" in result["markdown_table"]
     assert "导出完成后必须生成下载链接" in result["markdown_table"]
+    assert result["automation_guidance"]["automation_candidate_rules"]
 
 
 def test_generate_test_script_returns_pytest_skeleton() -> None:
@@ -86,6 +89,24 @@ def test_generate_test_script_returns_pytest_skeleton() -> None:
     assert "导出完成后必须生成下载链接" in result["script_content"]
 
 
+def test_generate_test_script_returns_api_skeleton_when_requested() -> None:
+    result = generate_test_script("根据需求生成 API 接口自动化脚本", _sample_requirement_context())
+
+    assert result["script_framework"] == "pytest-api"
+    assert result["recommended_file_name"].endswith(".py")
+    assert "api_client" in result["script_content"]
+    assert result["automation_checklist"]
+
+
+def test_generate_test_script_returns_playwright_skeleton_when_requested() -> None:
+    result = generate_test_script("根据需求生成 Playwright E2E 页面自动化脚本", _sample_requirement_context())
+
+    assert result["script_framework"] == "playwright"
+    assert result["recommended_file_name"].endswith(".spec.ts")
+    assert "test.step" in result["script_content"]
+    assert result["script_language"] == "typescript"
+
+
 def test_search_logs_finds_matches_in_explicit_file(tmp_path: Path) -> None:
     log_file = tmp_path / "app.log"
     log_file.write_text("INFO start\nERROR timeout while calling service\nINFO done\n", encoding="utf-8")
@@ -95,3 +116,46 @@ def test_search_logs_finds_matches_in_explicit_file(tmp_path: Path) -> None:
     assert result["task"] == "log_analysis"
     assert result["match_count"] == 1
     assert any("timeout while calling service" in match for match in result["matches"])
+
+
+def test_run_pytest_returns_protocol_fields(tmp_path: Path) -> None:
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_demo.py").write_text("def test_demo():\n    assert True\n", encoding="utf-8")
+
+    result = run_pytest(target="tests/test_demo.py", workspace_root=str(tmp_path))
+
+    assert result["_ok"] is True
+    assert result["exit_code"] == 0
+    assert result["duration_seconds"] >= 0
+    assert result["command_args"][0] == "pytest"
+
+
+def test_analyze_pytest_result_extracts_failure_evidence() -> None:
+    result = analyze_pytest_result(
+        """
+FAILED tests/test_demo.py::test_demo - AssertionError: assert 1 == 2
+tests/test_demo.py:2: AssertionError
+=================== 1 failed in 0.10s ===================
+"""
+    )
+
+    assert result["_ok"] is False
+    assert result["error_type"] == "assertion_error"
+    assert result["confidence"] >= 0.8
+    assert result["failure_locations"]
+
+
+def test_analyze_pytest_result_detects_skipped_only() -> None:
+    result = analyze_pytest_result("============================= 20 skipped in 0.11s =============================")
+
+    assert result["error_type"] == "skipped_only"
+    assert result["confidence"] >= 0.9
+    assert result["next_actions"]
+
+
+def test_analyze_pytest_result_adds_flaky_signals_for_timeout() -> None:
+    result = analyze_pytest_result("E TimeoutError: waiting for locator timed out after retry")
+
+    assert result["error_type"] == "timeout"
+    assert result["flaky_signals"]

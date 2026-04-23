@@ -182,12 +182,16 @@ def format_test_cases(result: dict[str, Any], *, full: bool = False) -> str:
     if hidden_count > 0:
         table = table + f"\n\n... 还有 {hidden_count} 条，已保存到完整 Markdown 文件"
 
+    guidance = result.get("automation_guidance", {})
+
     return "\n\n".join(
         [
             "# 测试用例",
             _section("分析依据", _basis_lines(result.get("analysis_basis", {}))),
             _section("生成策略", _numbered(result.get("generation_strategy", []))),
             _section("建议用例分组", _numbered(result.get("case_groups", []))),
+            _section("自动化候选规则", _numbered(guidance.get("automation_candidate_rules", []))),
+            _section("测试反模式提醒", _numbered(guidance.get("testing_anti_patterns", []))),
             _section("待确认项", _numbered(result.get("open_questions", []))),
             _section("用例统计", f"共 {result.get('case_count', 0)} 条"),
             table,
@@ -197,13 +201,15 @@ def format_test_cases(result: dict[str, Any], *, full: bool = False) -> str:
 
 def format_script_generation(result: dict[str, Any], *, full: bool = False) -> str:
     script = result.get("script_content", "")
+    language = result.get("script_language", "python")
     return "\n\n".join(
         [
             "# pytest 脚本草稿",
             _section("分析依据", _basis_lines(result.get("analysis_basis", {}))),
             _section("待确认项", _numbered(result.get("open_questions", []))),
+            _section("自动化检查清单", _numbered(result.get("automation_checklist", []))),
             _section("建议文件名", result.get("recommended_file_name", "")),
-            f"```python\n{script}```",
+            f"```{language}\n{script}```",
         ]
     )
 
@@ -213,6 +219,11 @@ def format_result_analysis(result: dict[str, Any], *, full: bool = False) -> str
         [
             "# pytest 结果分析",
             _section("问题类型", result.get("error_type", "unknown")),
+            _section("置信度", str(result.get("confidence", ""))),
+            _section("pytest 摘要", result.get("pytest_summary", "")),
+            _section("证据", _numbered(result.get("evidence", []))),
+            _section("失败位置", _numbered(result.get("failure_locations", []))),
+            _section("Flaky 线索", _numbered(result.get("flaky_signals", []))),
             _section("可能原因", _numbered(result.get("possible_causes", []))),
             _section("下一步排查", _numbered(result.get("next_actions", []))),
             _section("原始摘要", result.get("summary", "")),
@@ -230,6 +241,12 @@ def format_test_execution(execution_result: dict[str, Any], analysis_result: dic
     ]
     if analysis_result:
         parts.append(_section("结果判断", analysis_result.get("error_type", "unknown")))
+        if analysis_result.get("pytest_summary"):
+            parts.append(_section("pytest 摘要", analysis_result.get("pytest_summary", "")))
+        if analysis_result.get("evidence"):
+            parts.append(_section("证据", _numbered(analysis_result.get("evidence", []))))
+        if analysis_result.get("flaky_signals"):
+            parts.append(_section("Flaky 线索", _numbered(analysis_result.get("flaky_signals", []))))
         parts.append(_section("建议动作", _numbered(analysis_result.get("next_actions", []))))
     stdout = execution_result.get("stdout", "").strip()
     stderr = execution_result.get("stderr", "").strip()

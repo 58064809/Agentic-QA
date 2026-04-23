@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 IGNORED_PARTS = {".git", "__pycache__", ".pytest_cache", ".idea", ".deepeval"}
 
 
@@ -34,6 +34,8 @@ def search_logs(file_path: str = "", keyword: str = "error", limit: int = 50, wo
     candidates = _resolve_candidates(file_path, root)
     if file_path and not candidates[0].exists():
         return {
+            "_ok": False,
+            "_error": "log_file_not_found",
             "task": "log_analysis",
             "file_path": str(candidates[0]),
             "keyword": keyword,
@@ -45,6 +47,8 @@ def search_logs(file_path: str = "", keyword: str = "error", limit: int = 50, wo
 
     if not candidates:
         return {
+            "_ok": False,
+            "_error": "no_log_files_found",
             "task": "log_analysis",
             "file_path": file_path,
             "keyword": keyword,
@@ -65,6 +69,8 @@ def search_logs(file_path: str = "", keyword: str = "error", limit: int = 50, wo
                 matches.append(f"{_display_path(path, root)}:{line_number}: {line.strip()}")
                 if len(matches) >= limit:
                     return {
+                        "_ok": True,
+                        "_metadata": {"match_count": len(matches), "searched_files": len(candidates), "limited": True},
                         "task": "log_analysis",
                         "file_path": file_path or "",
                         "keyword": keyword,
@@ -74,6 +80,8 @@ def search_logs(file_path: str = "", keyword: str = "error", limit: int = 50, wo
                     }
 
     return {
+        "_ok": True,
+        "_metadata": {"match_count": len(matches), "searched_files": len(candidates), "limited": False},
         "task": "log_analysis",
         "file_path": file_path or "",
         "keyword": keyword,
