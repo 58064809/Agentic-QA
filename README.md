@@ -13,6 +13,7 @@
 
 ## 目录
 
+- `AGENTS.md`: 项目级 AI 记忆，给 Codex / IDE 新会话读取。
 - `agents/`: 助手角色定义。
 - `rules/`: 意图规则和路由配置。
 - `flows/`: 轻量流程定义。
@@ -21,6 +22,8 @@
 - `runtime/`: 意图识别、资源加载、文档发现、路由执行、结果保存。
 - `tests/`: 回归测试。
 - `workspace/requirements/`: 需求资料工作区。
+
+`AGENTS.md` 和 `agents/*/AGENT.md` 不要混用：根目录 `AGENTS.md` 记录项目级约定和目录边界；`agents/*/AGENT.md` 是运行时可加载的具体角色定义。当前默认角色是 `agents/senior_test_engineer/AGENT.md`，后续如需多 agent，在 `agents/` 下新增独立目录即可。
 
 ## 需求资料放置
 
