@@ -37,6 +37,8 @@ intents:
     skill_doc: skills/test_execution/SKILL.md
     flow: test_execution
     requires_requirement_context: false
+    post_skills:
+      - analyze_pytest_result
 
   result_analysis:
     rule_file: rules/intents/result_analysis.md

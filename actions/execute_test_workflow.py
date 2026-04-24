@@ -189,11 +189,12 @@ def _load_json(path: Path, default):
 
 
 def _load_cases():
-    plan = _load_json(_requirement_root() / "outputs" / "test_execution_plan.json", {{"cases": []}})
+    plan = _load_json(_requirement_root() / "outputs" / "test_execution" / "test_execution_plan.json", {{"cases": []}})
     return plan.get("cases", [])
 
 
 CASES = _load_cases()
+READY_CASES = [case for case in CASES if (case.get("binding", {{}}) or {{}}).get("status") == "ready"]
 
 
 @pytest.fixture(scope="session")
@@ -208,13 +209,19 @@ def ai_test_env():
 
 
 @pytest.mark.ai_generated
-@pytest.mark.parametrize("case", CASES, ids=lambda item: item["case_id"])
+def test_ai_generated_cases_ready():
+    if not CASES:
+        pytest.skip("No AI-generated cases found. Run the workflow to generate outputs/test_execution/test_execution_plan.json.")
+    if not READY_CASES:
+        pytest.skip("AI-generated cases are present but none are bound (ready). Fill automation/bindings.json and rerun workflow.")
+
+
+@pytest.mark.ai_generated
+@pytest.mark.parametrize("case", CASES, ids=lambda item: item.get("case_id", "CASE"))
 def test_ai_generated_case_binding(case, ai_test_env):
     binding = case.get("binding", {{}})
     if binding.get("status") != "ready":
-        pytest.skip(
-            f"{{case['case_id']}} {{case['title']}} is not bound to executable API/page/fixture/DB code"
-        )
+        pytest.skip(f\"{{case.get('case_id')}} {{case.get('title')}} needs API/page/fixture/DB binding\")
     result = execute_case_binding(case, ai_test_env)
     assert result["status"] == "passed"
 '''
@@ -593,6 +600,11 @@ def _extract_pytest_counts(summary: str) -> dict[str, int]:
     return counts
 
 
+def _extract_collected_items(stdout: str) -> int:
+    match = re.search(r"collected\s+(\d+)\s+items", stdout)
+    return int(match.group(1)) if match else 0
+
+
 def _build_report_args(env_path: Path, artifacts: dict[str, str]) -> list[str]:
     if not env_path.exists():
         return []
@@ -639,6 +651,7 @@ def execute_test_workflow(
     raw_pytest_output = f"{execution_result.get('stdout', '')}\n{execution_result.get('stderr', '')}".strip()
     analysis_result = analyze_pytest_result(raw_pytest_output, execution_result=execution_result)
     pytest_counts = _extract_pytest_counts(str(analysis_result.get("pytest_summary", "")))
+    collected_items = _extract_collected_items(str(execution_result.get("stdout", "")))
 
     blocked = plan["ready_count"] == 0
     return {
@@ -655,6 +668,7 @@ def execute_test_workflow(
         "automation_ready_count": plan["ready_count"],
         "pending_binding_count": plan["pending_count"],
         "pytest_counts": pytest_counts,
+        "pytest_collected_items": collected_items,
         "blocked_by_environment": blocked,
         "artifacts": artifacts,
         "pytest_target": pytest_target,

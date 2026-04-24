@@ -262,6 +262,7 @@ def format_test_workflow_execution(result: dict[str, Any], *, full: bool = False
     execution_result = result.get("execution_result", {})
     analysis_result = result.get("analysis_result", {})
     pytest_counts = result.get("pytest_counts", {})
+    collected = int(result.get("pytest_collected_items", 0) or 0)
     stages = [
         f"{stage.get('name')}：{stage.get('status')}"
         for stage in result.get("stages", [])
@@ -271,6 +272,7 @@ def format_test_workflow_execution(result: dict[str, Any], *, full: bool = False
         f"用例总数：{result.get('case_count', 0)}",
         f"执行计划已绑定：{result.get('automation_ready_count', 0)}",
         f"执行计划待绑定：{result.get('pending_binding_count', 0)}",
+        f"pytest 收集用例数：{collected}",
         f"pytest 实际通过：{pytest_counts.get('passed', 0)}",
         f"pytest 实际跳过：{pytest_counts.get('skipped', 0)}",
         f"pytest target：{result.get('pytest_target', '')}",

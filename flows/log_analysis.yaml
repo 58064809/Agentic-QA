@@ -1,8 +1,9 @@
 name: log_analysis
 steps:
+  - match_intent
   - load_agent
   - load_intent_rule
-  - parse_log_target
   - load_skill_doc
+  - build_action_input
   - search_logs
-  - format_result
+  - save_output

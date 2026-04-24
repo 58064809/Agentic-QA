@@ -15,6 +15,9 @@ from tools.env_config import parse_env_text
 from tools.http_client import HttpClient
 from tools.pg_client import PgReadonlyClient
 
+MAX_DB_ROWS = 200
+STRICT_TEMPLATE_RENDERING = True
+
 DEPOSIT_AUTO_BINDINGS: dict[str, dict[str, Any]] = {
     "DEP-P0-002": {
         "status": "ready",
@@ -111,6 +114,7 @@ def merge_binding_overrides(plan: dict[str, Any], binding_file: Path) -> dict[st
 def execute_case_binding(case: dict[str, Any], env: dict[str, Any] | None = None) -> dict[str, Any]:
     binding = case.get("binding", {})
     binding_type = binding.get("type")
+    _validate_binding_schema(case)
     if binding_type == "python_adapter":
         return _execute_python_adapter(case)
     if binding_type == "api":
@@ -342,6 +346,10 @@ def _send_api_step(
     headers.update(_render_templates(dict(step.get("headers", {})), step_context))
     body = _render_templates(step.get("json"), step_context)
     headers = _merge_cookie_headers(headers, profile_config.get("cookies", {}), step_context)
+    if STRICT_TEMPLATE_RENDERING:
+        _assert_no_unresolved_templates(path, case_id=str(case.get("case_id", "")), field="path")
+        _assert_no_unresolved_templates(headers, case_id=str(case.get("case_id", "")), field="headers")
+        _assert_no_unresolved_templates(body, case_id=str(case.get("case_id", "")), field="json")
     auth_profile = step.get("auth")
     token_env = step.get("token_env") or profile_config.get("token_env")
     token = step.get("token") or profile_config.get("token")
@@ -430,7 +438,9 @@ def _execute_sqlite_assertions(case: dict[str, Any], db_path: str, assertions: l
             query = str(assertion.get("query", "")).strip()
             _assert_readonly_query(case, query)
             cursor = connection.execute(query, assertion.get("params", []))
-            rows = cursor.fetchall()
+            rows = cursor.fetchmany(MAX_DB_ROWS + 1)
+            if len(rows) > MAX_DB_ROWS:
+                raise AssertionError(f"{case.get('case_id')} db result too large (>{MAX_DB_ROWS} rows)")
             expected_row_count = assertion.get("expected_row_count")
             if expected_row_count is not None:
                 assert len(rows) == int(expected_row_count), (
@@ -456,6 +466,8 @@ def _execute_postgres_assertions(case: dict[str, Any], dsn: str, assertions: lis
         query = str(assertion.get("query", "")).strip()
         _assert_readonly_query(case, query)
         rows = client.query(query, assertion.get("params", []))
+        if len(rows) > MAX_DB_ROWS:
+            raise AssertionError(f"{case.get('case_id')} pg result too large (>{MAX_DB_ROWS} rows)")
         expected_row_count = assertion.get("expected_row_count")
         if expected_row_count is not None:
             assert len(rows) == int(expected_row_count), (
@@ -685,12 +697,68 @@ def _resolve_context_expression(context: dict[str, Any], expression: str) -> Any
     current: Any = context
     for part in expression.split("."):
         if isinstance(current, dict):
-            current = current.get(part)
+            if part in current:
+                current = current.get(part)
+            else:
+                if STRICT_TEMPLATE_RENDERING:
+                    raise AssertionError(f"unresolved template expression: {expression}")
+                return ""
         elif isinstance(current, list) and part.isdigit():
             current = current[int(part)]
         else:
+            if STRICT_TEMPLATE_RENDERING:
+                raise AssertionError(f"unresolved template expression: {expression}")
             return ""
     return "" if current is None else current
+
+
+def _assert_no_unresolved_templates(value: Any, *, case_id: str, field: str) -> None:
+    if value is None:
+        return
+    if isinstance(value, str):
+        if "{{" in value and "}}" in value:
+            raise AssertionError(f"{case_id} unresolved template in {field}: {value}")
+        return
+    if isinstance(value, list):
+        for item in value:
+            _assert_no_unresolved_templates(item, case_id=case_id, field=field)
+        return
+    if isinstance(value, dict):
+        for item in value.values():
+            _assert_no_unresolved_templates(item, case_id=case_id, field=field)
+        return
+
+
+def _validate_binding_schema(case: dict[str, Any]) -> None:
+    binding = case.get("binding") or {}
+    case_id = str(case.get("case_id", ""))
+    if not isinstance(binding, dict):
+        raise AssertionError(f"{case_id} binding must be a dict")
+    binding_type = str(binding.get("type") or "")
+    status = str(binding.get("status") or "")
+    if status and status not in {"ready", "pending", "draft"}:
+        raise AssertionError(f"{case_id} unsupported binding status: {status}")
+    if binding_type in {"", "unbound"}:
+        return
+    if binding_type == "python_adapter":
+        if not binding.get("target"):
+            raise AssertionError(f"{case_id} python_adapter requires target")
+        if not binding.get("scenarios"):
+            raise AssertionError(f"{case_id} python_adapter requires scenarios")
+        return
+    if binding_type in {"api", "api_flow", "scenario"}:
+        if binding_type == "api" and not binding.get("path"):
+            raise AssertionError(f"{case_id} api binding requires path")
+        if binding_type == "api_flow" and not binding.get("steps"):
+            raise AssertionError(f"{case_id} api_flow binding requires steps")
+        if binding_type == "scenario" and not binding.get("steps"):
+            raise AssertionError(f"{case_id} scenario binding requires steps")
+        return
+    if binding_type == "db_assert":
+        if not binding.get("assertions"):
+            raise AssertionError(f"{case_id} db_assert requires assertions")
+        return
+    raise AssertionError(f"{case_id} unsupported binding type: {binding_type}")
 
 
 def _generate_value(generator: Any) -> Any:

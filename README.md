@@ -53,6 +53,22 @@ python -m runtime.cli "执行 pytest tests"
 python -m runtime.cli "分析日志 logs/app.log 关键字 timeout"
 ```
 
+## 使用（Poetry 推荐）
+
+本项目默认按 Poetry 管理依赖（可复现、便于 CI）。
+
+```bash
+pip install poetry
+poetry install
+poetry run python -m runtime.cli "帮我分析保证金需求，看看 PRD 和原型图"
+```
+
+运行测试：
+
+```bash
+poetry run pytest -q
+```
+
 默认使用项目下的 `workspace/`。如果要指定其他工作区：
 
 ```bash

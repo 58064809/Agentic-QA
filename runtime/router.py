@@ -14,6 +14,7 @@ from runtime.intent_matcher import match_intent_details
 from runtime.resource_loader import load_markdown_resource
 from runtime.resource_loader import summarize_resource
 from runtime.output_writer import save_assistant_output
+from runtime.pipeline import run_post_skills
 from runtime.response_formatter import format_skill_result
 from runtime.skill_registry import get_skill
 
@@ -237,51 +238,6 @@ def handle_user_input(user_text: str, workspace_root: str | Path | None = None) 
     else:
         flow_run.record("build_action_input", intent=intent_name, keys=sorted(kwargs.keys()))
 
-    if intent_name == "test_execution":
-        execution_action_result = normalize_action_result(skill(**kwargs))
-        execution_result = execution_action_result.data
-        flow_run.record(
-            "run_pytest",
-            "ok" if execution_action_result.ok else "error",
-            exit_code=execution_result.get("exit_code"),
-            error=execution_action_result.error,
-        )
-        analyze_skill = get_skill("analyze_pytest_result")
-        analysis_result = None
-        analysis_action_result = None
-        if analyze_skill is not None:
-            raw_text = f"{execution_result.get('stdout', '')}\n{execution_result.get('stderr', '')}".strip()
-            analysis_action_result = normalize_action_result(analyze_skill(raw_text=raw_text, execution_result=execution_result))
-            analysis_result = analysis_action_result.data
-            flow_run.record(
-                "analyze_pytest_result",
-                "ok" if analysis_action_result.ok else "error",
-                error_type=analysis_result.get("error_type"),
-                confidence=analysis_result.get("confidence"),
-            )
-        result["executed"] = True
-        result["execution_kwargs"] = kwargs
-        result["skill_result"] = execution_result
-        result["action_result"] = {
-            "ok": execution_action_result.ok,
-            "error": execution_action_result.error,
-            "warnings": list(execution_action_result.warnings),
-            "metadata": execution_action_result.metadata,
-        }
-        result["analysis_result"] = analysis_result
-        result["formatted_output"] = format_skill_result(intent_name, execution_result, analysis_result)
-        result["saved_formatted_output"] = format_skill_result(intent_name, execution_result, analysis_result, full=True)
-        output_root = _resolve_test_execution_output_root(current_workspace, kwargs)
-        result["saved_output"] = save_assistant_output(
-            output_root,
-            intent_name,
-            result["saved_formatted_output"],
-            execution_result,
-        )
-        flow_run.record("save_output", files=len(result["saved_output"].get("files", [])))
-        result["flow_run"] = flow_run.to_dict()
-        return result
-
     action_result = normalize_action_result(skill(**kwargs))
     skill_result = action_result.data
     flow_run.record(
@@ -291,6 +247,28 @@ def handle_user_input(user_text: str, workspace_root: str | Path | None = None) 
         warnings=list(action_result.warnings),
     )
     output_root = _resolve_output_root(current_workspace, kwargs)
+    post_skill_names = intent_config.get("post_skills") or []
+    post_results = {}
+    analysis_result = None
+    if post_skill_names and isinstance(post_skill_names, list):
+        post_results = run_post_skills(
+            post_skill_names,
+            intent_name=intent_name,
+            user_text=user_text,
+            action_result=skill_result,
+            action_ok=action_result.ok,
+        )
+        flow_run.record("post_skills", skills=post_skill_names, ok=all(item.ok for item in post_results.values()))
+        analysis = post_results.get("analyze_pytest_result")
+        if analysis and analysis.data:
+            analysis_result = analysis.data
+            flow_run.record(
+                "analyze_pytest_result",
+                "ok" if analysis.ok else "error",
+                error_type=analysis_result.get("error_type"),
+                confidence=analysis_result.get("confidence"),
+            )
+
     result["ok"] = action_result.ok
     result["executed"] = action_result.ok
     result["skill_result"] = skill_result
@@ -300,10 +278,19 @@ def handle_user_input(user_text: str, workspace_root: str | Path | None = None) 
         "warnings": list(action_result.warnings),
         "metadata": action_result.metadata,
     }
-    result["formatted_output"] = format_skill_result(intent_name, skill_result)
-    result["saved_formatted_output"] = format_skill_result(intent_name, skill_result, full=True)
+    if post_results:
+        result["post_skill_results"] = {
+            name: {"ok": item.ok, "error": item.error, "data": item.data} for name, item in post_results.items()
+        }
+    if analysis_result is not None:
+        result["analysis_result"] = analysis_result
+        result["formatted_output"] = format_skill_result(intent_name, skill_result, analysis_result)
+        result["saved_formatted_output"] = format_skill_result(intent_name, skill_result, analysis_result, full=True)
+    else:
+        result["formatted_output"] = format_skill_result(intent_name, skill_result)
+        result["saved_formatted_output"] = format_skill_result(intent_name, skill_result, full=True)
     result["saved_output"] = save_assistant_output(
-        output_root,
+        _resolve_test_execution_output_root(output_root, kwargs) if intent_name == "test_execution" else output_root,
         intent_name,
         result["saved_formatted_output"],
         skill_result,

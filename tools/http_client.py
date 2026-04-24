@@ -55,7 +55,7 @@ class HttpClient:
                         f"expected HTTP {expected_status}, got {response.status_code}; body={response.body[:500]}"
                     )
                 return response
-            except urllib.error.URLError as exc:
+            except (urllib.error.URLError, OSError) as exc:
                 last_error = exc
                 if attempt + 1 >= attempts:
                     raise

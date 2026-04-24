@@ -1,4 +1,5 @@
 import json
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler
@@ -71,8 +72,15 @@ def test_http_client_injects_auth_header(monkeypatch, tmp_path) -> None:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
+        _wait_for_server("127.0.0.1", int(server.server_address[1]))
         client = HttpClient(f"http://127.0.0.1:{server.server_address[1]}", auth_provider=provider)
-        response = client.request("POST", "/demo", json_body={"ok": True}, auth={"token_env": "TEST_AUTH_TOKEN"})
+        response = client.request(
+            "POST",
+            "/demo",
+            json_body={"ok": True},
+            auth={"token_env": "TEST_AUTH_TOKEN"},
+            retries=1,
+        )
 
         assert response.status_code == 200
         assert response.json == {"success": True}
@@ -80,6 +88,20 @@ def test_http_client_injects_auth_header(monkeypatch, tmp_path) -> None:
     finally:
         server.shutdown()
         thread.join(timeout=2)
+
+
+def _wait_for_server(host: str, port: int, timeout_seconds: float = 2.0) -> None:
+    deadline = time.time() + timeout_seconds
+    last_error: BaseException | None = None
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.2):
+                return
+        except OSError as exc:
+            last_error = exc
+            time.sleep(0.05)
+    if last_error:
+        raise last_error
 
 
 def test_parse_project_env_plaintext_values() -> None:

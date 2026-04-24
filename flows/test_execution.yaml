@@ -1,8 +1,10 @@
 name: test_execution
 steps:
+  - match_intent
   - load_agent
   - load_intent_rule
-  - parse_pytest_target
+  - load_skill_doc
+  - build_action_input
   - run_pytest
   - analyze_pytest_result
-  - format_result
+  - save_output

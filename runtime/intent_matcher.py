@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from runtime.intent_rules_loader import load_intent_rules
+
 
 @dataclass(frozen=True)
 class IntentCandidate:
@@ -24,133 +26,37 @@ class IntentMatch:
     reason: str = ""
 
 
-INTENT_RULES: dict[str, dict[str, tuple[str, ...]]] = {
-    "test_workflow_execution": {
-        "strong": (
-            "生成测试用例并执行",
-            "生成用例并执行",
-            "分析需求并生成测试用例并执行",
-            "一键测试",
-            "测试闭环",
-            "test workflow",
-            "generate cases and run",
-        ),
-        "verbs": ("生成", "产出", "输出", "执行", "运行", "跑", "run"),
-        "objects": ("测试用例", "用例", "test case", "cases", "pytest"),
-        "context": ("需求", "prd", "requirement"),
-        "negative": ("只生成", "只分析", "只执行", "只跑 pytest"),
-        "deny": ("不要执行", "不用执行", "别执行", "只看用例"),
-    },
-    "requirement_analysis": {
-        "strong": (
-            "分析需求",
-            "需求分析",
-            "review prd",
-            "review requirement",
-            "分析prd",
-            "看prd",
-            "梳理需求",
-        ),
-        "verbs": ("分析", "review", "梳理", "拆", "看"),
-        "objects": ("需求", "prd", "requirement", "原型", "prototype"),
-        "context": ("业务规则", "流程", "状态", "边界", "open question"),
-        "negative": ("测试用例", "脚本", "日志", "pytest 结果", "执行pytest"),
-        "deny": ("不要分析需求", "不用分析需求", "别分析需求"),
-    },
-    "test_case_generation": {
-        "strong": (
-            "生成测试用例",
-            "生成用例",
-            "设计测试用例",
-            "测试点",
-            "test case",
-            "testcase",
-            "case table",
-        ),
-        "verbs": ("生成", "设计", "整理", "输出", "列出"),
-        "objects": ("测试用例", "用例", "测试点", "case", "cases"),
-        "context": ("markdown", "表格", "边界值", "等价类", "决策表"),
-        "negative": ("脚本", "日志", "pytest结果"),
-        "deny": ("不要生成用例", "不用生成用例", "别生成用例"),
-    },
-    "script_generation": {
-        "strong": (
-            "生成脚本",
-            "测试脚本",
-            "自动化脚本",
-            "pytest脚本",
-            "pytest script",
-            "playwright",
-            "接口自动化脚本",
-        ),
-        "verbs": ("生成", "写", "创建", "产出"),
-        "objects": ("脚本", "script", "pytest", "playwright", "spec", "自动化"),
-        "context": ("api", "接口", "page", "fixture"),
-        "negative": ("日志", "结果分析"),
-        "deny": ("不要生成脚本", "不用生成脚本", "别生成脚本"),
-    },
-    "test_execution": {
-        "strong": (
-            "执行pytest",
-            "运行pytest",
-            "跑pytest",
-            "执行用例",
-            "跑用例",
-            "重跑pytest",
-            "smoke",
-            "regression",
-        ),
-        "verbs": ("执行", "运行", "跑", "重跑", "rerun", "run"),
-        "objects": ("pytest", "测试", "用例", "smoke", "regression"),
-        "context": ("-k", "-m", "::", "tests/", "tests\\"),
-        "negative": ("结果分析", "日志", "生成用例", "生成脚本"),
-        "deny": ("不要执行", "不用执行", "别执行", "不跑", "not run"),
-    },
-    "result_analysis": {
-        "strong": (
-            "分析pytest结果",
-            "分析失败结果",
-            "失败原因",
-            "报错分析",
-            "结果分析",
-            "traceback",
-            "assertionerror",
-            "错误栈分析",
-        ),
-        "verbs": ("分析", "定位", "排查", "看"),
-        "objects": ("结果", "失败", "报错", "traceback", "assertionerror", "exception", "错误栈"),
-        "context": ("pytest", "failed", "error", "assert", "stderr"),
-        "negative": ("日志分析", "查日志"),
-        "deny": ("不要分析结果", "不用分析结果", "别分析结果"),
-    },
-    "log_analysis": {
-        "strong": (
-            "查日志",
-            "分析日志",
-            "日志分析",
-            "搜日志",
-            "search log",
-            "error log",
-        ),
-        "verbs": ("分析", "查", "搜", "搜索", "定位"),
-        "objects": ("日志", "log", "traceid", "trace_id"),
-        "context": ("error", "timeout", ".log"),
-        "negative": ("pytest结果", "脚本", "测试用例"),
-        "deny": ("不要查日志", "不用查日志", "别查日志"),
-    },
-}
+_RULES_DOC = load_intent_rules()
 
-INTENT_PRIORITY = (
-    "test_workflow_execution",
-    "result_analysis",
-    "test_execution",
-    "script_generation",
-    "test_case_generation",
-    "log_analysis",
-    "requirement_analysis",
-)
-MIN_CONFIDENT_SCORE = 45
-MIN_MARGIN = 12
+
+def _tuple_list(value: Any) -> tuple[str, ...]:
+    if not value:
+        return ()
+    if isinstance(value, (list, tuple)):
+        return tuple(str(item) for item in value if str(item).strip())
+    return (str(value),)
+
+
+def _load_rules_from_doc() -> tuple[dict[str, dict[str, tuple[str, ...]]], tuple[str, ...], int, int]:
+    intents = _RULES_DOC.get("intents", {}) if isinstance(_RULES_DOC, dict) else {}
+    rules: dict[str, dict[str, tuple[str, ...]]] = {}
+    if isinstance(intents, dict):
+        for intent_name, sections in intents.items():
+            if not isinstance(sections, dict):
+                continue
+            rules[intent_name] = {key: _tuple_list(value) for key, value in sections.items()}
+
+    priority = _tuple_list(_RULES_DOC.get("priority") if isinstance(_RULES_DOC, dict) else None)
+    min_confident = int(_RULES_DOC.get("min_confident_score", 45)) if isinstance(_RULES_DOC, dict) else 45
+    min_margin = int(_RULES_DOC.get("min_margin", 12)) if isinstance(_RULES_DOC, dict) else 12
+    return rules, priority, min_confident, min_margin
+
+
+INTENT_RULES, INTENT_PRIORITY, MIN_CONFIDENT_SCORE, MIN_MARGIN = _load_rules_from_doc()
+if not INTENT_RULES:
+    raise RuntimeError("Intent rules are missing; expected rules/intents/index.yaml")
+if not INTENT_PRIORITY:
+    INTENT_PRIORITY = tuple(INTENT_RULES.keys())
 
 
 def _normalize_text(user_text: str) -> str:

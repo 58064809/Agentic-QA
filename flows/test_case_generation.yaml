@@ -1,9 +1,9 @@
 name: test_case_generation
 steps:
+  - match_intent
   - load_agent
   - load_intent_rule
-  - discover_requirement_docs
-  - discover_prototype_assets
   - load_skill_doc
+  - discover_requirement_context
   - generate_test_cases
-  - format_result
+  - save_output

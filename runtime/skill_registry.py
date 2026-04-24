@@ -1,23 +1,43 @@
 from __future__ import annotations
 
-from actions.analyze_pytest_result import analyze_pytest_result
-from actions.analyze_requirement import analyze_requirement
-from actions.execute_test_workflow import execute_test_workflow
-from actions.generate_test_cases import generate_test_cases
-from actions.generate_test_script import generate_test_script
-from actions.run_pytest import run_pytest
-from actions.search_logs import search_logs
-
-SKILL_REGISTRY = {
-    "analyze_requirement": analyze_requirement,
-    "generate_test_cases": generate_test_cases,
-    "generate_test_script": generate_test_script,
-    "execute_test_workflow": execute_test_workflow,
-    "run_pytest": run_pytest,
-    "analyze_pytest_result": analyze_pytest_result,
-    "search_logs": search_logs,
-}
+import importlib
+from dataclasses import dataclass
+from functools import lru_cache
+from typing import Any, Callable
 
 
-def get_skill(skill_name: str):
-    return SKILL_REGISTRY.get(skill_name)
+SkillCallable = Callable[..., dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class SkillSpec:
+    name: str
+    module_path: str
+    attribute: str
+
+
+DEFAULT_SKILL_MODULE = "actions"
+
+
+def _default_spec(skill_name: str) -> SkillSpec:
+    # Convention: actions/<skill_name>.py defines function <skill_name>.
+    return SkillSpec(
+        name=skill_name,
+        module_path=f"{DEFAULT_SKILL_MODULE}.{skill_name}",
+        attribute=skill_name,
+    )
+
+
+@lru_cache(maxsize=256)
+def _load_skill_callable(spec: SkillSpec) -> SkillCallable | None:
+    try:
+        module = importlib.import_module(spec.module_path)
+    except ModuleNotFoundError:
+        return None
+
+    skill = getattr(module, spec.attribute, None)
+    return skill if callable(skill) else None
+
+
+def get_skill(skill_name: str) -> SkillCallable | None:
+    return _load_skill_callable(_default_spec(skill_name))

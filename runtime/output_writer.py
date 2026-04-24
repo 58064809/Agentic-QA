@@ -4,6 +4,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from runtime.redaction import redact_text
+
 SAFE_INTENT_NAMES = {
     "requirement_analysis": "requirement_analysis",
     "test_case_generation": "test_cases",
@@ -51,16 +53,40 @@ def save_assistant_output(
     files: list[dict[str, Any]] = []
 
     markdown_path = output_dir / f"{timestamp}_{base_name}.md"
-    files.append(_write_text(markdown_path, formatted_output))
+    redacted_output = redact_text(formatted_output)
+    file_info = _write_text(markdown_path, redacted_output)
+    file_info.update(
+        {
+            "kind": "markdown",
+            "redacted": redacted_output != formatted_output,
+            "relative_path": _safe_relative_to_root(markdown_path, workspace_root),
+        }
+    )
+    files.append(file_info)
 
     if intent_name == "script_generation" and skill_result:
         script_content = skill_result.get("script_content", "")
         recommended_file_name = skill_result.get("recommended_file_name") or f"{timestamp}_{base_name}.py"
         if script_content:
             script_path = output_dir / recommended_file_name
-            files.append(_write_text(script_path, script_content))
+            script_info = _write_text(script_path, script_content)
+            script_info.update(
+                {
+                    "kind": "python",
+                    "redacted": False,
+                    "relative_path": _safe_relative_to_root(script_path, workspace_root),
+                }
+            )
+            files.append(script_info)
 
     return {
         "output_dir": str(output_dir),
         "files": files,
     }
+
+
+def _safe_relative_to_root(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
