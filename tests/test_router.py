@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from runtime.intent_matcher import match_intent
 from runtime.router import build_log_analysis_kwargs
 from runtime.router import build_test_execution_kwargs
 from runtime.router import handle_user_input
@@ -19,6 +20,19 @@ def test_build_test_execution_kwargs_with_requirement_tests_path() -> None:
     kwargs = build_test_execution_kwargs("执行 pytest requirements/deposit-management/tests")
 
     assert kwargs["target"] == "requirements/deposit-management/tests"
+
+
+def test_match_test_workflow_execution_intent() -> None:
+    assert match_intent("generate cases and run deposit requirement") == "test_workflow_execution"
+
+
+def test_handle_user_input_returns_clarification_for_ambiguous_intent(tmp_path: Path) -> None:
+    result = handle_user_input("帮我处理一下 pytest", workspace_root=tmp_path)
+
+    assert result["ok"] is False
+    assert result["error"] == "intent_needs_clarification"
+    assert result["candidate_intents"]
+    assert result["clarification_prompt"]
 
 
 def test_build_log_analysis_kwargs_extracts_file_and_keyword() -> None:
@@ -57,7 +71,7 @@ def test_handle_requirement_analysis_saves_output(tmp_path: Path) -> None:
 
     saved_path = Path(result["saved_output"]["files"][0]["path"])
     assert saved_path.exists()
-    assert saved_path.parent == tmp_path / "outputs"
+    assert saved_path.parent == tmp_path / "outputs" / "requirement_analysis"
     assert saved_path.read_text(encoding="utf-8") == result["saved_formatted_output"]
     assert "完整内容见 JSON" not in saved_path.read_text(encoding="utf-8")
 
@@ -81,7 +95,7 @@ def test_handle_requirement_analysis_saves_into_requirement_package(tmp_path: Pa
     assert result["requirement_context"]["requirement_package"]["name"] == "deposit-management"
     saved_path = Path(result["saved_output"]["files"][0]["path"])
     assert saved_path.exists()
-    assert saved_path.parent == package / "outputs"
+    assert saved_path.parent == package / "outputs" / "requirement_analysis"
 
 
 def test_handle_log_analysis_uses_workspace_root_and_saves_output(tmp_path: Path) -> None:
@@ -116,7 +130,9 @@ def test_handle_test_execution_uses_workspace_root_and_saves_output(tmp_path: Pa
     assert result["analysis_result"]["confidence"] > 0
     assert any(step["step"] == "run_pytest" for step in result["flow_run"]["executed_steps"])
     assert result["formatted_output"]
-    assert Path(result["saved_output"]["files"][0]["path"]).exists()
+    saved_path = Path(result["saved_output"]["files"][0]["path"])
+    assert saved_path.exists()
+    assert saved_path.parent == tmp_path / "outputs" / "test_reports"
 
 
 def test_handle_test_execution_saves_into_requirement_package_when_target_is_package_scoped(tmp_path: Path) -> None:
@@ -133,4 +149,35 @@ def test_handle_test_execution_saves_into_requirement_package_when_target_is_pac
     assert result["ok"] is True
     saved_path = Path(result["saved_output"]["files"][0]["path"])
     assert saved_path.exists()
-    assert saved_path.parent == package / "outputs"
+    assert saved_path.parent == package / "outputs" / "test_reports"
+
+
+def test_handle_test_workflow_execution_creates_artifacts(tmp_path: Path) -> None:
+    package = tmp_path / "requirements" / "deposit-management"
+    docs_dir = package / "docs"
+    prototype_dir = package / "prototype"
+    docs_dir.mkdir(parents=True)
+    prototype_dir.mkdir()
+
+    (docs_dir / "deposit_prd.md").write_text(
+        "# 保证金 PRD\n\n- 商家缴纳保证金后必须更新余额\n",
+        encoding="utf-8",
+    )
+    (prototype_dir / "deposit.html").write_text("<html>deposit</html>", encoding="utf-8")
+
+    result = handle_user_input("generate cases and run deposit requirement", workspace_root=tmp_path)
+
+    assert result["ok"] is True
+    assert result["intent"] == "test_workflow_execution"
+    assert result["skill_result"]["case_count"] >= 1
+    assert result["skill_result"]["pending_binding_count"] >= 1
+    assert result["skill_result"]["analysis_result"]["error_type"] == "skipped_only"
+    assert Path(result["skill_result"]["artifacts"]["env_profile"]).exists()
+    assert Path(result["skill_result"]["artifacts"]["test_data"]).exists()
+    assert Path(result["skill_result"]["artifacts"]["binding_overrides"]).exists()
+    assert Path(result["skill_result"]["artifacts"]["execution_plan"]).exists()
+    assert Path(result["skill_result"]["artifacts"]["pytest_script"]).exists()
+    assert Path(result["skill_result"]["artifacts"]["junit_xml"]).exists()
+    saved_path = Path(result["saved_output"]["files"][0]["path"])
+    assert saved_path.exists()
+    assert saved_path.parent == package / "outputs" / "test_execution"

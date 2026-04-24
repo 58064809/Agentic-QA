@@ -24,6 +24,13 @@ intents:
     flow: script_generation
     requires_requirement_context: true
 
+  test_workflow_execution:
+    rule_file: rules/intents/test_workflow_execution.md
+    primary_skill: execute_test_workflow
+    skill_doc: skills/test_workflow_execution/SKILL.md
+    flow: test_workflow_execution
+    requires_requirement_context: true
+
   test_execution:
     rule_file: rules/intents/test_execution.md
     primary_skill: run_pytest

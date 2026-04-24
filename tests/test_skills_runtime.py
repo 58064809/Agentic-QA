@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from actions.analyze_requirement import analyze_requirement
 from actions.analyze_pytest_result import analyze_pytest_result
@@ -129,6 +130,17 @@ def test_run_pytest_returns_protocol_fields(tmp_path: Path) -> None:
     assert result["exit_code"] == 0
     assert result["duration_seconds"] >= 0
     assert result["command_args"][0] == "pytest"
+
+
+def test_run_pytest_decodes_windows_gbk_output(monkeypatch) -> None:
+    def fake_run(*args, **kwargs):
+        return SimpleNamespace(returncode=0, stdout=b"\xc8\xa8\xcf\xde", stderr=b"")
+
+    monkeypatch.setattr("actions.run_pytest.subprocess.run", fake_run)
+
+    result = run_pytest(target="tests/test_demo.py")
+
+    assert "\u6743\u9650" in result["stdout"]
 
 
 def test_analyze_pytest_result_extracts_failure_evidence() -> None:

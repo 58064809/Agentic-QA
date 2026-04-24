@@ -257,6 +257,40 @@ def format_test_execution(execution_result: dict[str, Any], analysis_result: dic
     return "\n\n".join(parts)
 
 
+def format_test_workflow_execution(result: dict[str, Any], *, full: bool = False) -> str:
+    artifacts = result.get("artifacts", {})
+    execution_result = result.get("execution_result", {})
+    analysis_result = result.get("analysis_result", {})
+    pytest_counts = result.get("pytest_counts", {})
+    stages = [
+        f"{stage.get('name')}：{stage.get('status')}"
+        for stage in result.get("stages", [])
+    ]
+    artifact_lines = [f"{name}：{path}" for name, path in artifacts.items()]
+    summary = [
+        f"用例总数：{result.get('case_count', 0)}",
+        f"执行计划已绑定：{result.get('automation_ready_count', 0)}",
+        f"执行计划待绑定：{result.get('pending_binding_count', 0)}",
+        f"pytest 实际通过：{pytest_counts.get('passed', 0)}",
+        f"pytest 实际跳过：{pytest_counts.get('skipped', 0)}",
+        f"pytest target：{result.get('pytest_target', '')}",
+        f"pytest exit_code：{execution_result.get('exit_code')}",
+        f"pytest 摘要：{analysis_result.get('pytest_summary', '')}",
+    ]
+    parts = [
+        "# 测试闭环执行结果",
+        _section("分析依据", _basis_lines(result.get("analysis_basis", {}))),
+        _section("执行摘要", summary),
+        _section("阶段结果", stages),
+        _section("真实结论", _numbered(result.get("honest_conclusion", []))),
+        _section("生成文件", artifact_lines),
+        _section("下一步", _numbered(result.get("next_actions", []))),
+    ]
+    if full:
+        parts.append(format_test_execution(execution_result, analysis_result, full=True))
+    return "\n\n".join(parts)
+
+
 def format_log_analysis(result: dict[str, Any], *, full: bool = False) -> str:
     summary = [
         f"关键字：{result.get('keyword', '')}",
@@ -291,6 +325,8 @@ def format_skill_result(
         return format_result_analysis(skill_result, full=full)
     if intent_name == "test_execution":
         return format_test_execution(skill_result, analysis_result, full=full)
+    if intent_name == "test_workflow_execution":
+        return format_test_workflow_execution(skill_result, full=full)
     if intent_name == "log_analysis":
         return format_log_analysis(skill_result, full=full)
     return str(skill_result)

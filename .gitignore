@@ -6,6 +6,8 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+.env
+.env.*
 dist/
 build/
 /outputs/
@@ -16,6 +18,12 @@ workspace/requirements/*/prototype/*
 !workspace/requirements/*/prototype/.gitkeep
 workspace/requirements/*/logs/*
 !workspace/requirements/*/logs/.gitkeep
+workspace/requirements/*/env/*
+!workspace/requirements/*/env/.gitkeep
+workspace/requirements/*/data/*
+!workspace/requirements/*/data/.gitkeep
+workspace/requirements/*/automation/*
+!workspace/requirements/*/automation/.gitkeep
 workspace/requirements/*/tests/*
 !workspace/requirements/*/tests/.gitkeep
 workspace/**/outputs/*

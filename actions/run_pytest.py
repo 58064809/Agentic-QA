@@ -1,11 +1,50 @@
 from __future__ import annotations
 
+import locale
 import subprocess
 import time
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _decode_process_output(value: bytes | str | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+
+    candidates: list[tuple[str, str]] = []
+    tried: set[str] = set()
+    for encoding in ["utf-8", locale.getpreferredencoding(False), "gbk", "cp936"]:
+        if not encoding or encoding in tried:
+            continue
+        tried.add(encoding)
+        try:
+            candidates.append((encoding, value.decode(encoding)))
+        except UnicodeDecodeError:
+            continue
+
+    if not candidates:
+        return value.decode("utf-8", errors="replace")
+
+    utf8_text = next((text for encoding, text in candidates if encoding.lower().replace("-", "") == "utf8"), "")
+    if utf8_text and _contains_cjk(utf8_text) and "\ufffd" not in utf8_text:
+        return utf8_text
+
+    best_text = max(candidates, key=lambda item: _decode_score(item[1]))[1]
+    return best_text
+
+
+def _contains_cjk(text: str) -> bool:
+    return any("\u4e00" <= char <= "\u9fff" for char in text)
+
+
+def _decode_score(text: str) -> int:
+    cjk_count = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
+    replacement_count = text.count("\ufffd")
+    return cjk_count * 10 - replacement_count * 100
 
 
 def run_pytest(
@@ -32,9 +71,6 @@ def run_pytest(
         result = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             cwd=str(cwd),
             timeout=timeout_seconds,
         )
@@ -54,8 +90,8 @@ def run_pytest(
             "exit_code": 124,
             "duration_seconds": duration_seconds,
             "timeout_seconds": timeout_seconds,
-            "stdout": stdout if isinstance(stdout, str) else stdout.decode(encoding="utf-8", errors="replace"),
-            "stderr": stderr if isinstance(stderr, str) else stderr.decode(encoding="utf-8", errors="replace"),
+            "stdout": _decode_process_output(stdout),
+            "stderr": _decode_process_output(stderr),
         }
 
     return {
@@ -69,6 +105,6 @@ def run_pytest(
         "exit_code": result.returncode,
         "duration_seconds": duration_seconds,
         "timeout_seconds": timeout_seconds,
-        "stdout": result.stdout or "",
-        "stderr": result.stderr or "",
+        "stdout": _decode_process_output(result.stdout),
+        "stderr": _decode_process_output(result.stderr),
     }

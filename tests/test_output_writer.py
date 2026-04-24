@@ -13,7 +13,7 @@ def test_save_assistant_output_writes_markdown(tmp_path: Path) -> None:
 
     saved_file = Path(result["files"][0]["path"])
     assert saved_file.exists()
-    assert saved_file.parent == tmp_path / "outputs"
+    assert saved_file.parent == tmp_path / "outputs" / "requirement_analysis"
     assert saved_file.name.endswith("_requirement_analysis.md")
     assert saved_file.read_text(encoding="utf-8").startswith("# 需求分析结论")
 
@@ -33,5 +33,6 @@ def test_save_script_generation_writes_markdown_and_python(tmp_path: Path) -> No
     assert len(paths) == 2
     assert any(path.suffix == ".md" for path in paths)
     script_path = next(path for path in paths if path.suffix == ".py")
+    assert script_path.parent == tmp_path / "outputs" / "scripts"
     assert script_path.name == "test_generated_from_requirement.py"
     assert "def test_demo" in script_path.read_text(encoding="utf-8")

@@ -131,6 +131,8 @@ def build_skill_kwargs(intent_name: str, user_text: str, workspace_root: Path, r
     kwargs: dict[str, Any] = {"user_text": user_text}
     if routing_config.get("requires_requirement_context"):
         kwargs["requirement_context"] = discover_requirement_context(workspace_root, user_text)
+    if intent_name == "test_workflow_execution":
+        kwargs["workspace_root"] = str(workspace_root)
     return kwargs
 
 
@@ -164,6 +166,25 @@ def handle_user_input(user_text: str, workspace_root: str | Path | None = None) 
             "ok": False,
             "error": "intent_not_matched",
             "user_text": user_text,
+        }
+    if match.needs_clarification:
+        return {
+            "ok": False,
+            "error": "intent_needs_clarification",
+            "user_text": user_text,
+            "intent": match.name,
+            "confidence": match.confidence,
+            "reason": match.reason,
+            "candidate_intents": [
+                {
+                    "name": candidate.name,
+                    "score": candidate.score,
+                    "matched_keywords": list(candidate.matched_keywords),
+                    "negated_keywords": list(candidate.negated_keywords),
+                }
+                for candidate in match.candidates
+            ],
+            "clarification_prompt": "请明确你要我做哪一类：需求分析、生成测试用例、生成脚本、执行 pytest、分析 pytest 结果、分析日志。",
         }
 
     current_workspace = Path(workspace_root) if workspace_root else DEFAULT_WORKSPACE if DEFAULT_WORKSPACE.exists() else ROOT

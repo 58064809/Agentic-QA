@@ -8,8 +8,19 @@ SAFE_INTENT_NAMES = {
     "requirement_analysis": "requirement_analysis",
     "test_case_generation": "test_cases",
     "script_generation": "pytest_script",
+    "test_workflow_execution": "test_workflow_execution",
     "test_execution": "pytest_execution",
     "result_analysis": "pytest_result_analysis",
+    "log_analysis": "log_analysis",
+}
+
+OUTPUT_SUBDIRECTORIES = {
+    "requirement_analysis": "requirement_analysis",
+    "test_case_generation": "test_cases",
+    "script_generation": "scripts",
+    "test_workflow_execution": "test_execution",
+    "test_execution": "test_reports",
+    "result_analysis": "test_reports",
     "log_analysis": "log_analysis",
 }
 
@@ -34,7 +45,7 @@ def save_assistant_output(
     formatted_output: str,
     skill_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    output_dir = workspace_root / "outputs"
+    output_dir = workspace_root / "outputs" / OUTPUT_SUBDIRECTORIES.get(intent_name, intent_name)
     base_name = SAFE_INTENT_NAMES.get(intent_name, intent_name)
     timestamp = _timestamp()
     files: list[dict[str, Any]] = []
