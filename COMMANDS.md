@@ -14,7 +14,7 @@ Codex 接到自然语言命令后，先识别意图，再路由到对应 SOP 和
 | 执行测试、跑测试 | `tasks/05-execute-tests.md` | `workflows/05-test-execution-workflow.md` | Test Execution Agent | `50-execution-results/` |
 | 分析失败、看日志 | `tasks/06-analyze-failures.md` | `workflows/06-failure-analysis-workflow.md` | Failure Analysis Agent | `60-failure-analysis/` |
 | 生成 bug、提缺陷 | `tasks/07-generate-bug-draft.md` | `workflows/07-bug-draft-workflow.md` | Bug Draft Agent | `70-bugs/` |
-| 生成报告、QA 报告 | `tasks/08-generate-report.md` | `workflows/08-report-generation-workflow.md` | Report Generation Agent | `80-reports/` |
+| 生成报告、QA 报告 | `tasks/08-generate-report.md` | `workflows/08-report-generation-workflow.md` | Report Generation Agent | `80-reports/qa-report-draft.md` |
 | 归档需求、完成归档 | `tasks/09-archive-requirement.md` | `workflows/09-archive-workflow.md` | Archive Agent | `90-archive/` |
 
 ## 命令解析规则
@@ -23,6 +23,7 @@ Codex 接到自然语言命令后，先识别意图，再路由到对应 SOP 和
 - 若目标产物依赖未审核上游产物，必须停止并提示人工审核。
 - 若命令包含“直接执行”“跑测试”，仍需检查执行环境、测试数据和风险。
 - 若命令包含“归档”，必须先运行 `scripts/archive_requirement.py` 的审核状态检查。
+- AI 生成的 QA 报告只能写入 `prd/<id>/80-reports/qa-report-draft.md`；人工确认后的正式报告可命名为 `qa-report.md`。
 
 ## 推荐命令格式
 

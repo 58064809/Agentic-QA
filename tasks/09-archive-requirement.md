@@ -11,7 +11,8 @@
 ## 输入文件
 
 - `prd/<id>/metadata.yml`
-- `prd/<id>/80-reports/qa-report-draft.md`
+- `prd/<id>/80-reports/qa-report.md`，人工确认后的正式报告。
+- `prd/<id>/80-reports/qa-report-draft.md`，如正式报告尚未生成，则必须作为待确认草稿处理。
 - 所有关联产物。
 
 ## 必须读取的 Agent/Workflow/Prompt/Rules/Skills/Knowledge

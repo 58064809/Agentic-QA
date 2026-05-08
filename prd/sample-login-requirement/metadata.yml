@@ -14,7 +14,8 @@ artifacts:
   execution_results: prd/sample-login-requirement/50-execution-results/
   failure_analysis: prd/sample-login-requirement/60-failure-analysis/failure-analysis.md
   bugs: prd/sample-login-requirement/70-bugs/
-  reports: prd/sample-login-requirement/80-reports/
+  report_draft: prd/sample-login-requirement/80-reports/qa-report-draft.md
+  report: prd/sample-login-requirement/80-reports/qa-report.md
   archive: prd/sample-login-requirement/90-archive/
 review_gates:
   - name: 需求分析审核

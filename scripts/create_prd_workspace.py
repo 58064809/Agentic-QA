@@ -102,7 +102,8 @@ def default_metadata(slug: str, title: str, owner: str, created_by: str) -> dict
             "execution_results": f"{workspace}/50-execution-results/",
             "failure_analysis": f"{workspace}/60-failure-analysis/failure-analysis.md",
             "bugs": f"{workspace}/70-bugs/",
-            "reports": f"{workspace}/80-reports/",
+            "report_draft": f"{workspace}/80-reports/qa-report-draft.md",
+            "report": f"{workspace}/80-reports/qa-report.md",
             "archive": f"{workspace}/90-archive/",
         },
         "review_gates": [

@@ -14,7 +14,8 @@ artifacts:
   execution_results: prd/example-requirement/50-execution-results/
   failure_analysis: prd/example-requirement/60-failure-analysis/failure-analysis.md
   bugs: prd/example-requirement/70-bugs/
-  reports: prd/example-requirement/80-reports/
+  report_draft: prd/example-requirement/80-reports/qa-report-draft.md
+  report: prd/example-requirement/80-reports/qa-report.md
   archive: prd/example-requirement/90-archive/
 review_gates:
   - name: 需求分析审核
