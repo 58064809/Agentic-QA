@@ -16,7 +16,8 @@
 | 执行结果 | `prd/<id>/50-execution-results/` |
 | 失败分析 | `prd/<id>/60-failure-analysis/failure-analysis.md` |
 | 缺陷草稿 | `prd/<id>/70-bugs/` |
-| QA 报告 | `prd/<id>/80-reports/qa-report-draft.md` |
+| AI 生成 QA 报告草稿 | `prd/<id>/80-reports/qa-report-draft.md` |
+| 人工确认正式 QA 报告 | `prd/<id>/80-reports/qa-report.md` |
 | 归档索引 | `prd/<id>/90-archive/archive-index.md` |
 
 ## 规则
@@ -24,3 +25,4 @@
 - 不允许把同一需求的产物散落在仓库根目录。
 - 不允许覆盖人工已确认产物；需要修改时生成修订记录。
 - 自动化脚本必须放入 `generated/`，人工维护脚本可另建 `manual/`。
+- AI 只能生成 `qa-report-draft.md`；`qa-report.md` 是人工确认后的正式报告，可后续生成。

@@ -16,11 +16,9 @@
 ## 任务列表
 
 - `001-bootstrap-final-workspace.md`：一次性初始化最终版工作区骨架、规则、工作流、Agent、Prompt、Rules、Skills、PRD 示例、脚本、CI。
-- `002-enhance-content-quality.md`：补强各类文档、Prompt、Rules、Skills、Knowledge 的内容质量。
-- `003-validate-and-polish.md`：执行校验、修复问题、完善 README 和使用示例。
 
 ## 当前建议执行顺序
 
 先把 `001-bootstrap-final-workspace.md` 交给 Codex 执行。
 
-执行完成后，先跑验收命令，再继续执行后续任务。
+执行完成后，先跑验收命令；后续任务文件创建前，不在索引中预留不存在的任务引用。

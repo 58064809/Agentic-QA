@@ -23,6 +23,8 @@
 
 - `prd/<id>/80-reports/qa-report-draft.md`
 
+说明：`qa-report-draft.md` 是 AI 生成草稿；`qa-report.md` 是人工确认后的正式报告，可后续生成。
+
 ## 必须读取的资料
 
 - `workflows/08-report-generation-workflow.md`

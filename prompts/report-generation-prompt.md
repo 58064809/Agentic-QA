@@ -19,6 +19,8 @@
 
 ## 输出格式
 
+- 文件路径必须是 `prd/<id>/80-reports/qa-report-draft.md`。
+- `qa-report-draft.md` 是 AI 生成草稿；`qa-report.md` 是人工确认后的正式报告，可后续生成。
 - 基本信息。
 - 测试范围。
 - 执行概况。
