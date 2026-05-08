@@ -1,0 +1,35 @@
+requirement_id: sample-login-requirement
+title: 手机号密码登录
+status: draft
+owner: QA Owner
+created_by: Codex
+last_updated_by: Codex
+artifacts:
+  requirement: prd/sample-login-requirement/requirement.md
+  api_doc: prd/sample-login-requirement/api-doc.md
+  analysis: prd/sample-login-requirement/10-analysis/requirement-analysis.md
+  testcases: prd/sample-login-requirement/20-testcases/testcases.md
+  api_tests: prd/sample-login-requirement/30-api-tests/generated/
+  ui_tests: prd/sample-login-requirement/40-ui-tests/generated/
+  execution_results: prd/sample-login-requirement/50-execution-results/
+  failure_analysis: prd/sample-login-requirement/60-failure-analysis/failure-analysis.md
+  bugs: prd/sample-login-requirement/70-bugs/
+  reports: prd/sample-login-requirement/80-reports/
+  archive: prd/sample-login-requirement/90-archive/
+review_gates:
+  - name: 需求分析审核
+    status: needs_human_review
+    owner: 产品负责人
+    required_before: 生成测试用例
+  - name: 测试用例审核
+    status: needs_human_review
+    owner: QA 负责人
+    required_before: 生成自动化脚本
+  - name: 执行前确认
+    status: needs_human_confirmation
+    owner: QA 负责人
+    required_before: 执行自动化测试
+  - name: 执行结果确认
+    status: needs_human_confirmation
+    owner: QA 负责人
+    required_before: 归档

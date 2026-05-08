@@ -1,0 +1,5 @@
+requirements:
+  - requirement_id: sample-login-requirement
+    title: 手机号密码登录
+    path: prd/sample-login-requirement
+    status: draft
