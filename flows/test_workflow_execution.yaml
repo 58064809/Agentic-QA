@@ -1,9 +1,0 @@
-name: test_workflow_execution
-steps:
-  - match_intent
-  - load_agent
-  - load_intent_rule
-  - load_skill_doc
-  - discover_requirement_context
-  - execute_test_workflow
-  - save_output
