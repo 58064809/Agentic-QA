@@ -85,3 +85,16 @@ def test_archive_requirement_rejects_unreviewed_workspace(tmp_path):
 
     with pytest.raises(RuntimeError, match="拒绝归档"):
         archive_requirement(workspace)
+
+
+def test_codex_completion_summary_template_is_documented():
+    repo_root = Path(__file__).resolve().parents[2]
+    rules = (repo_root / "rules" / "codex-output-rules.md").read_text(encoding="utf-8")
+    template_path = repo_root / "knowledge" / "templates" / "codex-completion-summary-template.md"
+    template = template_path.read_text(encoding="utf-8")
+
+    assert "标准完成回执模板" in rules
+    assert template_path.is_file()
+    for heading in ["变更摘要", "修改文件", "验收结果", "待人工确认", "下一步建议"]:
+        assert heading in template
+    assert "未执行命令必须说明原因" in template
