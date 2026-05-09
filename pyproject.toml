@@ -17,8 +17,8 @@ dependencies = [
   "ruff>=0.8",
 ]
 
-[tool.setuptools]
-py-modules = []
+[tool.setuptools.packages.find]
+include = ["runtime*"]
 
 [tool.ruff]
 line-length = 100

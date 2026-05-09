@@ -14,6 +14,7 @@ CORE_FILES = [
     "docs/architecture/production-agent-runtime-roadmap.md",
     "docs/roadmap.md",
     "workflows/10-runtime-testcase-generation-workflow.md",
+    "runtime/README.md",
 ]
 CORE_DIRS = [
     ".github",
@@ -31,6 +32,7 @@ CORE_DIRS = [
     "prd",
     "scripts",
     "tests",
+    "runtime",
 ]
 CODEX_OUTPUT_REQUIRED_TERMS = [
     "标准完成回执模板",
@@ -57,6 +59,7 @@ PATH_PREFIXES = (
     "skills/",
     "knowledge/",
     "docs/",
+    "runtime/",
     "prd/",
     "scripts/",
     "tests/",
@@ -80,7 +83,7 @@ PLANNED_REFERENCE_MARKERS = (
     "可选新增",
     "后续任务中创建",
 )
-TASK_INSTRUCTION_REFERENCE_MARKERS = (" 中补充", "必须报告")
+TASK_INSTRUCTION_REFERENCE_MARKERS = (" 中补充", "必须报告", "至少包含", "例如", "允许新增")
 
 
 def read_text(path: Path) -> str:
@@ -146,6 +149,10 @@ def find_broken_markdown_path_refs(repo_root: Path) -> list[str]:
                 continue
             if source.startswith("_codex_tasks/") and any(
                 marker in line for marker in TASK_INSTRUCTION_REFERENCE_MARKERS
+            ):
+                continue
+            if source.startswith("_codex_tasks/") and re.match(
+                r"\s*-\s+`runtime/.+/README\.md`", line
             ):
                 continue
 

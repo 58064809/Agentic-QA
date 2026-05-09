@@ -101,9 +101,20 @@ python scripts/validate_docs_consistency.py
 python scripts/validate_prd_workspace.py prd/demo-requirement
 python scripts/run_pytest.py
 python scripts/generate_markdown_report.py prd/sample-login-requirement
+python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement
 pytest
 ruff check .
 ```
+
+## Runtime Skeleton
+
+第 2 阶段 Runtime 目前只是最小骨架，不接入真实 LLM，不强制引入 LangGraph / LangChain 依赖，也不连接真实业务环境。默认命令为 dry-run，不写入文件：
+
+```bash
+python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement
+```
+
+只有显式传入 `--approve-write` 才允许写入 `prd/<id>/20-testcases/testcases.md` 草稿。若目标文件已存在，当前骨架默认拒绝覆盖；写入后的状态仍为 `needs_human_review`，不得继续自动生成 API/UI 脚本或归档。
 
 ## 完整示例流程
 
