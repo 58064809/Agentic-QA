@@ -23,12 +23,17 @@ def relative_to_repo(path: Path, repo_root: Path) -> str:
 
 
 def result_to_summary(result: RuntimeResult, created_at: str) -> dict[str, object]:
+    draft_artifact_previews = {
+        name: content[:DRAFT_PREVIEW_CHARS]
+        for name, content in result.draft_artifacts.items()
+    }
     return {
         "run_id": result.run_id,
         "created_at": created_at,
         "success": result.success,
         "orchestration": result.orchestration,
         "mode": "approve-write" if result.approve_write else "dry-run",
+        "task_type": result.task_type,
         "user_input": result.user_input,
         "prd_path": result.prd_path,
         "intent": result.intent,
@@ -36,12 +41,16 @@ def result_to_summary(result: RuntimeResult, created_at: str) -> dict[str, objec
         "loaded_files": sorted(result.loaded_files),
         "executed_nodes": result.executed_nodes,
         "output_path": result.output_path,
+        "output_paths": result.output_paths,
+        "artifacts": result.artifacts,
         "wrote_file": result.wrote_file,
         "review_status": result.review_status,
+        "llm": result.llm,
         "errors": result.errors,
         "warnings": result.warnings,
         "quality_errors": result.quality_errors,
         "draft_artifact_preview": (result.draft_artifact or "")[:DRAFT_PREVIEW_CHARS],
+        "draft_artifact_previews": draft_artifact_previews,
     }
 
 
@@ -63,11 +72,21 @@ def render_markdown_summary(summary: dict[str, object]) -> str:
 - 编排方式：{summary["orchestration"]}
 - PRD：{summary["prd_path"]}
 - 意图：{summary["intent"] or "未识别"}
+- 任务类型：{summary["task_type"] or "未记录"}
 - 成功：{summary["success"]}
 
 ## 节点轨迹
 
 {format_list(list(summary["executed_nodes"]))}
+
+## LLM
+
+- enabled：{dict(summary["llm"]).get("enabled")}
+- used：{dict(summary["llm"]).get("used")}
+- provider：{dict(summary["llm"]).get("provider")}
+- base_url：{dict(summary["llm"]).get("base_url")}
+- model：{dict(summary["llm"]).get("model")}
+- calls：{dict(summary["llm"]).get("calls")}
 
 ## 文件与产物
 

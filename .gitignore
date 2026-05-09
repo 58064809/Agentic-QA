@@ -12,6 +12,9 @@ build/
 *.egg-info/
 .venv/
 .runtime/runs/
+.env
+.env.*
+!.env.example
 venv/
 env/
 .DS_Store
