@@ -19,6 +19,8 @@ def create_minimal_docs_repo(root: Path) -> Path:
         "workflows",
         ".github",
         ".github/workflows",
+        "docs",
+        "docs/architecture",
         "agents",
         "tasks",
         "prompts",
@@ -36,6 +38,9 @@ def create_minimal_docs_repo(root: Path) -> Path:
     write_file(root / "AGENTS.md")
     write_file(root / "COMMANDS.md")
     write_file(root / ".github/workflows/ci.yml")
+    write_file(root / "docs/architecture/production-agent-runtime-roadmap.md")
+    write_file(root / "docs/roadmap.md")
+    write_file(root / "workflows/10-runtime-testcase-generation-workflow.md")
     write_file(
         root / "rules/codex-output-rules.md",
         "标准完成回执模板\n变更摘要\n修改文件\n验收结果\n待人工确认\n下一步建议\n",
@@ -71,6 +76,18 @@ def test_validate_docs_consistency_reports_missing_ci_workflow(tmp_path):
     errors = validate_docs_consistency(repo_root)
 
     assert any(error.endswith(".github/workflows/ci.yml") for error in errors)
+
+
+def test_validate_docs_consistency_reports_missing_runtime_roadmap(tmp_path):
+    repo_root = create_minimal_docs_repo(tmp_path)
+    (repo_root / "docs/architecture/production-agent-runtime-roadmap.md").unlink()
+
+    errors = validate_docs_consistency(repo_root)
+
+    assert any(
+        error.endswith("docs/architecture/production-agent-runtime-roadmap.md")
+        for error in errors
+    )
 
 
 def test_validate_docs_consistency_reports_missing_codex_output_heading(tmp_path):

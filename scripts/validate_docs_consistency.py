@@ -11,10 +11,15 @@ CORE_FILES = [
     "rules/codex-output-rules.md",
     "knowledge/templates/codex-completion-summary-template.md",
     ".github/workflows/ci.yml",
+    "docs/architecture/production-agent-runtime-roadmap.md",
+    "docs/roadmap.md",
+    "workflows/10-runtime-testcase-generation-workflow.md",
 ]
 CORE_DIRS = [
     ".github",
     ".github/workflows",
+    "docs",
+    "docs/architecture",
     "workflows",
     "agents",
     "tasks",
@@ -51,6 +56,7 @@ PATH_PREFIXES = (
     "rules/",
     "skills/",
     "knowledge/",
+    "docs/",
     "prd/",
     "scripts/",
     "tests/",
@@ -66,7 +72,7 @@ EXCLUDED_DIRS = {
     "__pycache__",
 }
 INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
-PLANNED_REFERENCE_MARKERS = ("待生成", "如生成", "可后续生成", "后续生成")
+PLANNED_REFERENCE_MARKERS = ("待生成", "如生成", "可后续生成", "后续生成", " 或 ")
 
 
 def read_text(path: Path) -> str:

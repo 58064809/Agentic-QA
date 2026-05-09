@@ -37,3 +37,12 @@
 - 自动化执行前必须确认环境、账号、数据和影响范围。
 - 归档前 metadata 中不得存在 `needs_human_review` 或 `needs_human_confirmation`。
 - 不得把完整文件内容粘贴到 Chat 中代替路径、摘要和验收结果。
+
+## 生产级 Runtime 路线约束
+
+- 当前默认执行模式仍然是 Codex 驱动的标准化工作台。
+- 当用户要求“生产级 Agent”“LangGraph Runtime”或“Runtime 驱动”时，Codex 应优先读取 `docs/architecture/production-agent-runtime-roadmap.md`。
+- Codex 不得把 LangGraph Runtime 和现有声明式工作台对立起来。
+- Codex 不得把 Prompt、Rules、Skills 全部硬编码进 Python。
+- 后续实现 Runtime 时，应让 Runtime 读取 `workflows/`、`prompts/`、`rules/`、`skills/`、`knowledge/`，而不是替代这些目录。
+- Codex 修改 Runtime 前，必须明确当前任务属于第 1 阶段文档工作台，还是第 2 阶段 Runtime 能力。

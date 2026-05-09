@@ -20,6 +20,16 @@ Codex 接到自然语言命令后，先识别意图，再路由到对应 SOP 和
 | 生成报告、QA 报告 | `workflows/08-report-generation-workflow.md` | `tasks/08-generate-report.md` | Report Generation Agent | `prompts/report-generation-prompt.md` | `rules/status-rules.md` | `skills/qa-report-writing-skill.md`、`knowledge/templates/qa-report-template.md` | 全部 QA 产物 | `80-reports/qa-report-draft.md` | `needs_human_confirmation` |
 | 归档需求、完成归档 | `workflows/09-archive-workflow.md` | `tasks/09-archive-requirement.md` | Archive Agent | `prompts/archive-prompt.md` | `rules/archive-rules.md` | `scripts/archive_requirement.py` | metadata、正式报告、全部产物 | `90-archive/archive-index.md` | `archived` |
 
+## 生产级 Runtime 命令路由
+
+| 用户命令示例 | 任务类型 | 应读取文档 | 说明 |
+|---|---|---|---|
+| 设计生产级 Agent 架构 | architecture_planning | `docs/architecture/production-agent-runtime-roadmap.md` | 只做架构和路线，不直接实现完整 Runtime |
+| 新增 LangGraph Runtime 骨架 | runtime_bootstrap | `docs/architecture/production-agent-runtime-roadmap.md` | 创建最小 Runtime 目录和入口 |
+| 实现测试用例生成 Graph | runtime_testcase_graph | `workflows/10-runtime-testcase-generation-workflow.md`、`workflows/02-testcase-generation-workflow.md` | 第一条 Runtime 闭环 |
+| 加入 Human-in-the-loop | runtime_human_gate | `rules/review-gate-rules.md` | 对写入、执行、归档等动作加人工门禁 |
+| 加入 Runtime 持久化 | runtime_persistence | `docs/architecture/production-agent-runtime-roadmap.md` | Checkpoint、运行记录、状态恢复 |
+
 ## 常见中文触发表达
 
 - 需求分析：“分析这个需求”“拆一下登录需求”“帮我看 PRD”“提取业务规则”。
@@ -31,6 +41,7 @@ Codex 接到自然语言命令后，先识别意图，再路由到对应 SOP 和
 - 缺陷草稿：“生成 bug 草稿”“整理缺陷报告”“把真实缺陷写成 issue”。
 - QA 报告：“生成 QA 报告草稿”“汇总测试结果”“输出风险结论草稿”。
 - 归档：“归档这个需求”“生成归档索引”“确认完成后归档”。
+- Runtime 架构：“设计生产级 Agent 架构”“新增 LangGraph Runtime 骨架”“实现测试用例生成 Graph”“加入 Human-in-the-loop”“加入 Runtime 持久化”。
 
 ## 命令解析规则
 
@@ -45,6 +56,7 @@ Codex 接到自然语言命令后，先识别意图，再路由到对应 SOP 和
 - AI 生成的 QA 报告只能写入 `prd/<id>/80-reports/qa-report-draft.md`；人工确认后的正式报告可命名为 `qa-report.md`。
 - 大段产物内容必须写入仓库文件，Chat 中只提供文件路径和摘要。
 - 每个任务完成后必须输出标准回执，验收命令必须明确区分“通过 / 失败 / 未执行”。
+- Runtime 相关命令不得直接替代声明式工作台；必须先判断属于第 1 阶段文档工作台，还是第 2 阶段 Runtime 能力。
 
 ## 推荐命令格式
 

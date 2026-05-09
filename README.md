@@ -2,13 +2,40 @@
 
 Agentic-QA 是一个**指令路由型人机协同 Agentic QA 工作空间**：用自然语言命令驱动 Codex 执行 QA 作业，用文件化规范约束输入、输出、审核门和归档路径。
 
-本仓库不实现 Agent Runtime、LLM Provider、工作流引擎、数据库或 Web 平台，而是用 `COMMANDS.md`、`workflows/`、`agents/`、`tasks/`、`prompts/`、`rules/`、`skills/`、`knowledge/` 和 `prd/` 固定 Codex / ChatGPT / IDE Agent 的执行行为。
+Agentic-QA 的终极目标是建设生产级 Agentic QA 系统。生产级不是一开始就自研平台，而是逐步具备可路由命令、声明式 QA 工作流、可复用 Agent 角色、可追踪 PRD 产物、Human-in-the-loop 门禁、可恢复 Runtime、运行记录和真实 QA 工具接入能力。
+
+当前阶段不实现完整 Agent Runtime、LLM Provider、工作流引擎、数据库或 Web 平台，而是用 `COMMANDS.md`、`workflows/`、`agents/`、`tasks/`、`prompts/`、`rules/`、`skills/`、`knowledge/` 和 `prd/` 固定 Codex / ChatGPT / IDE Agent 的执行行为。下一阶段才在不替代现有声明式资产的前提下，引入轻量 LangGraph Runtime。
 
 核心模式：
 
 ```text
 AI 生成 -> 人审核 -> AI 执行 -> 人确认 -> AI 归档
 ```
+
+## 两阶段路线
+
+### 第 1 阶段：Codex 驱动的标准化工作台
+
+第 1 阶段继续把 Agentic-QA 做成标准化 QA 工作台，由 Codex / ChatGPT / IDE Agent 读取仓库规则完成 QA 任务。核心资产仍然是 `AGENTS.md`、`COMMANDS.md`、`workflows/`、`agents/`、`tasks/`、`prompts/`、`rules/`、`skills/`、`knowledge/`、`prd/`、`scripts/` 和 `tests/`。
+
+### 第 2 阶段：LangGraph Runtime 驱动的轻量执行引擎
+
+第 2 阶段新增轻量 Runtime，用 LangGraph 承接流程、状态、条件路由、循环修正、Human-in-the-loop、持久化和运行记录，用 LangChain 承接模型调用、Prompt 模板、结构化输入输出和工具封装。
+
+核心原则：
+
+```text
+外层 LangGraph 固定流程，内层关键生成节点用 Agent，底层文件、执行、状态、权限全部使用确定性代码
+```
+
+边界说明：
+
+- Agentic-QA 提供标准化上下文和产物规范。
+- LangGraph 提供稳定流程编排。
+- LangChain 提供模型、Prompt、结构化输出和工具封装。
+- Codex 继续负责代码开发和人工协作施工。
+- 不要一开始就重写成 Runtime，必须先保留并复用声明式资产。
+- 详细路线见 `docs/architecture/production-agent-runtime-roadmap.md` 和 `docs/roadmap.md`。
 
 ## 工作方式
 
@@ -39,6 +66,7 @@ AI 生成 -> 人审核 -> AI 执行 -> 人确认 -> AI 归档
 | `skills/` | 给 Codex 参考的 QA 专业能力说明 |
 | `knowledge/` | 方法论、模板、项目规则和历史经验 |
 | `prd/` | 需求工作区和产物目录 |
+| `docs/` | 架构、路线图和项目说明 |
 | `scripts/` | 工作区创建、校验、测试执行、报告和归档脚本 |
 | `tests/` | 脚本单元测试 |
 
