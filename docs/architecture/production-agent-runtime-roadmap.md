@@ -250,4 +250,4 @@ metadata_update_node
 4. `011-runtime-persistence-and-run-records.md`：加入 Checkpoint、运行记录和状态恢复。
 5. `012-runtime-qa-tool-integration.md`：接入 pytest、Playwright、Allure 和日志分析工具。
 
-当前进展：StateGraph 编排已接入测试用例生成最小流程；真实 LLM、持久化和复杂 Human-in-the-loop 仍在后续任务中完成。
+当前进展：StateGraph 编排已接入测试用例生成最小流程；011 已加入本地运行记录。真正可恢复 Checkpoint、Resume、真实 LLM 和复杂 Human-in-the-loop 仍在后续任务中完成。

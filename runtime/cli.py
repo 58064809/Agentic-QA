@@ -18,6 +18,19 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="显式允许写入测试用例草稿；默认 dry-run 不写入",
     )
+    run_parser.add_argument(
+        "--record-run",
+        dest="record_run",
+        action="store_true",
+        default=True,
+        help="生成本地运行记录；默认开启",
+    )
+    run_parser.add_argument(
+        "--no-record-run",
+        dest="record_run",
+        action="store_false",
+        help="不生成本地运行记录",
+    )
     return parser
 
 
@@ -29,6 +42,12 @@ def print_summary(result) -> None:
     print(f"- PRD: {result.prd_path}")
     print(f"- 目标输出: {result.output_path or '未生成'}")
     print(f"- 是否写入文件: {'是' if result.wrote_file else '否'}")
+    print(f"- Run ID: {result.run_id or '未生成'}")
+    if result.run_summary_json and result.run_summary_md:
+        print(f"- 运行记录 JSON: {result.run_summary_json}")
+        print(f"- 运行记录 Markdown: {result.run_summary_md}")
+    else:
+        print("- 运行记录: 未生成（--no-record-run）")
     print(f"- 人工审核状态: {result.review_status}")
     print(f"- 已执行节点: {', '.join(result.executed_nodes) if result.executed_nodes else '无'}")
     print(f"- 已加载文件数: {len(result.loaded_files)}")
@@ -56,6 +75,7 @@ def main() -> int:
             user_input=args.user_input,
             prd_path=Path(args.prd),
             approve_write=args.approve_write,
+            record_run=args.record_run,
         )
         print_summary(result)
         return 0 if result.success else 1

@@ -20,6 +20,7 @@ from runtime.graph.state import (
     from_graph_state,
     to_graph_state,
 )
+from runtime.records.run_recorder import record_runtime_result
 from runtime.schemas.runtime_result import RuntimeResult
 
 
@@ -102,6 +103,7 @@ def run_langgraph_testcase_generation_workflow(
     *,
     repo_root: Path | None = None,
     approve_write: bool = False,
+    record_run: bool = True,
 ) -> RuntimeResult:
     root = (repo_root or default_repo_root()).resolve()
     initial_state = QAWorkflowState(
@@ -113,4 +115,7 @@ def run_langgraph_testcase_generation_workflow(
     )
     graph = build_testcase_generation_graph(root)
     graph_state = graph.invoke(to_graph_state(initial_state))
-    return RuntimeResult.from_state(from_graph_state(graph_state))
+    result = RuntimeResult.from_state(from_graph_state(graph_state))
+    if record_run:
+        return record_runtime_result(result, root)
+    return result

@@ -21,6 +21,10 @@ class GraphQAWorkflowState(TypedDict, total=False):
     executed_nodes: list[str]
     wrote_file: bool
     orchestration: str
+    run_id: str | None
+    run_record_dir: str | None
+    run_summary_json: str | None
+    run_summary_md: str | None
 
 
 @dataclass
@@ -41,6 +45,10 @@ class QAWorkflowState:
     executed_nodes: list[str] = field(default_factory=list)
     wrote_file: bool = False
     orchestration: str = "LangGraph StateGraph"
+    run_id: str | None = None
+    run_record_dir: str | None = None
+    run_summary_json: str | None = None
+    run_summary_md: str | None = None
 
     @property
     def success(self) -> bool:
@@ -68,6 +76,10 @@ def to_graph_state(state: QAWorkflowState) -> GraphQAWorkflowState:
         "executed_nodes": list(state.executed_nodes),
         "wrote_file": state.wrote_file,
         "orchestration": state.orchestration,
+        "run_id": state.run_id,
+        "run_record_dir": state.run_record_dir,
+        "run_summary_json": state.run_summary_json,
+        "run_summary_md": state.run_summary_md,
     }
 
 
@@ -99,4 +111,8 @@ def from_graph_state(graph_state: GraphQAWorkflowState) -> QAWorkflowState:
         executed_nodes=_get_list(graph_state, "executed_nodes"),
         wrote_file=bool(graph_state.get("wrote_file", False)),
         orchestration=str(graph_state.get("orchestration", "LangGraph StateGraph")),
+        run_id=graph_state.get("run_id"),
+        run_record_dir=graph_state.get("run_record_dir"),
+        run_summary_json=graph_state.get("run_summary_json"),
+        run_summary_md=graph_state.get("run_summary_md"),
     )

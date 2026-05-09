@@ -123,3 +123,12 @@ def test_validate_docs_consistency_does_not_skip_path_refs_with_or(tmp_path):
     errors = validate_docs_consistency(repo_root)
 
     assert any("docs/not-exist.md" in error for error in errors)
+
+
+def test_validate_docs_consistency_ignores_local_runtime_output_path(tmp_path):
+    repo_root = create_minimal_docs_repo(tmp_path)
+    write_file(repo_root / "README.md", "运行记录默认写入 `.runtime/runs/`。\n")
+
+    errors = validate_docs_consistency(repo_root)
+
+    assert not errors

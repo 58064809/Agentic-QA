@@ -24,6 +24,10 @@ class RuntimeResult:
     executed_nodes: list[str]
     wrote_file: bool
     orchestration: str
+    run_id: str | None
+    run_record_dir: str | None
+    run_summary_json: str | None
+    run_summary_md: str | None
 
     @classmethod
     def from_state(cls, state: QAWorkflowState) -> RuntimeResult:
@@ -45,4 +49,8 @@ class RuntimeResult:
             executed_nodes=list(state.executed_nodes),
             wrote_file=state.wrote_file,
             orchestration=state.orchestration,
+            run_id=state.run_id,
+            run_record_dir=state.run_record_dir,
+            run_summary_json=state.run_summary_json,
+            run_summary_md=state.run_summary_md,
         )

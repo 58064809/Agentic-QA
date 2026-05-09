@@ -15,6 +15,7 @@ def run_testcase_generation_workflow(
     *,
     repo_root: Path | None = None,
     approve_write: bool = False,
+    record_run: bool = True,
 ) -> RuntimeResult:
     try:
         from runtime.graph.langgraph_app import run_langgraph_testcase_generation_workflow
@@ -28,4 +29,5 @@ def run_testcase_generation_workflow(
         prd_path=Path(prd_path),
         repo_root=repo_root,
         approve_write=approve_write,
+        record_run=record_run,
     )

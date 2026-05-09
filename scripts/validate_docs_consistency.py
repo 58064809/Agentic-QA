@@ -117,7 +117,7 @@ def should_skip_path_token(token: str) -> bool:
 
 
 def normalize_path_token(token: str) -> str:
-    token = token.strip().strip(".,，。:：;；")
+    token = token.strip().rstrip(".,，。:：;；")
     if token.startswith("./"):
         token = token[2:]
     token = token.replace("\\", "/")

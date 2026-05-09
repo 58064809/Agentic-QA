@@ -102,6 +102,7 @@ python scripts/validate_prd_workspace.py prd/demo-requirement
 python scripts/run_pytest.py
 python scripts/generate_markdown_report.py prd/sample-login-requirement
 python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement
+python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement --no-record-run
 pytest
 ruff check .
 ```
@@ -115,6 +116,8 @@ python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例
 ```
 
 只有显式传入 `--approve-write` 才允许写入 `prd/<id>/20-testcases/testcases.md` 草稿。若目标文件已存在，当前骨架默认拒绝覆盖；写入后的状态仍为 `needs_human_review`，不得继续自动生成 API/UI 脚本或归档。
+
+Runtime 默认会在 `.runtime/runs/` 下生成本地运行记录，用于追踪节点轨迹、加载文件、输出路径、错误和审核状态。运行记录不应提交到 Git；如只想执行流程而不生成记录，可传入 `--no-record-run`。
 
 ## 完整示例流程
 
