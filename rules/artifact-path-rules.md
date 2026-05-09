@@ -11,9 +11,11 @@
 | 元数据 | `prd/<id>/metadata.yml` |
 | 需求分析 | `prd/<id>/10-analysis/requirement-analysis.md` |
 | 测试用例 | `prd/<id>/20-testcases/testcases.md` |
+| API 测试计划 | `prd/<id>/30-api-tests/api-test-plan.md` |
 | API 测试脚本 | `prd/<id>/30-api-tests/generated/` |
 | UI 测试脚本 | `prd/<id>/40-ui-tests/generated/` |
 | 执行结果 | `prd/<id>/50-execution-results/` |
+| 执行报告 | `prd/<id>/50-execution-results/execution-report.md` |
 | 失败分析 | `prd/<id>/60-failure-analysis/failure-analysis.md` |
 | 缺陷草稿 | `prd/<id>/70-bugs/` |
 | AI 生成 QA 报告草稿 | `prd/<id>/80-reports/qa-report-draft.md` |

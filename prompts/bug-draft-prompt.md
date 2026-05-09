@@ -8,6 +8,10 @@
 
 把真实缺陷候选整理为 Markdown 缺陷草稿。
 
+## 任务目标
+
+生成可转入缺陷系统的 bug 草稿，但不替代人工确认缺陷成立。
+
 ## 输入
 
 - 失败分析。
@@ -25,6 +29,12 @@
 - 预期结果。
 - 证据。
 - 待确认项。
+
+## 必须参考的规则
+
+- `rules/failure-analysis-rules.md`
+- `skills/bug-report-writing-skill.md`
+- `knowledge/templates/bug-template.md`
 
 ## 质量要求
 

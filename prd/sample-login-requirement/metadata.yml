@@ -9,9 +9,11 @@ artifacts:
   api_doc: prd/sample-login-requirement/api-doc.md
   analysis: prd/sample-login-requirement/10-analysis/requirement-analysis.md
   testcases: prd/sample-login-requirement/20-testcases/testcases.md
+  api_test_plan: prd/sample-login-requirement/30-api-tests/api-test-plan.md
   api_tests: prd/sample-login-requirement/30-api-tests/generated/
   ui_tests: prd/sample-login-requirement/40-ui-tests/generated/
   execution_results: prd/sample-login-requirement/50-execution-results/
+  execution_report: prd/sample-login-requirement/50-execution-results/execution-report.md
   failure_analysis: prd/sample-login-requirement/60-failure-analysis/failure-analysis.md
   bugs: prd/sample-login-requirement/70-bugs/
   report_draft: prd/sample-login-requirement/80-reports/qa-report-draft.md

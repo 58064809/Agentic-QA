@@ -8,6 +8,10 @@
 
 执行已审核测试命令并收集结果。
 
+## 任务目标
+
+在明确授权环境中执行测试命令，记录命令、环境、结果、失败摘要和待人工确认项。
+
 ## 输入
 
 - 测试脚本。
@@ -21,6 +25,13 @@
 - 结果文件路径。
 - 失败摘要。
 - 待人工确认项。
+
+## 必须参考的规则
+
+- `rules/test-execution-rules.md`
+- `rules/automation-rules.md`
+- `scripts/run_pytest.py`
+- `scripts/collect_test_results.py`
 
 ## 质量要求
 

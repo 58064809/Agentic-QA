@@ -97,9 +97,11 @@ def default_metadata(slug: str, title: str, owner: str, created_by: str) -> dict
             "api_doc": f"{workspace}/api-doc.md",
             "analysis": f"{workspace}/10-analysis/requirement-analysis.md",
             "testcases": f"{workspace}/20-testcases/testcases.md",
+            "api_test_plan": f"{workspace}/30-api-tests/api-test-plan.md",
             "api_tests": f"{workspace}/30-api-tests/generated/",
             "ui_tests": f"{workspace}/40-ui-tests/generated/",
             "execution_results": f"{workspace}/50-execution-results/",
+            "execution_report": f"{workspace}/50-execution-results/execution-report.md",
             "failure_analysis": f"{workspace}/60-failure-analysis/failure-analysis.md",
             "bugs": f"{workspace}/70-bugs/",
             "report_draft": f"{workspace}/80-reports/qa-report-draft.md",
@@ -311,13 +313,21 @@ def generate_markdown_report(workspace_path: Path | str) -> Path:
     testcase_summary = first_existing_text([workspace / "20-testcases/testcases.md"])
     execution_summary = first_existing_text(
         [
+            workspace / "50-execution-results/execution-report.md",
             workspace / "50-execution-results/test-results-summary.md",
             workspace / "50-execution-results/pytest-report.json",
         ]
     )
     failure_summary = first_existing_text([workspace / "60-failure-analysis/failure-analysis.md"])
 
-    report = f"""# QA 报告草稿：{metadata.get("title")}
+    report = f"""---
+status: needs_human_confirmation
+human_confirmation_required: true
+artifact_type: qa_report_draft
+generated_by: scripts/generate_markdown_report.py
+---
+
+# QA 报告草稿：{metadata.get("title")}
 
 ## 基本信息
 
@@ -325,6 +335,8 @@ def generate_markdown_report(workspace_path: Path | str) -> Path:
 - 当前状态：{metadata.get("status")}
 - 负责人：{metadata.get("owner")}
 - 报告生成时间：{now_iso()}
+- 正式报告路径：{workspace.as_posix()}/80-reports/qa-report.md
+- 当前报告不得作为正式发布结论。
 
 ## 需求与分析摘要
 

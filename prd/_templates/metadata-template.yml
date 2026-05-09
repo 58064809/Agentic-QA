@@ -9,9 +9,11 @@ artifacts:
   api_doc: prd/example-requirement/api-doc.md
   analysis: prd/example-requirement/10-analysis/requirement-analysis.md
   testcases: prd/example-requirement/20-testcases/testcases.md
+  api_test_plan: prd/example-requirement/30-api-tests/api-test-plan.md
   api_tests: prd/example-requirement/30-api-tests/generated/
   ui_tests: prd/example-requirement/40-ui-tests/generated/
   execution_results: prd/example-requirement/50-execution-results/
+  execution_report: prd/example-requirement/50-execution-results/execution-report.md
   failure_analysis: prd/example-requirement/60-failure-analysis/failure-analysis.md
   bugs: prd/example-requirement/70-bugs/
   report_draft: prd/example-requirement/80-reports/qa-report-draft.md

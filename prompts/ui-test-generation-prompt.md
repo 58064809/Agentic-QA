@@ -8,6 +8,10 @@
 
 根据需求和用例生成 Playwright UI 自动化草稿。
 
+## 任务目标
+
+生成可审核的 UI 自动化草稿，明确关键路径、选择器策略、环境前提和不可自动化步骤。
+
 ## 输入
 
 - 原始需求。
@@ -20,6 +24,13 @@
 - 选择器策略。
 - 测试数据和环境说明。
 - 不适合自动化的场景说明。
+
+## 必须参考的规则
+
+- `rules/ui-test-rules.md`
+- `rules/automation-rules.md`
+- `skills/playwright-ui-test-skill.md`
+- `knowledge/project-rules/assertion-rules.md`
 
 ## 质量要求
 

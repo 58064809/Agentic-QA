@@ -8,6 +8,10 @@
 
 检查审核状态并生成归档索引。
 
+## 任务目标
+
+在所有人工审核和确认完成后生成归档索引；存在阻塞状态时必须拒绝归档。
+
 ## 输入
 
 - metadata。
@@ -19,6 +23,12 @@
 - 归档检查结果。
 - 阻塞项列表。
 - 归档索引路径。
+
+## 必须参考的规则
+
+- `rules/archive-rules.md`
+- `rules/status-rules.md`
+- `scripts/archive_requirement.py`
 
 ## 质量要求
 
