@@ -56,12 +56,14 @@ AI 生成 -> 人审核 -> AI 执行 -> 人确认 -> AI 归档
 - Codex 完成任务后应使用统一完成回执，人工审核时优先看“修改文件”和“验收结果”。
 - 未执行的验收命令不能视为通过，必须在回执中写明原因。
 - 后续 `_codex_tasks/` 任务文件应尽量短，避免要求在 Chat 中生成超长 Markdown。
+- `python scripts/validate_docs_consistency.py` 可用于检查仓库文档结构、规则模板和关键引用是否完整。
 
 ## 快速开始
 
 ```bash
 pip install -e .
 python scripts/create_prd_workspace.py demo-requirement
+python scripts/validate_docs_consistency.py
 python scripts/validate_prd_workspace.py prd/demo-requirement
 python scripts/run_pytest.py
 python scripts/generate_markdown_report.py prd/sample-login-requirement
