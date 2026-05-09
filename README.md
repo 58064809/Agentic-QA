@@ -58,6 +58,12 @@ AI 生成 -> 人审核 -> AI 执行 -> 人确认 -> AI 归档
 - 后续 `_codex_tasks/` 任务文件应尽量短，避免要求在 Chat 中生成超长 Markdown。
 - `python scripts/validate_docs_consistency.py` 可用于检查仓库文档结构、规则模板和关键引用是否完整。
 
+## GitHub Actions 校验
+
+GitHub Actions 会在 push 到 `master` 和面向 `master` 的 PR 时自动运行基础校验。当前 `CI` workflow 包含文档一致性检查、sample PRD 工作区校验、pytest wrapper、pytest 和 ruff。
+
+CI 不访问真实业务环境，不连接生产服务，也不依赖 secret。
+
 ## 快速开始
 
 ```bash

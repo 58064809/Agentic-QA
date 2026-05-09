@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Validate docs consistency
+        run: python scripts/validate_docs_consistency.py
+
+      - name: Validate sample PRD workspace
+        run: python scripts/validate_prd_workspace.py prd/sample-login-requirement
+
+      - name: Run pytest wrapper
+        run: python scripts/run_pytest.py
+
+      - name: Run pytest
+        run: pytest
+
+      - name: Run ruff
+        run: ruff check .

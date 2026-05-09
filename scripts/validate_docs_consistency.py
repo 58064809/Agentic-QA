@@ -10,8 +10,11 @@ CORE_FILES = [
     "COMMANDS.md",
     "rules/codex-output-rules.md",
     "knowledge/templates/codex-completion-summary-template.md",
+    ".github/workflows/ci.yml",
 ]
 CORE_DIRS = [
+    ".github",
+    ".github/workflows",
     "workflows",
     "agents",
     "tasks",
