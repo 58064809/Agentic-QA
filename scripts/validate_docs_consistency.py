@@ -72,7 +72,15 @@ EXCLUDED_DIRS = {
     "__pycache__",
 }
 INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
-PLANNED_REFERENCE_MARKERS = ("待生成", "如生成", "可后续生成", "后续生成", " 或 ")
+PLANNED_REFERENCE_MARKERS = (
+    "待生成",
+    "如生成",
+    "可后续生成",
+    "后续生成",
+    "可选新增",
+    "后续任务中创建",
+)
+TASK_INSTRUCTION_REFERENCE_MARKERS = (" 中补充", "必须报告")
 
 
 def read_text(path: Path) -> str:
@@ -126,6 +134,7 @@ def iter_markdown_files(repo_root: Path):
 def find_broken_markdown_path_refs(repo_root: Path) -> list[str]:
     errors: list[str] = []
     for markdown_path in iter_markdown_files(repo_root):
+        source = markdown_path.relative_to(repo_root).as_posix()
         in_fenced_block = False
         for line_number, line in enumerate(read_text(markdown_path).splitlines(), start=1):
             if line.strip().startswith("```"):
@@ -135,6 +144,10 @@ def find_broken_markdown_path_refs(repo_root: Path) -> list[str]:
                 continue
             if any(marker in line for marker in PLANNED_REFERENCE_MARKERS):
                 continue
+            if source.startswith("_codex_tasks/") and any(
+                marker in line for marker in TASK_INSTRUCTION_REFERENCE_MARKERS
+            ):
+                continue
 
             for match in INLINE_CODE_RE.finditer(line):
                 token = normalize_path_token(match.group(1))
@@ -143,7 +156,6 @@ def find_broken_markdown_path_refs(repo_root: Path) -> list[str]:
 
                 target = repo_root / token
                 if not target.exists():
-                    source = markdown_path.relative_to(repo_root).as_posix()
                     errors.append(f"{source}:{line_number} 引用了不存在的路径: {token}")
     return errors
 

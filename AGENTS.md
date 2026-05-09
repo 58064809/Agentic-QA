@@ -25,7 +25,7 @@
 
 ## 禁止事项
 
-- 不实现新的 Agent Runtime、工作流引擎、LLM Provider 或平台服务。
+- 在第 1 阶段文档工作台任务或未明确授权的任务中，不实现新的 Agent Runtime、工作流引擎、LLM Provider 或平台服务。
 - 不跳过人工审核门。
 - 不把未经确认的失败直接定性为真实缺陷。
 - 不在需求工作区之外散落 QA 产物。
@@ -46,3 +46,4 @@
 - Codex 不得把 Prompt、Rules、Skills 全部硬编码进 Python。
 - 后续实现 Runtime 时，应让 Runtime 读取 `workflows/`、`prompts/`、`rules/`、`skills/`、`knowledge/`，而不是替代这些目录。
 - Codex 修改 Runtime 前，必须明确当前任务属于第 1 阶段文档工作台，还是第 2 阶段 Runtime 能力。
+- 只有当用户明确要求执行第 2 阶段 Runtime 任务，且任务文件明确授权时，才允许新增轻量 Runtime 骨架；Runtime 仍必须复用 `workflows/`、`prompts/`、`rules/`、`skills/`、`knowledge/`，不得替代声明式资产。

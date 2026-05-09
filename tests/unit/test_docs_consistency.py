@@ -100,3 +100,15 @@ def test_validate_docs_consistency_reports_missing_codex_output_heading(tmp_path
     errors = validate_docs_consistency(repo_root)
 
     assert any("Codex 输出规则缺少关键内容: 标准完成回执模板" in error for error in errors)
+
+
+def test_validate_docs_consistency_does_not_skip_path_refs_with_or(tmp_path):
+    repo_root = create_minimal_docs_repo(tmp_path)
+    write_file(
+        repo_root / "docs/roadmap.md",
+        "这里可以读取 `docs/not-exist.md` 或 `docs/roadmap.md`。\n",
+    )
+
+    errors = validate_docs_consistency(repo_root)
+
+    assert any("docs/not-exist.md" in error for error in errors)
