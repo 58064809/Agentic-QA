@@ -23,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def print_summary(result) -> None:
     print("Runtime Skeleton 执行摘要")
+    print(f"- 编排方式: {result.orchestration}")
     print(f"- 模式: {'approve-write' if result.approve_write else 'dry-run'}")
     print(f"- 意图: {result.intent or '未识别'}")
     print(f"- PRD: {result.prd_path}")

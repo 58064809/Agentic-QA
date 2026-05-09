@@ -1,15 +1,19 @@
 # Runtime 最小骨架
 
-当前 Runtime 处于最小骨架阶段，用于第 2 阶段 LangGraph Runtime 的后续演进。
+当前 Runtime 处于最小骨架阶段，用于第 2 阶段 LangGraph Runtime 的后续演进。010 已接入 LangGraph `StateGraph` 编排最小流程，但仍不是生产完整 Runtime。
 
 ## 当前能力
 
 - 009 不接入真实 LLM。
-- 009 不强制引入 LangGraph / LangChain 依赖。
+- 010 使用 LangGraph `StateGraph` 编排测试用例生成最小流程。
+- 当前不接入真实 LLM。
+- 当前不接入 LangChain ChatModel。
+- 当前不接入持久化 Checkpointer。
 - 默认 dry-run，不写入文件。
 - 仅支持测试用例生成流程骨架。
 - Runtime 必须读取现有声明式资产，不允许硬编码 Prompt / Rules / Skills。
 - Runtime 的写入、执行、归档动作必须经过 Human Review Gate。
+- Human Review Gate 当前是状态门，不是复杂交互审批。
 
 ## 使用命令
 
@@ -27,4 +31,4 @@ python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例
 
 ## 后续方向
 
-010 再接入真实 LangGraph `StateGraph`，但仍不接入真实 LLM。
+011 再加入轻量运行记录和可恢复基础，但仍不接真实业务环境。

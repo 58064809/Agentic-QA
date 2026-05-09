@@ -23,6 +23,7 @@ class RuntimeResult:
     warnings: list[str]
     executed_nodes: list[str]
     wrote_file: bool
+    orchestration: str
 
     @classmethod
     def from_state(cls, state: QAWorkflowState) -> RuntimeResult:
@@ -43,4 +44,5 @@ class RuntimeResult:
             warnings=list(state.warnings),
             executed_nodes=list(state.executed_nodes),
             wrote_file=state.wrote_file,
+            orchestration=state.orchestration,
         )

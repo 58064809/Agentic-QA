@@ -108,7 +108,7 @@ ruff check .
 
 ## Runtime Skeleton
 
-第 2 阶段 Runtime 目前只是最小骨架，不接入真实 LLM，不强制引入 LangGraph / LangChain 依赖，也不连接真实业务环境。默认命令为 dry-run，不写入文件：
+第 2 阶段 Runtime 目前只是最小骨架，已使用 LangGraph `StateGraph` 编排测试用例生成最小流程，但不接入真实 LLM、不接入 LangChain ChatModel、不连接真实业务环境。默认命令为 dry-run，不写入文件：
 
 ```bash
 python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement

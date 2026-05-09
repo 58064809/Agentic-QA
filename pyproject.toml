@@ -9,6 +9,7 @@ description = "Command-routed human-in-the-loop Agentic QA workspace."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+  "langgraph>=0.2",
   "pytest>=8",
   "pytest-json-report>=1.5",
   "typer>=0.12",
