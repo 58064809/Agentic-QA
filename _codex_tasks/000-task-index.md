@@ -18,6 +18,7 @@
 
 - `001-bootstrap-final-workspace.md`：一次性初始化最终版工作区骨架、规则、工作流、Agent、Prompt、Rules、Skills、PRD 示例、脚本、CI。
 - `002-align-core-files.md`：对齐目录、核心文件、路径、状态、引用关系和验收命令。
+- `003-enhance-content-and-sample-flow.md`：补强文档、Workflow、Agent、Prompt、Rules、Skills、Knowledge 的内容质量，并跑通 sample-login-requirement 示例 QA 闭环。
 
 ## 当前建议执行顺序
 
