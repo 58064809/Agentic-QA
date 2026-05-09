@@ -287,13 +287,281 @@ def validate_workspace(workspace_path: Path | str) -> ValidationResult:
     return ValidationResult(workspace=workspace, errors=errors)
 
 
-def first_existing_text(paths: list[Path], max_chars: int = 1200) -> str:
+ARTIFACT_RELATIVE_PATHS = {
+    "requirement": "requirement.md",
+    "api_doc": "api-doc.md",
+    "analysis": "10-analysis/requirement-analysis.md",
+    "testcases": "20-testcases/testcases.md",
+    "api_test_plan": "30-api-tests/api-test-plan.md",
+    "api_tests": "30-api-tests/generated",
+    "ui_tests": "40-ui-tests/generated",
+    "execution_results": "50-execution-results",
+    "execution_report": "50-execution-results/execution-report.md",
+    "failure_analysis": "60-failure-analysis/failure-analysis.md",
+    "bugs": "70-bugs",
+    "report_draft": "80-reports/qa-report-draft.md",
+    "report": "80-reports/qa-report.md",
+    "archive": "90-archive",
+}
+
+
+def read_text_if_exists(path: Path) -> str:
+    if not path.is_file():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
+
+
+def strip_front_matter(content: str) -> str:
+    lines = content.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return content.strip()
+
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            return "\n".join(lines[index + 1 :]).strip()
+    return content.strip()
+
+
+def section_text(content: str, heading: str) -> str:
+    lines = strip_front_matter(content).splitlines()
+    collected: list[str] = []
+    in_section = False
+    section_level = 0
+
+    for line in lines:
+        match = re.match(r"^(#{2,6})\s+(.+?)\s*$", line)
+        if match:
+            level = len(match.group(1))
+            title = match.group(2).strip()
+            if in_section and level <= section_level:
+                break
+            if title == heading:
+                in_section = True
+                section_level = level
+                continue
+        if in_section:
+            collected.append(line)
+
+    return "\n".join(collected).strip()
+
+
+def is_table_separator(cells: list[str]) -> bool:
+    return all(re.fullmatch(r":?-{3,}:?", cell.strip()) for cell in cells)
+
+
+def parse_markdown_table(content: str) -> tuple[list[str], list[list[str]]]:
+    headers: list[str] = []
+    rows: list[list[str]] = []
+    in_table = False
+
+    for line in strip_front_matter(content).splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|") or not stripped.endswith("|"):
+            if in_table and headers:
+                break
+            continue
+
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if len(cells) < 2:
+            continue
+        if is_table_separator(cells):
+            in_table = True
+            continue
+        if not headers:
+            headers = cells
+            in_table = True
+            continue
+        rows.append(cells)
+
+    return headers, rows
+
+
+def compact_markdown_items(content: str, max_items: int = 5) -> list[str]:
+    items: list[str] = []
+    for line in strip_front_matter(content).splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("|"):
+            continue
+        if stripped in {"---"} or re.fullmatch(r"[-*]+", stripped):
+            continue
+        stripped = re.sub(r"^- \[[ xX]\]\s*", "- ", stripped)
+        stripped = re.sub(r"\s+", " ", stripped)
+        if stripped not in items:
+            items.append(stripped)
+        if len(items) >= max_items:
+            break
+    return items
+
+
+def document_intro_items(content: str, max_items: int = 3) -> list[str]:
+    items: list[str] = []
+    for line in strip_front_matter(content).splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("## "):
+            break
+        if stripped.startswith("#") or stripped.startswith("|"):
+            continue
+        stripped = re.sub(r"\s+", " ", stripped)
+        items.append(stripped)
+        if len(items) >= max_items:
+            break
+    return items
+
+
+def bullet_lines(items: list[str], empty_text: str = "未发现可摘要内容。") -> str:
+    if not items:
+        return f"- {empty_text}"
+    return "\n".join(f"- {item.lstrip('- ').strip()}" for item in items)
+
+
+def artifact_exists(workspace: Path, name: str, path_text: str) -> bool:
+    relative = ARTIFACT_RELATIVE_PATHS.get(name)
+    candidates = []
+    if relative:
+        candidates.append(workspace / relative)
+
+    path = Path(path_text)
+    candidates.append(path if path.is_absolute() else Path.cwd() / path)
+    return any(candidate.exists() for candidate in candidates)
+
+
+def artifact_index(metadata: dict[str, Any], workspace: Path) -> str:
+    artifacts = metadata.get("artifacts", {})
+    if not isinstance(artifacts, dict) or not artifacts:
+        return "- metadata.yml 未记录 artifacts。"
+
+    lines = ["| 产物 | 路径 | 当前状态 |", "|---|---|---|"]
+    for name, path_text in artifacts.items():
+        if not isinstance(path_text, str):
+            continue
+        exists = artifact_exists(workspace, name, path_text)
+        status = "存在" if exists else "待生成"
+        if name == "report_draft" and not exists:
+            status = "本次生成"
+        lines.append(f"| {name} | `{path_text}` | {status} |")
+    return "\n".join(lines)
+
+
+def summarize_requirement_analysis(workspace: Path) -> str:
+    analysis = read_text_if_exists(workspace / "10-analysis/requirement-analysis.md")
+    requirement = read_text_if_exists(workspace / "requirement.md")
+    source = analysis or requirement
+    if not source:
+        return "- 未找到需求分析或需求原文。"
+
+    summary = section_text(source, "需求摘要") or section_text(source, "需求范围")
+    items = compact_markdown_items(summary, max_items=4)
+
+    business_rules = section_text(source, "业务规则")
+    _, rule_rows = parse_markdown_table(business_rules)
+    if rule_rows:
+        items.append(f"已识别业务规则 {len(rule_rows)} 条。")
+
+    risk_items = compact_markdown_items(section_text(source, "测试风险"), max_items=3)
+    items.extend(f"风险：{item.lstrip('- ').strip()}" for item in risk_items)
+    return bullet_lines(items)
+
+
+def summarize_testcases(workspace: Path) -> str:
+    content = read_text_if_exists(workspace / "20-testcases/testcases.md")
+    if not content:
+        return "- 未找到测试用例草稿。"
+
+    headers, rows = parse_markdown_table(content)
+    if not rows:
+        return "- 未解析到测试用例表，需人工检查 `20-testcases/testcases.md`。"
+
+    priority_counts: dict[str, int] = {}
+    title_index = headers.index("标题") if "标题" in headers else 0
+    priority_index = headers.index("优先级") if "优先级" in headers else None
+    titles = []
+
+    for row in rows:
+        if title_index < len(row):
+            titles.append(row[title_index])
+        if priority_index is not None and priority_index < len(row):
+            priority = row[priority_index] or "未标记"
+            priority_counts[priority] = priority_counts.get(priority, 0) + 1
+
+    priority_summary = "、".join(
+        f"{priority} {count} 条" for priority, count in sorted(priority_counts.items())
+    )
+    lines = [
+        f"- 已识别测试用例 {len(rows)} 条。",
+        f"- 优先级分布：{priority_summary or '未标记'}。",
+    ]
+    if titles:
+        lines.append("- 代表性用例：" + "；".join(titles[:5]) + "。")
+    lines.append("- 完整用例请查看 `20-testcases/testcases.md`。")
+    return "\n".join(lines)
+
+
+def summarize_execution(workspace: Path) -> str:
+    content = read_text_if_exists(workspace / "50-execution-results/execution-report.md")
+    if not content:
+        return "- 未找到执行报告，当前不提供真实执行结论。"
+
+    command_section = section_text(content, "已执行的本地命令")
+    _, rows = parse_markdown_table(command_section)
+    passed = sum(1 for row in rows if any(cell == "通过" for cell in row))
+    lines = [
+        f"- 已记录本地验收命令 {len(rows)} 条，通过 {passed} 条。",
+        "- 真实业务接口测试是否执行需以授权环境和执行报告为准。",
+    ]
+
+    skipped = compact_markdown_items(section_text(content, "未执行的真实业务接口测试"), max_items=2)
+    lines.extend(f"- 未执行说明：{item.lstrip('- ').strip()}" for item in skipped)
+    return "\n".join(lines)
+
+
+def summarize_failure_analysis(workspace: Path) -> str:
+    content = read_text_if_exists(workspace / "60-failure-analysis/failure-analysis.md")
+    if not content:
+        return "- 未找到失败分析草稿。"
+
+    framework = section_text(content, "失败分类框架")
+    _, rows = parse_markdown_table(framework)
+    items = [f"已记录失败分类示例 {len(rows)} 条。"] if rows else []
+    intro = document_intro_items(content, max_items=2)
+    items.extend(intro)
+    items.append("真实缺陷结论必须等待人工确认和真实失败证据。")
+    return bullet_lines(items)
+
+
+def collect_human_confirmation_items(metadata: dict[str, Any], workspace: Path) -> str:
+    items: list[str] = []
+    review_gates = metadata.get("review_gates", [])
+    if isinstance(review_gates, list):
+        for gate in review_gates:
+            if not isinstance(gate, dict):
+                continue
+            status = gate.get("status")
+            if status in BLOCKING_STATUSES:
+                name = gate.get("name", "未命名审核门")
+                owner = gate.get("owner", "待指定")
+                items.append(f"{name}：{status}，负责人 {owner}。")
+
+    paths = [
+        workspace / "10-analysis/requirement-analysis.md",
+        workspace / "20-testcases/testcases.md",
+        workspace / "30-api-tests/api-test-plan.md",
+        workspace / "50-execution-results/execution-report.md",
+        workspace / "60-failure-analysis/failure-analysis.md",
+    ]
     for path in paths:
-        if path.is_file():
-            content = path.read_text(encoding="utf-8").strip()
-            if content:
-                return content[:max_chars]
-    return "未找到可用内容。"
+        content = read_text_if_exists(path)
+        if not content:
+            continue
+        relative = path.relative_to(workspace).as_posix()
+        for heading in ("待人工确认", "待人工审核"):
+            for item in compact_markdown_items(section_text(content, heading), max_items=4):
+                items.append(f"{relative}：{item.lstrip('- ').strip()}")
+
+    deduped = list(dict.fromkeys(items))[:11]
+    deduped.append("正式 `qa-report.md` 只能在人工确认后生成。")
+    return bullet_lines(deduped)
 
 
 def generate_markdown_report(workspace_path: Path | str) -> Path:
@@ -307,18 +575,12 @@ def generate_markdown_report(workspace_path: Path | str) -> Path:
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / "qa-report-draft.md"
 
-    requirement_summary = first_existing_text(
-        [workspace / "10-analysis/requirement-analysis.md", workspace / "requirement.md"]
-    )
-    testcase_summary = first_existing_text([workspace / "20-testcases/testcases.md"])
-    execution_summary = first_existing_text(
-        [
-            workspace / "50-execution-results/execution-report.md",
-            workspace / "50-execution-results/test-results-summary.md",
-            workspace / "50-execution-results/pytest-report.json",
-        ]
-    )
-    failure_summary = first_existing_text([workspace / "60-failure-analysis/failure-analysis.md"])
+    artifacts = artifact_index(metadata, workspace)
+    requirement_summary = summarize_requirement_analysis(workspace)
+    testcase_summary = summarize_testcases(workspace)
+    execution_summary = summarize_execution(workspace)
+    failure_summary = summarize_failure_analysis(workspace)
+    confirmation_items = collect_human_confirmation_items(metadata, workspace)
 
     report = f"""---
 status: needs_human_confirmation
@@ -338,7 +600,11 @@ generated_by: scripts/generate_markdown_report.py
 - 正式报告路径：{workspace.as_posix()}/80-reports/qa-report.md
 - 当前报告不得作为正式发布结论。
 
-## 需求与分析摘要
+## 产物索引
+
+{artifacts}
+
+## 需求分析摘要
 
 {requirement_summary}
 
@@ -346,7 +612,7 @@ generated_by: scripts/generate_markdown_report.py
 
 {testcase_summary}
 
-## 执行结果摘要
+## 自动化与执行摘要
 
 {execution_summary}
 
@@ -354,17 +620,21 @@ generated_by: scripts/generate_markdown_report.py
 
 {failure_summary}
 
+## 风险与阻塞项
+
+- metadata 中仍存在待审核或待确认状态时，不允许归档。
+- 未提供授权非生产环境前，不应把示例 API 脚本结果作为真实业务测试结论。
+- 当前报告只提供摘要和产物索引，完整证据需通过上方路径人工查看。
+
+## 待人工确认项
+
+{confirmation_items}
+
 ## 结论草稿
 
 - 当前报告由脚本生成，结论必须经过人工确认。
 - 若存在未审核或未确认状态，不允许归档。
-
-## 待人工确认
-
-- 需求理解是否准确。
-- 用例覆盖是否充分。
-- 自动化结果是否可信。
-- 缺陷判断和发布建议是否可接受。
+- 当前报告不得作为正式发布结论。
 """
     report_path.write_text(report, encoding="utf-8")
     return report_path

@@ -2,6 +2,8 @@
 
 Codex 接到自然语言命令后，先识别意图，再路由到对应 SOP 和 Workflow。
 
+所有任务完成后的 Chat 回复必须遵守 `rules/codex-output-rules.md`：不粘贴完整大文件或完整 diff，只输出摘要、关键路径、验收结果和待人工确认项。
+
 ## 路由表
 
 | 用户意图关键词 | Workflow | Task | Agent | Prompt | Rules | Skills/Knowledge | 输入 | 输出 | 状态 |
@@ -40,6 +42,7 @@ Codex 接到自然语言命令后，先识别意图，再路由到对应 SOP 和
 - 若命令包含“直接执行”“跑测试”，仍需检查执行环境、测试数据和风险。
 - 若命令包含“归档”，必须先运行 `scripts/archive_requirement.py` 的审核状态检查。
 - AI 生成的 QA 报告只能写入 `prd/<id>/80-reports/qa-report-draft.md`；人工确认后的正式报告可命名为 `qa-report.md`。
+- 大段产物内容必须写入仓库文件，Chat 中只提供文件路径和摘要。
 
 ## 推荐命令格式
 

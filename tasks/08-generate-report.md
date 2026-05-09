@@ -23,6 +23,7 @@
 - `workflows/08-report-generation-workflow.md`
 - `prompts/report-generation-prompt.md`
 - `rules/status-rules.md`
+- `rules/codex-output-rules.md`
 - `skills/qa-report-writing-skill.md`
 - `knowledge/templates/qa-report-template.md`
 
@@ -42,6 +43,7 @@
 ## 禁止事项
 
 - 不输出未经确认的正式结论。
+- 不把完整上游 Markdown 原文大段粘贴进报告。
 
 ## 验收标准
 
