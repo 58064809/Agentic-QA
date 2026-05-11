@@ -27,6 +27,7 @@ ANALYSIS_CONTEXT_FILES = [
     "rules/artifact-path-rules.md",
     "skills/requirement-decomposition-skill.md",
     "skills/business-rule-extraction-skill.md",
+    "knowledge/templates/requirement-analysis-template.md",
 ]
 TESTCASE_CONTEXT_FILES = [
     "AGENTS.md",
@@ -39,6 +40,11 @@ TESTCASE_CONTEXT_FILES = [
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
     "skills/test-design-skill.md",
+    "skills/equivalence-partitioning-skill.md",
+    "skills/boundary-value-analysis-skill.md",
+    "skills/scenario-modeling-skill.md",
+    "skills/state-transition-modeling-skill.md",
+    "skills/risk-based-testing-skill.md",
     "knowledge/templates/testcase-template.md",
 ]
 REQUIRED_PRD_FILES = ["metadata.yml", "requirement.md"]

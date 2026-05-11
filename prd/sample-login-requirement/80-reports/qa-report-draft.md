@@ -12,7 +12,7 @@ generated_by: scripts/generate_markdown_report.py
 - 需求 ID：sample-login-requirement
 - 当前状态：draft
 - 负责人：QA Owner
-- 报告生成时间：2026-05-09T01:52:53+00:00
+- 报告生成时间：2026-05-09T02:48:03+00:00
 - 正式报告路径：prd/sample-login-requirement/80-reports/qa-report.md
 - 当前报告不得作为正式发布结论。
 

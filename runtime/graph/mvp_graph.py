@@ -25,6 +25,7 @@ from runtime.graph.nodes.mvp_quality import (
     requirement_analysis_quality_check_node,
     testcase_mvp_quality_check_node,
 )
+from runtime.graph.nodes.requirement_normalizer import normalize_requirement_document
 from runtime.graph.state import (
     GraphQAWorkflowState,
     QAWorkflowState,
@@ -87,6 +88,10 @@ def build_mvp_generation_graph(repo_root: Path):
         _wrap_node(lambda state: mvp_context_loader_node(state, root)),
     )
     graph.add_node(
+        "requirement_normalizer_node",
+        _wrap_node(lambda state: normalize_requirement_document(state, root)),
+    )
+    graph.add_node(
         "requirement_analysis_generation_node",
         _wrap_node(requirement_analysis_generation_node),
     )
@@ -114,6 +119,11 @@ def build_mvp_generation_graph(repo_root: Path):
     )
     graph.add_conditional_edges(
         "mvp_workflow_selector_node",
+        _route_errors,
+        {"ok": "requirement_normalizer_node", "error": END},
+    )
+    graph.add_conditional_edges(
+        "requirement_normalizer_node",
         _route_errors,
         {"ok": "mvp_context_loader_node", "error": END},
     )

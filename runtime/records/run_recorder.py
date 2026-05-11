@@ -46,6 +46,7 @@ def result_to_summary(result: RuntimeResult, created_at: str) -> dict[str, objec
         "wrote_file": result.wrote_file,
         "review_status": result.review_status,
         "llm": result.llm,
+        "requirement_normalization": result.requirement_normalization,
         "errors": result.errors,
         "warnings": result.warnings,
         "quality_errors": result.quality_errors,
@@ -87,6 +88,14 @@ def render_markdown_summary(summary: dict[str, object]) -> str:
 - base_url：{dict(summary["llm"]).get("base_url")}
 - model：{dict(summary["llm"]).get("model")}
 - calls：{dict(summary["llm"]).get("calls")}
+
+## 需求文档归一化
+
+- performed：{dict(summary["requirement_normalization"]).get("performed")}
+- source_path：{dict(summary["requirement_normalization"]).get("source_path")}
+- output_path：{dict(summary["requirement_normalization"]).get("output_path")}
+- source_type：{dict(summary["requirement_normalization"]).get("source_type")}
+- skipped_reason：{dict(summary["requirement_normalization"]).get("skipped_reason")}
 
 ## 文件与产物
 

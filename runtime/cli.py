@@ -103,6 +103,15 @@ def print_summary(result) -> None:
             f"model={result.llm.get('model')}, "
             f"calls={result.llm.get('calls')}"
         )
+    if result.requirement_normalization:
+        normalization = result.requirement_normalization
+        print(
+            "- 需求文档归一化: "
+            f"performed={normalization.get('performed')}, "
+            f"source={normalization.get('source_path') or '无'}, "
+            f"output={normalization.get('output_path') or '无'}, "
+            f"reason={normalization.get('skipped_reason') or '无'}"
+        )
     print(f"- Run ID: {result.run_id or '未生成'}")
     if result.run_summary_json and result.run_summary_md:
         print(f"- 运行记录 JSON: {result.run_summary_json}")

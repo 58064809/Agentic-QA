@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from runtime.llm import openai_compatible  # noqa: E402
 from runtime.llm.config import (  # noqa: E402
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
     OpenAICompatibleConfig,
 )
+from runtime.llm.openai_compatible import OpenAICompatibleAdapter  # noqa: E402
 from runtime.llm.prompt_builder import build_requirement_analysis_prompt  # noqa: E402
 
 
@@ -67,3 +70,70 @@ def test_prompt_builder_truncates_large_context():
 
     assert len(result.prompt) < 1200
     assert result.warnings == ["LLM Prompt 输入超过 120 字符，已截断。"]
+
+
+def test_openai_adapter_prefers_responses_create(monkeypatch):
+    calls = {"responses": 0, "chat": 0}
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            calls["responses"] += 1
+            assert kwargs["model"] == "demo-model"
+            assert kwargs["input"][1]["content"] == "prompt text"
+            return SimpleNamespace(output_text="responses markdown")
+
+    class FakeChatCompletions:
+        def create(self, **kwargs):
+            calls["chat"] += 1
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="chat markdown"))]
+            )
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            assert kwargs["api_key"] == "local-secret"
+            assert kwargs["base_url"] == "https://example.test/v1"
+            self.responses = FakeResponses()
+            self.chat = SimpleNamespace(completions=FakeChatCompletions())
+
+    monkeypatch.setattr(openai_compatible, "OpenAI", FakeOpenAI)
+    config = OpenAICompatibleConfig(
+        api_key="local-secret",
+        base_url="https://example.test/v1",
+        model="demo-model",
+    )
+
+    content = OpenAICompatibleAdapter(config).generate_text("prompt text")
+
+    assert content == "responses markdown"
+    assert calls == {"responses": 1, "chat": 0}
+
+
+def test_openai_adapter_falls_back_to_chat_completions(monkeypatch):
+    calls = {"responses": 0, "chat": 0}
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            calls["responses"] += 1
+            raise AttributeError("responses not supported")
+
+    class FakeChatCompletions:
+        def create(self, **kwargs):
+            calls["chat"] += 1
+            assert kwargs["messages"][1]["content"] == "prompt text"
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="chat markdown"))]
+            )
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            self.responses = FakeResponses()
+            self.chat = SimpleNamespace(completions=FakeChatCompletions())
+
+    monkeypatch.setattr(openai_compatible, "OpenAI", FakeOpenAI)
+    config = OpenAICompatibleConfig(api_key="local-secret", model="demo-model")
+
+    content = OpenAICompatibleAdapter(config).generate_text("prompt text")
+
+    assert content == "chat markdown"
+    assert calls == {"responses": 1, "chat": 1}

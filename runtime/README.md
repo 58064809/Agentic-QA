@@ -7,9 +7,13 @@
 - 010 使用 LangGraph `StateGraph` 编排测试用例生成最小流程。
 - 011 已加入本地运行记录。
 - 012 支持需求分析草稿、测试用例草稿和 MVP 连续链路。
+- 012A 已将默认输出提升为评审级草稿：需求分析包含 12 个评审章节，测试用例简单需求不少于 15 条，并覆盖主流程、分支、权限、状态、边界、异常、幂等、数据一致性、兼容和回归风险。
+- 012B 补强质量门：低质量 Skeleton、空待确认问题、少量示例用例、非法优先级和额外“用例类型”列不能误通过。
+- 013 已接入 Microsoft MarkItDown，在 `analyze`、`generate-testcases` 和 `mvp` 的上下文加载前把 Word/PDF/TXT/HTML 等需求源文件归一化为 `requirement.md`。
 - LLM 默认关闭，必须通过 `--use-llm` 显式启用。
 - LLM 配置只从本地环境变量读取：`FREEMODEL_API_KEY`、`FREEMODEL_BASE_URL`、`FREEMODEL_MODEL`。
-- 缺少密钥或未启用 LLM 时，Runtime 降级生成 Skeleton 草稿。
+- LLM 调用优先使用 OpenAI-compatible `responses.create`，如果 SDK 或服务不支持，再 fallback 到 `chat.completions.create`。
+- 缺少密钥或未启用 LLM 时，Runtime 降级生成确定性评审级草稿。
 - 当前不接入 LangChain ChatModel。
 - 当前不接入持久化 Checkpointer。
 - 默认 dry-run，不写入业务产物，但会写运行记录。
@@ -29,6 +33,26 @@ python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/sa
 python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement
 ```
 
+## 需求文档归一化
+
+Runtime 会优先使用已有 `prd/<id>/requirement.md`，不会覆盖它。如果目标工作区没有 `requirement.md`，会按固定优先级查找并转换以下文件：
+
+```text
+requirement.docx
+requirement.pdf
+requirement.txt
+requirement.html
+requirement.htm
+requirement.rtf
+需求.docx
+需求.pdf
+需求.txt
+需求.html
+需求.htm
+```
+
+转换输出固定为 `prd/<id>/requirement.md`。如果多个源文件同时存在，Runtime 按优先级选择一个并在 warnings 中说明。该转换是受控输入归一化写入，不需要 `--approve-write`；QA 产物写入仍必须显式传 `--approve-write`。
+
 禁用运行记录：
 
 ```bash
@@ -45,6 +69,8 @@ python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例
 ```
 
 写入后仍然必须人工审核，状态保持 `needs_human_review`。如果目标 `10-analysis/requirement-analysis.md` 或 `20-testcases/testcases.md` 已存在，Runtime 默认拒绝覆盖。
+
+质量门会阻断以下输出：缺少 `needs_human_review`、缺少需求分析 12 个必要章节、待确认问题少于 3 个、业务规则/风险/映射为空、测试用例少于 15 条、缺少 P0、优先级不属于 `P0/P1/P2/P3`、表头新增“用例类型”、表格列数不是固定 5 列、缺少至少 4 类关键覆盖维度，或仍包含纯模板占位语。
 
 显式启用 LLM：
 

@@ -53,7 +53,16 @@ AI 生成 -> 人审核 -> AI 执行 -> 人确认 -> AI 归档
 - Runtime MVP 提供轻量 OpenAI-compatible adapter，但默认关闭，必须通过 `--use-llm` 显式启用。
 - 密钥只从本地环境变量读取，不写入仓库文件，也不写入 `.runtime/runs/` 运行记录。
 - 当前默认环境变量为 `FREEMODEL_API_KEY`、`FREEMODEL_BASE_URL`、`FREEMODEL_MODEL`。
-- 未启用 LLM 或缺少密钥时，Runtime 会降级生成 Skeleton 草稿，不直接失败。
+- LLM 调用优先使用 OpenAI-compatible `responses.create`，服务或 SDK 不支持时再 fallback 到 `chat.completions.create`。
+- 未启用 LLM 或缺少密钥时，Runtime 会降级生成确定性评审级草稿，不直接失败。
+
+## 需求文档归一化
+
+- Runtime MVP 已接入 Microsoft MarkItDown，`analyze`、`generate-testcases` 和 `mvp` 会先检查目标 PRD 工作区内的需求源文件。
+- 如果 `prd/<id>/requirement.md` 已存在，Runtime 直接使用它，不转换也不覆盖。
+- 如果没有 `requirement.md`，Runtime 会按固定优先级查找 `requirement.docx`、`requirement.pdf`、`requirement.txt`、`requirement.html`、`requirement.htm`、`requirement.rtf`，以及 `需求.docx`、`需求.pdf`、`需求.txt`、`需求.html`、`需求.htm`。
+- 找到受支持源文件后，Runtime 会将其转换为 `prd/<id>/requirement.md`，再继续需求分析和测试用例生成。
+- 不做目录递归扫描或批量导入，不提交真实业务 Word/PDF 文件；原始需求应只放在目标 PRD 工作区内。
 
 ## 目录说明
 
@@ -113,7 +122,7 @@ ruff check .
 
 ## Runtime MVP
 
-第 2 阶段 Runtime 已使用 LangGraph `StateGraph` 编排 MVP 流程，支持需求分析草稿、测试用例草稿，以及连续生成“需求分析 + 测试用例”。Runtime 不连接真实业务环境，不执行真实测试，不生成 API/UI 自动化脚本。默认命令为 dry-run，不写入业务产物：
+第 2 阶段 Runtime 已使用 LangGraph `StateGraph` 编排 MVP 流程，支持需求分析草稿、测试用例草稿，以及连续生成“需求分析 + 测试用例”。012A 已将默认输出提升为评审级草稿：需求分析固定输出 12 个评审章节，测试用例固定使用 `标题 | 优先级 | 前置条件 | 测试步骤 | 预期结果` 表头，简单需求默认满足不少于 15 条用例的质量门。Runtime 不连接真实业务环境，不执行真实测试，不生成 API/UI 自动化脚本。默认命令为 dry-run，不写入业务产物：
 
 ```bash
 python -m runtime.cli analyze "帮我分析这个需求" --prd prd/sample-login-requirement
@@ -125,6 +134,8 @@ python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例
 只有显式传入 `--approve-write` 才允许写入草稿。`analyze` 写入 `prd/<id>/10-analysis/requirement-analysis.md`，`generate-testcases` 写入 `prd/<id>/20-testcases/testcases.md`，`mvp` 同时写入两类草稿。若任一目标文件已存在，Runtime 默认拒绝覆盖；`mvp` 会拒绝部分写入。写入后的状态仍为 `needs_human_review`，不得继续自动生成 API/UI 脚本或归档。
 
 Runtime 默认会在 `.runtime/runs/` 下生成本地运行记录，用于追踪节点轨迹、加载文件、输出路径、错误和审核状态。运行记录不应提交到 Git；如只想执行流程而不生成记录，可传入 `--no-record-run`。
+
+MVP 质量门会检查需求分析是否包含 `needs_human_review`、12 个必要章节、至少 3 个具体待确认问题、实质业务规则、风险点与影响面、需求到测试覆盖映射；测试用例会检查固定 5 列表头、至少 15 条非表头用例、P0 用例、合法优先级、至少 4 类关键覆盖场景，并拒绝 Skeleton 占位语和“用例类型”等额外列。
 
 LLM 默认关闭。显式传入 `--use-llm` 后，Runtime 从本地环境变量读取配置：
 

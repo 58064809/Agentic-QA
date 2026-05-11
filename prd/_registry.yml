@@ -1,5 +1,9 @@
 requirements:
-  - requirement_id: sample-login-requirement
-    title: 手机号密码登录
-    path: prd/sample-login-requirement
-    status: draft
+- requirement_id: sample-login-requirement
+  title: 手机号密码登录
+  path: prd/sample-login-requirement
+  status: draft
+- requirement_id: demo-requirement
+  title: Demo Requirement
+  path: prd/demo-requirement
+  status: draft

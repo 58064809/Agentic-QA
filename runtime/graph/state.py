@@ -6,6 +6,16 @@ from typing import Any, TypedDict
 from runtime.llm.config import default_llm_metadata
 
 
+def default_requirement_normalization() -> dict[str, Any]:
+    return {
+        "performed": False,
+        "source_path": None,
+        "output_path": None,
+        "source_type": None,
+        "skipped_reason": None,
+    }
+
+
 class GraphQAWorkflowState(TypedDict, total=False):
     user_input: str
     prd_path: str
@@ -25,6 +35,7 @@ class GraphQAWorkflowState(TypedDict, total=False):
     use_llm: bool
     max_llm_calls: int
     llm: dict[str, Any]
+    requirement_normalization: dict[str, Any]
     errors: list[str]
     warnings: list[str]
     executed_nodes: list[str]
@@ -56,6 +67,9 @@ class QAWorkflowState:
     use_llm: bool = False
     max_llm_calls: int = 0
     llm: dict[str, Any] = field(default_factory=default_llm_metadata)
+    requirement_normalization: dict[str, Any] = field(
+        default_factory=default_requirement_normalization
+    )
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     executed_nodes: list[str] = field(default_factory=list)
@@ -94,6 +108,7 @@ def to_graph_state(state: QAWorkflowState) -> GraphQAWorkflowState:
         "use_llm": state.use_llm,
         "max_llm_calls": state.max_llm_calls,
         "llm": dict(state.llm),
+        "requirement_normalization": dict(state.requirement_normalization),
         "errors": list(state.errors),
         "warnings": list(state.warnings),
         "executed_nodes": list(state.executed_nodes),
@@ -148,6 +163,10 @@ def from_graph_state(graph_state: GraphQAWorkflowState) -> QAWorkflowState:
         use_llm=bool(graph_state.get("use_llm", False)),
         max_llm_calls=int(graph_state.get("max_llm_calls", 0) or 0),
         llm={**default_llm_metadata(), **_get_any_dict(graph_state, "llm")},
+        requirement_normalization={
+            **default_requirement_normalization(),
+            **_get_any_dict(graph_state, "requirement_normalization"),
+        },
         errors=_get_list(graph_state, "errors"),
         warnings=_get_list(graph_state, "warnings"),
         executed_nodes=_get_list(graph_state, "executed_nodes"),

@@ -75,6 +75,8 @@ Workflow Selector：匹配 workflows/*.md
   ↓
 Context Loader：加载 PRD、Rules、Skills、Prompt、Knowledge
   ↓
+Requirement Normalizer：必要时将 Word/PDF/TXT/HTML 需求源文件转换为 requirement.md
+  ↓
 Requirement Analyzer / Testcase Agent / Script Agent
   ↓
 Quality Checker：质量检查
@@ -250,4 +252,4 @@ metadata_update_node
 4. `011-runtime-persistence-and-run-records.md`：加入 Checkpoint、运行记录和状态恢复。
 5. `012-runtime-qa-tool-integration.md`：接入 pytest、Playwright、Allure 和日志分析工具。
 
-当前进展：StateGraph 编排已接入测试用例生成最小流程；011 已加入本地运行记录；012 已打通需求分析草稿、测试用例草稿和 MVP 连续链路。LLM 默认关闭，仅通过 `--use-llm` 显式启用，并只读取本地环境变量。真正可恢复 Checkpoint、Resume 和复杂 Human-in-the-loop 仍在后续任务中完成。
+当前进展：StateGraph 编排已接入测试用例生成最小流程；011 已加入本地运行记录；012 已打通需求分析草稿、测试用例草稿和 MVP 连续链路；012A 已把默认输出和质量门提升到评审级；012B 已补强质量门，低质量 Skeleton、空待确认问题、少量示例用例、非法优先级和额外“用例类型”列不能误通过；013 已接入 MarkItDown，将目标 PRD 工作区内的 Word/PDF/TXT/HTML 等需求源文件转换为 `requirement.md` 后再分析。LLM 默认关闭，仅通过 `--use-llm` 显式启用，并只读取本地环境变量；OpenAI-compatible 调用优先使用 `responses.create`，不可用时 fallback 到 `chat.completions.create`。真正可恢复 Checkpoint、Resume 和复杂 Human-in-the-loop 仍在后续任务中完成。
