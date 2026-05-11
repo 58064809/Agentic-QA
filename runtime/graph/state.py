@@ -16,6 +16,15 @@ def default_requirement_normalization() -> dict[str, Any]:
     }
 
 
+def default_prototype_notes() -> dict[str, Any]:
+    return {
+        "loaded": False,
+        "path": None,
+        "requirement_has_images": False,
+        "warning": None,
+    }
+
+
 class GraphQAWorkflowState(TypedDict, total=False):
     user_input: str
     prd_path: str
@@ -36,6 +45,7 @@ class GraphQAWorkflowState(TypedDict, total=False):
     max_llm_calls: int
     llm: dict[str, Any]
     requirement_normalization: dict[str, Any]
+    prototype_notes: dict[str, Any]
     errors: list[str]
     warnings: list[str]
     executed_nodes: list[str]
@@ -70,6 +80,7 @@ class QAWorkflowState:
     requirement_normalization: dict[str, Any] = field(
         default_factory=default_requirement_normalization
     )
+    prototype_notes: dict[str, Any] = field(default_factory=default_prototype_notes)
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     executed_nodes: list[str] = field(default_factory=list)
@@ -109,6 +120,7 @@ def to_graph_state(state: QAWorkflowState) -> GraphQAWorkflowState:
         "max_llm_calls": state.max_llm_calls,
         "llm": dict(state.llm),
         "requirement_normalization": dict(state.requirement_normalization),
+        "prototype_notes": dict(state.prototype_notes),
         "errors": list(state.errors),
         "warnings": list(state.warnings),
         "executed_nodes": list(state.executed_nodes),
@@ -166,6 +178,10 @@ def from_graph_state(graph_state: GraphQAWorkflowState) -> QAWorkflowState:
         requirement_normalization={
             **default_requirement_normalization(),
             **_get_any_dict(graph_state, "requirement_normalization"),
+        },
+        prototype_notes={
+            **default_prototype_notes(),
+            **_get_any_dict(graph_state, "prototype_notes"),
         },
         errors=_get_list(graph_state, "errors"),
         warnings=_get_list(graph_state, "warnings"),

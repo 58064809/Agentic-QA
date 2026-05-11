@@ -47,6 +47,7 @@ def result_to_summary(result: RuntimeResult, created_at: str) -> dict[str, objec
         "review_status": result.review_status,
         "llm": result.llm,
         "requirement_normalization": result.requirement_normalization,
+        "prototype_notes": result.prototype_notes,
         "errors": result.errors,
         "warnings": result.warnings,
         "quality_errors": result.quality_errors,
@@ -96,6 +97,13 @@ def render_markdown_summary(summary: dict[str, object]) -> str:
 - output_path：{dict(summary["requirement_normalization"]).get("output_path")}
 - source_type：{dict(summary["requirement_normalization"]).get("source_type")}
 - skipped_reason：{dict(summary["requirement_normalization"]).get("skipped_reason")}
+
+## 原型图说明
+
+- loaded：{dict(summary["prototype_notes"]).get("loaded")}
+- path：{dict(summary["prototype_notes"]).get("path")}
+- requirement_has_images：{dict(summary["prototype_notes"]).get("requirement_has_images")}
+- warning：{dict(summary["prototype_notes"]).get("warning")}
 
 ## 文件与产物
 

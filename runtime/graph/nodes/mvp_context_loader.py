@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from runtime.graph.nodes.context_loader import resolve_prd_path
@@ -28,6 +29,7 @@ ANALYSIS_CONTEXT_FILES = [
     "skills/requirement-decomposition-skill.md",
     "skills/business-rule-extraction-skill.md",
     "knowledge/templates/requirement-analysis-template.md",
+    "knowledge/templates/prototype-notes-template.md",
 ]
 TESTCASE_CONTEXT_FILES = [
     "AGENTS.md",
@@ -46,8 +48,10 @@ TESTCASE_CONTEXT_FILES = [
     "skills/state-transition-modeling-skill.md",
     "skills/risk-based-testing-skill.md",
     "knowledge/templates/testcase-template.md",
+    "knowledge/templates/prototype-notes-template.md",
 ]
 REQUIRED_PRD_FILES = ["metadata.yml", "requirement.md"]
+IMAGE_MARKDOWN_RE = re.compile(r"!\[[^\]]*]\([^)]+\)")
 
 
 def mvp_command_router_node(state: QAWorkflowState) -> QAWorkflowState:
@@ -105,6 +109,44 @@ def _set_output_paths(state: QAWorkflowState, repo_root: Path, prd_path: Path) -
         state.output_path = testcase_path
 
 
+def _load_prototype_notes(
+    state: QAWorkflowState,
+    repo_root: Path,
+    prd_path: Path,
+    requirement_content: str,
+) -> None:
+    prototype_notes = prd_path / "prototype-notes.md"
+    prototype_relative_path = prototype_notes.relative_to(repo_root).as_posix()
+    requirement_has_images = bool(IMAGE_MARKDOWN_RE.search(requirement_content))
+
+    state.prototype_notes["requirement_has_images"] = requirement_has_images
+    if prototype_notes.is_file():
+        state.loaded_files[prototype_relative_path] = read_utf8(prototype_notes)
+        state.prototype_notes.update(
+            {
+                "loaded": True,
+                "path": prototype_relative_path,
+                "warning": None,
+            }
+        )
+        return
+
+    warning = "未发现 prototype-notes.md，如需求包含原型图，建议补充原型图说明。"
+    if requirement_has_images:
+        warning = (
+            "requirement.md 包含图片引用，但未发现 prototype-notes.md；"
+            "当前不会直接分析图片二进制，请补充原型图说明。"
+        )
+    state.warnings.append(warning)
+    state.prototype_notes.update(
+        {
+            "loaded": False,
+            "path": None,
+            "warning": warning,
+        }
+    )
+
+
 def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
     state.record_node("mvp_context_loader_node")
     if state.errors:
@@ -122,13 +164,19 @@ def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkfl
     state.loaded_files.update(loaded)
     state.errors.extend(errors)
 
+    requirement_content = ""
     for filename in REQUIRED_PRD_FILES:
         path = prd_path / filename
         relative_path = path.relative_to(repo_root).as_posix()
         if not path.is_file():
             state.errors.append(f"缺少 PRD 必需文件: {relative_path}")
             continue
-        state.loaded_files[relative_path] = read_utf8(path)
+        content = read_utf8(path)
+        state.loaded_files[relative_path] = content
+        if filename == "requirement.md":
+            requirement_content = content
+
+    _load_prototype_notes(state, repo_root, prd_path, requirement_content)
 
     api_doc = prd_path / "api-doc.md"
     if api_doc.is_file():

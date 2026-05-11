@@ -33,6 +33,9 @@ class RequirementContext:
     pending_items: list[str]
     endpoints: list[str]
     fields: list[str]
+    prototype_notes: str
+    has_prototype_notes: bool
+    requirement_has_images: bool
 
 
 def _prd_prefix(state: QAWorkflowState) -> str:
@@ -124,6 +127,7 @@ def _format_numbered(items: list[str], fallback: str) -> str:
 
 def _build_requirement_context(state: QAWorkflowState) -> RequirementContext:
     requirement = _path_content(state, "requirement.md")
+    prototype_notes = _path_content(state, "prototype-notes.md")
     api_doc = _path_content(state, "api-doc.md")
     metadata = _path_content(state, "metadata.yml")
     title = (
@@ -153,6 +157,9 @@ def _build_requirement_context(state: QAWorkflowState) -> RequirementContext:
         pending_items=pending_items,
         endpoints=_api_endpoints(api_doc),
         fields=_json_fields(requirement, api_doc),
+        prototype_notes=prototype_notes,
+        has_prototype_notes=bool(prototype_notes.strip()),
+        requirement_has_images=bool(state.prototype_notes.get("requirement_has_images")),
     )
 
 
@@ -216,6 +223,38 @@ def _render_mapping_rows(context: RequirementContext) -> str:
     return "\n".join(rows)
 
 
+def _prototype_analysis_note(context: RequirementContext) -> str:
+    if context.has_prototype_notes:
+        return (
+            "- 已读取 `prototype-notes.md`，分析应覆盖页面入口、字段、按钮、"
+            "默认/空/异常状态、弹窗、提示文案、权限差异和跳转逻辑。"
+        )
+    if context.requirement_has_images:
+        return (
+            "- 待确认：`requirement.md` 包含图片引用，但缺少 `prototype-notes.md`；"
+            "当前不会直接分析图片二进制，UI 展示、交互和字段校验存在覆盖缺口。"
+        )
+    return "- 待确认：如需求包含原型图，请补充 `prototype-notes.md`。"
+
+
+def _prototype_pending_questions(context: RequirementContext) -> list[str]:
+    if context.has_prototype_notes:
+        return [
+            "prototype-notes.md 中页面入口、字段规则、按钮状态和错误文案是否已由产品确认？",
+            "不同角色或业务状态下按钮是否可见、可点击、禁用是否已确认？",
+            "原型中的弹窗、跳转、埋点、日志、消息或通知是否需要进入验收范围？",
+        ]
+    if context.requirement_has_images:
+        return [
+            "requirement.md 包含原型图片，但未提供 prototype-notes.md，页面入口和布局如何确认？",
+            "原型图中的字段、按钮、弹窗和错误文案是否需要补充为文字说明？",
+            "当前不直接分析图片二进制，是否允许仅基于需求文本生成首版 QA 草稿？",
+        ]
+    return [
+        "如需求包含原型图，是否需要补充 prototype-notes.md 说明页面结构和交互？",
+    ]
+
+
 def _render_login_analysis(context: RequirementContext, source_lines: str) -> str:
     endpoints = _format_bullets(
         [f"`{endpoint}`" for endpoint in context.endpoints],
@@ -223,11 +262,16 @@ def _render_login_analysis(context: RequirementContext, source_lines: str) -> st
     )
     fields = ", ".join(context.fields or ["phone", "password", "access_token", "expires_in"])
     pending = _format_bullets(
-        context.pending_items
-        or [
-            "锁定计数维度需确认是账号、手机号、设备、IP 还是组合维度。",
-            "锁定剩余时间字段名、单位和是否必须返回需接口负责人确认。",
-            "token 有效期、刷新策略和服务端失效策略需安全负责人确认。",
+        [
+            *(
+                context.pending_items
+                or [
+                    "锁定计数维度需确认是账号、手机号、设备、IP 还是组合维度。",
+                    "锁定剩余时间字段名、单位和是否必须返回需接口负责人确认。",
+                    "token 有效期、刷新策略和服务端失效策略需安全负责人确认。",
+                ]
+            ),
+            *_prototype_pending_questions(context),
         ],
         "待确认：PRD 未列出待确认项。",
     )
@@ -275,6 +319,8 @@ generated_by: Runtime MVP Review Grade Draft
 | 认证服务 | 校验手机号格式、密码、错误次数、锁定状态并签发 token | 锁定计数维度和 token 失效策略待确认 |
 | 产品/安全/后台角色 | 确认错误文案、锁定策略、token 有效期和审计要求 | PRD 未定义后台配置入口，默认不在本次实现范围 |
 
+{_prototype_analysis_note(context)}
+
 ## 4. 主流程拆解
 
 1. 用户打开登录入口并输入手机号、密码。
@@ -295,6 +341,7 @@ generated_by: Runtime MVP Review Grade Draft
 | 锁定期间登录 | 锁定未到期，用户再次登录 | 返回 `ACCOUNT_LOCKED`，不签发 token，并提示剩余锁定时间规则待确认 |
 | token 过期访问资源 | Bearer token 已过期 | 返回 `TOKEN_EXPIRED`，提示重新登录 |
 | 接口协议差异 | HTTP 状态码与业务码实现不一致 | 进入待确认，不自行裁决 |
+| 原型交互缺口 | 原型图未转成文字说明或 prototype-notes 不完整 | 页面入口、按钮、弹窗、空状态和异常状态需补充确认 |
 
 ## 6. 业务规则清单
 
@@ -311,6 +358,7 @@ generated_by: Runtime MVP Review Grade Draft
 | 锁定解除 | 锁定超过 15 分钟 | 是否自动解除、是否重置错误计数待确认 |
 | token 有效 | 可访问受保护资源 | Authorization 格式和 token_type 一致 |
 | token 过期 | 访问受保护资源需重新登录 | 返回码、文案和客户端跳转一致 |
+| 原型字段/按钮/状态 | 以 prototype-notes.md 为准 | 展示字段、必填、错误提示、按钮可见/可点/禁用 |
 
 ## 8. 接口与依赖系统
 
@@ -337,6 +385,7 @@ generated_by: Runtime MVP Review Grade Draft
 | token 有效期和刷新策略不明确 | 登录态、客户端体验和安全风险 | 明确 expires_in、刷新和服务端失效策略 |
 | 并发错误计数 | 可能绕过 5 次锁定或提前锁定 | 设计并发和幂等验证 |
 | 前后端状态不一致 | 页面提示、接口码和数据库状态不一致 | 校验页面、接口、状态和日志一致 |
+| 原型说明缺失或不完整 | UI 展示、交互、字段校验和用例覆盖不足 | 补充 prototype-notes.md 后再评审 |
 
 ## 11. 待确认问题
 
@@ -372,10 +421,16 @@ def _render_generic_analysis(context: RequirementContext, source_lines: str) -> 
         "PRD 未提供接口文档，待补充接口路径、请求参数、响应字段、错误码和依赖系统。",
     )
     fields = ", ".join(context.fields) if context.fields else "核心业务字段待从接口文档补充"
-    pending_items = context.pending_items or [
-        "核心状态枚举、允许流转方向和终态是否可逆需产品/开发确认。",
-        "重复提交、并发处理和幂等键策略需开发确认。",
-        "前端提示、接口错误码和日志审计字段需产品/接口负责人确认。",
+    pending_items = [
+        *(
+            context.pending_items
+            or [
+                "核心状态枚举、允许流转方向和终态是否可逆需产品/开发确认。",
+                "重复提交、并发处理和幂等键策略需开发确认。",
+                "前端提示、接口错误码和日志审计字段需产品/接口负责人确认。",
+            ]
+        ),
+        *_prototype_pending_questions(context),
     ]
     pending = _format_bullets(pending_items, "待确认：PRD 未列出待确认项。")
     return f"""---
@@ -414,6 +469,8 @@ generated_by: Runtime MVP Review Grade Draft
 | 系统服务 | 执行接口校验、状态更新、消息/日志/审计写入 | 依赖失败、重试和幂等策略需确认 |
 | 审核/财务/风控角色 | 如涉及金额、库存、优惠、结算或高风险操作需参与确认 | 角色差异需在用例中单独覆盖 |
 
+{_prototype_analysis_note(context)}
+
 ## 4. 主流程拆解
 
 1. 业务用户进入功能入口并准备必要数据。
@@ -422,6 +479,7 @@ generated_by: Runtime MVP Review Grade Draft
 4. 后端根据 PRD 规则创建或更新业务记录，并返回处理结果。
 5. 前端展示成功结果、关键状态和后续可操作入口。
 6. 系统按需求写入日志、消息、通知或审计记录；如 PRD 未说明则列入待确认。
+7. 如存在 prototype-notes.md，应按页面入口、按钮、跳转逻辑和弹窗反馈补充 UI 主流程。
 
 ## 5. 分支流程与异常流程
 
@@ -433,6 +491,7 @@ generated_by: Runtime MVP Review Grade Draft
 | 状态不允许 | 数据处于已取消、已失效、已完成或不可编辑状态 | 阻断状态流转，保持原状态 |
 | 重复/并发提交 | 用户重复点击、接口重放或并发请求 | 保持幂等，不重复扣减、发放、结算或通知 |
 | 依赖失败 | 商品、订单、支付、库存、优惠、会员、消息等依赖异常 | 明确失败原因，支持重试或补偿策略待确认 |
+| 原型展示异常 | 空状态、加载失败、弹窗文案或按钮状态不清 | 按 prototype-notes.md 或产品确认结果补充 |
 
 ## 6. 业务规则清单
 
@@ -448,6 +507,7 @@ generated_by: Runtime MVP Review Grade Draft
 | 成功/完成 | 主流程处理成功 | 状态终态、消息、日志和后续入口 |
 | 失败/拒绝/取消/失效 | 异常或人工操作导致终止 | 原因记录、可恢复性和用户提示 |
 | 历史数据 | 老版本字段缺失或状态枚举差异 | 兼容展示、筛选、编辑和接口返回 |
+| 原型字段/按钮/状态 | 原型说明中的展示字段、按钮和页面状态 | 必填、格式、默认值、错误提示、可见性、可点击条件 |
 
 ## 8. 接口与依赖系统
 
@@ -472,6 +532,7 @@ generated_by: Runtime MVP Review Grade Draft
 | 并发与幂等未定义 | 重复扣减、重复发放、重复通知或状态错乱 | 设计防重键、唯一约束和并发用例 |
 | 依赖系统失败 | 订单、支付、库存、优惠、消息等链路不一致 | 明确重试、补偿和人工处理口径 |
 | 老数据兼容不足 | 历史状态无法展示或无法继续流转 | 增加兼容策略和回归用例 |
+| 原型说明缺失或不完整 | 页面展示、交互、字段校验和用例覆盖不足 | 补充 prototype-notes.md 后再评审 |
 
 ## 11. 待确认问题
 
@@ -837,6 +898,48 @@ def _generic_testcase_rows(context: RequirementContext) -> list[str]:
     ]
 
 
+def _prototype_testcase_rows(context: RequirementContext) -> list[str]:
+    if not context.has_prototype_notes:
+        return []
+    return [
+        _case_row(
+            "原型页面入口和默认展示正确",
+            "P1",
+            "已提供 prototype-notes.md，测试账号具备页面访问权限",
+            ["按原型说明进入页面", "检查页面标题、默认状态、展示字段和主要按钮"],
+            "页面入口可达；默认展示、字段、按钮和提示文案与 prototype-notes.md 一致",
+        ),
+        _case_row(
+            "原型字段必填、格式和边界校验正确",
+            "P1",
+            "页面表单字段规则已在 prototype-notes.md 中说明",
+            ["依次提交空值、非法格式、边界值和合法值", "检查页面提示和接口响应"],
+            "必填、格式、边界和错误提示符合原型说明；非法数据不落库",
+        ),
+        _case_row(
+            "原型按钮可见、可点和禁用条件正确",
+            "P1",
+            "准备不同角色和不同业务状态数据",
+            ["分别登录不同角色", "切换不同状态数据并观察按钮", "点击可用按钮"],
+            "按钮可见性、可点击条件、禁用态和点击后行为与 prototype-notes.md 一致",
+        ),
+        _case_row(
+            "原型弹窗、跳转和提示文案正确",
+            "P1",
+            "prototype-notes.md 已说明弹窗、跳转逻辑和提示文案",
+            ["触发确认弹窗、成功提示和失败提示", "检查用户操作后的系统结果"],
+            "弹窗内容、用户操作、跳转目标、成功反馈和失败反馈符合原型说明",
+        ),
+        _case_row(
+            "原型空状态、异常状态和加载失败展示正确",
+            "P2",
+            "准备无数据、接口异常或加载失败场景",
+            ["打开页面", "模拟空数据、接口错误和加载失败", "检查页面展示和可操作项"],
+            "空状态、异常状态、加载失败提示和可操作项符合 prototype-notes.md",
+        ),
+    ]
+
+
 def render_testcase_skeleton(state: QAWorkflowState) -> str:
     context = _build_requirement_context(state)
     source_lines = _render_source_files(state)
@@ -846,6 +949,7 @@ def render_testcase_skeleton(state: QAWorkflowState) -> str:
         else "PRD 工作区现有材料"
     )
     rows = _login_testcase_rows() if _is_login_context(context) else _generic_testcase_rows(context)
+    rows = [*rows, *_prototype_testcase_rows(context)]
     known_gaps = context.pending_items or [
         "PRD 未明确全部字段边界、角色矩阵、状态枚举、幂等策略和依赖失败处理口径。",
         "接口错误码、页面文案、日志/审计字段和历史数据兼容策略需人工确认。",

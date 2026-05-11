@@ -28,6 +28,7 @@ class RuntimeResult:
     max_llm_calls: int
     llm: dict[str, Any]
     requirement_normalization: dict[str, Any]
+    prototype_notes: dict[str, Any]
     errors: list[str]
     warnings: list[str]
     executed_nodes: list[str]
@@ -61,6 +62,7 @@ class RuntimeResult:
             max_llm_calls=state.max_llm_calls,
             llm=dict(state.llm),
             requirement_normalization=dict(state.requirement_normalization),
+            prototype_notes=dict(state.prototype_notes),
             errors=list(state.errors),
             warnings=list(state.warnings),
             executed_nodes=list(state.executed_nodes),

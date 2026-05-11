@@ -38,6 +38,7 @@ def create_mvp_repo(root: Path) -> Path:
         "skills/requirement-decomposition-skill.md": "需求拆解技能",
         "skills/business-rule-extraction-skill.md": "业务规则提取技能",
         "knowledge/templates/requirement-analysis-template.md": "需求分析模板",
+        "knowledge/templates/prototype-notes-template.md": "原型说明模板",
         "skills/test-design-skill.md": "测试设计技能",
         "skills/equivalence-partitioning-skill.md": "等价类技能",
         "skills/boundary-value-analysis-skill.md": "边界值技能",

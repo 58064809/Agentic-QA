@@ -112,6 +112,14 @@ def print_summary(result) -> None:
             f"output={normalization.get('output_path') or '无'}, "
             f"reason={normalization.get('skipped_reason') or '无'}"
         )
+    if result.prototype_notes:
+        prototype_notes = result.prototype_notes
+        print(
+            "- 原型图说明: "
+            f"loaded={prototype_notes.get('loaded')}, "
+            f"path={prototype_notes.get('path') or '无'}, "
+            f"requirement_has_images={prototype_notes.get('requirement_has_images')}"
+        )
     print(f"- Run ID: {result.run_id or '未生成'}")
     if result.run_summary_json and result.run_summary_md:
         print(f"- 运行记录 JSON: {result.run_summary_json}")
