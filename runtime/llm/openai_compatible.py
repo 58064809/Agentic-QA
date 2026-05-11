@@ -12,6 +12,7 @@ except ImportError:  # pragma: no cover - exercised only when dependency is abse
 SYSTEM_PROMPT = (
     "你是 Agentic-QA 的 QA 草稿生成助手，只输出可人工审核的 Markdown 草稿。"
 )
+LLM_TIMEOUT_SECONDS = 180.0
 
 
 class OpenAICompatibleAdapter:
@@ -48,8 +49,12 @@ class OpenAICompatibleAdapter:
         return content
 
     def _create_client(self) -> Any:
-        client = OpenAI(api_key=self.config.api_key, base_url=self.config.base_url)
-        return client
+        return OpenAI(
+            api_key=self.config.api_key,
+            base_url=self.config.base_url,
+            timeout=LLM_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
 
     def _generate_with_responses(self, client: Any, prompt: str) -> str:
         # freemodel 的 OpenAI-compatible responses 接口已通过用户本地验证：
