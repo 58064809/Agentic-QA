@@ -29,7 +29,6 @@ ANALYSIS_CONTEXT_FILES = [
     "skills/requirement-decomposition-skill.md",
     "skills/business-rule-extraction-skill.md",
     "knowledge/templates/requirement-analysis-template.md",
-    "knowledge/templates/prototype-notes-template.md",
 ]
 TESTCASE_CONTEXT_FILES = [
     "AGENTS.md",
@@ -48,10 +47,17 @@ TESTCASE_CONTEXT_FILES = [
     "skills/state-transition-modeling-skill.md",
     "skills/risk-based-testing-skill.md",
     "knowledge/templates/testcase-template.md",
-    "knowledge/templates/prototype-notes-template.md",
 ]
 REQUIRED_PRD_FILES = ["metadata.yml", "requirement.md"]
-IMAGE_MARKDOWN_RE = re.compile(r"!\[[^\]]*]\([^)]+\)")
+IMAGE_REFERENCE_RE = re.compile(
+    r"!\[[^\]]*]\([^)]+\)|\.(?:png|jpe?g)\b|(?:^|[^A-Za-z0-9_])(?:media|images)[\\/]",
+    re.IGNORECASE | re.MULTILINE,
+)
+IMAGE_IGNORED_WARNING = (
+    "检测到需求文档包含图片/原型图引用；当前 Runtime 不分析图片内容，只基于 "
+    "requirement.md 和 api-doc.md 的文本生成需求分析和测试用例。请人工确认图片中"
+    "是否存在未写入正文的字段、按钮、状态、弹窗、权限差异或交互规则。"
+)
 
 
 def mvp_command_router_node(state: QAWorkflowState) -> QAWorkflowState:
@@ -109,39 +115,19 @@ def _set_output_paths(state: QAWorkflowState, repo_root: Path, prd_path: Path) -
         state.output_path = testcase_path
 
 
-def _load_prototype_notes(
+def _detect_requirement_images(
     state: QAWorkflowState,
-    repo_root: Path,
-    prd_path: Path,
     requirement_content: str,
 ) -> None:
-    prototype_notes = prd_path / "prototype-notes.md"
-    prototype_relative_path = prototype_notes.relative_to(repo_root).as_posix()
-    requirement_has_images = bool(IMAGE_MARKDOWN_RE.search(requirement_content))
-
-    state.prototype_notes["requirement_has_images"] = requirement_has_images
-    if prototype_notes.is_file():
-        state.loaded_files[prototype_relative_path] = read_utf8(prototype_notes)
-        state.prototype_notes.update(
-            {
-                "loaded": True,
-                "path": prototype_relative_path,
-                "warning": None,
-            }
-        )
-        return
-
-    warning = "未发现 prototype-notes.md，如需求包含原型图，建议补充原型图说明。"
-    if requirement_has_images:
-        warning = (
-            "requirement.md 包含图片引用，但未发现 prototype-notes.md；"
-            "当前不会直接分析图片二进制，请补充原型图说明。"
-        )
-    state.warnings.append(warning)
+    requirement_has_images = bool(IMAGE_REFERENCE_RE.search(requirement_content))
+    warning = IMAGE_IGNORED_WARNING if requirement_has_images else None
+    if warning:
+        state.warnings.append(warning)
     state.prototype_notes.update(
         {
             "loaded": False,
             "path": None,
+            "requirement_has_images": requirement_has_images,
             "warning": warning,
         }
     )
@@ -176,7 +162,7 @@ def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkfl
         if filename == "requirement.md":
             requirement_content = content
 
-    _load_prototype_notes(state, repo_root, prd_path, requirement_content)
+    _detect_requirement_images(state, requirement_content)
 
     api_doc = prd_path / "api-doc.md"
     if api_doc.is_file():

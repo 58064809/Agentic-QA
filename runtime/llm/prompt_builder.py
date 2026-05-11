@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 MAX_INPUT_CHARS = 12000
+IMAGE_REFERENCE_RE = re.compile(
+    r"!\[[^\]]*]\([^)]+\)|\.(?:png|jpe?g)\b|(?:^|[^A-Za-z0-9_])(?:media|images)[\\/]",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 @dataclass(frozen=True)
@@ -39,6 +44,17 @@ def _render_file_bundle(
     return bundle, warnings
 
 
+def _image_detection_section(loaded_files: dict[str, str], prd_prefix: str) -> str:
+    requirement = loaded_files.get(f"{prd_prefix}/requirement.md", "")
+    if not IMAGE_REFERENCE_RE.search(requirement):
+        return ""
+    return (
+        "检测到 requirement.md 包含图片/原型图引用。当前 Runtime 不分析图片内容，"
+        "只允许基于 requirement.md 和 api-doc.md 的文本生成草稿。必须把图片内容"
+        "未分析写入待确认问题，禁止猜测图片中的字段、按钮、页面布局和交互。"
+    )
+
+
 def build_requirement_analysis_prompt(
     loaded_files: dict[str, str],
     *,
@@ -47,18 +63,17 @@ def build_requirement_analysis_prompt(
 ) -> PromptBuildResult:
     selected_paths = [
         f"{prd_prefix}/requirement.md",
-        f"{prd_prefix}/prototype-notes.md",
         f"{prd_prefix}/api-doc.md",
         "rules/requirement-analysis-rules.md",
         "skills/requirement-decomposition-skill.md",
         "skills/business-rule-extraction-skill.md",
         "knowledge/templates/requirement-analysis-template.md",
-        "knowledge/templates/prototype-notes-template.md",
         "prompts/requirement-analysis-prompt.md",
     ]
     bundle, warnings = _render_file_bundle(
         loaded_files,
         selected_paths,
+        injected_sections={"图片检测": _image_detection_section(loaded_files, prd_prefix)},
         max_input_chars=max_input_chars,
     )
     prompt = f"""请基于以下上下文生成需求分析草稿。
@@ -87,8 +102,9 @@ human_review_required: true
 
 每章必须结合 PRD 或接口文档输出具体内容；待确认问题至少 3 个且必须具体可回答。
 业务规则清单、风险点与影响面、需求到测试覆盖映射不得为空或只有“待补充”。
-如果存在 prototype-notes.md，必须基于其中的页面、字段、按钮、状态、弹窗、提示文案和权限差异生成分析。
-如果 requirement.md 含图片但缺少 prototype-notes.md，只能基于文字生成，并在待确认问题中提示原型图信息不足。
+当前 Runtime 不分析图片/原型图内容，不读取 prototype-notes.md，也不接视觉模型。
+如果 requirement.md 包含 Markdown 图片引用、.png/.jpg/.jpeg、media/ 或 images/ 等图片痕迹，只能基于 requirement.md 和 api-doc.md 的文本生成分析。
+检测到图片时，禁止猜测图片中的字段、按钮、页面布局和交互，必须在待确认问题中提示图片内容未分析。
 不得编造需求；不确定内容请标记为“待确认”“待补充”或“假设”。
 
 {bundle}
@@ -105,7 +121,7 @@ def build_testcase_prompt(
 ) -> PromptBuildResult:
     selected_paths = [
         f"{prd_prefix}/requirement.md",
-        f"{prd_prefix}/prototype-notes.md",
+        f"{prd_prefix}/api-doc.md",
         f"{prd_prefix}/10-analysis/requirement-analysis.md",
         "rules/testcase-rules.md",
         "skills/test-design-skill.md",
@@ -115,10 +131,9 @@ def build_testcase_prompt(
         "skills/state-transition-modeling-skill.md",
         "skills/risk-based-testing-skill.md",
         "knowledge/templates/testcase-template.md",
-        "knowledge/templates/prototype-notes-template.md",
         "prompts/testcase-design-prompt.md",
     ]
-    injected = {}
+    injected = {"图片检测": _image_detection_section(loaded_files, prd_prefix)}
     if generated_analysis:
         injected["本次运行生成的需求分析草稿"] = generated_analysis
     bundle, warnings = _render_file_bundle(
@@ -141,8 +156,9 @@ human_review_required: true
 不允许新增“用例类型”列。
 简单需求不少于 15 条，中等需求不少于 30 条，复杂需求不少于 50 条；信息不足时说明原因但仍输出可评审用例。
 必须覆盖主流程、关键分支、权限与角色、状态流转、必填/格式/边界、异常、重复提交/幂等、数据一致性、老数据兼容、前后端一致、接口异常/弱网/超时和回归影响。
-如果存在 prototype-notes.md，必须覆盖页面入口、默认展示、字段、按钮、弹窗、提示文案、角色/状态展示差异、空状态、异常状态、加载失败和防重复点击。
-如果 requirement.md 含图片但缺少 prototype-notes.md，只能基于文字生成，并在待确认问题中提示原型图信息不足。
+当前 Runtime 不分析图片/原型图内容，不读取 prototype-notes.md，也不接视觉模型。
+如果 requirement.md 包含 Markdown 图片引用、.png/.jpg/.jpeg、media/ 或 images/ 等图片痕迹，只能基于 requirement.md、api-doc.md 和已生成需求分析中的文本生成用例。
+检测到图片时，禁止猜测图片中的字段、按钮、页面布局和交互；可以增加待确认类用例或风险说明，提醒图片内容未覆盖。
 每条用例的前置条件、步骤和预期都必须可执行、可验证。
 不得生成 API/UI 自动化脚本，不得输出正式 QA 结论。
 

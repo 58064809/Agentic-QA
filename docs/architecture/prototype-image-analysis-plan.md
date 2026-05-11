@@ -1,32 +1,28 @@
-# 原型图识别后续方案
+# 图片与原型图忽略策略
 
-## 当前阶段
+## 当前最终策略
 
-当前 Runtime MVP 只走文本链路，不上传、不解析、不直接分析图片二进制。原型图中的页面结构、字段规则、按钮行为、弹窗、状态、权限差异和错误文案，需要先由人工整理到 `prototype-notes.md`。
+当前 Runtime MVP 明确不分析图片/原型图内容，不接视觉模型，不上传图片，也不通过 `prototype-notes.md` 间接让模型分析图片内容。
 
-推荐的当前输入链路：
+Runtime 只读取以下文本输入：
 
-```text
-Word/PDF/TXT/HTML -> MarkItDown -> requirement.md
-人工阅读原型图 -> prototype-notes.md
-api-doc.md（可选）
-requirement.md + prototype-notes.md + api-doc.md -> 需求分析 -> 测试用例
-```
+- `requirement.md`：必须存在，承载需求正文。
+- `api-doc.md`：可选，承载接口说明。
 
-如果 `requirement.md` 中存在 Markdown 图片引用但缺少 `prototype-notes.md`，Runtime 只能基于文本生成草稿，并在 warning 和待确认问题中提示原型信息不足。
+`prototype-notes.md` 已废弃为 Runtime 输入。即使目标 PRD 工作区存在该文件，也不会进入上下文、Prompt、需求分析或测试用例生成。
 
-## 后续阶段
+## 图片检测行为
 
-后续如要接入视觉模型，建议拆成独立、可审计的输入归一化流程：
+如果 `requirement.md` 中出现 Markdown 图片引用，或出现 `.png`、`.jpg`、`.jpeg`、`media/`、`images/` 等图片资源痕迹，Runtime 只做两件事：
 
-1. 从 Word/PDF 或人工上传目录中提取原型图片，统一保存到 `assets/prototypes/`。
-2. 由视觉模型读取图片并生成 `prototype-analysis.md`，内容包括页面清单、字段、按钮、跳转、状态、弹窗、错误文案和权限差异。
-3. 人工审核并修订 `prototype-analysis.md`，必要时同步整理为 `prototype-notes.md`。
-4. 最终分析链路同时读取 `requirement.md`、`prototype-notes.md`、`prototype-analysis.md` 和 `api-doc.md`。
+1. 追加 warning，说明图片/原型图内容未分析。
+2. 在需求分析待确认问题中提示人工确认图片里是否存在未写入正文的字段、按钮、状态、弹窗、权限差异或交互规则。
+
+测试用例生成仍只基于正文和接口文档继续，不得凭空写图片中的字段、按钮、页面布局或交互。可以增加待确认类用例或风险说明，用于标记图片内容未覆盖。
 
 ## 边界
 
-- 视觉识别结果必须是可 diff、可人工审核的 Markdown，不直接把图片理解结果隐藏在运行时状态里。
-- 视觉模型接入不能替代 `requirement.md`，也不能绕过 Human Review Gate。
+- 图片内容不能作为已知需求事实使用。
 - 图片、业务原型和真实需求源文件可能包含敏感信息，不应默认提交到 Git。
-- 未经人工确认的视觉识别结果只能作为待审核输入，不应直接定性为最终需求结论。
+- 如果图片中确实存在业务信息，人工应先把确认后的文字补充到 `requirement.md`，再重新运行分析和用例生成。
+- 未来如重新评估视觉模型接入，必须通过新的明确授权任务处理，不作为当前 Runtime MVP 的隐含能力。

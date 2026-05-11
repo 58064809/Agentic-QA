@@ -10,7 +10,7 @@
 - 012A 已将默认输出提升为评审级草稿：需求分析包含 12 个评审章节，测试用例简单需求不少于 15 条，并覆盖主流程、分支、权限、状态、边界、异常、幂等、数据一致性、兼容和回归风险。
 - 012B 补强质量门：低质量 Skeleton、空待确认问题、少量示例用例、非法优先级和额外“用例类型”列不能误通过。
 - 013 已接入 Microsoft MarkItDown，在 `analyze`、`generate-testcases` 和 `mvp` 的上下文加载前把 Word/PDF/TXT/HTML 等需求源文件归一化为 `requirement.md`。
-- 015 支持两段式需求输入：`requirement.md` 承载需求正文，`prototype-notes.md` 承载原型图交互说明，`api-doc.md` 继续作为可选接口说明。
+- 016 已废弃 `prototype-notes.md` 输入链路；Runtime 明确不分析图片/原型图内容，只检测图片痕迹并 warning。
 - LLM 默认关闭，必须通过 `--use-llm` 显式启用。
 - LLM 配置只从本地环境变量读取：`FREEMODEL_API_KEY`、`FREEMODEL_BASE_URL`、`FREEMODEL_MODEL`。
 - LLM 调用优先使用 OpenAI-compatible `responses.create`，如果 SDK 或服务不支持，再 fallback 到 `chat.completions.create`。
@@ -54,19 +54,18 @@ requirement.rtf
 
 转换输出固定为 `prd/<id>/requirement.md`。如果多个源文件同时存在，Runtime 按优先级选择一个并在 warnings 中说明。该转换是受控输入归一化写入，不需要 `--approve-write`；QA 产物写入仍必须显式传 `--approve-write`。
 
-## 两段式需求输入
+## 需求输入与图片策略
 
-Runtime 的推荐输入由三类 Markdown 文件组成：
+Runtime 的推荐输入由两类 Markdown 文件组成：
 
 - `requirement.md`：需求正文，来自 MarkItDown 转换或人工整理。
-- `prototype-notes.md`：原型图交互说明，记录页面入口、展示字段、按钮、弹窗、状态、权限差异、提示文案和跳转逻辑。
 - `api-doc.md`：接口说明，可选。
 
-`analyze`、`generate-testcases` 和 `mvp` 会在上下文加载时自动读取 `prd/<id>/prototype-notes.md`。如果文件不存在，流程不会失败，但会在 warnings 和运行记录中提示补充原型图说明；如果 `requirement.md` 包含 Markdown 图片引用且缺少 `prototype-notes.md`，warning 会明确说明当前 Runtime 不会直接分析图片二进制。
+`analyze`、`generate-testcases` 和 `mvp` 不读取 `prd/<id>/prototype-notes.md`。即使该文件存在，也不会进入上下文、Prompt、需求分析或测试用例生成。
 
-当前 Runtime 仍是文本链路，不调用视觉模型，也不会上传或解析图片二进制。原型图中的字段、按钮、状态、弹窗、错误文案和权限差异需要先由人工整理到 `prototype-notes.md`，后续如接入视觉模型，可再生成单独的原型识别结果供分析读取。
+当前 Runtime 仍是文本链路，不调用视觉模型，也不会上传、解析或间接分析图片二进制。如果 `requirement.md` 包含 Markdown 图片引用、`.png`、`.jpg`、`.jpeg`、`media/` 或 `images/` 等图片痕迹，Runtime 会 warning，并在待确认问题中提示人工确认图片中是否存在未写入正文的字段、按钮、状态、弹窗、权限差异或交互规则。测试用例生成不得基于图片内容编造字段、按钮、页面布局或交互。
 
-后续图像识别路线见 `docs/architecture/prototype-image-analysis-plan.md`。
+图片忽略策略见 `docs/architecture/prototype-image-analysis-plan.md`。
 
 禁用运行记录：
 
@@ -97,4 +96,4 @@ python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/sa
 
 ## 后续方向
 
-后续可把 Human Review Gate 升级为可记录人工审核动作的 CLI 命令，并继续补齐真实 Checkpoint / Resume。视觉模型识别原型图属于后续能力，不在当前 Runtime MVP 中执行。
+后续可把 Human Review Gate 升级为可记录人工审核动作的 CLI 命令，并继续补齐真实 Checkpoint / Resume。当前最终策略是不分析图片/原型图内容；如未来重新评估视觉模型接入，必须作为新的明确授权任务处理。

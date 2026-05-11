@@ -64,15 +64,16 @@ AI 生成 -> 人审核 -> AI 执行 -> 人确认 -> AI 归档
 - 找到受支持源文件后，Runtime 会将其转换为 `prd/<id>/requirement.md`，再继续需求分析和测试用例生成。
 - 不做目录递归扫描或批量导入，不提交真实业务 Word/PDF 文件；原始需求应只放在目标 PRD 工作区内。
 
-## 两段式需求输入
+## 需求输入与图片策略
 
 - `requirement.md`：需求正文，来自 MarkItDown 转换或人工整理。
-- `prototype-notes.md`：原型图交互说明，人工补充页面入口、展示字段、按钮、弹窗、状态、权限差异、提示文案和跳转逻辑。
 - `api-doc.md`：接口说明，可选。
 
-Runtime 在分析和生成用例时会同时读取 `requirement.md`、`prototype-notes.md` 和 `api-doc.md`。如果缺少 `prototype-notes.md`，流程不会失败，但会提示补充；如果 `requirement.md` 含 Markdown 图片引用而缺少 `prototype-notes.md`，会提示当前不会直接分析图片二进制。视觉模型识别原型图属于后续能力，不在当前 MVP 中执行。
+当前 Runtime 明确不分析图片/原型图内容，不接视觉模型，也不使用 `prototype-notes.md` 作为输入。`analyze`、`generate-testcases` 和 `mvp` 只基于 `requirement.md` 和 `api-doc.md` 的文本生成草稿。
 
-后续图像识别路线见 `docs/architecture/prototype-image-analysis-plan.md`。
+如果 `requirement.md` 出现 Markdown 图片引用、`.png`、`.jpg`、`.jpeg`、`media/` 或 `images/` 等图片痕迹，Runtime 会 warning，并在待确认问题中提示人工确认图片中是否存在未写入正文的字段、按钮、状态、弹窗、权限差异或交互规则。Runtime 不会基于图片内容编造字段、按钮、布局或交互。
+
+图片忽略策略见 `docs/architecture/prototype-image-analysis-plan.md`。
 
 ## 目录说明
 

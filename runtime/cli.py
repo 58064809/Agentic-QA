@@ -113,12 +113,11 @@ def print_summary(result) -> None:
             f"reason={normalization.get('skipped_reason') or '无'}"
         )
     if result.prototype_notes:
-        prototype_notes = result.prototype_notes
+        image_detection = result.prototype_notes
         print(
-            "- 原型图说明: "
-            f"loaded={prototype_notes.get('loaded')}, "
-            f"path={prototype_notes.get('path') or '无'}, "
-            f"requirement_has_images={prototype_notes.get('requirement_has_images')}"
+            "- 图片检测: "
+            f"requirement_has_images={image_detection.get('requirement_has_images')}, "
+            f"warning={image_detection.get('warning') or '无'}"
         )
     print(f"- Run ID: {result.run_id or '未生成'}")
     if result.run_summary_json and result.run_summary_md:

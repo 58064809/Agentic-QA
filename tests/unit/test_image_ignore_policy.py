@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -38,7 +39,6 @@ def create_repo(root: Path, *, requirement: str | None = None) -> Path:
         "skills/requirement-decomposition-skill.md": "需求拆解技能",
         "skills/business-rule-extraction-skill.md": "业务规则提取技能",
         "knowledge/templates/requirement-analysis-template.md": "需求分析模板",
-        "knowledge/templates/prototype-notes-template.md": "原型说明模板",
         "skills/test-design-skill.md": "测试设计技能",
         "skills/equivalence-partitioning-skill.md": "等价类技能",
         "skills/boundary-value-analysis-skill.md": "边界值技能",
@@ -67,51 +67,13 @@ def create_repo(root: Path, *, requirement: str | None = None) -> Path:
 def prototype_notes_content() -> str:
     return """# 原型图说明
 
-## 1. 原型图清单
-
-| 编号 | 页面/弹窗 | 图片来源 | 说明状态 |
-|---|---|---|---|
-| P01 | 登录页 | login.png | needs_human_review |
-
-## 2. 页面结构说明
-
-### P01：登录页
-
-- 页面入口：App 首页点击登录
-- 页面目标：手机号密码登录
-- 展示字段：手机号、密码
-- 操作按钮：登录、忘记密码
-- 默认状态：登录按钮置灰
-- 空状态：无
-- 异常状态：手机号格式错误、密码错误
-- 权限差异：未登录用户可见
-- 跳转逻辑：登录成功进入首页
-
-## 3. 表单与字段规则
-
-| 页面 | 字段 | 类型 | 必填 | 格式/范围 | 默认值 | 错误提示 | 备注 |
-|---|---|---|---|---|---|---|---|
-| 登录页 | 手机号 | 文本 | 是 | 大陆手机号 | 空 | 手机号格式不正确 | 无 |
-
-## 4. 按钮与交互规则
-
-| 页面 | 按钮/操作 | 可点击条件 | 点击后行为 | 成功反馈 | 失败反馈 | 防重复/幂等 |
-|---|---|---|---|---|---|---|
-| 登录页 | 登录 | 手机号和密码合法 | 调用登录接口 | 跳转首页 | 展示错误文案 | 防重复点击 |
-
-## 5. 状态与展示规则
-
-| 页面 | 业务状态 | 展示内容 | 可操作项 | 禁用项 | 提示文案 |
-|---|---|---|---|---|---|
-| 登录页 | 默认 | 输入框和登录按钮 | 输入手机号密码 | 登录按钮 | 请输入手机号 |
-
-## 8. 待确认问题
-
-- [ ] 错误文案是否统一？
+- 原型专属字段：会员等级徽章
+- 原型专属按钮：批量确认按钮
+- 原型专属交互：登录按钮置灰后弹窗确认
 """
 
 
-def test_missing_prototype_notes_warns_without_failing(tmp_path):
+def test_no_image_does_not_warn_about_prototype_notes(tmp_path):
     repo_root = create_repo(tmp_path)
 
     analysis_result = run_requirement_analysis_workflow(
@@ -128,21 +90,18 @@ def test_missing_prototype_notes_warns_without_failing(tmp_path):
     )
 
     assert analysis_result.success
-    assert analysis_result.prototype_notes["loaded"] is False
-    assert any(
-        "未发现 prototype-notes.md" in warning for warning in analysis_result.warnings
-    )
+    assert analysis_result.prototype_notes["requirement_has_images"] is False
+    assert analysis_result.prototype_notes["warning"] is None
+    assert not any("prototype-notes" in warning for warning in analysis_result.warnings)
     assert mvp_result.success
-    assert mvp_result.prototype_notes["loaded"] is False
-    assert any(
-        "未发现 prototype-notes.md" in warning for warning in mvp_result.warnings
-    )
+    assert mvp_result.prototype_notes["warning"] is None
+    assert not any("prototype-notes" in warning for warning in mvp_result.warnings)
 
 
-def test_requirement_images_without_prototype_notes_warns(tmp_path):
+def test_requirement_image_reference_produces_strong_warning(tmp_path):
     repo_root = create_repo(
         tmp_path,
-        requirement="# 登录需求\n\n![登录原型](login.png)\n\n用户通过手机号密码登录。",
+        requirement="# 登录需求\n\n![登录原型](images/login.png)\n\n用户通过手机号密码登录。",
     )
 
     result = run_requirement_analysis_workflow(
@@ -153,10 +112,19 @@ def test_requirement_images_without_prototype_notes_warns(tmp_path):
     )
 
     assert result.prototype_notes["requirement_has_images"] is True
-    assert any("包含图片引用" in warning for warning in result.warnings)
+    assert result.prototype_notes["loaded"] is False
+    assert any("当前 Runtime 不分析图片内容" in warning for warning in result.warnings)
+    assert (
+        "请人工确认图片中是否存在未写入正文的字段、按钮、状态、弹窗、权限差异或交互规则"
+        in result.prototype_notes["warning"]
+    )
+    assert (
+        "需求文档包含图片/原型图引用，但当前 Runtime 未分析图片内容"
+        in result.draft_artifacts["requirement_analysis"]
+    )
 
 
-def test_existing_prototype_notes_are_loaded(tmp_path):
+def test_existing_prototype_notes_are_ignored(tmp_path):
     repo_root = create_repo(tmp_path)
     write_file(repo_root / "prd/demo-requirement/prototype-notes.md", prototype_notes_content())
 
@@ -168,15 +136,16 @@ def test_existing_prototype_notes_are_loaded(tmp_path):
     )
 
     assert result.success
-    assert result.prototype_notes["loaded"] is True
-    assert result.prototype_notes["path"] == "prd/demo-requirement/prototype-notes.md"
-    assert "prd/demo-requirement/prototype-notes.md" in result.loaded_files
+    assert result.prototype_notes["loaded"] is False
+    assert result.prototype_notes["path"] is None
+    assert "prd/demo-requirement/prototype-notes.md" not in result.loaded_files
+    assert "会员等级徽章" not in result.draft_artifacts["requirement_analysis"]
 
 
-def test_llm_prompts_include_prototype_notes_content():
+def test_llm_prompts_do_not_include_prototype_notes_content():
     loaded_files = {
-        "prd/demo-requirement/requirement.md": "# 登录需求",
-        "prd/demo-requirement/prototype-notes.md": "登录按钮置灰，成功后跳转首页。",
+        "prd/demo-requirement/requirement.md": "# 登录需求\n\n![原型](login.jpg)",
+        "prd/demo-requirement/prototype-notes.md": "原型专属按钮：批量确认按钮",
         "knowledge/templates/prototype-notes-template.md": "# 原型图说明",
     }
 
@@ -189,12 +158,39 @@ def test_llm_prompts_include_prototype_notes_content():
         prd_prefix="prd/demo-requirement",
     )
 
-    assert "登录按钮置灰，成功后跳转首页。" in analysis_prompt.prompt
-    assert "登录按钮置灰，成功后跳转首页。" in testcase_prompt.prompt
+    assert "原型专属按钮：批量确认按钮" not in analysis_prompt.prompt
+    assert "原型专属按钮：批量确认按钮" not in testcase_prompt.prompt
+    assert "knowledge/templates/prototype-notes-template.md" not in analysis_prompt.prompt
+    assert "knowledge/templates/prototype-notes-template.md" not in testcase_prompt.prompt
+    assert "禁止猜测图片中的字段、按钮、页面布局和交互" in analysis_prompt.prompt
+    assert "禁止猜测图片中的字段、按钮、页面布局和交互" in testcase_prompt.prompt
 
 
-def test_testcase_generation_uses_prototype_notes_for_ui_cases(tmp_path):
-    repo_root = create_repo(tmp_path)
+def test_run_record_contains_image_detection_warning(tmp_path):
+    repo_root = create_repo(
+        tmp_path,
+        requirement="# 登录需求\n\n原型资源：media/login.jpeg\n\n用户通过手机号密码登录。",
+    )
+
+    result = run_requirement_analysis_workflow(
+        "请分析这个需求",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=True,
+    )
+    summary_path = repo_root / result.run_summary_json
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+
+    assert summary["image_detection"]["requirement_has_images"] is True
+    assert "当前 Runtime 不分析图片内容" in summary["image_detection"]["warning"]
+    assert summary["image_detection"]["loaded"] is False
+
+
+def test_testcase_generation_does_not_invent_from_images_or_prototype_notes(tmp_path):
+    repo_root = create_repo(
+        tmp_path,
+        requirement="# 登录需求\n\n![登录原型](login.png)\n\n用户通过手机号密码登录。",
+    )
     write_file(repo_root / "prd/demo-requirement/prototype-notes.md", prototype_notes_content())
 
     result = run_mvp_testcase_generation_workflow(
@@ -206,6 +202,7 @@ def test_testcase_generation_uses_prototype_notes_for_ui_cases(tmp_path):
 
     assert result.success
     testcases = result.draft_artifacts["testcases"]
-    assert "原型页面入口和默认展示正确" in testcases
-    assert "原型字段必填、格式和边界校验正确" in testcases
-    assert "原型按钮可见、可点和禁用条件正确" in testcases
+    assert "图片内容未分析的人工确认项已记录" in testcases
+    assert "会员等级徽章" not in testcases
+    assert "批量确认按钮" not in testcases
+    assert "登录按钮置灰后弹窗确认" not in testcases

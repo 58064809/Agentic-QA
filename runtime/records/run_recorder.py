@@ -47,6 +47,7 @@ def result_to_summary(result: RuntimeResult, created_at: str) -> dict[str, objec
         "review_status": result.review_status,
         "llm": result.llm,
         "requirement_normalization": result.requirement_normalization,
+        "image_detection": result.prototype_notes,
         "prototype_notes": result.prototype_notes,
         "errors": result.errors,
         "warnings": result.warnings,
@@ -98,12 +99,12 @@ def render_markdown_summary(summary: dict[str, object]) -> str:
 - source_type：{dict(summary["requirement_normalization"]).get("source_type")}
 - skipped_reason：{dict(summary["requirement_normalization"]).get("skipped_reason")}
 
-## 原型图说明
+## 图片检测
 
-- loaded：{dict(summary["prototype_notes"]).get("loaded")}
-- path：{dict(summary["prototype_notes"]).get("path")}
-- requirement_has_images：{dict(summary["prototype_notes"]).get("requirement_has_images")}
-- warning：{dict(summary["prototype_notes"]).get("warning")}
+- requirement_has_images：{dict(summary["image_detection"]).get("requirement_has_images")}
+- warning：{dict(summary["image_detection"]).get("warning")}
+- prototype_notes_loaded：{dict(summary["image_detection"]).get("loaded")}
+- prototype_notes_path：{dict(summary["image_detection"]).get("path")}
 
 ## 文件与产物
 
