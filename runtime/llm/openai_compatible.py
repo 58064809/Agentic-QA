@@ -52,13 +52,12 @@ class OpenAICompatibleAdapter:
         return client
 
     def _generate_with_responses(self, client: Any, prompt: str) -> str:
+        # freemodel 的 OpenAI-compatible responses 接口已通过用户本地验证：
+        # client.responses.create(model="gpt-5.5", input="纯文本")。
+        # 因此这里优先使用纯文本 input，避免 role-list / temperature 等参数导致兼容失败。
         response = client.responses.create(
             model=self.config.model,
-            input=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.2,
+            input=f"{SYSTEM_PROMPT}\n\n{prompt}",
         )
         content = _extract_response_text(response)
         if not content:
@@ -72,7 +71,6 @@ class OpenAICompatibleAdapter:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            temperature=0.2,
         )
         content = response.choices[0].message.content
         return content or ""
