@@ -34,6 +34,12 @@ class OpenAICompatibleAdapter:
         except Exception as exc:  # noqa: BLE001 - adapter must support fallback.
             response_error = exc
 
+        if not self.config.enable_chat_fallback:
+            raise RuntimeError(
+                "responses.create 调用失败，且 chat.completions fallback 当前关闭: "
+                f"{response_error}"
+            ) from response_error
+
         try:
             content = self._generate_with_chat_completions(client, prompt)
         except Exception as exc:  # noqa: BLE001 - surface both attempts.

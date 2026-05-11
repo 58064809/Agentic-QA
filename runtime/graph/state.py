@@ -42,6 +42,7 @@ class GraphQAWorkflowState(TypedDict, total=False):
     dry_run: bool
     approve_write: bool
     use_llm: bool
+    fast_llm: bool
     max_llm_calls: int
     llm: dict[str, Any]
     requirement_normalization: dict[str, Any]
@@ -55,6 +56,8 @@ class GraphQAWorkflowState(TypedDict, total=False):
     run_record_dir: str | None
     run_summary_json: str | None
     run_summary_md: str | None
+    debug_dir: str | None
+    debug_artifacts: dict[str, str]
 
 
 @dataclass
@@ -75,6 +78,7 @@ class QAWorkflowState:
     dry_run: bool = True
     approve_write: bool = False
     use_llm: bool = False
+    fast_llm: bool = False
     max_llm_calls: int = 0
     llm: dict[str, Any] = field(default_factory=default_llm_metadata)
     requirement_normalization: dict[str, Any] = field(
@@ -90,6 +94,8 @@ class QAWorkflowState:
     run_record_dir: str | None = None
     run_summary_json: str | None = None
     run_summary_md: str | None = None
+    debug_dir: str | None = None
+    debug_artifacts: dict[str, str] = field(default_factory=dict)
 
     @property
     def success(self) -> bool:
@@ -117,6 +123,7 @@ def to_graph_state(state: QAWorkflowState) -> GraphQAWorkflowState:
         "dry_run": state.dry_run,
         "approve_write": state.approve_write,
         "use_llm": state.use_llm,
+        "fast_llm": state.fast_llm,
         "max_llm_calls": state.max_llm_calls,
         "llm": dict(state.llm),
         "requirement_normalization": dict(state.requirement_normalization),
@@ -130,6 +137,8 @@ def to_graph_state(state: QAWorkflowState) -> GraphQAWorkflowState:
         "run_record_dir": state.run_record_dir,
         "run_summary_json": state.run_summary_json,
         "run_summary_md": state.run_summary_md,
+        "debug_dir": state.debug_dir,
+        "debug_artifacts": dict(state.debug_artifacts),
     }
 
 
@@ -173,6 +182,7 @@ def from_graph_state(graph_state: GraphQAWorkflowState) -> QAWorkflowState:
         dry_run=bool(graph_state.get("dry_run", True)),
         approve_write=bool(graph_state.get("approve_write", False)),
         use_llm=bool(graph_state.get("use_llm", False)),
+        fast_llm=bool(graph_state.get("fast_llm", False)),
         max_llm_calls=int(graph_state.get("max_llm_calls", 0) or 0),
         llm={**default_llm_metadata(), **_get_any_dict(graph_state, "llm")},
         requirement_normalization={
@@ -192,4 +202,6 @@ def from_graph_state(graph_state: GraphQAWorkflowState) -> QAWorkflowState:
         run_record_dir=graph_state.get("run_record_dir"),
         run_summary_json=graph_state.get("run_summary_json"),
         run_summary_md=graph_state.get("run_summary_md"),
+        debug_dir=graph_state.get("debug_dir"),
+        debug_artifacts=_get_str_dict(graph_state, "debug_artifacts"),
     )
