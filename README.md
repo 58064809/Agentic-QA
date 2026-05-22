@@ -196,16 +196,13 @@ python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例
 
 只有显式传入 `--approve-write` 才允许写入草稿。`analyze` 写入 `prd/<id>/10-analysis/requirement-analysis.md`，`generate-testcases` 写入 `prd/<id>/20-testcases/testcases.md`，`mvp` 同时写入两类草稿。若任一目标文件已存在，Runtime 默认拒绝覆盖；`mvp` 会拒绝部分写入。写入后的状态仍为 `needs_human_review`，不得继续自动生成 API/UI 脚本或归档。
 
-Runtime Graph 已启用 checkpointer，每次运行都会带 `thread_id`。`human_review_node` 使用 LangGraph `interrupt` 暂停，审批通过后才允许 writer 节点写入：
+Runtime Graph 已启用 checkpointer，每次运行都会带 `thread_id`。当前默认不再额外暂停等待 `approve` 命令；`--approve-write` 本身就是 Runtime 写入授权：
 
 ```bash
 python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/sample-login-requirement --approve-write
-python -m runtime.cli approve <run_id> --reviewed-by user --review-notes "确认通过"
-python -m runtime.cli reject <run_id> --reviewed-by user --review-notes "退回修改"
-python -m runtime.cli resume <run_id>
 ```
 
-Runtime 默认会在 `.runtime/runs/<run_id>/` 下生成本地运行记录，用于追踪节点轨迹、加载文件、输出路径、错误、审核状态、审批事件、Graph state 和 checkpointer。`approve` / `reject` 会追加写入 `review-events.jsonl`；writer 成功后，`metadata_update_node` 会在目标 PRD 的 `metadata.yml` 中记录 `last_runtime_run` 和 `runtime_runs`。这只表示 Runtime 写入已审批，不等于业务 QA 审核通过。运行记录不应提交到 Git；如只想执行流程而不生成记录，可传入 `--no-record-run`。
+Runtime 默认会在 `.runtime/runs/<run_id>/` 下生成本地运行记录，用于追踪节点轨迹、加载文件、输出路径、错误、写入授权状态、Graph state 和 checkpointer。writer 成功后，`metadata_update_node` 会在目标 PRD 的 `metadata.yml` 中记录 `last_runtime_run` 和 `runtime_runs`。这只表示 Runtime 已按 `--approve-write` 写入草稿，不等于业务 QA 审核通过。运行记录不应提交到 Git；如只想执行流程而不生成记录，可传入 `--no-record-run`。
 
 MVP 质量门会检查需求分析是否包含 `needs_human_review`、12 个必要章节、至少 3 个具体待确认问题、实质业务规则、风险点与影响面、需求到测试覆盖映射；测试用例会检查固定 5 列表头、至少 15 条非表头用例、P0 用例、合法优先级、至少 4 类关键覆盖场景，并拒绝 Skeleton 占位语和“用例类型”等额外列。
 

@@ -18,14 +18,14 @@
 - LLM 调用优先使用 OpenAI-compatible `responses.create`；`chat.completions.create` fallback 默认关闭，仅在本地设置 `FREEMODEL_ENABLE_CHAT_FALLBACK=true` 时启用。
 - 缺少密钥或未启用 LLM 时，Runtime 降级生成确定性评审级草稿。
 - 当前不接入 LangChain ChatModel。
-- 当前不接入持久化 Checkpointer。
+- 当前使用本地文件化 checkpointer 快照，写入 `.runtime/runs/<run_id>/checkpointer.pkl`。
 - 默认 dry-run，不写入业务产物，但会写运行记录。
-- `--approve-write` 才允许写入需求分析和测试用例草稿。
+- `--approve-write` 才允许写入需求分析和测试用例草稿；该参数本身就是 Runtime 写入授权。
 - Graph 已启用 checkpointer，每次运行都会带 `thread_id`。
-- `human_review_node` 使用 LangGraph `interrupt` 暂停；审批通过后才允许 writer 节点写入。
-- CLI 支持 `approve`、`reject`、`resume` 处理暂停中的运行。
-- 运行状态、Graph state、审批事件和 checkpointer 写入 `.runtime/runs/<run_id>/`。
-- writer 成功后，`metadata_update_node` 会在目标 PRD 的 `metadata.yml` 中记录 `last_runtime_run` 和 `runtime_runs`；这只表示 Runtime 写入已审批，不等于业务 QA 审核通过。
+- 当前默认不再额外暂停等待 `approve` 命令；`human_review_node` 只做写入授权状态标记。
+- CLI 保留 `approve`、`reject`、`resume`，仅用于兼容旧的暂停运行。
+- 运行状态、Graph state 和 checkpointer 写入 `.runtime/runs/<run_id>/`。
+- writer 成功后，`metadata_update_node` 会在目标 PRD 的 `metadata.yml` 中记录 `last_runtime_run` 和 `runtime_runs`；这只表示 Runtime 已按 `--approve-write` 写入草稿，不等于业务 QA 审核通过。
 - 如果目标文件已存在，默认拒绝覆盖；MVP 连续链路拒绝部分写入。
 - Runtime 必须读取现有声明式资产，不允许硬编码 Prompt / Rules / Skills。
 - Runtime 的写入、执行、归档动作必须经过 Human Review Gate。
@@ -101,20 +101,7 @@ python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/sa
 python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement --approve-write
 ```
 
-带 `--approve-write` 的命令不会直接写入产物，而是先停在 Human Review Gate。审核通过后再执行：
-
-```bash
-python -m runtime.cli approve <run_id> --reviewed-by user --review-notes "确认通过"
-```
-
-拒绝或查看暂停状态：
-
-```bash
-python -m runtime.cli reject <run_id> --reviewed-by user --review-notes "覆盖不足，退回修改"
-python -m runtime.cli resume <run_id>
-```
-
-审批通过后 writer 节点才允许写入。写入后的产物状态仍为 `needs_human_review`，不得继续自动生成 API/UI 脚本或归档。如果目标 `10-analysis/requirement-analysis.md` 或 `20-testcases/testcases.md` 已存在，Runtime 默认拒绝覆盖。
+带 `--approve-write` 的命令会在质量门通过后直接写入产物，不需要再执行 `approve <run_id>`。写入后的产物状态仍为 `needs_human_review`，不得继续自动生成 API/UI 脚本或归档。如果目标 `10-analysis/requirement-analysis.md` 或 `20-testcases/testcases.md` 已存在，Runtime 默认拒绝覆盖。
 
 每次运行记录默认包含：
 
@@ -123,11 +110,10 @@ python -m runtime.cli resume <run_id>
 .runtime/runs/<run_id>/run-summary.md
 .runtime/runs/<run_id>/run-state.json
 .runtime/runs/<run_id>/graph-state.json
-.runtime/runs/<run_id>/review-events.jsonl
 .runtime/runs/<run_id>/checkpointer.pkl
 ```
 
-`review-events.jsonl` 使用 append-only 方式记录每次人工动作，包含 `action`、`reviewed_by`、`review_notes`、`previous_status`、`next_status`、`wrote_file` 和输出路径。`reject` 也会记录事件，但不会写入业务产物。
+若需要兼容旧的暂停运行，仍可使用 `approve`、`reject`、`resume`；这些命令会追加 `review-events.jsonl`，但新运行默认不再需要这一步。
 
 质量门会阻断以下输出：缺少 `needs_human_review`、缺少需求分析 12 个必要章节、待确认问题少于 3 个、业务规则/风险/映射为空、测试用例少于 15 条、缺少 P0、优先级不属于 `P0/P1/P2/P3`、表头新增“用例类型”、表格列数不是固定 5 列、缺少至少 4 类关键覆盖维度，或仍包含纯模板占位语。
 
@@ -143,4 +129,4 @@ python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/sa
 
 ## 后续方向
 
-后续可把 Human Review Gate 升级为可记录人工审核动作的 CLI 命令，并继续补齐真实 Checkpoint / Resume。当前最终策略是不分析图片/原型图内容；如未来重新评估视觉模型接入，必须作为新的明确授权任务处理。
+后续可继续增强 metadata 写回、运行记录查询和业务审核状态管理。当前最终策略是不分析图片/原型图内容；如未来重新评估视觉模型接入，必须作为新的明确授权任务处理。

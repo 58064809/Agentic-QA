@@ -8,7 +8,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from runtime.graph.mvp_graph import (  # noqa: E402
-    resume_mvp_generation_workflow,
     run_mvp_analysis_and_testcases_workflow,
     run_mvp_testcase_generation_workflow,
     run_requirement_analysis_workflow,
@@ -197,7 +196,7 @@ def test_analyze_dry_run_generates_analysis_without_writing(tmp_path):
 
     assert result.success
     assert result.task_type == "analysis"
-    assert result.run_status == "interrupted"
+    assert result.run_status == "completed"
     assert result.review_status == "needs_human_review"
     assert "requirement_analysis" in result.draft_artifacts
     analysis = result.draft_artifacts["requirement_analysis"]
@@ -217,16 +216,10 @@ def test_analyze_approve_write_creates_analysis_draft(tmp_path):
         repo_root=repo_root,
         approve_write=True,
     )
-    assert result.run_id is not None
-    result = resume_mvp_generation_workflow(
-        result.run_id,
-        repo_root=repo_root,
-        action="approve",
-    )
-
     output_path = repo_root / "prd/demo-requirement/10-analysis/requirement-analysis.md"
     assert result.success
     assert result.wrote_file
+    assert result.review_status == "write_approved"
     assert "artifact_type: requirement_analysis" in output_path.read_text(encoding="utf-8")
 
 
@@ -242,7 +235,7 @@ def test_generate_testcases_dry_run_generates_testcases_without_writing(tmp_path
 
     assert result.success
     assert result.task_type == "testcase_generation"
-    assert result.run_status == "interrupted"
+    assert result.run_status == "completed"
     assert result.review_status == "needs_human_review"
     assert "testcases" in result.draft_artifacts
     testcases = result.draft_artifacts["testcases"]
@@ -261,16 +254,10 @@ def test_generate_testcases_approve_write_creates_testcase_draft(tmp_path):
         repo_root=repo_root,
         approve_write=True,
     )
-    assert result.run_id is not None
-    result = resume_mvp_generation_workflow(
-        result.run_id,
-        repo_root=repo_root,
-        action="approve",
-    )
-
     output_path = repo_root / "prd/demo-requirement/20-testcases/testcases.md"
     assert result.success
     assert result.wrote_file
+    assert result.review_status == "write_approved"
     assert "artifact_type: testcase_draft" in output_path.read_text(encoding="utf-8")
 
 
@@ -286,7 +273,7 @@ def test_mvp_dry_run_generates_two_drafts_without_writing(tmp_path):
 
     assert result.success
     assert result.task_type == "mvp_analysis_testcases"
-    assert result.run_status == "interrupted"
+    assert result.run_status == "completed"
     assert result.review_status == "needs_human_review"
     assert set(result.draft_artifacts) == {"requirement_analysis", "testcases"}
     assert "## 12. 需求到测试覆盖映射" in result.draft_artifacts["requirement_analysis"]
@@ -304,15 +291,9 @@ def test_mvp_approve_write_creates_analysis_and_testcases(tmp_path):
         repo_root=repo_root,
         approve_write=True,
     )
-    assert result.run_id is not None
-    result = resume_mvp_generation_workflow(
-        result.run_id,
-        repo_root=repo_root,
-        action="approve",
-    )
-
     assert result.success
     assert result.wrote_file
+    assert result.review_status == "write_approved"
     assert (repo_root / "prd/demo-requirement/10-analysis/requirement-analysis.md").is_file()
     assert (repo_root / "prd/demo-requirement/20-testcases/testcases.md").is_file()
 
@@ -328,13 +309,6 @@ def test_mvp_approve_write_refuses_partial_overwrite(tmp_path):
         repo_root=repo_root,
         approve_write=True,
     )
-    assert result.run_id is not None
-    result = resume_mvp_generation_workflow(
-        result.run_id,
-        repo_root=repo_root,
-        action="approve",
-    )
-
     assert not result.success
     assert not result.wrote_file
     assert existing_analysis.read_text(encoding="utf-8") == "人工已有分析"

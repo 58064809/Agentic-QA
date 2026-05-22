@@ -10,8 +10,8 @@ def artifact_writer_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
     state.record_node("artifact_writer_node")
     if state.errors or state.quality_errors:
         return state
-    if state.review_status != "approved":
-        state.errors.append("人工审核未通过，拒绝写入产物。")
+    if state.review_status not in {"approved", "write_approved"}:
+        state.errors.append("未获得 Runtime 写入授权，拒绝写入产物。")
         return state
     if state.dry_run:
         return state

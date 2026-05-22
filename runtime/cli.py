@@ -82,9 +82,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_runtime_arguments(mvp_parser)
 
     for command, help_text in [
-        ("approve", "审批通过暂停中的 Runtime 运行并继续写入"),
-        ("reject", "拒绝暂停中的 Runtime 运行，不写入产物"),
-        ("resume", "查看或恢复 Runtime 运行"),
+        ("approve", "兼容旧暂停运行：审批通过并继续写入"),
+        ("reject", "兼容旧暂停运行：拒绝并不写入产物"),
+        ("resume", "查看或恢复旧暂停 Runtime 运行"),
     ]:
         review_parser = subparsers.add_parser(command, help=help_text)
         review_parser.add_argument("run_id", help="运行记录 ID")

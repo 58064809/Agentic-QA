@@ -7,10 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from runtime.graph.app import (  # noqa: E402
-    resume_recorded_workflow,
-    run_testcase_generation_workflow,
-)
+from runtime.graph.app import run_testcase_generation_workflow  # noqa: E402
 from runtime.graph.nodes.context_loader import context_loader_node  # noqa: E402
 from runtime.graph.nodes.intent_router import intent_router_node  # noqa: E402
 from runtime.graph.nodes.quality_checker import (  # noqa: E402
@@ -101,13 +98,6 @@ def test_approve_write_creates_testcase_draft_when_missing(tmp_path):
         repo_root=repo_root,
         approve_write=True,
     )
-    assert result.run_id is not None
-    result = resume_recorded_workflow(
-        result.run_id,
-        repo_root=repo_root,
-        action="approve",
-    )
-
     output_path = repo_root / "prd/demo-requirement/20-testcases/testcases.md"
     content = output_path.read_text(encoding="utf-8")
     assert result.success
@@ -127,13 +117,6 @@ def test_approve_write_does_not_overwrite_existing_testcases(tmp_path):
         repo_root=repo_root,
         approve_write=True,
     )
-    assert result.run_id is not None
-    result = resume_recorded_workflow(
-        result.run_id,
-        repo_root=repo_root,
-        action="approve",
-    )
-
     assert not result.success
     assert not result.wrote_file
     assert output_path.read_text(encoding="utf-8") == "人工已有内容"

@@ -104,7 +104,7 @@ def test_run_record_json_contains_runtime_summary(tmp_path):
     assert summary["run_id"] == result.run_id
     assert summary["thread_id"] == result.thread_id
     assert summary["success"] is True
-    assert summary["run_status"] == "interrupted"
+    assert summary["run_status"] == "completed"
     assert summary["orchestration"] == "LangGraph StateGraph"
     assert summary["executed_nodes"]
     assert summary["loaded_files"]

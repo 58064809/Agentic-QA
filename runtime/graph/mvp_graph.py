@@ -87,7 +87,7 @@ def _route_after_analysis_quality(graph_state: GraphQAWorkflowState) -> str:
 def _route_after_human_review(graph_state: GraphQAWorkflowState) -> str:
     if graph_state.get("errors") or graph_state.get("quality_errors"):
         return "error"
-    if graph_state.get("review_status") == "approved":
+    if graph_state.get("review_status") in {"approved", "write_approved"}:
         return "write"
     return "end"
 
@@ -119,7 +119,7 @@ def _state_from_graph_output(graph_state: GraphQAWorkflowState) -> QAWorkflowSta
         }
         if "human_review_node" not in state.executed_nodes:
             state.executed_nodes.append("human_review_node")
-    elif state.run_status in {"not_started", "approved"}:
+    elif state.run_status in {"not_started", "approved", "write_approved", "dry_run"}:
         state.run_status = "completed" if state.success else "failed"
     return state
 
