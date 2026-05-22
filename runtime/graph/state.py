@@ -25,6 +25,16 @@ def default_prototype_notes() -> dict[str, Any]:
     }
 
 
+def default_human_review() -> dict[str, Any]:
+    return {
+        "status": "not_started",
+        "decision": None,
+        "reviewed_by": None,
+        "review_notes": None,
+        "interrupt": None,
+    }
+
+
 class GraphQAWorkflowState(TypedDict, total=False):
     user_input: str
     prd_path: str
@@ -53,6 +63,9 @@ class GraphQAWorkflowState(TypedDict, total=False):
     wrote_file: bool
     orchestration: str
     run_id: str | None
+    thread_id: str | None
+    run_status: str
+    human_review: dict[str, Any]
     run_record_dir: str | None
     run_summary_json: str | None
     run_summary_md: str | None
@@ -91,6 +104,9 @@ class QAWorkflowState:
     wrote_file: bool = False
     orchestration: str = "LangGraph StateGraph"
     run_id: str | None = None
+    thread_id: str | None = None
+    run_status: str = "not_started"
+    human_review: dict[str, Any] = field(default_factory=default_human_review)
     run_record_dir: str | None = None
     run_summary_json: str | None = None
     run_summary_md: str | None = None
@@ -134,6 +150,9 @@ def to_graph_state(state: QAWorkflowState) -> GraphQAWorkflowState:
         "wrote_file": state.wrote_file,
         "orchestration": state.orchestration,
         "run_id": state.run_id,
+        "thread_id": state.thread_id,
+        "run_status": state.run_status,
+        "human_review": dict(state.human_review),
         "run_record_dir": state.run_record_dir,
         "run_summary_json": state.run_summary_json,
         "run_summary_md": state.run_summary_md,
@@ -199,6 +218,9 @@ def from_graph_state(graph_state: GraphQAWorkflowState) -> QAWorkflowState:
         wrote_file=bool(graph_state.get("wrote_file", False)),
         orchestration=str(graph_state.get("orchestration", "LangGraph StateGraph")),
         run_id=graph_state.get("run_id"),
+        thread_id=graph_state.get("thread_id"),
+        run_status=str(graph_state.get("run_status", "not_started")),
+        human_review={**default_human_review(), **_get_any_dict(graph_state, "human_review")},
         run_record_dir=graph_state.get("run_record_dir"),
         run_summary_json=graph_state.get("run_summary_json"),
         run_summary_md=graph_state.get("run_summary_md"),

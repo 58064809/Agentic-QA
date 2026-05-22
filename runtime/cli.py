@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from runtime.graph.app import (
+    resume_recorded_workflow,
     run_mvp_analysis_and_testcases_workflow,
     run_mvp_testcase_generation_workflow,
     run_requirement_analysis_workflow,
@@ -79,6 +80,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="连续生成需求分析草稿和测试用例草稿",
     )
     add_common_runtime_arguments(mvp_parser)
+
+    for command, help_text in [
+        ("approve", "审批通过暂停中的 Runtime 运行并继续写入"),
+        ("reject", "拒绝暂停中的 Runtime 运行，不写入产物"),
+        ("resume", "查看或恢复 Runtime 运行"),
+    ]:
+        review_parser = subparsers.add_parser(command, help=help_text)
+        review_parser.add_argument("run_id", help="运行记录 ID")
+        review_parser.add_argument("--reviewed-by", default="user", help="审核人")
+        review_parser.add_argument("--review-notes", default=None, help="审核备注")
     return parser
 
 
@@ -86,6 +97,7 @@ def print_summary(result) -> None:
     print("Runtime 执行摘要")
     print(f"- 编排方式: {result.orchestration}")
     print(f"- 模式: {'approve-write' if result.approve_write else 'dry-run'}")
+    print(f"- 运行状态: {result.run_status}")
     print(f"- 任务类型: {result.task_type or 'legacy_testcase_generation'}")
     print(f"- 意图: {result.intent or '未识别'}")
     print(f"- PRD: {result.prd_path}")
@@ -120,12 +132,15 @@ def print_summary(result) -> None:
             f"warning={image_detection.get('warning') or '无'}"
         )
     print(f"- Run ID: {result.run_id or '未生成'}")
+    print(f"- Thread ID: {result.thread_id or '未生成'}")
     if result.run_summary_json and result.run_summary_md:
         print(f"- 运行记录 JSON: {result.run_summary_json}")
         print(f"- 运行记录 Markdown: {result.run_summary_md}")
     else:
         print("- 运行记录: 未生成（--no-record-run）")
     print(f"- 人工审核状态: {result.review_status}")
+    if result.human_review:
+        print(f"- 人工审核详情: {result.human_review}")
     print(f"- 已执行节点: {', '.join(result.executed_nodes) if result.executed_nodes else '无'}")
     print(f"- 已加载文件数: {len(result.loaded_files)}")
 
@@ -141,6 +156,8 @@ def print_summary(result) -> None:
 
     if not result.approve_write:
         print("说明: dry-run 不写入文件；需要写入时请显式传入 --approve-write。")
+    if result.run_status == "interrupted":
+        print("说明: 当前运行已在人工审核点暂停；通过后执行 approve，拒绝执行 reject。")
 
 
 def main() -> int:
@@ -186,6 +203,35 @@ def main() -> int:
             approve_write=args.approve_write,
             record_run=args.record_run,
             use_llm=args.use_llm,
+        )
+        print_summary(result)
+        return 0 if result.success else 1
+
+    if args.command == "approve":
+        result = resume_recorded_workflow(
+            args.run_id,
+            action="approve",
+            reviewed_by=args.reviewed_by,
+            review_notes=args.review_notes,
+        )
+        print_summary(result)
+        return 0 if result.success else 1
+
+    if args.command == "reject":
+        result = resume_recorded_workflow(
+            args.run_id,
+            action="reject",
+            reviewed_by=args.reviewed_by,
+            review_notes=args.review_notes,
+        )
+        print_summary(result)
+        return 0 if result.success else 1
+
+    if args.command == "resume":
+        result = resume_recorded_workflow(
+            args.run_id,
+            reviewed_by=args.reviewed_by,
+            review_notes=args.review_notes,
         )
         print_summary(result)
         return 0 if result.success else 1

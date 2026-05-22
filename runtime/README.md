@@ -21,6 +21,10 @@
 - 当前不接入持久化 Checkpointer。
 - 默认 dry-run，不写入业务产物，但会写运行记录。
 - `--approve-write` 才允许写入需求分析和测试用例草稿。
+- Graph 已启用 checkpointer，每次运行都会带 `thread_id`。
+- `human_review_node` 使用 LangGraph `interrupt` 暂停；审批通过后才允许 writer 节点写入。
+- CLI 支持 `approve`、`reject`、`resume` 处理暂停中的运行。
+- 运行状态、Graph state 和 checkpointer 写入 `.runtime/runs/<run_id>/`。
 - 如果目标文件已存在，默认拒绝覆盖；MVP 连续链路拒绝部分写入。
 - Runtime 必须读取现有声明式资产，不允许硬编码 Prompt / Rules / Skills。
 - Runtime 的写入、执行、归档动作必须经过 Human Review Gate。
@@ -96,7 +100,30 @@ python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/sa
 python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement --approve-write
 ```
 
-写入后仍然必须人工审核，状态保持 `needs_human_review`。如果目标 `10-analysis/requirement-analysis.md` 或 `20-testcases/testcases.md` 已存在，Runtime 默认拒绝覆盖。
+带 `--approve-write` 的命令不会直接写入产物，而是先停在 Human Review Gate。审核通过后再执行：
+
+```bash
+python -m runtime.cli approve <run_id> --reviewed-by user --review-notes "确认通过"
+```
+
+拒绝或查看暂停状态：
+
+```bash
+python -m runtime.cli reject <run_id> --reviewed-by user --review-notes "覆盖不足，退回修改"
+python -m runtime.cli resume <run_id>
+```
+
+审批通过后 writer 节点才允许写入。写入后的产物状态仍为 `needs_human_review`，不得继续自动生成 API/UI 脚本或归档。如果目标 `10-analysis/requirement-analysis.md` 或 `20-testcases/testcases.md` 已存在，Runtime 默认拒绝覆盖。
+
+每次运行记录默认包含：
+
+```text
+.runtime/runs/<run_id>/run-summary.json
+.runtime/runs/<run_id>/run-summary.md
+.runtime/runs/<run_id>/run-state.json
+.runtime/runs/<run_id>/graph-state.json
+.runtime/runs/<run_id>/checkpointer.pkl
+```
 
 质量门会阻断以下输出：缺少 `needs_human_review`、缺少需求分析 12 个必要章节、待确认问题少于 3 个、业务规则/风险/映射为空、测试用例少于 15 条、缺少 P0、优先级不属于 `P0/P1/P2/P3`、表头新增“用例类型”、表格列数不是固定 5 列、缺少至少 4 类关键覆盖维度，或仍包含纯模板占位语。
 

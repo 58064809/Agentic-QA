@@ -69,6 +69,9 @@ def test_dry_run_generates_run_record_by_default(tmp_path):
     assert result.run_summary_md
     assert (repo_root / result.run_summary_json).is_file()
     assert (repo_root / result.run_summary_md).is_file()
+    assert (repo_root / result.run_record_dir / "checkpointer.pkl").is_file()
+    assert (repo_root / result.run_record_dir / "graph-state.json").is_file()
+    assert (repo_root / result.run_record_dir / "run-state.json").is_file()
     assert not (repo_root / "prd/demo-requirement/20-testcases/testcases.md").exists()
 
 
@@ -99,11 +102,14 @@ def test_run_record_json_contains_runtime_summary(tmp_path):
     summary = read_summary_json(result, repo_root)
 
     assert summary["run_id"] == result.run_id
+    assert summary["thread_id"] == result.thread_id
     assert summary["success"] is True
+    assert summary["run_status"] == "interrupted"
     assert summary["orchestration"] == "LangGraph StateGraph"
     assert summary["executed_nodes"]
     assert summary["loaded_files"]
     assert summary["wrote_file"] is False
+    assert summary["human_review"]["status"] == "needs_human_review"
 
 
 def test_run_record_markdown_contains_nodes_and_review_status(tmp_path):

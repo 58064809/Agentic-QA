@@ -37,6 +37,9 @@ def mvp_artifact_writer_node(
     state.record_node("mvp_artifact_writer_node")
     if state.errors or state.quality_errors:
         return state
+    if state.review_status != "approved":
+        state.errors.append("人工审核未通过，拒绝写入产物。")
+        return state
     if state.dry_run:
         return state
     if not state.approve_write:

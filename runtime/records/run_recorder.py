@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import json
+import pickle
+from collections import defaultdict
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from runtime.records.run_id import generate_run_id
 from runtime.schemas.runtime_result import RuntimeResult
 
 DRAFT_PREVIEW_CHARS = 300
+CHECKPOINTER_FILE = "checkpointer.pkl"
+GRAPH_STATE_FILE = "graph-state.json"
+RUN_STATE_FILE = "run-state.json"
 
 
 def now_iso() -> str:
@@ -22,6 +28,96 @@ def relative_to_repo(path: Path, repo_root: Path) -> str:
         return path.as_posix()
 
 
+def run_record_dir_for(repo_root: Path, run_id: str) -> Path:
+    return repo_root / ".runtime" / "runs" / run_id
+
+
+def create_run_identity(run_id: str | None = None) -> tuple[str, str]:
+    next_run_id = run_id or generate_run_id()
+    return next_run_id, next_run_id
+
+
+def sanitize_for_json(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): sanitize_for_json(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [sanitize_for_json(item) for item in value]
+    if isinstance(value, str | int | float | bool) or value is None:
+        return value
+    if hasattr(value, "value") and hasattr(value, "id"):
+        return {
+            "type": value.__class__.__name__,
+            "id": str(value.id),
+            "value": sanitize_for_json(value.value),
+        }
+    return repr(value)
+
+
+def plain_mapping(value: Any) -> Any:
+    if isinstance(value, defaultdict | dict):
+        return {key: plain_mapping(item) for key, item in value.items()}
+    return value
+
+
+def nested_defaultdict(value: dict) -> defaultdict:
+    outer: defaultdict = defaultdict(lambda: defaultdict(dict))
+    for thread_id, namespaces in value.items():
+        outer[thread_id] = defaultdict(dict)
+        for namespace, checkpoints in namespaces.items():
+            outer[thread_id][namespace] = dict(checkpoints)
+    return outer
+
+
+def save_checkpointer(checkpointer: Any, run_record_dir: Path) -> Path:
+    payload = {
+        "storage": plain_mapping(checkpointer.storage),
+        "writes": plain_mapping(checkpointer.writes),
+        "blobs": dict(checkpointer.blobs),
+    }
+    path = run_record_dir / CHECKPOINTER_FILE
+    path.write_bytes(pickle.dumps(payload))
+    return path
+
+
+def load_checkpointer(run_record_dir: Path) -> Any:
+    from langgraph.checkpoint.memory import MemorySaver
+
+    path = run_record_dir / CHECKPOINTER_FILE
+    payload = pickle.loads(path.read_bytes())
+    checkpointer = MemorySaver()
+    checkpointer.storage = nested_defaultdict(payload.get("storage", {}))
+    checkpointer.writes = defaultdict(dict, payload.get("writes", {}))
+    checkpointer.blobs = dict(payload.get("blobs", {}))
+    return checkpointer
+
+
+def write_runtime_state(
+    *,
+    result: RuntimeResult,
+    repo_root: Path,
+    run_record_dir: Path,
+    graph_state: dict[str, Any] | None,
+    created_at: str,
+) -> None:
+    state_payload = {
+        "run_id": result.run_id,
+        "thread_id": result.thread_id,
+        "run_status": result.run_status,
+        "created_at": created_at,
+        "updated_at": now_iso(),
+        "result": sanitize_for_json(result.__dict__),
+        "graph_state": sanitize_for_json(graph_state or {}),
+    }
+    (run_record_dir / RUN_STATE_FILE).write_text(
+        json.dumps(state_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (run_record_dir / GRAPH_STATE_FILE).write_text(
+        json.dumps(sanitize_for_json(graph_state or {}), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def result_to_summary(result: RuntimeResult, created_at: str) -> dict[str, object]:
     draft_artifact_previews = {
         name: content[:DRAFT_PREVIEW_CHARS]
@@ -29,8 +125,10 @@ def result_to_summary(result: RuntimeResult, created_at: str) -> dict[str, objec
     }
     return {
         "run_id": result.run_id,
+        "thread_id": result.thread_id,
         "created_at": created_at,
         "success": result.success,
+        "run_status": result.run_status,
         "orchestration": result.orchestration,
         "mode": "approve-write" if result.approve_write else "dry-run",
         "task_type": result.task_type,
@@ -45,6 +143,7 @@ def result_to_summary(result: RuntimeResult, created_at: str) -> dict[str, objec
         "artifacts": result.artifacts,
         "wrote_file": result.wrote_file,
         "review_status": result.review_status,
+        "human_review": result.human_review,
         "llm": result.llm,
         "requirement_normalization": result.requirement_normalization,
         "image_detection": result.prototype_notes,
@@ -70,8 +169,10 @@ def render_markdown_summary(summary: dict[str, object]) -> str:
 ## 基本信息
 
 - Run ID：{summary["run_id"]}
+- Thread ID：{summary["thread_id"]}
 - 时间：{summary["created_at"]}
 - 模式：{mode}
+- 运行状态：{summary["run_status"]}
 - 编排方式：{summary["orchestration"]}
 - PRD：{summary["prd_path"]}
 - 意图：{summary["intent"] or "未识别"}
@@ -118,6 +219,7 @@ def render_markdown_summary(summary: dict[str, object]) -> str:
 ## 审核状态
 
 - review_status：{summary["review_status"]}
+- human_review：{json.dumps(summary["human_review"], ensure_ascii=False)}
 
 ## 错误与警告
 
@@ -135,9 +237,16 @@ def render_markdown_summary(summary: dict[str, object]) -> str:
 """
 
 
-def record_runtime_result(result: RuntimeResult, repo_root: Path) -> RuntimeResult:
+def record_runtime_result(
+    result: RuntimeResult,
+    repo_root: Path,
+    *,
+    graph_state: dict[str, Any] | None = None,
+    checkpointer: Any | None = None,
+) -> RuntimeResult:
     run_id = result.run_id or generate_run_id()
-    run_record_dir = repo_root / ".runtime" / "runs" / run_id
+    thread_id = result.thread_id or run_id
+    run_record_dir = run_record_dir_for(repo_root, run_id)
     summary_json = run_record_dir / "run-summary.json"
     summary_md = run_record_dir / "run-summary.md"
     created_at = now_iso()
@@ -148,19 +257,29 @@ def record_runtime_result(result: RuntimeResult, repo_root: Path) -> RuntimeResu
     result_with_paths = replace(
         result,
         run_id=run_id,
+        thread_id=thread_id,
         run_record_dir=relative_dir,
         run_summary_json=relative_json,
         run_summary_md=relative_md,
     )
 
     try:
-        run_record_dir.mkdir(parents=True, exist_ok=False)
+        run_record_dir.mkdir(parents=True, exist_ok=True)
+        if checkpointer is not None:
+            save_checkpointer(checkpointer, run_record_dir)
         summary = result_to_summary(result_with_paths, created_at)
         summary_json.write_text(
             json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
         summary_md.write_text(render_markdown_summary(summary), encoding="utf-8")
+        write_runtime_state(
+            result=result_with_paths,
+            repo_root=repo_root,
+            run_record_dir=run_record_dir,
+            graph_state=graph_state,
+            created_at=created_at,
+        )
     except OSError as exc:
         errors = [*result_with_paths.errors, f"运行记录写入失败: {exc}"]
         return replace(result_with_paths, success=False, errors=errors)

@@ -35,6 +35,9 @@ class RuntimeResult:
     wrote_file: bool
     orchestration: str
     run_id: str | None
+    thread_id: str | None
+    run_status: str
+    human_review: dict[str, Any]
     run_record_dir: str | None
     run_summary_json: str | None
     run_summary_md: str | None
@@ -69,6 +72,9 @@ class RuntimeResult:
             wrote_file=state.wrote_file,
             orchestration=state.orchestration,
             run_id=state.run_id,
+            thread_id=state.thread_id,
+            run_status=state.run_status,
+            human_review=dict(state.human_review),
             run_record_dir=state.run_record_dir,
             run_summary_json=state.run_summary_json,
             run_summary_md=state.run_summary_md,

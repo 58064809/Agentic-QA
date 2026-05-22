@@ -9,6 +9,7 @@ sys.path.insert(0, str(REPO_ROOT))
 import runtime.graph.langgraph_app as langgraph_app  # noqa: E402
 from runtime.graph.langgraph_app import (  # noqa: E402
     build_testcase_generation_graph,
+    resume_langgraph_testcase_generation_workflow,
     run_langgraph_testcase_generation_workflow,
 )
 
@@ -59,8 +60,10 @@ def test_langgraph_dry_run_does_not_write_testcases(tmp_path):
 
     assert result.success
     assert result.orchestration == "LangGraph StateGraph"
+    assert result.run_status == "interrupted"
+    assert result.review_status == "needs_human_review"
     assert not result.wrote_file
-    assert "artifact_writer_node" in result.executed_nodes
+    assert "artifact_writer_node" not in result.executed_nodes
     assert not (repo_root / "prd/demo-requirement/20-testcases/testcases.md").exists()
 
 
@@ -72,6 +75,12 @@ def test_langgraph_approve_write_creates_testcase_draft(tmp_path):
         "prd/demo-requirement",
         repo_root=repo_root,
         approve_write=True,
+    )
+    assert result.run_id is not None
+    result = resume_langgraph_testcase_generation_workflow(
+        result.run_id,
+        repo_root=repo_root,
+        action="approve",
     )
 
     output_path = repo_root / "prd/demo-requirement/20-testcases/testcases.md"
@@ -91,11 +100,40 @@ def test_langgraph_approve_write_does_not_overwrite_existing_testcases(tmp_path)
         repo_root=repo_root,
         approve_write=True,
     )
+    assert result.run_id is not None
+    result = resume_langgraph_testcase_generation_workflow(
+        result.run_id,
+        repo_root=repo_root,
+        action="approve",
+    )
 
     assert not result.success
     assert not result.wrote_file
     assert output_path.read_text(encoding="utf-8") == "人工已有内容"
     assert any("默认不覆盖" in error for error in result.errors)
+
+
+def test_langgraph_reject_does_not_write_testcase_draft(tmp_path):
+    repo_root = create_runtime_repo(tmp_path)
+
+    result = run_langgraph_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        approve_write=True,
+    )
+    assert result.run_id is not None
+    result = resume_langgraph_testcase_generation_workflow(
+        result.run_id,
+        repo_root=repo_root,
+        action="reject",
+    )
+
+    assert result.success
+    assert result.run_status == "rejected"
+    assert result.review_status == "rejected"
+    assert not result.wrote_file
+    assert not (repo_root / "prd/demo-requirement/20-testcases/testcases.md").exists()
 
 
 def test_langgraph_unsupported_intent_stops_before_context_loader(tmp_path):

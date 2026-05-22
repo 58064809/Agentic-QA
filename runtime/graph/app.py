@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from runtime.schemas.runtime_result import RuntimeResult
@@ -108,4 +109,49 @@ def run_mvp_analysis_and_testcases_workflow(
         approve_write=approve_write,
         record_run=record_run,
         use_llm=use_llm,
+    )
+
+
+def _read_recorded_task_type(repo_root: Path, run_id: str) -> str | None:
+    state_path = repo_root / ".runtime" / "runs" / run_id / "run-state.json"
+    if not state_path.is_file():
+        raise FileNotFoundError(f"未找到运行记录: {state_path.as_posix()}")
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    result = payload.get("result", {})
+    if not isinstance(result, dict):
+        return None
+    task_type = result.get("task_type")
+    return str(task_type) if task_type else None
+
+
+def resume_recorded_workflow(
+    run_id: str,
+    *,
+    action: str | None = None,
+    reviewed_by: str = "user",
+    review_notes: str | None = None,
+    repo_root: Path | None = None,
+) -> RuntimeResult:
+    root = (repo_root or default_repo_root()).resolve()
+    task_type = _read_recorded_task_type(root, run_id)
+
+    if task_type in {"analysis", "testcase_generation", "mvp_analysis_testcases"}:
+        from runtime.graph.mvp_graph import resume_mvp_generation_workflow
+
+        return resume_mvp_generation_workflow(
+            run_id,
+            action=action,
+            reviewed_by=reviewed_by,
+            review_notes=review_notes,
+            repo_root=root,
+        )
+
+    from runtime.graph.langgraph_app import resume_langgraph_testcase_generation_workflow
+
+    return resume_langgraph_testcase_generation_workflow(
+        run_id,
+        action=action,
+        reviewed_by=reviewed_by,
+        review_notes=review_notes,
+        repo_root=root,
     )

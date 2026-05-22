@@ -196,7 +196,16 @@ python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例
 
 只有显式传入 `--approve-write` 才允许写入草稿。`analyze` 写入 `prd/<id>/10-analysis/requirement-analysis.md`，`generate-testcases` 写入 `prd/<id>/20-testcases/testcases.md`，`mvp` 同时写入两类草稿。若任一目标文件已存在，Runtime 默认拒绝覆盖；`mvp` 会拒绝部分写入。写入后的状态仍为 `needs_human_review`，不得继续自动生成 API/UI 脚本或归档。
 
-Runtime 默认会在 `.runtime/runs/` 下生成本地运行记录，用于追踪节点轨迹、加载文件、输出路径、错误和审核状态。运行记录不应提交到 Git；如只想执行流程而不生成记录，可传入 `--no-record-run`。
+Runtime Graph 已启用 checkpointer，每次运行都会带 `thread_id`。`human_review_node` 使用 LangGraph `interrupt` 暂停，审批通过后才允许 writer 节点写入：
+
+```bash
+python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/sample-login-requirement --approve-write
+python -m runtime.cli approve <run_id> --reviewed-by user --review-notes "确认通过"
+python -m runtime.cli reject <run_id> --reviewed-by user --review-notes "退回修改"
+python -m runtime.cli resume <run_id>
+```
+
+Runtime 默认会在 `.runtime/runs/<run_id>/` 下生成本地运行记录，用于追踪节点轨迹、加载文件、输出路径、错误、审核状态、Graph state 和 checkpointer。运行记录不应提交到 Git；如只想执行流程而不生成记录，可传入 `--no-record-run`。
 
 MVP 质量门会检查需求分析是否包含 `needs_human_review`、12 个必要章节、至少 3 个具体待确认问题、实质业务规则、风险点与影响面、需求到测试覆盖映射；测试用例会检查固定 5 列表头、至少 15 条非表头用例、P0 用例、合法优先级、至少 4 类关键覆盖场景，并拒绝 Skeleton 占位语和“用例类型”等额外列。
 
