@@ -1,7 +1,7 @@
 # 归档规则
 
 - 归档前必须完成需求分析、用例、执行结果、失败分析和报告的人工审核或确认。
-- metadata 中不得存在 `needs_human_review` 或 `needs_human_confirmation`。
+- metadata 中不得存在 `needs_human_review`、`needs_revision`、`needs_human_confirmation` 或 `needs_changes`。
 - 归档索引必须列出关键产物路径、归档时间和归档状态。
 - 归档不代表删除原始材料，不允许清空工作区。
 - 归档后如需修改，应创建新的修订记录或新需求工作区。
@@ -11,5 +11,6 @@
 - `metadata.yml` 结构校验通过。
 - 需求分析、测试用例、执行结果、失败分析、QA 报告均已有产物或明确说明不适用。
 - `qa-report.md` 已由人工确认生成；若只有 `qa-report-draft.md`，不得作为正式归档结论。
-- 所有 review gate 不得处于 `needs_human_review`、`needs_human_confirmation`、`needs_changes` 或 `rejected`。
+- 所有 review gate 不得处于 `needs_human_review`、`needs_revision`、`needs_human_confirmation`、`needs_changes` 或 `rejected`。
+- 旧状态 `needs_human_confirmation` 按 `needs_human_review` 处理，旧状态 `needs_changes` 按 `needs_revision` 处理，不能作为归档放行状态。
 - 归档脚本失败时，不允许手工伪造 `archive-index.md`。

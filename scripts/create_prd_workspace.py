@@ -15,14 +15,22 @@ import yaml
 ALLOWED_STATUSES = {
     "draft",
     "needs_human_review",
+    "reviewed",
+    "needs_revision",
     "approved",
+    # Legacy-compatible statuses kept for existing workspaces.
     "needs_changes",
     "rejected",
     "needs_human_confirmation",
     "confirmed",
     "archived",
 }
-BLOCKING_STATUSES = {"needs_human_review", "needs_human_confirmation"}
+BLOCKING_STATUSES = {
+    "needs_human_review",
+    "needs_revision",
+    "needs_changes",
+    "needs_human_confirmation",
+}
 WORKSPACE_DIRS = [
     "10-analysis",
     "20-testcases",
@@ -122,8 +130,8 @@ def default_metadata(slug: str, title: str, owner: str, created_by: str) -> dict
                 "required_before": "生成自动化脚本",
             },
             {
-                "name": "执行结果确认",
-                "status": "needs_human_confirmation",
+                "name": "执行结果审核",
+                "status": "needs_human_review",
                 "owner": "QA 负责人",
                 "required_before": "归档",
             },
@@ -583,8 +591,8 @@ def generate_markdown_report(workspace_path: Path | str) -> Path:
     confirmation_items = collect_human_confirmation_items(metadata, workspace)
 
     report = f"""---
-status: needs_human_confirmation
-human_confirmation_required: true
+status: needs_human_review
+human_review_required: true
 artifact_type: qa_report_draft
 generated_by: scripts/generate_markdown_report.py
 ---
@@ -709,7 +717,7 @@ def archive_requirement(workspace_path: Path | str) -> Path:
 ## 归档说明
 
 本索引由 `scripts/archive_requirement.py` 生成。归档前已检查 metadata 中不存在
-`needs_human_review` 或 `needs_human_confirmation` 状态。
+`needs_human_review`、`needs_revision`、`needs_changes` 或 `needs_human_confirmation` 状态。
 """
     archive_path.write_text(archive, encoding="utf-8")
     metadata["status"] = "archived"

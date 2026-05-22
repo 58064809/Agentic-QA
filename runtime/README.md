@@ -2,6 +2,8 @@
 
 当前 Runtime 处于 MVP 阶段，用于第 2 阶段 LangGraph Runtime 的后续演进。010 已接入 LangGraph `StateGraph`，011 已加入本地运行记录，012 已打通需求分析与测试用例生成链路，但仍不是生产完整 Runtime。
 
+当前真实需求交付主线仍是 Codex-first：用户在 PyCharm Chat / Codex Chat 中直接输入自然语言命令，Codex 读取仓库声明式资产和目标 PRD 工作区生成 QA 产物。Runtime CLI 目前是辅助工具，用于文档归一化、结构校验、运行记录和未来自动化能力预留；Runtime LLM 不是当前真实需求交付依赖。
+
 ## 当前能力
 
 - 010 使用 LangGraph `StateGraph` 编排测试用例生成最小流程。
@@ -11,9 +13,9 @@
 - 012B 补强质量门：低质量 Skeleton、空待确认问题、少量示例用例、非法优先级和额外“用例类型”列不能误通过。
 - 013 已接入 Microsoft MarkItDown，在 `analyze`、`generate-testcases` 和 `mvp` 的上下文加载前把 Word/PDF/TXT/HTML 等需求源文件归一化为 `requirement.md`。
 - 016 已废弃 `prototype-notes.md` 输入链路；Runtime 明确不分析图片/原型图内容，只检测图片痕迹并 warning。
-- LLM 默认关闭，必须通过 `--use-llm` 显式启用。
+- LLM 默认关闭，必须通过 `--use-llm` 显式启用；该能力只作为预留能力，不作为当前主线交付入口。
 - LLM 配置只从本地环境变量读取：`FREEMODEL_API_KEY`、`FREEMODEL_BASE_URL`、`FREEMODEL_MODEL`。
-- LLM 调用优先使用 OpenAI-compatible `responses.create`，如果 SDK 或服务不支持，再 fallback 到 `chat.completions.create`。
+- LLM 调用优先使用 OpenAI-compatible `responses.create`；`chat.completions.create` fallback 默认关闭，仅在本地设置 `FREEMODEL_ENABLE_CHAT_FALLBACK=true` 时启用。
 - 缺少密钥或未启用 LLM 时，Runtime 降级生成确定性评审级草稿。
 - 当前不接入 LangChain ChatModel。
 - 当前不接入持久化 Checkpointer。
@@ -26,6 +28,16 @@
 - 运行记录默认位于 `.runtime/runs/<run_id>/`，不应提交到 Git。
 
 ## 使用命令
+
+真实需求交付优先使用 Chat 中的 Codex-first 命令，例如：
+
+```text
+帮我分析 prd/<需求名> 需求，按仓库规则输出需求分析。
+基于 prd/<需求名> 的需求分析生成测试用例。
+根据评审意见增量修订 prd/<需求名> 的需求分析和测试用例。
+```
+
+以下 Runtime 命令用于验证辅助能力或后续自动化链路，不是当前主线交付要求：
 
 ```bash
 python -m runtime.cli analyze "帮我分析这个需求" --prd prd/sample-login-requirement
@@ -53,6 +65,8 @@ requirement.rtf
 ```
 
 转换输出固定为 `prd/<id>/requirement.md`。如果多个源文件同时存在，Runtime 按优先级选择一个并在 warnings 中说明。该转换是受控输入归一化写入，不需要 `--approve-write`；QA 产物写入仍必须显式传 `--approve-write`。
+
+如果转换后的 Markdown 存在乱码、分页符、异常断行、控制字符或连续异常空格，后续可使用轻量清洗脚本生成 `requirement.cleaned.md`。清洗只允许做格式层面的无语义变更，默认不得覆盖 `requirement.md`；不做 OCR，不处理图片，不分析原型图。
 
 ## 需求输入与图片策略
 
@@ -93,6 +107,8 @@ python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/sa
 ```
 
 默认服务地址为 `https://api.freemodel.dev`，默认模型为 `gpt-5.5`。请只在本地环境变量中设置密钥，不要提交 `.env` 或任何密钥文件。运行记录会记录是否启用 LLM、模型、服务地址、调用次数和错误摘要，但不会记录密钥。
+
+当前阶段不建议把 `--use-llm` 作为真实业务需求的默认交付路径。真实交付应由 Codex 读取仓库规则和 PRD 文本后生成草稿，再由人工评审确认。
 
 ## 后续方向
 

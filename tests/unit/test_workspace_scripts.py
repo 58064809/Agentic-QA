@@ -13,7 +13,9 @@ from create_prd_workspace import (  # noqa: E402
     archive_requirement,
     create_workspace,
     generate_markdown_report,
+    read_yaml,
     validate_workspace,
+    write_yaml,
 )
 
 
@@ -84,6 +86,22 @@ def test_archive_requirement_rejects_unreviewed_workspace(tmp_path):
     workspace = create_workspace("demo-requirement", prd_root=tmp_path / "prd")
 
     with pytest.raises(RuntimeError, match="拒绝归档"):
+        archive_requirement(workspace)
+
+
+def test_validate_workspace_accepts_needs_revision_and_blocks_archive(tmp_path):
+    workspace = create_workspace("demo-requirement", prd_root=tmp_path / "prd")
+    metadata_path = workspace / "metadata.yml"
+    metadata = read_yaml(metadata_path)
+    for gate in metadata["review_gates"]:
+        gate["status"] = "approved"
+    metadata["review_gates"][0]["status"] = "needs_revision"
+    write_yaml(metadata_path, metadata)
+
+    result = validate_workspace(workspace)
+
+    assert result.ok, result.errors
+    with pytest.raises(RuntimeError, match="needs_revision"):
         archive_requirement(workspace)
 
 

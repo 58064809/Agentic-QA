@@ -48,6 +48,8 @@ def test_openai_compatible_config_reads_env_without_serializing_key(monkeypatch)
         "provider": "openai_compatible",
         "base_url": "https://example.test/v1",
         "model": "demo-model",
+        "chat_fallback_enabled": False,
+        "max_input_chars": 8000,
         "calls": 0,
         "errors": [],
     }
@@ -79,7 +81,7 @@ def test_openai_adapter_prefers_responses_create(monkeypatch):
         def create(self, **kwargs):
             calls["responses"] += 1
             assert kwargs["model"] == "demo-model"
-            assert kwargs["input"][1]["content"] == "prompt text"
+            assert kwargs["input"] == f"{openai_compatible.SYSTEM_PROMPT}\n\nprompt text"
             return SimpleNamespace(output_text="responses markdown")
 
     class FakeChatCompletions:
@@ -131,7 +133,11 @@ def test_openai_adapter_falls_back_to_chat_completions(monkeypatch):
             self.chat = SimpleNamespace(completions=FakeChatCompletions())
 
     monkeypatch.setattr(openai_compatible, "OpenAI", FakeOpenAI)
-    config = OpenAICompatibleConfig(api_key="local-secret", model="demo-model")
+    config = OpenAICompatibleConfig(
+        api_key="local-secret",
+        model="demo-model",
+        enable_chat_fallback=True,
+    )
 
     content = OpenAICompatibleAdapter(config).generate_text("prompt text")
 
