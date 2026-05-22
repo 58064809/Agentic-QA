@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
+
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
@@ -17,6 +20,10 @@ from runtime.graph.langgraph_app import (  # noqa: E402
 def write_file(path: Path, content: str = "placeholder") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+
+
+def read_jsonl(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
 def create_runtime_repo(root: Path) -> Path:
@@ -88,6 +95,25 @@ def test_langgraph_approve_write_creates_testcase_draft(tmp_path):
     assert result.wrote_file
     assert "Runtime Skeleton" in output_path.read_text(encoding="utf-8")
 
+    assert result.run_record_dir is not None
+    events = read_jsonl(repo_root / result.run_record_dir / "review-events.jsonl")
+    assert events[-1]["action"] == "approve"
+    assert events[-1]["previous_status"] == "needs_human_review"
+    assert events[-1]["next_status"] == "approved"
+    assert events[-1]["wrote_file"] is True
+
+    summary = json.loads(
+        (repo_root / result.run_record_dir / "run-summary.json").read_text(encoding="utf-8")
+    )
+    assert summary["review_events"][-1]["action"] == "approve"
+
+    metadata = yaml.safe_load(
+        (repo_root / "prd/demo-requirement/metadata.yml").read_text(encoding="utf-8")
+    )
+    assert metadata["status"] == "needs_human_review"
+    assert metadata["last_runtime_run"]["run_id"] == result.run_id
+    assert metadata["runtime_runs"][-1]["wrote_file"] is True
+
 
 def test_langgraph_approve_write_does_not_overwrite_existing_testcases(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
@@ -134,6 +160,12 @@ def test_langgraph_reject_does_not_write_testcase_draft(tmp_path):
     assert result.review_status == "rejected"
     assert not result.wrote_file
     assert not (repo_root / "prd/demo-requirement/20-testcases/testcases.md").exists()
+
+    assert result.run_record_dir is not None
+    events = read_jsonl(repo_root / result.run_record_dir / "review-events.jsonl")
+    assert events[-1]["action"] == "reject"
+    assert events[-1]["next_status"] == "rejected"
+    assert events[-1]["wrote_file"] is False
 
 
 def test_langgraph_unsupported_intent_stops_before_context_loader(tmp_path):

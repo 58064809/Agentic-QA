@@ -15,6 +15,7 @@ DRAFT_PREVIEW_CHARS = 300
 CHECKPOINTER_FILE = "checkpointer.pkl"
 GRAPH_STATE_FILE = "graph-state.json"
 RUN_STATE_FILE = "run-state.json"
+REVIEW_EVENTS_FILE = "review-events.jsonl"
 
 
 def now_iso() -> str:
@@ -30,6 +31,10 @@ def relative_to_repo(path: Path, repo_root: Path) -> str:
 
 def run_record_dir_for(repo_root: Path, run_id: str) -> Path:
     return repo_root / ".runtime" / "runs" / run_id
+
+
+def review_events_path_for(run_record_dir: Path) -> Path:
+    return run_record_dir / REVIEW_EVENTS_FILE
 
 
 def create_run_identity(run_id: str | None = None) -> tuple[str, str]:
@@ -107,6 +112,7 @@ def write_runtime_state(
         "updated_at": now_iso(),
         "result": sanitize_for_json(result.__dict__),
         "graph_state": sanitize_for_json(graph_state or {}),
+        "review_events": read_review_events(run_record_dir),
     }
     (run_record_dir / RUN_STATE_FILE).write_text(
         json.dumps(state_payload, ensure_ascii=False, indent=2) + "\n",
@@ -118,7 +124,64 @@ def write_runtime_state(
     )
 
 
-def result_to_summary(result: RuntimeResult, created_at: str) -> dict[str, object]:
+def read_review_events(run_record_dir: Path) -> list[dict[str, Any]]:
+    path = review_events_path_for(run_record_dir)
+    if not path.is_file():
+        return []
+    events = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        parsed = json.loads(line)
+        if isinstance(parsed, dict):
+            events.append(parsed)
+    return events
+
+
+def append_review_event(
+    result: RuntimeResult,
+    repo_root: Path,
+    *,
+    action: str,
+    reviewed_by: str,
+    review_notes: str | None,
+    previous_status: str,
+    previous_run_status: str | None = None,
+) -> Path:
+    if not result.run_id:
+        raise ValueError("缺少 run_id，无法记录人工审核事件。")
+
+    run_record_dir = run_record_dir_for(repo_root, result.run_id)
+    run_record_dir.mkdir(parents=True, exist_ok=True)
+    event = {
+        "run_id": result.run_id,
+        "thread_id": result.thread_id,
+        "action": action,
+        "reviewed_by": reviewed_by,
+        "review_notes": review_notes,
+        "created_at": now_iso(),
+        "previous_status": previous_status,
+        "previous_run_status": previous_run_status,
+        "next_status": result.review_status,
+        "next_run_status": result.run_status,
+        "wrote_file": result.wrote_file,
+        "output_path": result.output_path,
+        "output_paths": result.output_paths,
+        "errors": result.errors,
+        "warnings": result.warnings,
+    }
+    path = review_events_path_for(run_record_dir)
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(event, ensure_ascii=False) + "\n")
+    return path
+
+
+def result_to_summary(
+    result: RuntimeResult,
+    created_at: str,
+    *,
+    review_events: list[dict[str, Any]] | None = None,
+) -> dict[str, object]:
     draft_artifact_previews = {
         name: content[:DRAFT_PREVIEW_CHARS]
         for name, content in result.draft_artifacts.items()
@@ -144,6 +207,7 @@ def result_to_summary(result: RuntimeResult, created_at: str) -> dict[str, objec
         "wrote_file": result.wrote_file,
         "review_status": result.review_status,
         "human_review": result.human_review,
+        "review_events": review_events or [],
         "llm": result.llm,
         "requirement_normalization": result.requirement_normalization,
         "image_detection": result.prototype_notes,
@@ -220,6 +284,7 @@ def render_markdown_summary(summary: dict[str, object]) -> str:
 
 - review_status：{summary["review_status"]}
 - human_review：{json.dumps(summary["human_review"], ensure_ascii=False)}
+- review_events：{len(list(summary["review_events"]))}
 
 ## 错误与警告
 
@@ -267,7 +332,11 @@ def record_runtime_result(
         run_record_dir.mkdir(parents=True, exist_ok=True)
         if checkpointer is not None:
             save_checkpointer(checkpointer, run_record_dir)
-        summary = result_to_summary(result_with_paths, created_at)
+        summary = result_to_summary(
+            result_with_paths,
+            created_at,
+            review_events=read_review_events(run_record_dir),
+        )
         summary_json.write_text(
             json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",

@@ -24,7 +24,8 @@
 - Graph 已启用 checkpointer，每次运行都会带 `thread_id`。
 - `human_review_node` 使用 LangGraph `interrupt` 暂停；审批通过后才允许 writer 节点写入。
 - CLI 支持 `approve`、`reject`、`resume` 处理暂停中的运行。
-- 运行状态、Graph state 和 checkpointer 写入 `.runtime/runs/<run_id>/`。
+- 运行状态、Graph state、审批事件和 checkpointer 写入 `.runtime/runs/<run_id>/`。
+- writer 成功后，`metadata_update_node` 会在目标 PRD 的 `metadata.yml` 中记录 `last_runtime_run` 和 `runtime_runs`；这只表示 Runtime 写入已审批，不等于业务 QA 审核通过。
 - 如果目标文件已存在，默认拒绝覆盖；MVP 连续链路拒绝部分写入。
 - Runtime 必须读取现有声明式资产，不允许硬编码 Prompt / Rules / Skills。
 - Runtime 的写入、执行、归档动作必须经过 Human Review Gate。
@@ -122,8 +123,11 @@ python -m runtime.cli resume <run_id>
 .runtime/runs/<run_id>/run-summary.md
 .runtime/runs/<run_id>/run-state.json
 .runtime/runs/<run_id>/graph-state.json
+.runtime/runs/<run_id>/review-events.jsonl
 .runtime/runs/<run_id>/checkpointer.pkl
 ```
+
+`review-events.jsonl` 使用 append-only 方式记录每次人工动作，包含 `action`、`reviewed_by`、`review_notes`、`previous_status`、`next_status`、`wrote_file` 和输出路径。`reject` 也会记录事件，但不会写入业务产物。
 
 质量门会阻断以下输出：缺少 `needs_human_review`、缺少需求分析 12 个必要章节、待确认问题少于 3 个、业务规则/风险/映射为空、测试用例少于 15 条、缺少 P0、优先级不属于 `P0/P1/P2/P3`、表头新增“用例类型”、表格列数不是固定 5 列、缺少至少 4 类关键覆盖维度，或仍包含纯模板占位语。
 

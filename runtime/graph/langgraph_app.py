@@ -24,6 +24,7 @@ from runtime.graph.state import (
     to_graph_state,
 )
 from runtime.records.run_recorder import (
+    append_review_event,
     create_run_identity,
     load_checkpointer,
     record_runtime_result,
@@ -115,7 +116,10 @@ def build_testcase_generation_graph(repo_root: Path, checkpointer: MemorySaver |
         "artifact_writer_node",
         _wrap_node(lambda state: artifact_writer_node(state, root)),
     )
-    graph.add_node("metadata_update_node", _wrap_node(metadata_update_node))
+    graph.add_node(
+        "metadata_update_node",
+        _wrap_node(lambda state: metadata_update_node(state, root)),
+    )
 
     graph.add_edge(START, "intent_router_node")
     graph.add_conditional_edges(
@@ -223,8 +227,23 @@ def resume_langgraph_testcase_generation_workflow(
         "reviewed_by": reviewed_by,
         "review_notes": review_notes,
     }
+    previous_snapshot = graph.get_state(graph_config)
+    previous_state = from_graph_state(dict(previous_snapshot.values))
+    previous_status = (
+        "needs_human_review" if previous_snapshot.next else previous_state.review_status
+    )
+    previous_run_status = "interrupted" if previous_snapshot.next else previous_state.run_status
     graph_state = graph.invoke(Command(resume=decision), config=graph_config)
     result = RuntimeResult.from_state(_state_from_graph_output(graph_state))
+    append_review_event(
+        result,
+        root,
+        action=action,
+        reviewed_by=reviewed_by,
+        review_notes=review_notes,
+        previous_status=previous_status,
+        previous_run_status=previous_run_status,
+    )
     return record_runtime_result(
         result,
         root,
