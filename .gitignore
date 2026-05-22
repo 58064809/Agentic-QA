@@ -19,3 +19,14 @@ venv/
 env/
 .DS_Store
 Thumbs.db
+
+# Local scratch files
+caogao.py
+
+# Local demo workspace from quickstart/testing
+prd/demo-requirement/
+
+# Real business PRD source/input files stay local unless explicitly approved
+prd/*-review/metadata.yml
+prd/*-review/requirement.md
+prd/*-review/requirement.pdf
