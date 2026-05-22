@@ -18,7 +18,12 @@ def add_common_runtime_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--approve-write",
         action="store_true",
-        help="显式允许写入草稿；默认 dry-run 不写入业务产物。",
+        help="兼容旧参数：显式允许写入草稿；默认 dry-run 不写入业务产物。",
+    )
+    parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="一键确认并写入草稿；等同于 --approve-write。",
     )
     parser.add_argument(
         "--use-llm",
@@ -50,7 +55,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--approve-write",
         action="store_true",
-        help="显式允许写入测试用例草稿；默认 dry-run 不写入",
+        help="兼容旧参数：显式允许写入测试用例草稿；默认 dry-run 不写入",
+    )
+    run_parser.add_argument(
+        "--confirm",
+        action="store_true",
+        help="一键确认并写入测试用例草稿；等同于 --approve-write。",
     )
     run_parser.add_argument(
         "--record-run",
@@ -80,6 +90,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="连续生成需求分析草稿和测试用例草稿",
     )
     add_common_runtime_arguments(mvp_parser)
+
+    confirm_parser = subparsers.add_parser(
+        "confirm",
+        help="一键确认：连续生成需求分析和测试用例并写入草稿",
+    )
+    confirm_parser.add_argument("user_input", help="用户自然语言命令")
+    confirm_parser.add_argument("--prd", required=True, help="PRD 工作区路径")
+    confirm_parser.add_argument(
+        "--use-llm",
+        action="store_true",
+        help="显式启用本地环境变量配置的 OpenAI-compatible LLM；默认关闭。",
+    )
+    confirm_parser.add_argument(
+        "--record-run",
+        dest="record_run",
+        action="store_true",
+        default=True,
+        help="生成本地运行记录；默认开启。",
+    )
+    confirm_parser.add_argument(
+        "--no-record-run",
+        dest="record_run",
+        action="store_false",
+        help="不生成本地运行记录。",
+    )
 
     for command, help_text in [
         ("approve", "兼容旧暂停运行：审批通过并继续写入"),
@@ -155,9 +190,13 @@ def print_summary(result) -> None:
             print(f"- {error}")
 
     if not result.approve_write:
-        print("说明: dry-run 不写入文件；需要写入时请显式传入 --approve-write。")
+        print("说明: dry-run 不写入文件；需要写入时请使用 confirm 命令，或显式传入 --confirm。")
     if result.run_status == "interrupted":
         print("说明: 当前运行已在人工审核点暂停；通过后执行 approve，拒绝执行 reject。")
+
+
+def write_confirmed(args: argparse.Namespace) -> bool:
+    return bool(getattr(args, "approve_write", False) or getattr(args, "confirm", False))
 
 
 def main() -> int:
@@ -168,7 +207,7 @@ def main() -> int:
         result = run_testcase_generation_workflow(
             user_input=args.user_input,
             prd_path=Path(args.prd),
-            approve_write=args.approve_write,
+            approve_write=write_confirmed(args),
             record_run=args.record_run,
         )
         print_summary(result)
@@ -178,7 +217,7 @@ def main() -> int:
         result = run_requirement_analysis_workflow(
             user_input=args.user_input,
             prd_path=Path(args.prd),
-            approve_write=args.approve_write,
+            approve_write=write_confirmed(args),
             record_run=args.record_run,
             use_llm=args.use_llm,
         )
@@ -189,7 +228,7 @@ def main() -> int:
         result = run_mvp_testcase_generation_workflow(
             user_input=args.user_input,
             prd_path=Path(args.prd),
-            approve_write=args.approve_write,
+            approve_write=write_confirmed(args),
             record_run=args.record_run,
             use_llm=args.use_llm,
         )
@@ -200,7 +239,18 @@ def main() -> int:
         result = run_mvp_analysis_and_testcases_workflow(
             user_input=args.user_input,
             prd_path=Path(args.prd),
-            approve_write=args.approve_write,
+            approve_write=write_confirmed(args),
+            record_run=args.record_run,
+            use_llm=args.use_llm,
+        )
+        print_summary(result)
+        return 0 if result.success else 1
+
+    if args.command == "confirm":
+        result = run_mvp_analysis_and_testcases_workflow(
+            user_input=args.user_input,
+            prd_path=Path(args.prd),
+            approve_write=True,
             record_run=args.record_run,
             use_llm=args.use_llm,
         )

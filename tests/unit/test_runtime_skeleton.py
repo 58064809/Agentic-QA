@@ -7,6 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from runtime.cli import build_parser  # noqa: E402
 from runtime.graph.app import run_testcase_generation_workflow  # noqa: E402
 from runtime.graph.nodes.context_loader import context_loader_node  # noqa: E402
 from runtime.graph.nodes.intent_router import intent_router_node  # noqa: E402
@@ -149,3 +150,22 @@ def test_cli_help_runs():
 
     assert result.returncode == 0
     assert "Agentic-QA Runtime" in result.stdout
+    assert "confirm" in result.stdout
+
+
+def test_confirm_command_parses_one_click_write():
+    args = build_parser().parse_args(
+        ["confirm", "帮我分析需求并生成测试用例", "--prd", "prd/demo-requirement"]
+    )
+
+    assert args.command == "confirm"
+    assert args.prd == "prd/demo-requirement"
+
+
+def test_confirm_alias_parses_for_mvp():
+    args = build_parser().parse_args(
+        ["mvp", "帮我分析需求并生成测试用例", "--prd", "prd/demo-requirement", "--confirm"]
+    )
+
+    assert args.command == "mvp"
+    assert args.confirm is True

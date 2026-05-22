@@ -20,15 +20,16 @@
 - 当前不接入 LangChain ChatModel。
 - 当前使用本地文件化 checkpointer 快照，写入 `.runtime/runs/<run_id>/checkpointer.pkl`。
 - 默认 dry-run，不写入业务产物，但会写运行记录。
-- `--approve-write` 才允许写入需求分析和测试用例草稿；该参数本身就是 Runtime 写入授权。
+- `confirm` 命令提供一键确认写入；`--confirm` 可作为 `analyze`、`generate-testcases`、`mvp` 和 `run` 的写入确认开关。
+- `--approve-write` 保留为兼容旧参数，等同于 `--confirm`。
 - Graph 已启用 checkpointer，每次运行都会带 `thread_id`。
 - 当前默认不再额外暂停等待 `approve` 命令；`human_review_node` 只做写入授权状态标记。
 - CLI 保留 `approve`、`reject`、`resume`，仅用于兼容旧的暂停运行。
 - 运行状态、Graph state 和 checkpointer 写入 `.runtime/runs/<run_id>/`。
-- writer 成功后，`metadata_update_node` 会在目标 PRD 的 `metadata.yml` 中记录 `last_runtime_run` 和 `runtime_runs`；这只表示 Runtime 已按 `--approve-write` 写入草稿，不等于业务 QA 审核通过。
+- writer 成功后，`metadata_update_node` 会在目标 PRD 的 `metadata.yml` 中记录 `last_runtime_run` 和 `runtime_runs`；这只表示 Runtime 已按一键确认写入草稿，不等于业务 QA 审核通过。
 - 如果目标文件已存在，默认拒绝覆盖；MVP 连续链路拒绝部分写入。
 - Runtime 必须读取现有声明式资产，不允许硬编码 Prompt / Rules / Skills。
-- Runtime 的写入、执行、归档动作必须经过 Human Review Gate。
+- Runtime 的写入动作仍会经过 Human Review Gate 状态标记，但当前不再要求额外执行 `approve`/`reject`。
 - Human Review Gate 当前是状态门，不是复杂交互审批。
 - 运行记录默认位于 `.runtime/runs/<run_id>/`，不应提交到 Git。
 
@@ -69,7 +70,7 @@ requirement.rtf
 需求.htm
 ```
 
-转换输出固定为 `prd/<id>/requirement.md`。如果多个源文件同时存在，Runtime 按优先级选择一个并在 warnings 中说明。该转换是受控输入归一化写入，不需要 `--approve-write`；QA 产物写入仍必须显式传 `--approve-write`。
+转换输出固定为 `prd/<id>/requirement.md`。如果多个源文件同时存在，Runtime 按优先级选择一个并在 warnings 中说明。该转换是受控输入归一化写入，不需要 `confirm`；QA 产物写入仍必须一键确认。
 
 如果转换后的 Markdown 存在乱码、分页符、异常断行、控制字符或连续异常空格，后续可使用轻量清洗脚本生成 `requirement.cleaned.md`。清洗只允许做格式层面的无语义变更，默认不得覆盖 `requirement.md`；不做 OCR，不处理图片，不分析原型图。
 
@@ -92,16 +93,22 @@ Runtime 的推荐输入由两类 Markdown 文件组成：
 python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement --no-record-run
 ```
 
-显式写入测试用例草稿：
+一键确认并写入需求分析和测试用例草稿：
 
 ```bash
-python -m runtime.cli analyze "帮我分析这个需求" --prd prd/sample-login-requirement --approve-write
-python -m runtime.cli generate-testcases "帮我生成测试用例" --prd prd/sample-login-requirement --approve-write
-python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/sample-login-requirement --approve-write
-python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement --approve-write
+python -m runtime.cli confirm "帮我分析需求并生成测试用例" --prd prd/sample-login-requirement
 ```
 
-带 `--approve-write` 的命令会在质量门通过后直接写入产物，不需要再执行 `approve <run_id>`。写入后的产物状态仍为 `needs_human_review`，不得继续自动生成 API/UI 脚本或归档。如果目标 `10-analysis/requirement-analysis.md` 或 `20-testcases/testcases.md` 已存在，Runtime 默认拒绝覆盖。
+也可以在原有命令上使用 `--confirm`：
+
+```bash
+python -m runtime.cli analyze "帮我分析这个需求" --prd prd/sample-login-requirement --confirm
+python -m runtime.cli generate-testcases "帮我生成测试用例" --prd prd/sample-login-requirement --confirm
+python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/sample-login-requirement --confirm
+python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement --confirm
+```
+
+一键确认命令会在质量门通过后直接写入产物，不需要再执行 `approve <run_id>`。写入后的产物状态仍为 `needs_human_review`，不得继续自动生成 API/UI 脚本或归档。如果目标 `10-analysis/requirement-analysis.md` 或 `20-testcases/testcases.md` 已存在，Runtime 默认拒绝覆盖。`--approve-write` 仍可使用，但只作为旧命令兼容别名。
 
 每次运行记录默认包含：
 
