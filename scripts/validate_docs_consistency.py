@@ -11,7 +11,7 @@ CORE_FILES = [
     "rules/codex-output-rules.md",
     "knowledge/templates/codex-completion-summary-template.md",
     ".github/workflows/ci.yml",
-    "docs/architecture/production-agent-runtime-roadmap.md",
+    "docs/production-agent-runtime-roadmap.md",
     "docs/roadmap.md",
     "workflows/10-runtime-testcase-generation-workflow.md",
     "runtime/README.md",
@@ -23,7 +23,6 @@ CORE_DIRS = [
     "docs/architecture",
     "workflows",
     "agents",
-    "tasks",
     "prompts",
     "rules",
     "skills",
@@ -33,6 +32,9 @@ CORE_DIRS = [
     "scripts",
     "tests",
     "runtime",
+    "apps",
+    "rag",
+    "configs",
 ]
 CODEX_OUTPUT_REQUIRED_TERMS = [
     "标准完成回执模板",
@@ -53,7 +55,6 @@ COMPLETION_TEMPLATE_REQUIRED_TERMS = [
 PATH_PREFIXES = (
     "workflows/",
     "agents/",
-    "tasks/",
     "prompts/",
     "rules/",
     "skills/",
@@ -63,7 +64,6 @@ PATH_PREFIXES = (
     "prd/",
     "scripts/",
     "tests/",
-    "_codex_tasks/",
 )
 EXCLUDED_DIRS = {
     ".git",
@@ -83,7 +83,6 @@ PLANNED_REFERENCE_MARKERS = (
     "可选新增",
     "后续任务中创建",
 )
-TASK_INSTRUCTION_REFERENCE_MARKERS = (" 中补充", "必须报告", "至少包含", "例如", "允许新增")
 
 
 def read_text(path: Path) -> str:
@@ -146,14 +145,6 @@ def find_broken_markdown_path_refs(repo_root: Path) -> list[str]:
             if in_fenced_block:
                 continue
             if any(marker in line for marker in PLANNED_REFERENCE_MARKERS):
-                continue
-            if source.startswith("_codex_tasks/") and any(
-                marker in line for marker in TASK_INSTRUCTION_REFERENCE_MARKERS
-            ):
-                continue
-            if source.startswith("_codex_tasks/") and re.match(
-                r"\s*-\s+`runtime/.+/README\.md`", line
-            ):
                 continue
 
             for match in INLINE_CODE_RE.finditer(line):

@@ -1,0 +1,30 @@
+app:
+  name: agentic-qa
+  env: dev
+
+input:
+  support_feishu_doc: true
+  support_markdown: true
+
+workflow:
+  enable_human_checkpoint: true
+  default_checkpoint_node: requirement_analysis
+
+rag:
+  enabled: true
+  top_k: 5
+  vector_store: faiss
+  chunk_size: 500
+  chunk_overlap: 50
+  embedding_model: text-embedding-3-small
+  embedding_dim: 1536
+  index_dir: .rag_index
+  knowledge_paths:
+    - knowledge/qa-methodology
+    - knowledge/project-rules
+    - knowledge/templates
+
+output:
+  markdown: true
+  yaml: true
+  json: true

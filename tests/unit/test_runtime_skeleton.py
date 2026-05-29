@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import subprocess
+
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from runtime.cli import build_parser  # noqa: E402
 from runtime.graph.app import run_testcase_generation_workflow  # noqa: E402
 from runtime.graph.nodes.context_loader import context_loader_node  # noqa: E402
 from runtime.graph.nodes.intent_router import intent_router_node  # noqa: E402
@@ -53,13 +52,46 @@ def test_intent_router_recognizes_testcase_generation():
     assert not state.errors
 
 
-def test_intent_router_rejects_unsupported_intent():
-    state = QAWorkflowState(user_input="请归档这个需求", prd_path="prd/demo-requirement")
+def test_intent_router_recognizes_all_supported_intents():
+    test_cases = [
+        ("帮我分析登录需求", "requirement_analysis"),
+        ("拆解需求并提取业务规则", "requirement_analysis"),
+        ("生成测试用例覆盖边界场景", "testcase_generation"),
+        ("设计用例补边界", "testcase_generation"),
+        ("生成接口自动化", "api_test_generation"),
+        ("根据接口文档出测试脚本", "api_test_generation"),
+        ("生成 Playwright 脚本", "ui_test_generation"),
+        ("做端到端测试", "ui_test_generation"),
+        ("跑 pytest 收集结果", "test_execution"),
+        ("执行测试并收集结果", "test_execution"),
+        ("看失败日志判断原因", "failure_analysis"),
+        ("分类这些失败", "failure_analysis"),
+        ("生成 bug 草稿", "bug_draft"),
+        ("提缺陷报告", "bug_draft"),
+        ("生成 QA 报告草稿", "report_generation"),
+        ("汇总测试结果", "report_generation"),
+        ("归档这个需求", "archive"),
+    ]
+    for user_input, expected_intent in test_cases:
+        state = QAWorkflowState(user_input=user_input, prd_path="prd/demo-requirement")
+        intent_router_node(state)
+        assert state.intent == expected_intent, (
+            f"输入「{user_input}」应匹配意图 {expected_intent}，实际得到 {state.intent}"
+        )
+        assert not state.errors, (
+            f"输入「{user_input}」不应报错，实际得到 {state.errors}"
+        )
+
+
+def test_intent_router_unknown_input_reports_supported_list():
+    state = QAWorkflowState(user_input="帮我浇花", prd_path="prd/demo-requirement")
 
     intent_router_node(state)
 
     assert state.intent is None
-    assert state.errors == ["当前 Runtime Skeleton 仅支持测试用例生成 dry-run。"]
+    assert len(state.errors) == 1
+    assert "未能识别意图" in state.errors[0]
+    assert "需求分析" in state.errors[0]
 
 
 def test_context_loader_loads_sample_prd_required_files():
@@ -139,33 +171,4 @@ def test_quality_check_reports_missing_review_status_and_headers(tmp_path):
     assert any("测试用例草稿缺少表头" in error for error in state.quality_errors)
 
 
-def test_cli_help_runs():
-    result = subprocess.run(
-        [sys.executable, "-m", "runtime.cli", "--help"],
-        check=False,
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
-    )
 
-    assert result.returncode == 0
-    assert "Agentic-QA Runtime" in result.stdout
-    assert "confirm" in result.stdout
-
-
-def test_confirm_command_parses_one_click_write():
-    args = build_parser().parse_args(
-        ["confirm", "帮我分析需求并生成测试用例", "--prd", "prd/demo-requirement"]
-    )
-
-    assert args.command == "confirm"
-    assert args.prd == "prd/demo-requirement"
-
-
-def test_confirm_alias_parses_for_mvp():
-    args = build_parser().parse_args(
-        ["mvp", "帮我分析需求并生成测试用例", "--prd", "prd/demo-requirement", "--confirm"]
-    )
-
-    assert args.command == "mvp"
-    assert args.confirm is True

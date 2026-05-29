@@ -19,7 +19,6 @@ Test Execution Agent、Failure Analysis Agent、Bug Draft Agent 提供输入说�
 
 ## 必须读取
 
-- `tasks/08-generate-report.md`
 - `prompts/report-generation-prompt.md`
 - `rules/status-rules.md`
 - `rules/codex-output-rules.md`

@@ -41,8 +41,8 @@ target_agent: API Test Generation Agent
 - `rules/automation-rules.md`
 - `knowledge/project-rules/assertion-rules.md`
 - `knowledge/project-rules/automation-coding-rules.md`
-- `skills/api-contract-analysis-skill.md`
-- `skills/pytest-api-test-skill.md`
+- `qa-methods/api-contract-analysis-skill.md`
+- `qa-methods/pytest-api-test-skill.md`
 
 ## 质量要求
 

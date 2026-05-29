@@ -34,10 +34,10 @@ target_agent: Runtime 测试用例生成 Agent (LangGraph Node)
 - `rules/testcase-rules.md` — 测试用例规则
 - `rules/review-gate-rules.md` — 审核门规则
 - `rules/artifact-path-rules.md` — 产物路径规则
-- `skills/test-design-skill.md` — 测试设计技能
-- `skills/equivalence-partitioning-skill.md` — 等价类划分技能
-- `skills/boundary-value-analysis-skill.md` — 边界值分析技能
-- `skills/state-transition-modeling-skill.md` — 状态流转建模技能
+- `qa-methods/test-design-skill.md` — 测试设计技能
+- `qa-methods/equivalence-partitioning-skill.md` — 等价类划分技能
+- `qa-methods/boundary-value-analysis-skill.md` — 边界值分析技能
+- `qa-methods/state-transition-modeling-skill.md` — 状态流转建模技能
 - `knowledge/templates/testcase-template.md` — 测试用例模板
 - `prompts/testcase-design-prompt.md` — 测试用例设计 Prompt（质量要求参考）
 - Runtime 当前运行记录（`run_id`、会话上下文、状态追踪）
@@ -71,10 +71,10 @@ run_id: <current_run_id>
 - `rules/testcase-rules.md`
 - `rules/review-gate-rules.md`
 - `rules/artifact-path-rules.md`
-- `skills/test-design-skill.md`
-- `skills/equivalence-partitioning-skill.md`
-- `skills/boundary-value-analysis-skill.md`
-- `skills/state-transition-modeling-skill.md`
+- `qa-methods/test-design-skill.md`
+- `qa-methods/equivalence-partitioning-skill.md`
+- `qa-methods/boundary-value-analysis-skill.md`
+- `qa-methods/state-transition-modeling-skill.md`
 - `knowledge/templates/testcase-template.md`
 - `prompts/testcase-design-prompt.md`（质量要求和禁止事项保持一致）
 

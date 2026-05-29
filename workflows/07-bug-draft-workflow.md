@@ -19,7 +19,6 @@ Failure Analysis Agent 提供证据，Requirement Analysis Agent 提供需求依
 
 ## 必须读取
 
-- `tasks/07-generate-bug-draft.md`
 - `prompts/bug-draft-prompt.md`
 - `rules/failure-analysis-rules.md`
 - `skills/bug-report-writing-skill.md`

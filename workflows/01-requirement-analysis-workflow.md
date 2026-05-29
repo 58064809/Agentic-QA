@@ -19,8 +19,6 @@ Testcase Design Agent 可协助识别测试关注点。
 
 ## 必须读取
 
-- `tasks/00-locate-requirement.md`
-- `tasks/01-analyze-requirement.md`
 - `prompts/requirement-analysis-prompt.md`
 - `rules/artifact-path-rules.md`
 - `rules/requirement-analysis-rules.md`

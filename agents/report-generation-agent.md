@@ -35,9 +35,8 @@
 ## 必须读取的资料
 
 - `workflows/08-report-generation-workflow.md`
-- `tasks/08-generate-report.md`
 - `prompts/report-generation-prompt.md`
-- `skills/qa-report-writing-skill.md`
+- `qa-methods/qa-report-writing-skill.md`
 - `knowledge/templates/qa-report-template.md`
 
 ## 必须遵守的规则

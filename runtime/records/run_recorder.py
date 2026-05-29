@@ -193,7 +193,7 @@ def result_to_summary(
         "success": result.success,
         "run_status": result.run_status,
         "orchestration": result.orchestration,
-        "mode": "approve-write" if result.approve_write else "dry-run",
+        "mode": "auto-write" if result.approve_write else "dry-run",
         "task_type": result.task_type,
         "user_input": result.user_input,
         "prd_path": result.prd_path,

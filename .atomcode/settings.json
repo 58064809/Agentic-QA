@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "PostToolUse": {
+      "command": "ruff format {file_path}",
+      "condition": "file_path ends with .py"
+    },
+    "PreToolUse": {
+      "action": "reject",
+      "condition": "file_path matches '\\.env$|\\.env\\..+$'"
+    }
+  }
+}

@@ -29,7 +29,6 @@
 ## 必须读取的资料
 
 - `workflows/05-test-execution-workflow.md`
-- `tasks/05-execute-tests.md`
 - `prompts/test-execution-prompt.md`
 - `rules/test-execution-rules.md`
 - `scripts/run_pytest.py`

@@ -30,10 +30,9 @@
 ## 必须读取的资料
 
 - `workflows/02-testcase-generation-workflow.md`
-- `tasks/02-generate-testcases.md`
 - `prompts/testcase-design-prompt.md`
 - `rules/testcase-rules.md`
-- `skills/test-design-skill.md`
+- `qa-methods/test-design-skill.md`
 - `knowledge/templates/testcase-template.md`
 
 ## 必须遵守的规则

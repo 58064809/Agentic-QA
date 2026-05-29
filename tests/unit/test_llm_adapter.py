@@ -18,9 +18,9 @@ from runtime.llm.prompt_builder import build_requirement_analysis_prompt  # noqa
 
 
 def test_openai_compatible_config_defaults_without_api_key(monkeypatch):
-    monkeypatch.delenv("FREEMODEL_API_KEY", raising=False)
-    monkeypatch.delenv("FREEMODEL_BASE_URL", raising=False)
-    monkeypatch.delenv("FREEMODEL_MODEL", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_BASE_URL", raising=False)
+    monkeypatch.delenv("DEEPSEEK_MODEL", raising=False)
 
     config = OpenAICompatibleConfig.from_env()
     metadata = config.to_metadata(enabled=True)
@@ -33,9 +33,11 @@ def test_openai_compatible_config_defaults_without_api_key(monkeypatch):
 
 
 def test_openai_compatible_config_reads_env_without_serializing_key(monkeypatch):
-    monkeypatch.setenv("FREEMODEL_API_KEY", "local-secret")
-    monkeypatch.setenv("FREEMODEL_BASE_URL", "https://example.test/v1")
-    monkeypatch.setenv("FREEMODEL_MODEL", "demo-model")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "local-secret")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    monkeypatch.setenv("DEEPSEEK_ENABLE_CHAT_FALLBACK", "false")
+    monkeypatch.setenv("DEEPSEEK_MAX_INPUT_CHARS", "8000")
 
     config = OpenAICompatibleConfig.from_env()
     metadata = config.to_metadata(enabled=True)
@@ -45,9 +47,9 @@ def test_openai_compatible_config_reads_env_without_serializing_key(monkeypatch)
     assert metadata == {
         "enabled": True,
         "used": False,
-        "provider": "openai_compatible",
-        "base_url": "https://example.test/v1",
-        "model": "demo-model",
+        "provider": "deepseek",
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-v4-flash",
         "chat_fallback_enabled": False,
         "max_input_chars": 8000,
         "calls": 0,
@@ -70,7 +72,7 @@ def test_prompt_builder_truncates_large_context():
         max_input_chars=120,
     )
 
-    assert len(result.prompt) < 1200
+    assert len(result.prompt) < 2500  # 基础指令+CoT+自检约1300，截断后总长度应合理
     assert result.warnings == ["LLM Prompt 输入超过 120 字符，已截断。"]
 
 

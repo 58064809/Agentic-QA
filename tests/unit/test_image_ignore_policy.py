@@ -26,7 +26,7 @@ def create_repo(root: Path, *, requirement: str | None = None) -> Path:
     files = {
         "AGENTS.md": "Agent 协作规范",
         "COMMANDS.md": "命令路由",
-        "docs/architecture/production-agent-runtime-roadmap.md": "Runtime 路线图",
+        "docs/production-agent-runtime-roadmap.md": "Runtime 路线图",
         "workflows/01-requirement-analysis-workflow.md": "需求分析工作流",
         "workflows/10-runtime-testcase-generation-workflow.md": "Runtime 测试用例工作流",
         "workflows/02-testcase-generation-workflow.md": "测试用例工作流",

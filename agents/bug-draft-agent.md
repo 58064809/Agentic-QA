@@ -29,9 +29,8 @@
 ## 必须读取的资料
 
 - `workflows/07-bug-draft-workflow.md`
-- `tasks/07-generate-bug-draft.md`
 - `prompts/bug-draft-prompt.md`
-- `skills/bug-report-writing-skill.md`
+- `qa-methods/bug-report-writing-skill.md`
 - `knowledge/templates/bug-template.md`
 
 ## 必须遵守的规则

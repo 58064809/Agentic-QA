@@ -218,6 +218,14 @@ def test_analyze_approve_write_creates_analysis_draft(tmp_path):
     )
     output_path = repo_root / "prd/demo-requirement/10-analysis/requirement-analysis.md"
     assert result.success
+    assert output_path.exists()
+    structured_json = output_path.with_suffix(".json")
+    structured_yaml = output_path.with_suffix(".yml")
+    assert structured_json.exists()
+    assert structured_yaml.exists()
+    structured = json.loads(structured_json.read_text(encoding="utf-8"))
+    assert structured["schema_version"] == "agentic-qa.artifact.v1"
+    assert structured["markdown_path"] == "prd/demo-requirement/10-analysis/requirement-analysis.md"
     assert result.wrote_file
     assert result.review_status == "write_approved"
     assert "artifact_type: requirement_analysis" in output_path.read_text(encoding="utf-8")
@@ -488,7 +496,7 @@ def test_review_grade_testcase_rejects_invalid_priority(tmp_path, monkeypatch):
 
 def test_llm_generated_review_grade_testcases_pass_quality_gate(tmp_path, monkeypatch):
     repo_root = create_mvp_repo(tmp_path)
-    monkeypatch.setenv("FREEMODEL_API_KEY", "local-secret")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "local-secret")
     monkeypatch.setattr(
         OpenAICompatibleAdapter,
         "generate_text",
@@ -510,7 +518,7 @@ def test_llm_generated_review_grade_testcases_pass_quality_gate(tmp_path, monkey
 
 def test_use_llm_without_api_key_degrades_to_skeleton(tmp_path, monkeypatch):
     repo_root = create_mvp_repo(tmp_path)
-    monkeypatch.delenv("FREEMODEL_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
 
     result = run_requirement_analysis_workflow(
         "请分析这个需求",
@@ -529,9 +537,9 @@ def test_use_llm_without_api_key_degrades_to_skeleton(tmp_path, monkeypatch):
 
 def test_run_record_does_not_store_llm_secret(tmp_path, monkeypatch):
     repo_root = create_mvp_repo(tmp_path)
-    monkeypatch.setenv("FREEMODEL_API_KEY", "secret-token-should-not-be-stored")
-    monkeypatch.setenv("FREEMODEL_BASE_URL", "https://example.test/v1")
-    monkeypatch.setenv("FREEMODEL_MODEL", "demo-model")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "secret-token-should-not-be-stored")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://example.test/v1")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "demo-model")
     monkeypatch.setattr(
         OpenAICompatibleAdapter,
         "generate_text",

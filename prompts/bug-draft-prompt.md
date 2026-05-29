@@ -43,7 +43,7 @@ target_agent: Bug Draft Agent
 ## 必须参考的规则
 
 - `rules/failure-analysis-rules.md`
-- `skills/bug-report-writing-skill.md`
+- `qa-methods/bug-report-writing-skill.md`
 - `knowledge/templates/bug-template.md`
 
 ## 质量要求

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
+from rag.config import RagConfig
+from rag.manager import RagManager
 from runtime.graph.nodes.mvp_context_loader import (
     TASK_ANALYSIS,
     TASK_MVP,
@@ -38,6 +41,26 @@ class RequirementContext:
 
 def _prd_prefix(state: QAWorkflowState) -> str:
     return state.prd_path.replace("\\", "/").rstrip("/")
+
+
+def _build_rag_context(state: QAWorkflowState) -> str:
+    config = RagConfig.from_env()
+    if not config.enabled:
+        return ""
+    try:
+        repo_root = Path.cwd()
+        query = "\n".join(
+            value
+            for key, value in state.loaded_files.items()
+            if key.endswith(("requirement.md", "api-doc.md", "requirement-analysis.md"))
+        )
+        context = RagManager(repo_root, config).build_rag_context(query or state.user_input)
+    except Exception as exc:
+        state.warnings.append(f"RAG 召回失败，已降级为无 RAG 上下文: {exc}")
+        return ""
+    if context:
+        state.warnings.append("已通过 RAG 召回测试规范、Prompt 模板和项目文档上下文。")
+    return context
 
 
 def _path_content(state: QAWorkflowState, suffix: str) -> str:
@@ -993,6 +1016,7 @@ def requirement_analysis_generation_node(state: QAWorkflowState) -> QAWorkflowSt
     prompt = build_requirement_analysis_prompt(
         state.loaded_files,
         prd_prefix=_prd_prefix(state),
+        rag_context=_build_rag_context(state),
     )
     state.warnings.extend(prompt.warnings)
     artifact = _generate_with_optional_llm(
@@ -1025,6 +1049,7 @@ def testcase_generation_mvp_node(state: QAWorkflowState) -> QAWorkflowState:
         state.loaded_files,
         prd_prefix=_prd_prefix(state),
         generated_analysis=state.draft_artifacts.get("requirement_analysis"),
+        rag_context=_build_rag_context(state),
     )
     state.warnings.extend(prompt.warnings)
     artifact = _generate_with_optional_llm(

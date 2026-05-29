@@ -19,7 +19,6 @@ Testcase Design Agent 提供用例解释，Test Execution Agent 提供执行约�
 
 ## 必须读取
 
-- `tasks/03-generate-api-tests.md`
 - `prompts/api-test-generation-prompt.md`
 - `rules/api-test-rules.md`
 - `rules/automation-rules.md`

@@ -1,294 +1,543 @@
+"""Agentic-QA 纯自然语言 CLI 入口
+
+用法:
+    agentic-qa "你的自然语言命令"
+
+特点:
+    - 纯自然语言，无子命令、无参数
+    - LLM 语义路由自动提取意图和文档来源
+    - 自动进入对话循环，支持多轮会话
+    - 自动写入产物（不打断）
+"""
+
 from __future__ import annotations
 
-import argparse
+import shutil
+import sys
+from datetime import datetime
 from pathlib import Path
 
+import yaml
+
 from runtime.graph.app import (
-    resume_recorded_workflow,
+    default_repo_root,
     run_mvp_analysis_and_testcases_workflow,
     run_mvp_testcase_generation_workflow,
     run_requirement_analysis_workflow,
-    run_testcase_generation_workflow,
 )
+from runtime.llm.config import OpenAICompatibleConfig
+from runtime.llm.intent_router import route_intent
+from runtime.schemas.runtime_result import RuntimeResult
+from runtime.session import Session, SessionManager
+
+# ── 帮助提示 ──────────────────────────────────────────────────
+
+HELP_TEXT = """用法:
+    agentic-qa "你的自然语言命令"
+
+示例:
+    agentic-qa "帮我分析登录需求 D:\\需求\\登录.md"
+    agentic-qa "分析 prd/sample-login-requirement 并生成测试用例"
+    agentic-qa "处理这个飞书链接 https://xxx.feishu.cn/docx/123"
+
+对话模式:
+    # 首次执行后自动进入对话模式
+    > 再补充几个边界用例
+    > 分析支付模块 D:\\需求\\支付.md
+    > 退出
+
+数据目录（不提交 Git）:
+    .runtime/sessions/default/   - 会话持久化
+    .runtime/runs/<run_id>/      - 运行记录
+"""
 
 
-def add_common_runtime_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("user_input", help="用户自然语言命令")
-    parser.add_argument("--prd", required=True, help="PRD 工作区路径")
-    parser.add_argument(
-        "--approve-write",
-        action="store_true",
-        help="兼容旧参数：显式允许写入草稿；默认 dry-run 不写入业务产物。",
-    )
-    parser.add_argument(
-        "--confirm",
-        action="store_true",
-        help="一键确认并写入草稿；等同于 --approve-write。",
-    )
-    parser.add_argument(
-        "--use-llm",
-        action="store_true",
-        help="显式启用本地环境变量配置的 OpenAI-compatible LLM；默认关闭。",
-    )
-    parser.add_argument(
-        "--record-run",
-        dest="record_run",
-        action="store_true",
-        default=True,
-        help="生成本地运行记录；默认开启。",
-    )
-    parser.add_argument(
-        "--no-record-run",
-        dest="record_run",
-        action="store_false",
-        help="不生成本地运行记录。",
-    )
+# ── Intent → 工作流映射 ───────────────────────────────────────
+
+def _task_type_from_intent(intent: str) -> str | None:
+    """将 LLM 路由意图映射到 Graph 的 task_type。"""
+    mapping = {
+        "requirement_analysis": "analysis",
+        "testcase_generation": "testcase_generation",
+        "api_test_generation": "testcase_generation",
+        "ui_test_generation": "testcase_generation",
+        "test_execution": "testcase_generation",
+        "failure_analysis": "testcase_generation",
+        "bug_draft": "testcase_generation",
+        "report_generation": "testcase_generation",
+        "archive": None,
+    }
+    return mapping.get(intent)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Agentic-QA Runtime 最小骨架")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+def _run_workflow(
+    user_input: str,
+    prd_path: str,
+    *,
+    intent: str,
+    repo_root: Path,
+    session: Session,
+    debug: bool = False,
+) -> RuntimeResult:
+    """根据意图执行对应工作流。"""
+    approve_write = True  # 用户确认过 A = 自动写入
 
-    run_parser = subparsers.add_parser("run", help="运行 Runtime dry-run 流程")
-    run_parser.add_argument("user_input", help="用户自然语言命令")
-    run_parser.add_argument("--prd", required=True, help="PRD 工作区路径")
-    run_parser.add_argument(
-        "--approve-write",
-        action="store_true",
-        help="兼容旧参数：显式允许写入测试用例草稿；默认 dry-run 不写入",
-    )
-    run_parser.add_argument(
-        "--confirm",
-        action="store_true",
-        help="一键确认并写入测试用例草稿；等同于 --approve-write。",
-    )
-    run_parser.add_argument(
-        "--record-run",
-        dest="record_run",
-        action="store_true",
-        default=True,
-        help="生成本地运行记录；默认开启",
-    )
-    run_parser.add_argument(
-        "--no-record-run",
-        dest="record_run",
-        action="store_false",
-        help="不生成本地运行记录",
-    )
-
-    analyze_parser = subparsers.add_parser("analyze", help="生成需求分析草稿")
-    add_common_runtime_arguments(analyze_parser)
-
-    testcase_parser = subparsers.add_parser(
-        "generate-testcases",
-        help="生成测试用例草稿",
-    )
-    add_common_runtime_arguments(testcase_parser)
-
-    mvp_parser = subparsers.add_parser(
-        "mvp",
-        help="连续生成需求分析草稿和测试用例草稿",
-    )
-    add_common_runtime_arguments(mvp_parser)
-
-    confirm_parser = subparsers.add_parser(
-        "confirm",
-        help="一键确认：连续生成需求分析和测试用例并写入草稿",
-    )
-    confirm_parser.add_argument("user_input", help="用户自然语言命令")
-    confirm_parser.add_argument("--prd", required=True, help="PRD 工作区路径")
-    confirm_parser.add_argument(
-        "--use-llm",
-        action="store_true",
-        help="显式启用本地环境变量配置的 OpenAI-compatible LLM；默认关闭。",
-    )
-    confirm_parser.add_argument(
-        "--record-run",
-        dest="record_run",
-        action="store_true",
-        default=True,
-        help="生成本地运行记录；默认开启。",
-    )
-    confirm_parser.add_argument(
-        "--no-record-run",
-        dest="record_run",
-        action="store_false",
-        help="不生成本地运行记录。",
-    )
-
-    for command, help_text in [
-        ("approve", "兼容旧暂停运行：审批通过并继续写入"),
-        ("reject", "兼容旧暂停运行：拒绝并不写入产物"),
-        ("resume", "查看或恢复旧暂停 Runtime 运行"),
-    ]:
-        review_parser = subparsers.add_parser(command, help=help_text)
-        review_parser.add_argument("run_id", help="运行记录 ID")
-        review_parser.add_argument("--reviewed-by", default="user", help="审核人")
-        review_parser.add_argument("--review-notes", default=None, help="审核备注")
-    return parser
-
-
-def print_summary(result) -> None:
-    print("Runtime 执行摘要")
-    print(f"- 编排方式: {result.orchestration}")
-    print(f"- 模式: {'approve-write' if result.approve_write else 'dry-run'}")
-    print(f"- 运行状态: {result.run_status}")
-    print(f"- 任务类型: {result.task_type or 'legacy_testcase_generation'}")
-    print(f"- 意图: {result.intent or '未识别'}")
-    print(f"- PRD: {result.prd_path}")
-    print(f"- 目标输出: {result.output_path or '未生成'}")
-    if result.output_paths:
-        print("- 产物路径:")
-        for name, output_path in result.output_paths.items():
-            print(f"  - {name}: {output_path}")
-    print(f"- 是否写入文件: {'是' if result.wrote_file else '否'}")
-    if result.llm:
-        print(
-            "- LLM: "
-            f"enabled={result.llm.get('enabled')}, "
-            f"used={result.llm.get('used')}, "
-            f"model={result.llm.get('model')}, "
-            f"calls={result.llm.get('calls')}"
+    if intent == "requirement_analysis":
+        result = run_requirement_analysis_workflow(
+            user_input=user_input,
+            prd_path=Path(prd_path),
+            repo_root=repo_root,
+            approve_write=approve_write,
+            record_run=True,
+            use_llm=True,
         )
-    if result.requirement_normalization:
-        normalization = result.requirement_normalization
-        print(
-            "- 需求文档归一化: "
-            f"performed={normalization.get('performed')}, "
-            f"source={normalization.get('source_path') or '无'}, "
-            f"output={normalization.get('output_path') or '无'}, "
-            f"reason={normalization.get('skipped_reason') or '无'}"
+    elif intent == "testcase_generation":
+        result = run_mvp_testcase_generation_workflow(
+            user_input=user_input,
+            prd_path=Path(prd_path),
+            repo_root=repo_root,
+            approve_write=approve_write,
+            record_run=True,
+            use_llm=True,
         )
-    if result.prototype_notes:
-        image_detection = result.prototype_notes
-        print(
-            "- 图片检测: "
-            f"requirement_has_images={image_detection.get('requirement_has_images')}, "
-            f"warning={image_detection.get('warning') or '无'}"
-        )
-    print(f"- Run ID: {result.run_id or '未生成'}")
-    print(f"- Thread ID: {result.thread_id or '未生成'}")
-    if result.run_summary_json and result.run_summary_md:
-        print(f"- 运行记录 JSON: {result.run_summary_json}")
-        print(f"- 运行记录 Markdown: {result.run_summary_md}")
     else:
-        print("- 运行记录: 未生成（--no-record-run）")
-    print(f"- 人工审核状态: {result.review_status}")
-    if result.human_review:
-        print(f"- 人工审核详情: {result.human_review}")
-    print(f"- 已执行节点: {', '.join(result.executed_nodes) if result.executed_nodes else '无'}")
-    print(f"- 已加载文件数: {len(result.loaded_files)}")
+        # 兜底：MVP（需求分析 + 测试用例）
+        result = run_mvp_analysis_and_testcases_workflow(
+            user_input=user_input,
+            prd_path=Path(prd_path),
+            repo_root=repo_root,
+            approve_write=approve_write,
+            record_run=True,
+            use_llm=True,
+        )
 
+    return result
+
+
+# ── PRD 工作区管理 ────────────────────────────────────────────
+
+def _ensure_prd_workspace(
+    repo_root: Path,
+    prd_path_str: str,
+) -> str:
+    """确保 PRD 工作区存在，返回相对路径字符串。
+
+    三种情况:
+    1. 已经是 prd/<name> 相对路径 → 直接使用
+    2. 绝对路径指向已存在的 PRD 目录 → 转换为相对路径
+    3. 绝对路径指向一个源文件 → 创建 PRD 工作区
+    """
+    candidate = Path(prd_path_str)
+
+    # 情况 1: 已经是 prd/<name> 或相对路径
+    if not candidate.is_absolute():
+        # 确保不以 prd 开头时也拼接
+        if not prd_path_str.startswith("prd/"):
+            prd_path_str = f"prd/{prd_path_str}"
+        full = repo_root / prd_path_str
+        if full.is_dir():
+            return prd_path_str
+        # 目录不存在，尝试用名字创建
+        full.mkdir(parents=True, exist_ok=True)
+        _init_workspace_metadata(full, candidate.name)
+        return prd_path_str
+
+    # 情况 2: 绝对路径，已经是目录
+    if candidate.is_dir():
+        try:
+            rel = candidate.relative_to(repo_root)
+            return rel.as_posix()
+        except ValueError:
+            # 不在 repo 内，创建软链接或复制目录
+            return _import_external_directory(repo_root, candidate)
+
+    # 情况 3: 绝对路径，是一个源文件
+    if candidate.is_file():
+        return _import_source_file(repo_root, candidate)
+
+    # 不存在，报错
+    raise FileNotFoundError(f"文件或目录不存在: {prd_path_str}")
+
+
+def _workspace_name(path: Path) -> str:
+    """从文件路径生成工作区名字。"""
+    stem = path.stem
+    # 去掉中文"需求"前缀以保持简洁
+    for prefix in ("需求", "requirement", "prd_"):
+        if stem.startswith(prefix):
+            stem = stem[len(prefix):]
+            break
+    # 移除特殊字符
+    stem = "".join(c for c in stem if c.isalnum() or c in "-_")
+    return stem or "default"
+
+
+def _init_workspace_metadata(workspace_dir: Path, name: str) -> None:
+    """创建初始 metadata.yml。"""
+    metadata = {
+        "requirement_id": name,
+        "title": name,
+        "status": "active",
+        "created_by": "agentic-qa",
+    }
+    metadata_path = workspace_dir / "metadata.yml"
+    if not metadata_path.is_file():
+        metadata_path.write_text(
+            yaml.dump(metadata, allow_unicode=True, encoding="utf-8").decode("utf-8"),
+            encoding="utf-8",
+        )
+
+
+def _safe_workspace_name(value: str) -> str:
+    stem = "".join(c for c in value.strip() if c.isalnum() or c in "-_")
+    return stem[:80] or f"requirement-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
+
+def _import_markdown_requirement(
+    repo_root: Path,
+    markdown: str,
+    *,
+    title: str = "manual-markdown-requirement",
+    source_url: str | None = None,
+) -> str:
+    """Create a PRD workspace from already-normalized Markdown text."""
+    name = _safe_workspace_name(title)
+    prd_rel = f"prd/{name}"
+    workspace_dir = repo_root / prd_rel
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+
+    requirement_path = workspace_dir / "requirement.md"
+    if not requirement_path.is_file():
+        requirement_path.write_text(markdown.strip() + "\n", encoding="utf-8")
+
+    metadata = {
+        "requirement_id": name,
+        "title": title,
+        "status": "active",
+        "created_by": "agentic-qa",
+        "source_type": "feishu" if source_url else "manual_markdown",
+    }
+    if source_url:
+        metadata["source_url"] = source_url
+    metadata_path = workspace_dir / "metadata.yml"
+    if not metadata_path.is_file():
+        metadata_path.write_text(
+            yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+    return prd_rel
+
+
+def is_feishu_url(url: str) -> bool:
+    from runtime.tools.feishu_fetcher import is_feishu_url as _is_feishu_url
+
+    return _is_feishu_url(url)
+
+
+def fetch_feishu_doc(url: str) -> tuple[str, str]:
+    from runtime.tools.feishu_fetcher import fetch_feishu_doc as _fetch_feishu_doc
+
+    return _fetch_feishu_doc(url)
+
+
+def _import_feishu_url(repo_root: Path, url: str) -> str:
+    """Fetch a Feishu document and normalize it into a PRD workspace."""
+    if not is_feishu_url(url):
+        raise ValueError(f"无法识别飞书文档链接: {url}")
+    title, markdown = fetch_feishu_doc(url)
+    if not markdown.strip():
+        raise ValueError("飞书文档内容为空，无法生成 requirement.md")
+    return _import_markdown_requirement(
+        repo_root,
+        markdown,
+        title=title,
+        source_url=url,
+    )
+
+
+def _looks_like_markdown_requirement(user_input: str) -> bool:
+    text = user_input.strip()
+    if len(text) < 20:
+        return False
+    return text.startswith("# ") or "\n## " in text or "\n- " in text
+
+
+def _import_source_file(repo_root: Path, source_path: Path) -> str:
+    """从源文件导入并创建 PRD 工作区。"""
+    name = _workspace_name(source_path)
+    prd_rel = f"prd/{name}"
+    workspace_dir = repo_root / prd_rel
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+
+    # 复制源文件
+    dest = workspace_dir / source_path.name
+    if not dest.is_file():
+        shutil.copy2(source_path, dest)
+
+    # 创建 metadata
+    _init_workspace_metadata(workspace_dir, name)
+
+    print(f"📁 创建 PRD 工作区: {prd_rel} （来源: {source_path}）")
+    return prd_rel
+
+
+def _import_external_directory(repo_root: Path, external_dir: Path) -> str:
+    """从外部目录导入 PRD 工作区。"""
+    name = _workspace_name(external_dir)
+    prd_rel = f"prd/{name}"
+    workspace_dir = repo_root / prd_rel
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+
+    # 复制目录下的需求文档
+    for ext in ("*.md", "*.pdf", "*.docx", "*.txt", "*.html"):
+        for f in external_dir.glob(ext):
+            if not (workspace_dir / f.name).is_file():
+                shutil.copy2(f, workspace_dir)
+
+    _init_workspace_metadata(workspace_dir, name)
+    print(f"📁 导入外部工作区: {prd_rel} （来源: {external_dir}）")
+    return prd_rel
+
+
+# ── 结果输出 ──────────────────────────────────────────────────
+
+def _print_result(result: RuntimeResult, intent: str) -> None:
+    """打印运行结果摘要。"""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+
+    console = Console()
+
+    if result.errors:
+        console.print(Panel(
+            "\n".join(result.errors),
+            title="❌ 错误",
+            border_style="red",
+        ))
+        return
+
+    # 任务摘要
+    intent_names = {
+        "requirement_analysis": "需求分析",
+        "testcase_generation": "测试用例生成",
+        "mvp": "需求分析 + 测试用例",
+    }
+    task_name = intent_names.get(intent, intent)
+
+    table = Table(title=f"✅ {task_name} 完成", show_header=False, box=None)
+    table.add_column("属性", style="cyan")
+    table.add_column("值")
+
+    if result.output_path:
+        table.add_row("输出", result.output_path)
     if result.warnings:
-        print("警告:")
-        for warning in result.warnings:
-            print(f"- {warning}")
+        for w in result.warnings[:3]:
+            table.add_row("⚠️", w)
+    if result.quality_errors:
+        for qe in result.quality_errors[:3]:
+            table.add_row("质量门", qe)
+    if result.run_id:
+        table.add_row("运行记录", f".runtime/runs/{result.run_id}/")
 
-    if result.errors or result.quality_errors:
-        print("错误:")
-        for error in result.errors + result.quality_errors:
-            print(f"- {error}")
-
-    if not result.approve_write:
-        print("说明: dry-run 不写入文件；需要写入时请使用 confirm 命令，或显式传入 --confirm。")
-    if result.run_status == "interrupted":
-        print("说明: 当前运行已在人工审核点暂停；通过后执行 approve，拒绝执行 reject。")
+    console.print(table)
+    console.print()
 
 
-def write_confirmed(args: argparse.Namespace) -> bool:
-    return bool(getattr(args, "approve_write", False) or getattr(args, "confirm", False))
+# ── 对话循环 ──────────────────────────────────────────────────
 
+_DIALOGUE_EXIT_WORDS = frozenset({"退出", "exit", "quit", "q", "bye"})
+
+
+def _dialogue_loop(
+    session: Session,
+    repo_root: Path,
+    debug: bool = False,
+) -> None:
+    """进入对话循环，等待用户自然语言输入。"""
+    from rich.console import Console
+
+    console = Console()
+    last_intent = session.meta.last_intent
+    last_prd = session.meta.last_prd_path
+
+    while True:
+        try:
+            line = input("> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n👋 再见")
+            break
+
+        if not line:
+            continue
+        if line.lower() in _DIALOGUE_EXIT_WORDS:
+            console.print("👋 再见")
+            break
+
+        # 重置会话
+        if line in ("重新开始", "重置", "新会话"):
+            session.reset()
+            console.print("🔄 会话已重置")
+            continue
+
+        # 路由意图
+        config = OpenAICompatibleConfig.from_env()
+        route = route_intent(line, config)
+
+        if not route.is_valid:
+            console.print(f"[red]❌ 路由失败: {'; '.join(route.errors)}[/red]")
+            continue
+
+        # 重置意图
+        if route.is_reset:
+            session.reset()
+            console.print("🔄 会话已重置")
+            continue
+
+        # 更新 session 状态
+        prd_path = route.prd_path or last_prd
+        intent = route.intent or last_intent or "mvp"
+
+        if not prd_path and route.url:
+            try:
+                prd_path = _import_feishu_url(repo_root, route.url)
+            except ValueError as e:
+                console.print(f"[red]❌ {e}[/red]")
+                continue
+        if not prd_path and _looks_like_markdown_requirement(line):
+            prd_path = _import_markdown_requirement(repo_root, line)
+
+        if not prd_path:
+            console.print("[yellow]⚠️ 未指定需求来源，请在对话中提供文件路径或飞书链接[/yellow]")
+            console.print("  示例: 帮我分析 D:\\需求\\登录.md")
+            continue
+
+        # 确保工作区
+        try:
+            prd_rel = _ensure_prd_workspace(repo_root, prd_path)
+        except FileNotFoundError as e:
+            console.print(f"[red]❌ {e}[/red]")
+            continue
+
+        # 更新 session
+        session.update_meta(
+            last_prd_path=prd_rel,
+            last_intent=intent,
+        )
+        session.append_history("user", line)
+        last_prd = prd_rel
+        last_intent = intent
+
+        # 执行工作流
+        console.print(f"\n[dim]意图: {intent} | PRD: {prd_rel}[/dim]")
+        result = _run_workflow(
+            user_input=line,
+            prd_path=prd_rel,
+            intent=intent,
+            repo_root=repo_root,
+            session=session,
+            debug=debug,
+        )
+        _print_result(result, intent)
+        session.append_history("assistant", str(result))
+
+
+# ── 主入口 ────────────────────────────────────────────────────
 
 def main() -> int:
-    parser = build_parser()
-    args = parser.parse_args()
+    # Windows GBK 终端兼容
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
 
-    if args.command == "run":
-        result = run_testcase_generation_workflow(
-            user_input=args.user_input,
-            prd_path=Path(args.prd),
-            approve_write=write_confirmed(args),
-            record_run=args.record_run,
+    # 帮助
+    if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h", "help"):
+        print(HELP_TEXT)
+        return 0
+
+    user_input = " ".join(sys.argv[1:]).strip()
+    repo_root = default_repo_root()
+    session_manager = SessionManager(repo_root)
+    session = session_manager.get_or_create("default")
+
+    # 路由意图
+    config = OpenAICompatibleConfig.from_env()
+    if not config.has_api_key:
+        print(
+            "❌ 缺少 DEEPSEEK_API_KEY 环境变量。\n"
+            "   请复制 .env.example 为 .env 并填写密钥，然后运行:\n"
+            "   set -a && source .env && set +a   (Git Bash)\n"
+            "   或手动设置:\n"
+            "   set DEEPSEEK_API_KEY=your-key    (Cmd)\n"
         )
-        print_summary(result)
-        return 0 if result.success else 1
+        return 1
 
-    if args.command == "analyze":
-        result = run_requirement_analysis_workflow(
-            user_input=args.user_input,
-            prd_path=Path(args.prd),
-            approve_write=write_confirmed(args),
-            record_run=args.record_run,
-            use_llm=args.use_llm,
+    route = route_intent(user_input, config)
+
+    if not route.is_valid:
+        print(f"❌ 路由失败: {'; '.join(route.errors)}")
+        return 1
+
+    if route.is_reset:
+        session.reset()
+        print("🔄 会话已重置")
+        return 0
+
+    # 确保 PRD 工作区存在
+    if route.url:
+        try:
+            prd_rel = _import_feishu_url(repo_root, route.url)
+        except ValueError as e:
+            print(f"❌ {e}")
+            return 1
+    elif route.prd_path:
+        try:
+            prd_rel = _ensure_prd_workspace(repo_root, route.prd_path)
+        except FileNotFoundError as e:
+            print(f"❌ {e}")
+            return 1
+    elif _looks_like_markdown_requirement(user_input):
+        prd_rel = _import_markdown_requirement(repo_root, user_input)
+    elif session.meta.last_prd_path:
+        prd_rel = session.meta.last_prd_path
+        print(f"📂 复用上次工作区: {prd_rel}")
+    else:
+        print(
+            "❌ 未识别到需求文档路径。请在输入中包含 .md/.pdf 等文件路径。\n"
+            "   示例: agentic-qa \"帮我分析登录需求 D:\\需求\\登录.md\""
         )
-        print_summary(result)
-        return 0 if result.success else 1
+        return 1
 
-    if args.command == "generate-testcases":
-        result = run_mvp_testcase_generation_workflow(
-            user_input=args.user_input,
-            prd_path=Path(args.prd),
-            approve_write=write_confirmed(args),
-            record_run=args.record_run,
-            use_llm=args.use_llm,
-        )
-        print_summary(result)
-        return 0 if result.success else 1
+    # 确定意图（如果是 resume 或未识别，从 session 复用或默认 mvp）
+    intent = route.intent
+    if intent == "resume" or not intent:
+        intent = session.meta.last_intent or "mvp"
 
-    if args.command == "mvp":
-        result = run_mvp_analysis_and_testcases_workflow(
-            user_input=args.user_input,
-            prd_path=Path(args.prd),
-            approve_write=write_confirmed(args),
-            record_run=args.record_run,
-            use_llm=args.use_llm,
-        )
-        print_summary(result)
-        return 0 if result.success else 1
+    # 保存 session 状态
+    session.update_meta(
+        last_prd_path=prd_rel,
+        last_intent=intent,
+    )
+    session.append_history("user", user_input)
 
-    if args.command == "confirm":
-        result = run_mvp_analysis_and_testcases_workflow(
-            user_input=args.user_input,
-            prd_path=Path(args.prd),
-            approve_write=True,
-            record_run=args.record_run,
-            use_llm=args.use_llm,
-        )
-        print_summary(result)
-        return 0 if result.success else 1
+    # 执行
+    print(f"\n🎯 意图: {intent} | 📁 PRD: {prd_rel}")
+    result = _run_workflow(
+        user_input=user_input,
+        prd_path=prd_rel,
+        intent=intent,
+        repo_root=repo_root,
+        session=session,
+    )
 
-    if args.command == "approve":
-        result = resume_recorded_workflow(
-            args.run_id,
-            action="approve",
-            reviewed_by=args.reviewed_by,
-            review_notes=args.review_notes,
-        )
-        print_summary(result)
-        return 0 if result.success else 1
+    _print_result(result, intent)
+    session.append_history("assistant", str(result))
 
-    if args.command == "reject":
-        result = resume_recorded_workflow(
-            args.run_id,
-            action="reject",
-            reviewed_by=args.reviewed_by,
-            review_notes=args.review_notes,
-        )
-        print_summary(result)
-        return 0 if result.success else 1
+    # 进入对话循环
+    print("💬 继续对话（输入 \"退出\" 或 Ctrl+C 结束）")
+    _dialogue_loop(session, repo_root)
 
-    if args.command == "resume":
-        result = resume_recorded_workflow(
-            args.run_id,
-            reviewed_by=args.reviewed_by,
-            review_notes=args.review_notes,
-        )
-        print_summary(result)
-        return 0 if result.success else 1
-
-    parser.error("未知命令")
-    return 2
+    return 0 if result.success else 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

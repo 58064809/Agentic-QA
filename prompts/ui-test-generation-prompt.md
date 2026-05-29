@@ -36,7 +36,7 @@ target_agent: UI Test Generation Agent
 
 - `rules/ui-test-rules.md`
 - `rules/automation-rules.md`
-- `skills/playwright-ui-test-skill.md`
+- `qa-methods/playwright-ui-test-skill.md`
 - `knowledge/project-rules/assertion-rules.md`
 
 ## 质量要求

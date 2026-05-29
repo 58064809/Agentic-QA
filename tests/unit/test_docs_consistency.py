@@ -22,7 +22,6 @@ def create_minimal_docs_repo(root: Path) -> Path:
         "docs",
         "docs/architecture",
         "agents",
-        "tasks",
         "prompts",
         "rules",
         "skills",
@@ -32,6 +31,9 @@ def create_minimal_docs_repo(root: Path) -> Path:
         "scripts",
         "tests",
         "runtime",
+        "apps",
+        "rag",
+        "configs",
     ]:
         (root / directory).mkdir(parents=True, exist_ok=True)
 
@@ -39,7 +41,7 @@ def create_minimal_docs_repo(root: Path) -> Path:
     write_file(root / "AGENTS.md")
     write_file(root / "COMMANDS.md")
     write_file(root / ".github/workflows/ci.yml")
-    write_file(root / "docs/architecture/production-agent-runtime-roadmap.md")
+    write_file(root / "docs/production-agent-runtime-roadmap.md")
     write_file(root / "docs/roadmap.md")
     write_file(root / "workflows/10-runtime-testcase-generation-workflow.md")
     write_file(root / "runtime/README.md")
@@ -82,12 +84,12 @@ def test_validate_docs_consistency_reports_missing_ci_workflow(tmp_path):
 
 def test_validate_docs_consistency_reports_missing_runtime_roadmap(tmp_path):
     repo_root = create_minimal_docs_repo(tmp_path)
-    (repo_root / "docs/architecture/production-agent-runtime-roadmap.md").unlink()
+    (repo_root / "docs/production-agent-runtime-roadmap.md").unlink()
 
     errors = validate_docs_consistency(repo_root)
 
     assert any(
-        error.endswith("docs/architecture/production-agent-runtime-roadmap.md")
+        error.endswith("docs/production-agent-runtime-roadmap.md")
         for error in errors
     )
 

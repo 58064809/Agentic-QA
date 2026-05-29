@@ -1,139 +1,302 @@
-# Runtime MVP
+# Runtime 架构文档
 
-当前 Runtime 处于 MVP 阶段，用于第 2 阶段 LangGraph Runtime 的后续演进。010 已接入 LangGraph `StateGraph`，011 已加入本地运行记录，012 已打通需求分析与测试用例生成链路，但仍不是生产完整 Runtime。
+## 概述
 
-当前真实需求交付主线仍是 Codex-first：用户在 PyCharm Chat / Codex Chat 中直接输入自然语言命令，Codex 读取仓库声明式资产和目标 PRD 工作区生成 QA 产物。Runtime CLI 目前是辅助工具，用于文档归一化、结构校验、运行记录和未来自动化能力预留；Runtime LLM 不是当前真实需求交付依赖。
+Runtime 是 Agentic-QA 的轻量执行引擎，提供**纯自然语言入口**、**LLM 语义路由**、**session 对话循环**和**自动持久化**能力。用户无需记忆子命令或参数，只需输入自然语言，Runtime 即可自动识别意图、路由到对应工作流、维护对话上下文并自动写入产物。
 
-## 当前能力
+---
 
-- 010 使用 LangGraph `StateGraph` 编排测试用例生成最小流程。
-- 011 已加入本地运行记录。
-- 012 支持需求分析草稿、测试用例草稿和 MVP 连续链路。
-- 012A 已将默认输出提升为评审级草稿：需求分析包含 12 个评审章节，测试用例简单需求不少于 15 条，并覆盖主流程、分支、权限、状态、边界、异常、幂等、数据一致性、兼容和回归风险。
-- 012B 补强质量门：低质量 Skeleton、空待确认问题、少量示例用例、非法优先级和额外“用例类型”列不能误通过。
-- 013 已接入 Microsoft MarkItDown，在 `analyze`、`generate-testcases` 和 `mvp` 的上下文加载前把 Word/PDF/TXT/HTML 等需求源文件归一化为 `requirement.md`。
-- 016 已废弃 `prototype-notes.md` 输入链路；Runtime 明确不分析图片/原型图内容，只检测图片痕迹并 warning。
-- LLM 默认关闭，必须通过 `--use-llm` 显式启用；该能力只作为预留能力，不作为当前主线交付入口。
-- LLM 配置只从本地环境变量读取：`FREEMODEL_API_KEY`、`FREEMODEL_BASE_URL`、`FREEMODEL_MODEL`。
-- LLM 调用优先使用 OpenAI-compatible `responses.create`；`chat.completions.create` fallback 默认关闭，仅在本地设置 `FREEMODEL_ENABLE_CHAT_FALLBACK=true` 时启用。
-- 缺少密钥或未启用 LLM 时，Runtime 降级生成确定性评审级草稿。
-- 当前不接入 LangChain ChatModel。
-- 当前使用本地文件化 checkpointer 快照，写入 `.runtime/runs/<run_id>/checkpointer.pkl`。
-- 默认 dry-run，不写入业务产物，但会写运行记录。
-- `confirm` 命令提供一键确认写入；`--confirm` 可作为 `analyze`、`generate-testcases`、`mvp` 和 `run` 的写入确认开关。
-- `--approve-write` 保留为兼容旧参数，等同于 `--confirm`。
-- Graph 已启用 checkpointer，每次运行都会带 `thread_id`。
-- 当前默认不再额外暂停等待 `approve` 命令；`human_review_node` 只做写入授权状态标记。
-- CLI 保留 `approve`、`reject`、`resume`，仅用于兼容旧的暂停运行。
-- 运行状态、Graph state 和 checkpointer 写入 `.runtime/runs/<run_id>/`。
-- writer 成功后，`metadata_update_node` 会在目标 PRD 的 `metadata.yml` 中记录 `last_runtime_run` 和 `runtime_runs`；这只表示 Runtime 已按一键确认写入草稿，不等于业务 QA 审核通过。
-- 如果目标文件已存在，默认拒绝覆盖；MVP 连续链路拒绝部分写入。
-- Runtime 必须读取现有声明式资产，不允许硬编码 Prompt / Rules / Skills。
-- Runtime 的写入动作仍会经过 Human Review Gate 状态标记，但当前不再要求额外执行 `approve`/`reject`。
-- Human Review Gate 当前是状态门，不是复杂交互审批。
-- 运行记录默认位于 `.runtime/runs/<run_id>/`，不应提交到 Git。
+## 一、入口：agentic-qa
 
-## 使用命令
-
-真实需求交付优先使用 Chat 中的 Codex-first 命令，例如：
-
-```text
-帮我分析 prd/<需求名> 需求，按仓库规则输出需求分析。
-基于 prd/<需求名> 的需求分析生成测试用例。
-根据评审意见增量修订 prd/<需求名> 的需求分析和测试用例。
-```
-
-以下 Runtime 命令用于验证辅助能力或后续自动化链路，不是当前主线交付要求：
+### 入口命令
 
 ```bash
-python -m runtime.cli analyze "帮我分析这个需求" --prd prd/sample-login-requirement
-python -m runtime.cli generate-testcases "帮我生成测试用例" --prd prd/sample-login-requirement
-python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/sample-login-requirement
-python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement
+agentic-qa <纯自然语言指令>
 ```
 
-## 需求文档归一化
-
-Runtime 会优先使用已有 `prd/<id>/requirement.md`，不会覆盖它。如果目标工作区没有 `requirement.md`，会按固定优先级查找并转换以下文件：
-
-```text
-requirement.docx
-requirement.pdf
-requirement.txt
-requirement.html
-requirement.htm
-requirement.rtf
-需求.docx
-需求.pdf
-需求.txt
-需求.html
-需求.htm
-```
-
-转换输出固定为 `prd/<id>/requirement.md`。如果多个源文件同时存在，Runtime 按优先级选择一个并在 warnings 中说明。该转换是受控输入归一化写入，不需要 `confirm`；QA 产物写入仍必须一键确认。
-
-如果转换后的 Markdown 存在乱码、分页符、异常断行、控制字符或连续异常空格，后续可使用轻量清洗脚本生成 `requirement.cleaned.md`。清洗只允许做格式层面的无语义变更，默认不得覆盖 `requirement.md`；不做 OCR，不处理图片，不分析原型图。
-
-## 需求输入与图片策略
-
-Runtime 的推荐输入由两类 Markdown 文件组成：
-
-- `requirement.md`：需求正文，来自 MarkItDown 转换或人工整理。
-- `api-doc.md`：接口说明，可选。
-
-`analyze`、`generate-testcases` 和 `mvp` 不读取 `prd/<id>/prototype-notes.md`。即使该文件存在，也不会进入上下文、Prompt、需求分析或测试用例生成。
-
-当前 Runtime 仍是文本链路，不调用视觉模型，也不会上传、解析或间接分析图片二进制。如果 `requirement.md` 包含 Markdown 图片引用、`.png`、`.jpg`、`.jpeg`、`media/` 或 `images/` 等图片痕迹，Runtime 会 warning，并在待确认问题中提示人工确认图片中是否存在未写入正文的字段、按钮、状态、弹窗、权限差异或交互规则。测试用例生成不得基于图片内容编造字段、按钮、页面布局或交互。
-
-图片忽略策略见 `docs/architecture/prototype-image-analysis-plan.md`。
-
-禁用运行记录：
+示例：
 
 ```bash
-python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement --no-record-run
+agentic-qa 帮我分析 prd/sample-login-requirement 的需求
+agentic-qa 基于 prd/sample-login-requirement 生成测试用例
+agentic-qa 分析需求并生成测试用例
+agentic-qa 继续上一轮分析，补充边界条件
 ```
 
-一键确认并写入需求分析和测试用例草稿：
+### 设计原则
 
-```bash
-python -m runtime.cli confirm "帮我分析需求并生成测试用例" --prd prd/sample-login-requirement
+- **纯自然语言**：入口不接受 `--flags`、`--options`、子命令或结构化参数。所有指令信息（目标 PRD、操作类型、约束条件）均从自然语言中由 LLM 语义解析提取。
+- **无子命令无参数**：废除 `analyze`、`generate-testcases`、`mvp`、`run`、`confirm` 等子命令体系。废除 `--prd`、`--confirm`、`--use-llm`、`--no-record-run` 等参数。所有配置（PRD 路径、写入确认、LLM 开关等）均由 LLM 从对话上下文和历史记录中推断，或在首次使用时由对话引导用户明确。
+- **单一入口**：`agentic-qa` 是唯一入口。不再区分 CLI 模式和 Chat 模式；Codex 环境中的 Chat 命令同样遵循本架构。
+
+### 入口工作流
+
+```
+用户输入自然语言
+    │
+    ▼
+agentic-qa 入口接收原始文本
+    │
+    ▼
+LLM 语义路由解析（见第二节）
+    │
+    ▼
+路由到对应 Workflow / Task
+    │
+    ▼
+执行完成后自动写入产物
+    │
+    ▼
+回复用户摘要（含路径、验收结果、待确认项）
 ```
 
-也可以在原有命令上使用 `--confirm`：
+---
 
-```bash
-python -m runtime.cli analyze "帮我分析这个需求" --prd prd/sample-login-requirement --confirm
-python -m runtime.cli generate-testcases "帮我生成测试用例" --prd prd/sample-login-requirement --confirm
-python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/sample-login-requirement --confirm
-python -m runtime.cli run "帮我生成 sample-login-requirement 的测试用例" --prd prd/sample-login-requirement --confirm
+## 二、LLM 语义路由
+
+### 路由模型
+
+Runtime 使用 LLM 对用户自然语言指令进行语义路由，不再依赖关键词匹配或固定子命令映射。
+
+### 路由输入
+
+```
+- 用户原始自然语言指令
+- 当前 session 上下文（最近 N 轮对话摘要）
+- 可用 Workflow 清单（来自 workflows/）
+- 当前 PRD 工作区状态（可选）
 ```
 
-一键确认命令会在质量门通过后直接写入产物，不需要再执行 `approve <run_id>`。写入后的产物状态仍为 `needs_human_review`，不得继续自动生成 API/UI 脚本或归档。如果目标 `10-analysis/requirement-analysis.md` 或 `20-testcases/testcases.md` 已存在，Runtime 默认拒绝覆盖。`--approve-write` 仍可使用，但只作为旧命令兼容别名。
+### 路由输出
 
-每次运行记录默认包含：
+```json
+{
+  "intent": "analyze | generate-testcases | full-pipeline | revise | export | continue | ...",
+  "target_prd": "sample-login-requirement",
+  "confidence": 0.95,
+  "requires_confirmation": false,
+  "extracted_params": {
+    "scope": "full",
+    "constraints": ["边界条件", "异常场景"]
+  }
+}
+```
+
+### 路由策略
+
+| 场景 | 路由行为 |
+|------|---------|
+| 明确意图 | 直接路由，无需确认 |
+| 模糊意图 | 回复澄清问题，引导用户明确 |
+| 多意图 | 拆分为子任务顺序执行 |
+| 继续/补充 | 识别为上轮 session 延续，加载历史 checkpoint |
+
+### 可用意图
+
+- `analyze` — 需求分析
+- `generate-testcases` — 测试用例生成
+- `full-pipeline` — 分析+用例全链路
+- `revise` — 按评审意见增量修订
+- `export` — 导出中文评审文件
+- `continue` — 继续上轮未完成任务
+- `status` — 查询运行状态或历史
+- `help` — 引导用户了解可用能力
+
+---
+
+## 三、Session 对话循环
+
+### 会话生命周期
+
+```
+Session 开始（首次 agentic-qa 调用）
+    │
+    ▼
+用户输入 → LLM 语义路由 → 执行 Workflow → 输出摘要
+    │                                            │
+    └──────── 继续输入 ←─────────────────────────┘
+    │
+    ▼
+Session 结束（显式结束 / 超时 / 所有任务完成）
+```
+
+### Session 状态
+
+每个 session 包含：
+
+```yaml
+session_id: uuid
+created_at: timestamp
+last_active: timestamp
+thread_id: string  # LangGraph thread_id
+history:
+  - turn: 1
+    user_input: "..."
+    intent: "analyze"
+    target_prd: "..."
+    result: "success"
+    artifacts: ["prd/.../10-analysis/requirement-analysis.md"]
+  - turn: 2
+    user_input: "继续..."
+    ...
+checkpoint_path: ".runtime/sessions/<session_id>/"
+status: "active | completed | expired"
+```
+
+### 对话上下文维护
+
+- 每轮对话自动追加到 session 历史
+- LLM 路由时携带最近 5 轮对话摘要（可配置）
+- 支持跨轮引用：用户说「继续上一轮」「补充边界条件」时，路由自动加载上轮 checkpoint
+- 同一 session 内，PRD 路径、风格偏好等上下文自动继承
+
+### 自动写入（不打断）
+
+- **不暂停等待用户确认**：Workflow 执行完成后自动写入产物，不在执行中途暂停等待 `approve`/`reject` 命令。
+- **写入后通知**：写入完成后，回复中告知用户已写入的路径和内容摘要。
+- **覆盖保护**：如果目标产物已存在，自动检查差异；仅在不一致时询问用户是否覆盖（异步轻量询问，不阻塞后续任务）。
+- **错误处理**：写入失败时自动重试一次，仍失败则在回复中给出错误信息和手动操作建议。
+
+---
+
+## 四、持久化
+
+### 持久化存储结构
+
+```
+.runtime/
+├── sessions/                          # Session 持久化
+│   ├── <session_id>/
+│   │   ├── session.yml                # Session 元数据
+│   │   ├── history.jsonl              # 对话历史（每轮一行 JSON）
+│   │   ├── context.json               # 当前上下文快照
+│   │   ├── checkpoints/               # LangGraph checkpoint
+│   │   │   ├── checkpoint_1.pkl
+│   │   │   └── checkpoint_2.pkl
+│   │   └── artifacts/                 # 本轮 session 产出的文件引用
+│   │       └── links.json
+│   └── index.yml                      # 所有 session 索引
+├── runs/                              # 运行记录（保持兼容）
+│   └── <run_id>/
+│       ├── run-summary.json
+│       ├── run-summary.md
+│       ├── run-state.json
+│       └── checkpointer.pkl
+└── config.yml                         # Runtime 全局配置（可选）
+```
+
+### Session 持久化
+
+| 数据 | 存储位置 | 格式 | 用途 |
+|------|---------|------|------|
+| Session 元数据 | `sessions/<id>/session.yml` | YAML | 创建时间、最后活跃、状态 |
+| 对话历史 | `sessions/<id>/history.jsonl` | JSONL | 每轮对话的输入/输出/路由结果 |
+| 上下文快照 | `sessions/<id>/context.json` | JSON | 当前 PRD、工作流状态、偏好 |
+| Checkpoints | `sessions/<id>/checkpoints/` | PKL | LangGraph 状态恢复 |
+| 产物引用 | `sessions/<id>/artifacts/links.json` | JSON | 此生环节点产出的文件路径列表 |
+
+### 运行记录持久化
+
+保持与 MVP 阶段兼容的运行记录结构，每次 agentic-qa 调用自动记录：
 
 ```text
 .runtime/runs/<run_id>/run-summary.json
 .runtime/runs/<run_id>/run-summary.md
 .runtime/runs/<run_id>/run-state.json
-.runtime/runs/<run_id>/graph-state.json
 .runtime/runs/<run_id>/checkpointer.pkl
 ```
 
-若需要兼容旧的暂停运行，仍可使用 `approve`、`reject`、`resume`；这些命令会追加 `review-events.jsonl`，但新运行默认不再需要这一步。
+运行记录包含：意图、目标 PRD、LLM 调用次数、执行状态、产物路径、错误摘要。不记录密钥或敏感信息。
 
-质量门会阻断以下输出：缺少 `needs_human_review`、缺少需求分析 12 个必要章节、待确认问题少于 3 个、业务规则/风险/映射为空、测试用例少于 15 条、缺少 P0、优先级不属于 `P0/P1/P2/P3`、表头新增“用例类型”、表格列数不是固定 5 列、缺少至少 4 类关键覆盖维度，或仍包含纯模板占位语。
+### 自动恢复
 
-显式启用 LLM：
+- 如果 session 因异常中断（进程退出、网络中断），下次相同 session_id 的调用自动加载最新 checkpoint 恢复。
+- 没有显式 session_id 时，按以下优先级匹配：
+  1. 最近 30 分钟内活跃的同一用户 session
+  2. 同一 PRD 的最近 session
+  3. 创建新 session
 
-```bash
-python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/sample-login-requirement --use-llm
+### 不提交到 Git
+
+整个 `.runtime/` 目录被 `.gitignore` 排除。所有持久化数据仅限本地开发环境和运行时使用。
+
+---
+
+## 五、架构总览
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       用户自然语言输入                        │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     agentic-qa 入口                          │
+│  (纯自然语言，无子命令无参数)                                 │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    LLM 语义路由                               │
+│  意图识别 → 参数提取 → PRD 定位 → 路由决策                   │
+└──────────┬──────────────────────────────────────┬───────────┘
+           │                                      │
+           ▼                                      ▼
+┌──────────────────────┐    ┌──────────────────────────────┐
+│   Workflow 执行       │    │    Session 管理               │
+│  ┌────────────────┐   │    │  ┌─────────────────────────┐ │
+│  │ 需求分析        │   │    │  │ 对话历史                │ │
+│  │ 测试用例生成    │   │    │  │ 上下文快照              │ │
+│  │ 全链路          │   │    │  │ Checkpoint 恢复         │ │
+│  │ 增量修订        │   │    │  │ 自动续接                │ │
+│  └────────┬───────┘   │    │  └─────────────────────────┘ │
+└───────────┼───────────┘    └──────────────────────────────┘
+            │                             │
+            ▼                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    自动写入产物                               │
+│  (不打断，写入后通知，覆盖保护)                               │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-默认服务地址为 `https://api.freemodel.dev`，默认模型为 `gpt-5.5`。请只在本地环境变量中设置密钥，不要提交 `.env` 或任何密钥文件。运行记录会记录是否启用 LLM、模型、服务地址、调用次数和错误摘要，但不会记录密钥。
+---
 
-当前阶段不建议把 `--use-llm` 作为真实业务需求的默认交付路径。真实交付应由 Codex 读取仓库规则和 PRD 文本后生成草稿，再由人工评审确认。
+## 六、与现有资产的交互
 
-## 后续方向
+| 资产 | 交互方式 |
+|------|---------|
+| `AGENTS.md` | Runtime 读取 Agent 角色定义，不修改 |
+| `COMMANDS.md` | Runtime 不依赖 COMMANDS.md 路由，仅用于信息参考 |
+| `workflows/` | Runtime 按路由结果调用对应 Workflow |
+| `rules/` | Runtime 遵守质量门、路径、命名规则 |
+| `skills/` | Runtime 读取 Skill 定义作为 LLM 上下文 |
+| `knowledge/` | Runtime 读取 Knowledge 作为 LLM 上下文 |
+| `prd/<id>/` | Runtime 写入 analysis/ 和 testcases/ 产物 |
+| `prompts/` | Runtime 读取 Prompt 模板作为 LLM 上下文 |
 
-后续可继续增强 metadata 写回、运行记录查询和业务审核状态管理。当前最终策略是不分析图片/原型图内容；如未来重新评估视觉模型接入，必须作为新的明确授权任务处理。
+---
+
+## 七、对比 MVP 阶段变更
+
+| 维度 | MVP 阶段 | 新架构 |
+|------|---------|--------|
+| 入口 | `python -m runtime.cli <子命令>` | `agentic-qa <自然语言>` |
+| 参数 | `--prd`, `--confirm`, `--use-llm` 等 | 无参数，LLM 语义提取 |
+| 路由 | 子命令映射 | LLM 语义路由 |
+| 对话 | 单次执行 | 多轮 session 对话循环 |
+| 写入 | 需 `--confirm` 或 `confirm` 命令 | 自动写入（不打断） |
+| 暂停 | `approve`/`reject`/`resume` 暂停等待 | 无需暂停，写入后通知 |
+| 会话 | 无 session 概念 | 完整 session 生命周期管理 |
+| 持久化 | 仅运行记录 | session + 运行记录双持久化 |
+| 覆盖保护 | 拒绝覆盖 | 差异检查 + 轻量询问 |
+
+---
+
+## 八、后续演进方向
+
+1. **多用户 session 隔离**：支持多用户并行 session，通过用户标识自动隔离
+2. **Session 超时与清理**：超过 N 天未活跃的 session 自动归档
+3. **对话历史检索**：支持按关键词/PRD/时间范围检索历史对话
+4. **异步通知**：长时间运行的任务完成后推送通知
+5. **Web Dashboard**：可视化查看 session、运行记录和产物状态
+6. **Session 导出**：将完整对话历史和产物导出为可分享文档

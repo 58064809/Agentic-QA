@@ -21,7 +21,7 @@ class OpenAICompatibleAdapter:
 
     def generate_text(self, prompt: str) -> str:
         if not self.config.api_key:
-            raise ValueError("缺少 FREEMODEL_API_KEY，无法调用 LLM。")
+            raise ValueError("缺少 DEEPSEEK_API_KEY，无法调用 LLM。")
         if OpenAI is None:
             raise RuntimeError("openai SDK 未安装，无法调用 LLM。")
 

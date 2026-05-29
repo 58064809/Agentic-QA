@@ -44,7 +44,7 @@ target_agent: Report Generation Agent
 
 ## 必须参考的规则
 
-- `skills/qa-report-writing-skill.md`
+- `qa-methods/qa-report-writing-skill.md`
 - `knowledge/templates/qa-report-template.md`
 
 ## 质量要求

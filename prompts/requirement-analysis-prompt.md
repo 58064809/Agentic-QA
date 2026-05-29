@@ -53,8 +53,8 @@ human_review_required: true
 - `rules/requirement-analysis-rules.md`
 - `rules/artifact-path-rules.md`
 - `rules/status-rules.md`
-- `skills/requirement-decomposition-skill.md`
-- `skills/business-rule-extraction-skill.md`
+- `qa-methods/requirement-decomposition-skill.md`
+- `qa-methods/business-rule-extraction-skill.md`
 - `knowledge/templates/requirement-analysis-template.md`
 
 ## 质量要求

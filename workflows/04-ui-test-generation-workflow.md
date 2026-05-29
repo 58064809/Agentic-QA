@@ -19,7 +19,6 @@ Testcase Design Agent 协助选择关键场景，Test Execution Agent 协助说�
 
 ## 必须读取
 
-- `tasks/04-generate-ui-tests.md`
 - `prompts/ui-test-generation-prompt.md`
 - `rules/ui-test-rules.md`
 - `rules/automation-rules.md`

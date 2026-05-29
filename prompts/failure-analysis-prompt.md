@@ -56,7 +56,7 @@ target_agent: Failure Analysis Agent
 
 - `rules/failure-analysis-rules.md`
 - `rules/test-execution-rules.md`
-- `skills/failure-log-analysis-skill.md`
+- `qa-methods/failure-log-analysis-skill.md`
 
 ## 质量要求
 

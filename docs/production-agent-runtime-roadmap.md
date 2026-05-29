@@ -1,6 +1,6 @@
 # 生产级 Agent 与 LangGraph Runtime 路线
 
-本文档用于明确 Agentic-QA 从“Codex 驱动的标准化 QA 工作台”逐步升级到“轻量 LangGraph Runtime 驱动的生产级 Agent 工作流”的路线。它不推翻现有声明式工作台，而是在现有 `AGENTS.md`、`COMMANDS.md`、`workflows/`、`agents/`、`tasks/`、`prompts/`、`rules/`、`skills/`、`knowledge/` 和 `prd/` 之上增加可执行编排层。
+本文档用于明确 Agentic-QA 的 Runtime 从当前轻量执行引擎逐步升级到生产级 Agent 工作流的路线。Runtime 不替代现有声明式资产（`AGENTS.md`、`COMMANDS.md`、`workflows/`、`agents/`、`prompts/`、`rules/`、`qa-methods/`、`knowledge/` 和 `prd/`），而是在这些资产之上增加可执行编排层。
 
 ## 终极目标
 
@@ -24,71 +24,32 @@ Agentic-QA 的终极目标是：
 
 AI 只负责生成、执行、整理和辅助判断，最终审核、确认和发布决策仍由人完成。
 
-## 两阶段路线
+## 当前 Runtime 状态
 
-### 第 1 阶段：Codex 驱动的标准化工作台
-
-第 1 阶段继续把 Agentic-QA 仓库建设成标准化工作台：
+Runtime 是 Agentic-QA 的轻量执行引擎，提供纯自然语言入口、LLM 语义路由、Session 对话循环和自动持久化能力。
 
 ```text
 用户自然语言命令
   ↓
-Codex / ChatGPT / IDE Agent 读取仓库规范
+LLM 语义路由 —— 提取意图 + 文档来源
   ↓
-COMMANDS.md 路由
+Session 管理器 —— 持久化对话上下文
   ↓
-workflows/ + tasks/ + agents/ + prompts/ + rules/ + skills/ + knowledge/
+LangGraph 工作流 —— 执行需求分析/测试用例生成
   ↓
-生成或更新 prd/<需求名>/ 对应产物
-  ↓
-人工审核和确认
+自动写入产物 —— 进入 REPL 等待下一轮
 ```
 
-本阶段重点是：
+当前已实现的能力：
 
-- 固化命令路由。
-- 固化 Workflow、Task、Agent、Prompt、Rules、Skills、Knowledge。
-- 固化 PRD 工作区结构。
-- 固化产物路径、状态流转和人工审核门。
-- 使用成熟工具完成辅助校验和测试执行。
-
-本阶段不要求仓库自行调用 LLM，也不要求内置 Agent Runtime。
-
-### 第 2 阶段：轻量 LangGraph Runtime 驱动
-
-第 2 阶段新增轻量 `runtime/`，将第 1 阶段的声明式资产变成可执行流程：
-
-```text
-用户自然语言命令
-  ↓
-Command Router：识别任务类型
-  ↓
-Workflow Selector：匹配 workflows/*.md
-  ↓
-Context Loader：加载 PRD、Rules、Skills、Prompt、Knowledge
-  ↓
-Requirement Analyzer / Testcase Agent / Script Agent
-  ↓
-Quality Checker：质量检查
-  ↓
-条件判断：
-  ├── 通过 → Artifact Writer
-  └── 不通过 → Revision Node
-  ↓
-Human Review Gate
-  ↓
-写回 prd/<需求名>/xx-xxx/
-  ↓
-更新 metadata.yml 状态
-```
-
-第 2 阶段的重点不是自研大平台，而是用成熟生态补齐生产级能力：
-
-- 用 LangGraph 管理流程、状态、条件跳转、循环修正和人工中断点。
-- 用 LangChain / LangChain Core 管理模型调用、Prompt Template、结构化输出和工具封装。
-- 用 Pydantic 定义结构化输入输出 Schema。
-- 用 Typer / Rich 保持 CLI 交互简洁。
-- 用 SQLite 或文件化 checkpoint 作为最小持久化起点。
+- 纯自然语言入口：`agentic-qa "..."` 无需子命令或参数。
+- LLM 语义路由：自动识别意图和文档来源。
+- Session 持久化：多轮对话上下文保持。
+- Checkpoint 支持：运行中断可恢复。
+- 运行记录：每次执行记录到 `.runtime/runs/<run_id>/`。
+- 自动写入：产物自动写入目标 PRD 工作区。
+- MarkItDown 集成：Word/PDF/TXT/HTML 等需求源文件自动转换。
+- 质量门：需求分析 12 个必要章节、测试用例 5 列表头 + 15 条等。
 
 ## LangGraph 与 LangChain 分工
 
@@ -130,10 +91,9 @@ Agentic-QA/
 ├── COMMANDS.md
 ├── workflows/
 ├── agents/
-├── tasks/
 ├── prompts/
 ├── rules/
-├── skills/
+├── qa-methods/
 ├── knowledge/
 ├── prd/
 ├── runtime/
@@ -163,8 +123,8 @@ Agentic-QA/
 
 其中：
 
-- `workflows/`、`tasks/`、`agents/`、`prompts/`、`rules/`、`skills/`、`knowledge/` 是声明式资产。
-- `runtime/` 是可选执行引擎。
+- `workflows/`、`agents/`、`prompts/`、`rules/`、`qa-methods/`、`knowledge/` 是声明式资产。
+- `runtime/` 是执行引擎。
 - `prd/` 是需求级资产工作区。
 - `scripts/` 是确定性工程脚本。
 
@@ -192,7 +152,7 @@ Agentic-QA/
 ## 节点 Agent 化边界
 
 | 节点 | 是否 Agent 化 | 说明 |
-|---|---:|---|
+|:---|---:|---|
 | Command Router | 否 | 使用结构化分类即可 |
 | Workflow Selector | 否 | 文件匹配和规则匹配应确定性执行 |
 | Context Loader | 否 | 读取文件和组装上下文应确定性执行 |
@@ -207,13 +167,13 @@ Agentic-QA/
 
 ## 第一个 Runtime 闭环
 
-不要一开始做全链路。第 2 阶段第一个可运行闭环只做：
+第一个可运行闭环：
 
 ```text
 生成测试用例
 ```
 
-推荐最小流程：
+最小流程：
 
 ```text
 intent_router_node
@@ -234,21 +194,21 @@ metadata_update_node
 对应命令示例：
 
 ```bash
-python -m runtime.cli run "帮我生成 prd/sample-login-requirement 需求测试用例"
+agentic-qa "帮我生成 prd/sample-login-requirement 需求测试用例"
 ```
 
 ## 推荐执行策略
 
 1. 保留现有声明式工作台。
-2. 新增 `runtime/` 最小骨架。
-3. 做第一个 LangGraph 流程：测试用例生成。
+2. Runtime 已提供最小骨架。
+3. 持续做 LangGraph 流程演进：需求分析、测试用例生成、API 自动化等。
 4. 加入 Human-in-the-loop。
-5. 加入持久化和运行记录。
+5. 加入持久化和运行记录（已完成）。
 6. 接入真实 QA 工具，例如 pytest、Playwright、Allure。
 
 ## 非目标
 
-即使进入第 2 阶段，也不要把项目做成以下形态：
+不要把项目做成以下形态：
 
 - 完整 Web 平台。
 - 自研 LLM Provider。

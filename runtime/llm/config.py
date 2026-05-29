@@ -5,17 +5,24 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-API_KEY_ENV = "FREEMODEL_API_KEY"
-BASE_URL_ENV = "FREEMODEL_BASE_URL"
-MODEL_ENV = "FREEMODEL_MODEL"
-ENABLE_CHAT_FALLBACK_ENV = "FREEMODEL_ENABLE_CHAT_FALLBACK"
-MAX_INPUT_CHARS_ENV = "FREEMODEL_MAX_INPUT_CHARS"
+# ── 环境变量（DeepSeek） ─────────────────────────────────────────
+API_KEY_ENV = "DEEPSEEK_API_KEY"
+BASE_URL_ENV = "DEEPSEEK_BASE_URL"
+MODEL_ENV = "DEEPSEEK_MODEL"
+ENABLE_CHAT_FALLBACK_ENV = "DEEPSEEK_ENABLE_CHAT_FALLBACK"
+MAX_INPUT_CHARS_ENV = "DEEPSEEK_MAX_INPUT_CHARS"
 
-DEFAULT_PROVIDER = "openai_compatible"
-DEFAULT_BASE_URL = "https://api.freemodel.dev"
-DEFAULT_MODEL = "gpt-5.5"
-DEFAULT_ENABLE_CHAT_FALLBACK = False
-DEFAULT_MAX_INPUT_CHARS = 8000
+# ── Anthropic / Claude 兼容端 ────────────────────────────────────
+CLAUDE_API_KEY_ENV = "CLAUDE_API_KEY"
+CLAUDE_BASE_URL_ENV = "CLAUDE_BASE_URL"
+CLAUDE_MODEL_ENV = "CLAUDE_MODEL"
+
+DEFAULT_PROVIDER = "deepseek"
+DEFAULT_BASE_URL = "https://api.deepseek.com"
+DEFAULT_CLAUDE_BASE_URL = "https://api.deepseek.com/anthropic"
+DEFAULT_MODEL = "deepseek-v4-flash"
+DEFAULT_ENABLE_CHAT_FALLBACK = True  # DeepSeek 使用 chat completions
+DEFAULT_MAX_INPUT_CHARS = 32000
 
 
 def default_llm_metadata(*, enabled: bool = False) -> dict[str, Any]:
@@ -79,10 +86,11 @@ class OpenAICompatibleConfig:
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> OpenAICompatibleConfig:
         env = environ or os.environ
+
         api_key = env.get(API_KEY_ENV) or None
         base_url = env.get(BASE_URL_ENV) or DEFAULT_BASE_URL
         model = env.get(MODEL_ENV) or DEFAULT_MODEL
-        enable_chat_fallback = _parse_bool(env.get(ENABLE_CHAT_FALLBACK_ENV))
+        enable_chat_fallback = _parse_bool(env.get(ENABLE_CHAT_FALLBACK_ENV), default=DEFAULT_ENABLE_CHAT_FALLBACK)
         max_input_chars, warnings = _parse_max_input_chars(env.get(MAX_INPUT_CHARS_ENV))
         return cls(
             api_key=api_key,

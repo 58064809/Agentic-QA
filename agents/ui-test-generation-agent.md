@@ -29,10 +29,9 @@ UI 测试生成 Agent，负责生成 Playwright UI 自动化脚本草稿。
 ## 必须读取的资料
 
 - `workflows/04-ui-test-generation-workflow.md`
-- `tasks/04-generate-ui-tests.md`
 - `prompts/ui-test-generation-prompt.md`
 - `rules/ui-test-rules.md`
-- `skills/playwright-ui-test-skill.md`
+- `qa-methods/playwright-ui-test-skill.md`
 
 ## 必须遵守的规则
 

@@ -132,7 +132,7 @@ def test_failed_runtime_flow_still_generates_run_record(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
 
     result = run_langgraph_testcase_generation_workflow(
-        "请归档这个需求",
+        "帮我浇花",  # 完全未知的意图，走不到 workflow_selector
         "prd/demo-requirement",
         repo_root=repo_root,
     )

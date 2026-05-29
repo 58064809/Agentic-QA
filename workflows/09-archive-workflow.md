@@ -19,7 +19,6 @@ Report Generation Agent 提供报告状态，Test Execution Agent 提供执行�
 
 ## 必须读取
 
-- `tasks/09-archive-requirement.md`
 - `prompts/archive-prompt.md`
 - `rules/archive-rules.md`
 - `rules/status-rules.md`

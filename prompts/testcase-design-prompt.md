@@ -38,12 +38,12 @@ target_agent: Testcase Design Agent
 
 - `rules/testcase-rules.md`
 - `rules/review-gate-rules.md`
-- `skills/test-design-skill.md`
-- `skills/equivalence-partitioning-skill.md`
-- `skills/boundary-value-analysis-skill.md`
-- `skills/scenario-modeling-skill.md`
-- `skills/state-transition-modeling-skill.md`
-- `skills/risk-based-testing-skill.md`
+- `qa-methods/test-design-skill.md`
+- `qa-methods/equivalence-partitioning-skill.md`
+- `qa-methods/boundary-value-analysis-skill.md`
+- `qa-methods/scenario-modeling-skill.md`
+- `qa-methods/state-transition-modeling-skill.md`
+- `qa-methods/risk-based-testing-skill.md`
 - `knowledge/templates/testcase-template.md`
 
 ## 覆盖要求

@@ -30,10 +30,9 @@
 ## 必须读取的资料
 
 - `workflows/06-failure-analysis-workflow.md`
-- `tasks/06-analyze-failures.md`
 - `prompts/failure-analysis-prompt.md`
 - `rules/failure-analysis-rules.md`
-- `skills/failure-log-analysis-skill.md`
+- `qa-methods/failure-log-analysis-skill.md`
 
 ## 必须遵守的规则
 

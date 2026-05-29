@@ -29,11 +29,10 @@
 ## 必须读取的资料
 
 - `workflows/01-requirement-analysis-workflow.md`
-- `tasks/01-analyze-requirement.md`
 - `prompts/requirement-analysis-prompt.md`
 - `rules/requirement-analysis-rules.md`
-- `skills/requirement-decomposition-skill.md`
-- `skills/business-rule-extraction-skill.md`
+- `qa-methods/requirement-decomposition-skill.md`
+- `qa-methods/business-rule-extraction-skill.md`
 
 ## 必须遵守的规则
 

@@ -111,7 +111,7 @@ def test_langgraph_approve_write_does_not_overwrite_existing_testcases(tmp_path)
     assert any("默认不覆盖" in error for error in result.errors)
 
 
-def test_langgraph_unsupported_intent_stops_before_context_loader(tmp_path):
+def test_langgraph_known_intent_proceeds_to_workflow_selector(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
 
     result = run_langgraph_testcase_generation_workflow(
@@ -120,11 +120,28 @@ def test_langgraph_unsupported_intent_stops_before_context_loader(tmp_path):
         repo_root=repo_root,
     )
 
-    assert not result.success
+    # "归档" 是已识别的意图，所以会继续到 workflow_selector_node
+    assert result.intent == "archive"
     assert "intent_router_node" in result.executed_nodes
+    # workflow_selector 只检查文件是否存在，不检查意图匹配—所以继续执行
+    assert "workflow_selector_node" in result.executed_nodes
+
+
+def test_langgraph_unknown_intent_stops_before_workflow_selector(tmp_path):
+    repo_root = create_runtime_repo(tmp_path)
+
+    result = run_langgraph_testcase_generation_workflow(
+        "帮我浇花",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+    )
+
+    assert not result.success
+    assert result.intent is None
+    assert "intent_router_node" in result.executed_nodes
+    assert "workflow_selector_node" not in result.executed_nodes
     assert "context_loader_node" not in result.executed_nodes
-    assert "testcase_generation_node" not in result.executed_nodes
-    assert "artifact_writer_node" not in result.executed_nodes
+    assert "artifact_generation_node" not in result.executed_nodes
 
 
 def test_langgraph_missing_prd_required_file_stops_before_generation(tmp_path):
@@ -140,7 +157,7 @@ def test_langgraph_missing_prd_required_file_stops_before_generation(tmp_path):
 
     assert not result.success
     assert "context_loader_node" in result.executed_nodes
-    assert "testcase_generation_node" not in result.executed_nodes
+    assert "artifact_generation_node" not in result.executed_nodes
     assert "artifact_writer_node" not in result.executed_nodes
     assert not (repo_root / "prd/demo-requirement/20-testcases/testcases.md").exists()
 
@@ -148,15 +165,15 @@ def test_langgraph_missing_prd_required_file_stops_before_generation(tmp_path):
 def test_langgraph_quality_failure_stops_before_writer(tmp_path, monkeypatch):
     repo_root = create_runtime_repo(tmp_path)
 
-    def fake_testcase_generation_node(state):
-        state.record_node("testcase_generation_node")
+    def fake_artifact_generation_node(state):
+        state.record_node("artifact_generation_node")
         state.draft_artifact = "缺少审核状态和表头"
         return state
 
     monkeypatch.setattr(
         langgraph_app,
-        "testcase_generation_node",
-        fake_testcase_generation_node,
+        "artifact_generation_node",
+        fake_artifact_generation_node,
     )
 
     result = run_langgraph_testcase_generation_workflow(

@@ -20,6 +20,21 @@ env/
 .DS_Store
 Thumbs.db
 
+# Local configs and generated data
+/configs/local.yaml
+/configs/private.yaml
+/outputs/
+/logs/
+/data/
+/cache/
+/vector_store/
+.rag_index/
+*.faiss
+*.index
+*.db
+*.sqlite
+*.log
+
 # Local scratch files
 caogao.py
 
@@ -30,3 +45,6 @@ prd/demo-requirement/
 prd/*-review/metadata.yml
 prd/*-review/requirement.md
 prd/*-review/requirement.pdf
+
+# AtomCode local-scope configs (machine-specific)
+.atomcode/local/

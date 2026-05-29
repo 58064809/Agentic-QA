@@ -66,7 +66,7 @@ metadata_update_node
 
 ## 必须读取的文件
 
-- `docs/architecture/production-agent-runtime-roadmap.md`
+- `docs/production-agent-runtime-roadmap.md`
 - `workflows/02-testcase-generation-workflow.md`
 - `prompts/testcase-design-prompt.md`
 - `rules/testcase-rules.md`

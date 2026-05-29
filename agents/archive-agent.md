@@ -30,7 +30,6 @@
 ## 必须读取的资料
 
 - `workflows/09-archive-workflow.md`
-- `tasks/09-archive-requirement.md`
 - `prompts/archive-prompt.md`
 - `rules/archive-rules.md`
 - `scripts/archive_requirement.py`

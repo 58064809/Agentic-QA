@@ -16,7 +16,7 @@ def artifact_writer_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
     if state.dry_run:
         return state
     if not state.approve_write:
-        state.errors.append("未显式传入 --approve-write，拒绝写入。")
+        state.errors.append("未显式设置 approve_write 状态字段，拒绝写入。")
         return state
     if not state.output_path or not state.draft_artifact:
         state.errors.append("缺少输出路径或草稿内容，拒绝写入。")

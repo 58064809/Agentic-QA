@@ -20,7 +20,7 @@ target_agent: Runtime Agent (LLM Semantic Router)
 - 通过语义理解（非关键词匹配）识别用户意图
 - 路由到 `workflows/` 中定义的 10 个标准 Workflow 之一
 - 路由失败时明确标记「路由未匹配」，不伪造匹配结果
-- 在路由决策中自动附加对应的 `prompts/`、`rules/`、`skills/`、`knowledge/` 上下文路径
+- 在路由决策中自动附加对应的 `prompts/`、`rules/`、`qa-methods/`、`knowledge/` 上下文路径
 
 ## 路由决策空间
 
@@ -57,7 +57,7 @@ target_agent: Runtime Agent (LLM Semantic Router)
   "agent": "对应 Agent 名称",
   "prompt": "prompts/name-prompt.md",
   "rules": ["rules/rule1.md", "rules/rule2.md"],
-  "skills": ["skills/skill1.md"],
+  "skills": ["qa-methods/skill1.md"],
   "knowledge": ["knowledge/path/file.md"],
   "prd_context": "prd/<id>/ 或 null",
   "requires_human_prd_confirm": true/false,
@@ -129,7 +129,7 @@ target_agent: Runtime Agent (LLM Semantic Router)
 
 3. **识别 PRD 上下文**：用户是否指定了 PRD？如果有，是哪个？需要确认吗？
 
-4. **准备上下文附件**：根据匹配的 Workflow，确定需要附加哪些 `rules/`、`skills/`、`knowledge/` 文件。
+4. **准备上下文附件**：根据匹配的 Workflow，确定需要附加哪些 `rules/`、`qa-methods/`、`knowledge/` 文件。
 
 5. **评估置信度**：匹配是否明确？是否存在歧义？是否需要用户进一步确认？
 
@@ -168,7 +168,7 @@ target_agent: Runtime Agent (LLM Semantic Router)
   "agent": "Requirement Analysis Agent",
   "prompt": "prompts/requirement-analysis-prompt.md",
   "rules": ["rules/requirement-analysis-rules.md", "rules/artifact-path-rules.md", "rules/status-rules.md"],
-  "skills": ["skills/requirement-decomposition-skill.md", "skills/business-rule-extraction-skill.md"],
+  "skills": ["qa-methods/requirement-decomposition-skill.md", "qa-methods/business-rule-extraction-skill.md"],
   "knowledge": ["knowledge/templates/requirement-analysis-template.md"],
   "prd_context": "prd/sample-login-requirement",
   "requires_human_prd_confirm": false,
@@ -190,7 +190,7 @@ target_agent: Runtime Agent (LLM Semantic Router)
   "agent": "Requirement Analysis Agent",
   "prompt": "prompts/requirement-analysis-prompt.md",
   "rules": ["rules/requirement-analysis-rules.md", "rules/artifact-path-rules.md", "rules/status-rules.md"],
-  "skills": ["skills/requirement-decomposition-skill.md", "skills/business-rule-extraction-skill.md"],
+  "skills": ["qa-methods/requirement-decomposition-skill.md", "qa-methods/business-rule-extraction-skill.md"],
   "knowledge": ["knowledge/templates/requirement-analysis-template.md"],
   "prd_context": null,
   "requires_human_prd_confirm": true,

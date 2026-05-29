@@ -19,7 +19,6 @@ API Test Generation Agent 和 UI Test Generation Agent 协助解释脚本，Fail
 
 ## 必须读取
 
-- `tasks/05-execute-tests.md`
 - `prompts/test-execution-prompt.md`
 - `rules/test-execution-rules.md`
 - `rules/automation-rules.md`

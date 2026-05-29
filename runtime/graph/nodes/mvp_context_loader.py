@@ -20,35 +20,39 @@ TESTCASE_WORKFLOW_FILES = [
 ANALYSIS_CONTEXT_FILES = [
     "AGENTS.md",
     "COMMANDS.md",
-    "docs/architecture/production-agent-runtime-roadmap.md",
+    "docs/production-agent-runtime-roadmap.md",
     "workflows/01-requirement-analysis-workflow.md",
     "prompts/requirement-analysis-prompt.md",
     "rules/requirement-analysis-rules.md",
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
-    "skills/requirement-decomposition-skill.md",
-    "skills/business-rule-extraction-skill.md",
+    "qa-methods/requirement-decomposition-skill.md",
+    "qa-methods/business-rule-extraction-skill.md",
     "knowledge/templates/requirement-analysis-template.md",
 ]
 TESTCASE_CONTEXT_FILES = [
     "AGENTS.md",
     "COMMANDS.md",
-    "docs/architecture/production-agent-runtime-roadmap.md",
+    "docs/production-agent-runtime-roadmap.md",
     "workflows/10-runtime-testcase-generation-workflow.md",
     "workflows/02-testcase-generation-workflow.md",
     "prompts/testcase-design-prompt.md",
     "rules/testcase-rules.md",
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
-    "skills/test-design-skill.md",
-    "skills/equivalence-partitioning-skill.md",
-    "skills/boundary-value-analysis-skill.md",
-    "skills/scenario-modeling-skill.md",
-    "skills/state-transition-modeling-skill.md",
-    "skills/risk-based-testing-skill.md",
+    "qa-methods/test-design-skill.md",
+    "qa-methods/equivalence-partitioning-skill.md",
+    "qa-methods/boundary-value-analysis-skill.md",
+    "qa-methods/scenario-modeling-skill.md",
+    "qa-methods/state-transition-modeling-skill.md",
+    "qa-methods/risk-based-testing-skill.md",
     "knowledge/templates/testcase-template.md",
 ]
 REQUIRED_PRD_FILES = ["metadata.yml", "requirement.md"]
+ROADMAP_CANDIDATES = [
+    "docs/production-agent-runtime-roadmap.md",
+    "docs/architecture/production-agent-runtime-roadmap.md",
+]
 IMAGE_REFERENCE_RE = re.compile(
     r"!\[[^\]]*]\([^)]+\)|\.(?:png|jpe?g)\b|(?:^|[^A-Za-z0-9_])(?:media|images)[\\/]",
     re.IGNORECASE | re.MULTILINE,
@@ -94,6 +98,18 @@ def _context_files_for_task(task_type: str | None) -> list[str]:
     if task_type == TASK_TESTCASE_GENERATION:
         return list(TESTCASE_CONTEXT_FILES)
     return sorted({*ANALYSIS_CONTEXT_FILES, *TESTCASE_CONTEXT_FILES})
+
+
+def _resolve_context_files(repo_root: Path, task_type: str | None) -> list[str]:
+    files = _context_files_for_task(task_type)
+    existing_roadmap = next(
+        (path for path in ROADMAP_CANDIDATES if (repo_root / path).is_file()),
+        ROADMAP_CANDIDATES[0],
+    )
+    return [
+        existing_roadmap if path in ROADMAP_CANDIDATES else path
+        for path in files
+    ]
 
 
 def _set_output_paths(state: QAWorkflowState, repo_root: Path, prd_path: Path) -> None:
@@ -146,7 +162,10 @@ def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkfl
         state.errors.append(f"PRD 工作区必须位于 prd/ 下: {state.prd_path}")
         return state
 
-    loaded, errors = read_existing_files(repo_root, _context_files_for_task(state.task_type))
+    loaded, errors = read_existing_files(
+        repo_root,
+        _resolve_context_files(repo_root, state.task_type),
+    )
     state.loaded_files.update(loaded)
     state.errors.extend(errors)
 

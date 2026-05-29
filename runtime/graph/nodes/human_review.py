@@ -15,10 +15,10 @@ def human_review_node(state: QAWorkflowState) -> QAWorkflowState:
             "status": "write_approved",
             "decision": {
                 "action": "approve_write",
-                "source": "--approve-write",
+                "source": "approve_write",
             },
             "reviewed_by": None,
-            "review_notes": "--approve-write 已授权 Runtime 写入草稿",
+            "review_notes": "approve_write 已授权 Runtime 写入草稿",
             "interrupt": None,
         }
         return state
@@ -32,8 +32,8 @@ def human_review_node(state: QAWorkflowState) -> QAWorkflowState:
             "source": "default",
         },
         "reviewed_by": None,
-        "review_notes": "dry-run 未写入文件；需要写入请传 --approve-write。",
+        "review_notes": "dry-run 未写入文件；需要写入请设置 approve_write。",
         "interrupt": None,
     }
-    state.warnings.append("dry-run 模式不写入文件；需要写入请显式传入 --approve-write。")
+    state.warnings.append("dry-run 模式不写入文件；需要写入请显式设置 approve_write。")
     return state

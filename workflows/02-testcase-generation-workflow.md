@@ -19,7 +19,6 @@ Requirement Analysis Agent 协助解释需求，Failure Analysis Agent 提供历
 
 ## 必须读取
 
-- `tasks/02-generate-testcases.md`
 - `prompts/testcase-design-prompt.md`
 - `rules/testcase-rules.md`
 - `rules/review-gate-rules.md`
