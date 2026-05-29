@@ -1,31 +1,54 @@
 # Agent 协作规范
 
-本仓库中的 Agent 是文件化角色定义，不是运行时服务。Codex 执行任务时必须先读取本文件，再读取具体 Agent 文件。
+本仓库中的 Agent 是文件化角色定义，供 Runtime 和 Codex 参考使用。
 
 ## 通用职责
 
-- 按 `COMMANDS.md` 识别用户自然语言命令。
-- 按 `workflows/` 和 `tasks/` 读取必要上下文。
+- Runtime 通过 LLM 语义路由识别用户意图，自动调用对应 Agent 角色和 Workflow。
+- Codex 执行任务时必须先读取本文件，再读取具体 Agent 文件。
 - 严格遵守 `rules/` 中的路径、命名、状态和审核门规则。
 - 完成任务后的 Chat 回复必须遵守 `rules/codex-output-rules.md`，只给摘要、关键路径、验收结果和待人工确认项。
-- 完成任务后必须按 `rules/codex-output-rules.md` 的标准完成回执模板回复，不得只回复“已完成”“已修改”等不可审核短句。
+- 完成任务后必须按 `rules/codex-output-rules.md` 的标准完成回执模板回复。
 - 只在目标 PRD 工作区内写入对应产物。
-- 对不确定内容使用“待确认”“待补充”“假设”标记，不伪造结论。
+- 对不确定内容使用"待确认""待补充""假设"标记，不伪造结论。
 
 ## 协作边界
 
-- Requirement Analysis Agent 负责需求拆解和风险识别。
-- Testcase Design Agent 负责测试设计和覆盖矩阵。
-- API/UI Test Generation Agent 负责生成自动化脚本草稿。
-- Test Execution Agent 负责执行命令并收集结果。
-- Failure Analysis Agent 负责失败分类和证据整理。
-- Bug Draft Agent 负责缺陷草稿。
-- Report Generation Agent 负责 QA 报告草稿。
-- Archive Agent 负责归档前校验和索引生成。
+| Agent | 职责 | 输出 |
+|-------|------|------|
+| Requirement Analysis Agent | 需求拆解和风险识别 | `10-analysis/requirement-analysis.md` |
+| Testcase Design Agent | 测试设计和覆盖矩阵 | `20-testcases/testcases.md` |
+| API Test Generation Agent | API 自动化脚本草稿 | `30-api-tests/generated/` |
+| UI Test Generation Agent | UI 自动化脚本草稿 | `40-ui-tests/generated/` |
+| Test Execution Agent | 执行命令并收集结果 | `50-execution-results/` |
+| Failure Analysis Agent | 失败分类和证据整理 | `60-failure-analysis/failure-analysis.md` |
+| Bug Draft Agent | 缺陷草稿 | `70-bugs/` |
+| Report Generation Agent | QA 报告草稿 | `80-reports/qa-report-draft.md` |
+| Archive Agent | 归档前校验和索引生成 | `90-archive/archive-index.md` |
+
+## Runtime Agent
+
+Runtime Agent 是执行引擎核心角色，负责自然语言入口、LLM 语义路由、会话管理和自动写入。
+
+### LLM 语义路由 Agent
+
+- 唯一入口为自然语言指令，格式：`agentic-qa "纯自然语言描述"`，无子命令无参数。
+- 接收自然语言后调用 LLM 做意图识别，将用户指令路由到对应的 Workflow（`workflows/`）和 Skills（`skills/`）。
+- 路由决策依赖 `workflows/` 中的 SOP 定义和 `prompts/semantic-router-prompt.md` 中的路由指令。
+- 路由结果自动附加上下文 `rules/`、`prompts/`、`knowledge/` 和目标 PRD 工作区路径。
+- 识别失败时标记「路由未匹配」并回退到确定性默认流程，不伪造匹配结果。
+- 不自作主张执行未授权的 Workflow 或写入操作。
+
+### Session 管理 Agent
+
+- 为每次 Runtime 会话创建唯一 `run_id`，写入 `.runtime/runs/<run_id>/`。
+- 负责 Graph state 的 Checkpoint 持久化（`.runtime/runs/<run_id>/checkpointer.pkl`），支持运行中断后恢复。
+- 运行记录自动序列化至 `.runtime/runs/<run_id>/`，包含输入指令、路由结果、Graph 状态变更和写入摘要。
+- 自动写入（不打断用户），无需 `--confirm`、`--approve-write` 等显式确认参数。
+- 会话结束时在目标 PRD 的 `metadata.yml` 中记录 `last_runtime_run` 和 `runtime_runs`，状态标记仅表示写入完成，不替代业务审核。
 
 ## 禁止事项
 
-- 在第 1 阶段文档工作台任务或未明确授权的任务中，不实现新的 Agent Runtime、工作流引擎、LLM Provider 或平台服务。
 - 不跳过人工审核门。
 - 不把未经确认的失败直接定性为真实缺陷。
 - 不在需求工作区之外散落 QA 产物。
@@ -38,12 +61,8 @@
 - 归档前 metadata 中不得存在 `needs_human_review` 或 `needs_human_confirmation`。
 - 不得把完整文件内容粘贴到 Chat 中代替路径、摘要和验收结果。
 
-## 生产级 Runtime 路线约束
+## Runtime 路线约束
 
-- 当前默认执行模式仍然是 Codex 驱动的标准化工作台。
-- 当用户要求“生产级 Agent”“LangGraph Runtime”或“Runtime 驱动”时，Codex 应优先读取 `docs/architecture/production-agent-runtime-roadmap.md`。
-- Codex 不得把 LangGraph Runtime 和现有声明式工作台对立起来。
-- Codex 不得把 Prompt、Rules、Skills 全部硬编码进 Python。
-- 后续实现 Runtime 时，应让 Runtime 读取 `workflows/`、`prompts/`、`rules/`、`skills/`、`knowledge/`，而不是替代这些目录。
-- Codex 修改 Runtime 前，必须明确当前任务属于第 1 阶段文档工作台，还是第 2 阶段 Runtime 能力。
-- 只有当用户明确要求执行第 2 阶段 Runtime 任务，且任务文件明确授权时，才允许新增轻量 Runtime 骨架；Runtime 仍必须复用 `workflows/`、`prompts/`、`rules/`、`skills/`、`knowledge/`，不得替代声明式资产。
+- 当前 Runtime 已提供纯自然语言入口、LLM 语义路由、Session 持久化和自动写入。
+- Runtime 读取 `workflows/`、`prompts/`、`rules/`、`skills/`、`knowledge/`，而不是替代这些目录。
+- 当需求涉及生产级 Runtime 演进时，应优先读取 `docs/production-agent-runtime-roadmap.md`。
