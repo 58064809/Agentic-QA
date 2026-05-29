@@ -1,6 +1,6 @@
 ---
-version: v1.1
-last_updated: 2025-01-01
+version: v2.0
+last_updated: 2025-07-01
 target_agent: Requirement Analysis Agent
 ---
 
@@ -102,15 +102,41 @@ human_review_required: true
 - 风险优先级
 - 需求到测试关注点映射是否完整
 
-## 相关 Prompt
+## 接口契约
 
-- `prompts/testcase-design-prompt.md` — 测试用例设计（本 Prompt 的下游，使用需求分析结果作为输入）
-- `prompts/semantic-router-prompt.md` — 语义路由（本 Prompt 的入口，将用户需求路由到需求分析 Agent）
+### 上游（输入依赖）
+| 数据项 | 来源 Prompt | 文件路径 | 说明 |
+|--------|-----------|---------|------|
+| 用户需求原始材料 | 用户/产品 | `prd/<id>/requirement.md` | 原始需求描述 |
+| 接口文档 | 产品/开发 | `prd/<id>/api-doc.md` | 接口定义（可选）|
+| 路由决策 | `semantic-router-prompt` | — | 意图和 PRD 上下文 |
+
+### 下游（输出消费方）
+| 数据项 | 消费方 Prompt | 文件路径 | 说明 |
+|--------|-------------|---------|------|
+| 需求分析草稿 | `testcase-design-prompt` | `prd/<id>/10-analysis/requirement-analysis.md` | 结构化的需求分析产物 |
+| 业务规则待确认 | 人工审核 | — | 需要人工确认的业务规则 |
+
+### 关键约束
+- 上游 `requirement.md` 必须存在，否则提示用户补充
+- 下游 `testcase-design-prompt` 必须等待分析产物状态为 `approved` 后才消费
+
+## 常见问题（FAQ）
+
+### Q: 需求材料不完整时怎么办？
+输出可审核的分析草稿，并在「待确认问题」章节列出所有信息缺口。每个缺口必须具体可回答。
+
+### Q: 如何区分业务规则和测试关注点？
+业务规则来自需求原文或接口文档的明确约束；测试关注点是质量属性（性能、安全、兼容性）的测试需求。
+
+### Q: 分析结果必须输出全部 12 个章节吗？
+是的。即使某章节无内容（如「无接口依赖」），也必须标注「无」或「不适用」，不得省略章节。
 
 ## 版本记录
 
 | 版本 | 日期 | 变更说明 |
 |------|------|----------|
+| v2.0 | 2025-07-01 | 全量升级至 14 章结构：新增接口契约、FAQ；版本对齐 |
 | v1.1 | 2025-01-01 | 添加 YAML Front Matter、版本记录、相关 Prompt 引用 |
 | v1.0 | 初始 | 初始版本 |
 

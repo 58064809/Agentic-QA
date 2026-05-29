@@ -1,6 +1,6 @@
 ---
-version: v1.0
-last_updated: 2025-01-01
+version: v2.0
+last_updated: 2025-07-01
 target_agent: Runtime 测试用例生成 Agent (LangGraph Node)
 ---
 
@@ -88,6 +88,27 @@ run_id: <current_run_id>
 6. 信息不足时必须说明缺口，但仍输出可评审用例
 7. 输出必须通过 `testcase_quality_check_node` 的质量检查
 
+## 先思考再输出（Chain of Thought）
+
+在输出测试用例草稿前，按以下步骤推理（推理过程不写入输出）：
+
+1. **理解上下文**：读取 requirement.md、api-doc.md、requirement-analysis.md，理解业务逻辑和约束
+2. **确定测试策略**：根据需求复杂度选择等价类/边界值/状态流转/场景建模方法的组合
+3. **按覆盖维度检查**：对照「覆盖要求」表格逐项检查是否覆盖了所有维度
+4. **数量评估**：评估需求复杂度（简单/中等/复杂），确保用例数量达标
+5. **格式组装**：按输出格式输出表格 + 覆盖矩阵 + 待确认问题 + 质量检查结果
+
+## 自检清单
+
+| 类别 | 检查项 |
+|------|--------|
+| 格式合规 | 使用固定四列表格（标题/优先级/前置条件/测试步骤/预期结果），无「用例类型」列 |
+| 覆盖维度 | 对照覆盖要求表格逐项检查：正常/异常/边界/状态/权限/幂等/数据一致性/老数据兼容等 |
+| 数量达标 | 简单 ≥15 条，中等 ≥30 条，复杂 ≥50 条 |
+| 前置条件 | 每条用例说明账号/角色/数据/开关/状态 |
+| 预期结果 | 包含页面/接口/数据库/日志等可观察结果 |
+| Front Matter | 包含 status/artifact_type/human_review_required/generated_by/run_id |
+
 ### 覆盖要求
 
 | 覆盖维度 | 具体要求 |
@@ -105,41 +126,6 @@ run_id: <current_run_id>
 | 接口异常 | 弱网、超时、依赖失败 |
 | 回归风险 | 历史高风险和核心 P0 场景 |
 
-## 先思考再输出（Chain of Thought）
-
-在生成测试用例前，按以下步骤推理（推理过程不写入输出）：
-
-1. **理解上下文**：读取 requirement.md、api-doc.md、requirement-analysis.md，理解业务领域和核心流程。
-
-2. **识别测试维度**：确定需要覆盖哪些维度（正常、异常、边界、状态、权限等）。
-
-3. **设计用例优先级**：
-   - P0：核心流程、认证授权、数据安全
-   - P1：主要分支、业务规则差异、状态流转
-   - P2：边界值、异常输入、错误处理
-   - P3：UI 文案、友好性、辅助功能
-
-4. **规划用例顺序**：先 P0 再 P1 再 P2/P3，同类场景归组。
-
-5. **检查覆盖缺口**：哪些场景缺少信息？哪些是待确认假设？标注在「待确认问题」中。
-
-6. **质量预检**：自检清单逐项检查后再输出。
-
-## 自检清单
-
-| 类别 | 检查项 |
-|------|--------|
-| 格式 | Front Matter 完整（status/artifact_type/human_review_required/generated_by/run_id）|
-| 格式 | 表格仅使用固定 5 列，无「用例类型」列 |
-| 覆盖 | 12 个覆盖维度均已考虑（如有缺失说明原因）|
-| 数量 | 满足最低用例数要求（简单 15 / 中等 30 / 复杂 50）|
-| 质量 | 每条用例前置条件含账号/角色/数据/状态 |
-| 质量 | 预期结果可观察（页面/接口/DB/日志）|
-| 质量 | 步骤可执行，无模糊描述 |
-| 约束 | 输出标记为 `needs_human_review` |
-| 约束 | 未设置 `approved` 状态 |
-| 依赖 | 上游需求分析已审核，否则标记阻塞状态 |
-
 ## 禁止事项
 
 - 不绕过 `testcase_quality_check_node` 输出未检查的用例
@@ -151,6 +137,36 @@ run_id: <current_run_id>
 - 不得新增「用例类型」列
 - 不覆盖已人工审核的测试用例
 - 不把 Prompt、Rules、Skills 硬编码进 Runtime 代码
+
+## 接口契约
+
+### 上游（输入依赖）
+| 数据项 | 来源 Prompt / Node | 文件路径 | 说明 |
+|--------|------------------|---------|------|
+| 上下文文件 | `context_loader_node`（Runtime）| 多种 | 由 `context_loader_node` 加载的所有文件 |
+| 需求分析 | `requirement-analysis-prompt` | `prd/<id>/10-analysis/requirement-analysis.md` | 已审核的需求分析 |
+| 测试设计 Prompt | — | `prompts/testcase-design-prompt.md` | 质量要求和覆盖要求参考 |
+
+### 下游（输出消费方）
+| 数据项 | 消费方 Prompt / Node | 文件路径 | 说明 |
+|--------|--------------------|---------|------|
+| 测试用例草稿 | `testcase_quality_check_node`（Runtime）| `prd/<id>/20-testcases/testcases.md` | 质量检查节点的输入 |
+| 测试用例草稿 | 人工审核 | `prd/<id>/20-testcases/testcases.md` | 供人工审核的测试用例 |
+
+### 关键约束
+- 输出必须通过 `testcase_quality_check_node` 的质量检查
+- 产物停在 `needs_human_review` 状态，不代替人工审核
+
+## 常见问题（FAQ）
+
+### Q: 本 Prompt 和 testcase-design-prompt 的关系？
+本 Prompt 是 Runtime 版本，作为 LangGraph 节点执行。质量要求和覆盖要求与 testcase-design-prompt 完全一致，但增加了 Run ID 记录和 Runtime 上下文管理。
+
+### Q: context_loader_node 没有加载所有必要文件怎么办？
+在加载的文件列表中检查是否包含所有必需文件。如果缺失关键文件，在待确认问题中注明缺口，仍基于已有信息输出用例草稿。
+
+### Q: 输出被 quality_check_node 驳回怎么办？
+检查驳回原因（格式/覆盖/数量），修正后重新生成。理想情况下 CoT 步骤已确保一次通过。
 
 ## 与标准测试用例设计 Prompt 的关系
 
@@ -217,4 +233,5 @@ run_id: run_20250101_001
 
 | 版本 | 日期 | 变更说明 |
 |------|------|----------|
+| v2.0 | 2025-07-01 | 全量升级至 14 章结构：新增 CoT、自检清单、接口契约、FAQ；与 testcase-design-prompt 同步质量标准 |
 | v1.0 | 2025-01-01 | 初始版本，为 LangGraph Runtime 测试用例生成节点定义 |

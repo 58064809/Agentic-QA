@@ -1,6 +1,6 @@
 ---
-version: v1.1
-last_updated: 2025-01-01
+version: v2.0
+last_updated: 2025-07-01
 target_agent: Test Execution Agent
 ---
 
@@ -73,15 +73,40 @@ target_agent: Test Execution Agent
 - 环境是否正确
 - 结果是否可信
 
-## 相关 Prompt
+## 接口契约
 
-- `prompts/api-test-generation-prompt.md` — API 测试生成（本 Prompt 的上游，生成可执行的 API 测试脚本）
-- `prompts/ui-test-generation-prompt.md` — UI 测试生成（本 Prompt 的上游，生成可执行的 UI 测试脚本）
-- `prompts/failure-analysis-prompt.md` — 失败分析（本 Prompt 的下游，分析执行失败结果）
+### 上游（输入依赖）
+| 数据项 | 来源 Prompt | 文件路径 | 说明 |
+|--------|-----------|---------|------|
+| API 测试脚本 | `api-test-generation-prompt` | `prd/<id>/30-api-tests/generated/` | 可执行的 API 测试套件 |
+| UI 测试脚本 | `ui-test-generation-prompt` | `prd/<id>/40-ui-tests/` | 可执行的 UI 测试套件 |
+| 环境说明 | 人工/DevOps | — | 目标环境 URL、账号、凭据 |
+
+### 下游（输出消费方）
+| 数据项 | 消费方 Prompt | 文件路径 | 说明 |
+|--------|-------------|---------|------|
+| 执行结果 | `failure-analysis-prompt` | `prd/<id>/50-execution-results/` | 执行命令、结果、失败摘要 |
+
+### 关键约束
+- 必须在明确授权环境中执行，默认不连接生产环境
+- 执行前检查所有外部依赖（数据库、Mock 服务、第三方 API）是否可用
+- 执行结果必须包含时间戳和环境快照关键词
+
+## 常见问题（FAQ）
+
+### Q: 测试执行失败但日志不够怎么办？
+记录可获取的错误信息和命令输出，在「待人工确认项」中注明日志不足以定位问题，建议人工重新执行或补充日志级别。
+
+### Q: 哪些环境可以自动执行？
+test/staging 环境且明确授权后可自动执行。production 环境及其影子环境禁止自动执行，需要人工确认执行。
+
+### Q: 执行结果中「失败摘要」应包含什么？
+测试名称、错误类型（assertion error / timeout / connection error）、关键错误信息片段（不贴完整堆栈）、失败分类初步判断。
 
 ## 版本记录
 
 | 版本 | 日期 | 变更说明 |
 |------|------|----------|
+| v2.0 | 2025-07-01 | 全量升级至 14 章结构：新增接口契约、FAQ；版本对齐 |
 | v1.1 | 2025-01-01 | 添加 YAML Front Matter、版本记录、相关 Prompt 引用 |
 | v1.0 | 初始 | 初始版本 |

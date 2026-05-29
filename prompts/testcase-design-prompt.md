@@ -1,6 +1,6 @@
 ---
-version: v1.1
-last_updated: 2025-01-01
+version: v2.0
+last_updated: 2025-07-01
 target_agent: Testcase Design Agent
 ---
 
@@ -107,17 +107,41 @@ target_agent: Testcase Design Agent
 - 覆盖是否充分
 - 优先级是否合理
 
-## 相关 Prompt
+## 接口契约
 
-- `prompts/requirement-analysis-prompt.md` — 需求分析（本 Prompt 的上游，提供需求分析结果作为输入）
-- `prompts/api-test-generation-prompt.md` — API 测试生成（本 Prompt 的下游，使用测试用例作为输入）
-- `prompts/ui-test-generation-prompt.md` — UI 测试生成（本 Prompt 的下游，使用测试用例作为输入）
-- `prompts/runtime-testcase-generation-prompt.md` — Runtime 测试用例生成（LangGraph 版本，与本 Prompt 保持一致的质量标准）
+### 上游（输入依赖）
+| 数据项 | 来源 Prompt | 文件路径 | 说明 |
+|--------|-----------|---------|------|
+| 需求分析 | `requirement-analysis-prompt` | `prd/<id>/10-analysis/requirement-analysis.md` | 结构化的需求分析产物 |
+| 原始需求 | 用户/产品 | `prd/<id>/requirement.md` | 原始需求描述 |
+| 接口文档 | 产品/开发 | `prd/<id>/api-doc.md` | 接口定义（可选）|
+
+### 下游（输出消费方）
+| 数据项 | 消费方 Prompt | 文件路径 | 说明 |
+|--------|-------------|---------|------|
+| 测试用例草稿 | `api-test-generation-prompt` | `prd/<id>/20-testcases/testcases.md` | 用于生成 API 自动化的用例基线 |
+| 测试用例草稿 | `ui-test-generation-prompt` | `prd/<id>/20-testcases/testcases.md` | 用于生成 UI 自动化的用例基线 |
+
+### 关键约束
+- 上游 `requirement-analysis.md` 的 `status` 必须为 `approved` 后才可消费
+- 下游 API/UI 生成 Prompt 看到 `status=needs_human_review` 时应输出示例框架而非真实脚本
+
+## 常见问题（FAQ）
+
+### Q: 需求简单但用例数量要求高怎么办？
+用例不少于 15 条不等于 15 条都要复杂。可以拆分前置条件不同的变体（不同角色/数据/设备组合）、增加边界值和异常场景来满足数量要求。
+
+### Q: 信息不足时如何生成用例？
+在「待确认问题」中标明缺口，仍输出基于已知信息的可评审用例。不要在缺口信息前停住不输出。
+
+### Q: 前置条件和测试步骤怎么写才算好？
+前置条件：具体说明需要什么账号（角色/权限）、什么数据（已存在/不存在）、什么系统状态（登录/未登录）。测试步骤：无歧义的单一步骤，每一步对应一个用户操作。
 
 ## 版本记录
 
 | 版本 | 日期 | 变更说明 |
 |------|------|----------|
+| v2.0 | 2025-07-01 | 全量升级至 14 章结构：新增接口契约、FAQ；版本对齐 |
 | v1.1 | 2025-01-01 | 添加 YAML Front Matter、版本记录、相关 Prompt 引用 |
 | v1.0 | 初始 | 初始版本 |
 

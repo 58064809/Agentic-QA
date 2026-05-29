@@ -1,6 +1,6 @@
 ---
-version: v1.0
-last_updated: 2025-01-01
+version: v2.0
+last_updated: 2025-07-01
 target_agent: Runtime Agent (LLM Semantic Router)
 ---
 
@@ -104,6 +104,16 @@ target_agent: Runtime Agent (LLM Semantic Router)
 - 不要在 `low` 置信度下猜测 Workflow
 - 路由失败时 `notes` 中说明失败原因和建议帮助信息
 
+## 先思考再输出（Chain of Thought）
+
+在输出路由决策前，按以下步骤推理（推理过程不写入输出）：
+
+1. **理解指令**：解析用户自然语言的核心动词和名词→意图方向
+2. **匹配 Workflow**：对照 10 个标准 Workflow 的典型意图描述，选择语义最匹配的目标
+3. **置信度评估**：判断用户指令的明确程度和上下文完整性
+4. **提取 PRD 上下文**：如果指令包含 PRD 路径、需求 ID 或模块名称，提取并验证
+5. **决策输出**：组装 JSON 路由决策，确保字段完整、路径正确
+
 ## 必须参考的规则
 
 - `AGENTS.md` — Agent 协作规范和禁止事项
@@ -118,20 +128,6 @@ target_agent: Runtime Agent (LLM Semantic Router)
 3. `rules`、`skills`、`knowledge` 列表至少各含 1 个有效路径
 4. 不路由到不存在的 Workflow
 5. `notes` 字段有实质内容，非空字符串
-
-## 先思考再输出（Chain of Thought）
-
-在输出路由决策前，按以下步骤推理（推理过程不写入输出）：
-
-1. **理解用户意图**：用户说的是什么？属于 QA 哪一阶段（需求、用例、自动化、执行、分析、报告、归档）？
-
-2. **匹配 Workflow**：哪个 Workflow 最匹配用户的当前需求？参考路由表中的典型意图描述。
-
-3. **识别 PRD 上下文**：用户是否指定了 PRD？如果有，是哪个？需要确认吗？
-
-4. **准备上下文附件**：根据匹配的 Workflow，确定需要附加哪些 `rules/`、`qa-methods/`、`knowledge/` 文件。
-
-5. **评估置信度**：匹配是否明确？是否存在歧义？是否需要用户进一步确认？
 
 ## 自检清单
 
@@ -151,6 +147,36 @@ target_agent: Runtime Agent (LLM Semantic Router)
 - 不返回 Workflow 列表让用户选（除非 medium 置信度）
 - 不在路由结果中包含执行逻辑或推理过程
 - 不修改用户原始指令
+
+## 接口契约
+
+### 上游（输入依赖）
+| 数据项 | 来源 | 说明 |
+|--------|------|------|
+| 用户自然语言指令 | 命令行参数 `agentic-qa "..."` | 系统入口，纯文本描述 |
+| 可选：PRD 注册表 | `prd/_registry.yml` | 当前存在的 PRD 工作区列表 |
+
+### 下游（输出消费方）
+| 数据项 | 消费方 Prompt | 说明 |
+|--------|-------------|------|
+| 路由决策 JSON | 对应 Workflow 的 Prompt | 包含 intent/workflow/prompt/rules/skills/knowledge |
+| PRD 上下文 | 对应 Workflow 的 Prompt | 目标 PRD 路径 |
+
+### 关键约束
+- 路由决策是系统入口，必须以标准 JSON 格式输出
+- 置信度为 low 时不得伪造匹配结果
+- 必须明确是否需要人工确认 PRD 工作区
+
+## 常见问题（FAQ）
+
+### Q: 用户输入很模糊怎么办？
+置信度设为 `medium`，返回最可能的 Workflow 并列出 2-3 个候选，由用户选择确认。
+
+### Q: 用户输入超出 QA 范围怎么办？
+置信度设为 `low`，返回 `workflow=null` 并提示用户输入与 QA 测试相关的指令。
+
+### Q: 如何判断是否需要人工确认 PRD？
+如果指令中未明确指定 PRD ID 或路径，则 `requires_human_prd_confirm: true`。如果指令包含明确路径（如 `prd/PRD-001`），则设为 `false`。
 
 ## 示例
 
@@ -224,4 +250,5 @@ target_agent: Runtime Agent (LLM Semantic Router)
 
 | 版本 | 日期 | 变更说明 |
 |------|------|----------|
+| v2.0 | 2025-07-01 | 全量升级至 14 章结构：新增 CoT、接口契约、FAQ；自检清单表格式规范化 |
 | v1.0 | 2025-01-01 | 初始版本，建立语义路由 Prompt 结构 |

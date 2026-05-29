@@ -1,6 +1,6 @@
 ---
-version: v1.1
-last_updated: 2025-01-01
+version: v2.0
+last_updated: 2025-07-01
 target_agent: UI Test Generation Agent
 ---
 
@@ -74,16 +74,39 @@ target_agent: UI Test Generation Agent
 - 选择器是否稳定
 - 环境和账号是否允许使用
 
-## 相关 Prompt
+## 接口契约
 
-- `prompts/testcase-design-prompt.md` — 测试用例设计（本 Prompt 的上游，提供已审核用例作为输入）
-- `prompts/api-test-generation-prompt.md` — API 测试生成（同层级，UI 和 API 测试可并行生成）
-- `prompts/test-execution-prompt.md` — 测试执行（本 Prompt 的下游，执行生成的 UI 测试脚本）
+### 上游（输入依赖）
+| 数据项 | 来源 Prompt | 文件路径 | 说明 |
+|--------|-----------|---------|------|
+| 测试用例 | `testcase-design-prompt` | `prd/<id>/20-testcases/testcases.md` | UI 测试场景和预期 |
+| 需求文档 | 用户/产品 | `prd/<id>/requirement.md` | 页面交互流程描述 |
+
+### 下游（输出消费方）
+| 数据项 | 消费方 Prompt | 文件路径 | 说明 |
+|--------|-------------|---------|------|
+| UI 测试脚本 | `test-execution-prompt` | `prd/<id>/40-ui-tests/` | 可执行的 Playwright 脚本 |
+
+### 关键约束
+- 使用稳定选择器（data-testid 优先），避免 CSS class 依赖
+- 不适合自动化的场景（验证码、生物识别、第三方 OAuth）必须在说明中标注
+
+## 常见问题（FAQ）
+
+### Q: 没有 data-testid 怎么办？
+按优先级选择：aria-label > text（get_by_text）> CSS 选择器（定位属性类 > 样式类）。在待审核点中标注缺少 data-testid 的选择器，建议开发补充。
+
+### Q: 页面流程复杂导致脚本太长怎么办？
+使用 Page Object 模式分解页面操作。每个 Page Object 封装一个页面的交互方法，测试仅编排业务流程。
+
+### Q: 如何处理异步加载元素？
+使用显式等待（`wait_for_selector`、`wait_for_navigation`、`wait_for_url`），固定 sleep 只在极少数无法等待的情况下使用，并注明原因。
 
 ## 版本记录
 
 | 版本 | 日期 | 变更说明 |
 |------|------|----------|
+| v2.0 | 2025-07-01 | 全量升级至 14 章结构：新增接口契约、FAQ；版本对齐 |
 | v1.1 | 2025-01-01 | 添加 YAML Front Matter、版本记录、相关 Prompt 引用 |
 | v1.0 | 初始 | 初始版本 |
 

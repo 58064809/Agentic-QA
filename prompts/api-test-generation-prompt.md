@@ -1,6 +1,6 @@
 ---
-version: v1.1
-last_updated: 2025-01-01
+version: v2.0
+last_updated: 2025-07-01
 target_agent: API Test Generation Agent
 ---
 
@@ -62,12 +62,12 @@ target_agent: API Test Generation Agent
 ## 自检清单
 
 | 类别 | 检查项 |
-|---|---|
-| 安全 | 不使用真实凭据，使用环境变量 |
-| 安全 | 默认 skip，不连接真实服务 |
-| 质量 | 断言覆盖状态码 + 业务码 + 响应结构 + 关键字段 |
-| 质量 | 每个函数一个场景，函数名体现测试目的 |
-| 可执行 | 有 conftest.py 或 fixture 提供基础配置 |
+|------|--------|
+| 结构完整性 | 输出了测试计划、数据设计、环境变量、脚本文件、断言策略、待审核点 6 部分 |
+| 安全性 | 无硬编码密码、token、API key（已用环境变量/ fixture 替代）|
+| 断言完备性 | 每条测试包含状态码断言 + 业务码断言 + 关键字段断言 |
+| 脚本可执行 | 脚本可直接复制到项目执行，不依赖外部未定义变量 |
+| 单一职责 | 每个测试函数只测一个场景 |
 
 ## 禁止事项
 
@@ -81,16 +81,39 @@ target_agent: API Test Generation Agent
 - 接口契约是否真实
 - 测试数据是否可用
 
-## 相关 Prompt
+## 接口契约
 
-- `prompts/testcase-design-prompt.md` — 测试用例设计（本 Prompt 的上游，提供已审核用例作为输入）
-- `prompts/ui-test-generation-prompt.md` — UI 测试生成（同层级，API 和 UI 测试可并行生成）
-- `prompts/test-execution-prompt.md` — 测试执行（本 Prompt 的下游，执行生成的 API 测试脚本）
+### 上游（输入依赖）
+| 数据项 | 来源 Prompt | 文件路径 | 说明 |
+|--------|-----------|---------|------|
+| 测试用例 | `testcase-design-prompt` | `prd/<id>/20-testcases/testcases.md` | 已审核的测试用例 |
+| 接口文档 | 产品/开发 | `prd/<id>/api-doc.md` | API 路径、请求/响应结构 |
+
+### 下游（输出消费方）
+| 数据项 | 消费方 Prompt | 文件路径 | 说明 |
+|--------|-------------|---------|------|
+| API 测试脚本 | `test-execution-prompt` | `prd/<id>/30-api-tests/generated/` | 可执行的 pytest 脚本 |
+
+### 关键约束
+- 下游执行必须在明确授权环境中运行
+- 脚本默认不连接生产环境，环境变量区分 test/staging/prod
+
+## 常见问题（FAQ）
+
+### Q: 接口文档不完整时怎么处理？
+标注缺失的接口信息（路径、字段、错误码），输出基于已知信息的脚本，在待审核点中注明需要补充的信息。
+
+### Q: 一个测试函数可以测多个场景吗？
+不可以。每个测试函数只测一个场景，函数名体现测试目的（如 `test_login_invalid_password`）。参数化用例也是单场景多数据。
+
+### Q: 环境变量怎么管理？
+使用 pytest conftest.py 的 fixture 或 `os.environ.get()` 读取。在测试计划文档中说明需要设置的环境变量名和含义。
 
 ## 版本记录
 
 | 版本 | 日期 | 变更说明 |
 |------|------|----------|
+| v2.0 | 2025-07-01 | 全量升级至 14 章结构：新增自检清单、接口契约、FAQ；版本对齐 |
 | v1.1 | 2025-01-01 | 添加 YAML Front Matter、版本记录、相关 Prompt 引用 |
 | v1.0 | 初始 | 初始版本 |
 
