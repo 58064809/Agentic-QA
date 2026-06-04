@@ -20,9 +20,9 @@ target_agent: Requirement Analysis Agent
 
 ## 输入
 
-- `requirement.md` — 原始需求
-- `api-doc.md` — 接口文档
-- `metadata.yml` — 元数据
+- `input/requirement.md` — 原始需求
+- `input/api.md` — 接口文档
+- `workspace.yml` — 元数据
 - 相关 rules、skills、knowledge 文件
 
 ## 输出格式
@@ -53,8 +53,8 @@ human_review_required: true
 - `rules/requirement-analysis-rules.md`
 - `rules/artifact-path-rules.md`
 - `rules/status-rules.md`
-- `qa-methods/requirement-decomposition-skill.md`
-- `qa-methods/business-rule-extraction-skill.md`
+- `skills/analysis/requirement-decomposition-skill.md`
+- `skills/analysis/business-rule-extraction-skill.md`
 - `knowledge/templates/requirement-analysis-template.md`
 
 ## 质量要求
@@ -107,18 +107,18 @@ human_review_required: true
 ### 上游（输入依赖）
 | 数据项 | 来源 Prompt | 文件路径 | 说明 |
 |--------|-----------|---------|------|
-| 用户需求原始材料 | 用户/产品 | `prd/<id>/requirement.md` | 原始需求描述 |
-| 接口文档 | 产品/开发 | `prd/<id>/api-doc.md` | 接口定义（可选）|
+| 用户需求原始材料 | 用户/产品 | `prd/<id>/input/requirement.md` | 原始需求描述 |
+| 接口文档 | 产品/开发 | `prd/<id>/input/api.md` | 接口定义（可选）|
 | 路由决策 | `semantic-router-prompt` | — | 意图和 PRD 上下文 |
 
 ### 下游（输出消费方）
 | 数据项 | 消费方 Prompt | 文件路径 | 说明 |
 |--------|-------------|---------|------|
-| 需求分析草稿 | `testcase-design-prompt` | `prd/<id>/10-analysis/requirement-analysis.md` | 结构化的需求分析产物 |
+| 需求分析草稿 | `testcase-design-prompt` | `prd/<id>/analysis/requirement-analysis.md` | 结构化的需求分析产物 |
 | 业务规则待确认 | 人工审核 | — | 需要人工确认的业务规则 |
 
 ### 关键约束
-- 上游 `requirement.md` 必须存在，否则提示用户补充
+- 上游 `input/requirement.md` 必须存在，否则提示用户补充
 - 下游 `testcase-design-prompt` 必须等待分析产物状态为 `approved` 后才消费
 
 ## 常见问题（FAQ）

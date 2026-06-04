@@ -12,7 +12,7 @@ from runtime.tools.document_converter import convert_requirement_to_markdown  # 
 
 def test_convert_requirement_txt_to_markdown(tmp_path):
     source = tmp_path / "requirement.txt"
-    output = tmp_path / "requirement.md"
+    output = tmp_path / "input/requirement.md"
     source.write_text("# Login Requirement\n\nUser can login.", encoding="utf-8")
 
     markdown = convert_requirement_to_markdown(source, output)
@@ -24,8 +24,9 @@ def test_convert_requirement_txt_to_markdown(tmp_path):
 
 def test_convert_requirement_does_not_overwrite_existing_markdown(tmp_path):
     source = tmp_path / "requirement.txt"
-    output = tmp_path / "requirement.md"
+    output = tmp_path / "input/requirement.md"
     source.write_text("new requirement", encoding="utf-8")
+    output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("human markdown", encoding="utf-8")
 
     try:
@@ -40,7 +41,7 @@ def test_convert_requirement_does_not_overwrite_existing_markdown(tmp_path):
 
 def test_convert_requirement_returns_clear_error_when_markitdown_fails(tmp_path, monkeypatch):
     source = tmp_path / "requirement.txt"
-    output = tmp_path / "requirement.md"
+    output = tmp_path / "input/requirement.md"
     source.write_text("source", encoding="utf-8")
 
     class FakeMarkItDown:

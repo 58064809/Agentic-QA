@@ -32,17 +32,22 @@ BLOCKING_STATUSES = {
     "needs_human_confirmation",
 }
 WORKSPACE_DIRS = [
-    "10-analysis",
-    "20-testcases",
-    "30-api-tests/generated",
-    "40-ui-tests/generated",
-    "50-execution-results",
-    "60-failure-analysis",
-    "70-bugs",
-    "80-reports",
-    "90-archive",
+    "input",
+    "input/attachments",
+    "context",
+    "analysis",
+    "cases",
+    "automation/api/generated",
+    "automation/ui/generated",
+    "execution/runs",
+    "defects",
+    "defects/bug-drafts",
+    "report",
+    "review",
+    "exports",
+    "archive",
 ]
-REQUIRED_FILES = ["requirement.md", "api-doc.md", "metadata.yml"]
+REQUIRED_FILES = ["input/requirement.md", "input/api.md", "workspace.yml"]
 REQUIRED_METADATA_KEYS = [
     "requirement_id",
     "title",
@@ -101,20 +106,20 @@ def default_metadata(slug: str, title: str, owner: str, created_by: str) -> dict
         "created_at": now_iso(),
         "updated_at": now_iso(),
         "artifacts": {
-            "requirement": f"{workspace}/requirement.md",
-            "api_doc": f"{workspace}/api-doc.md",
-            "analysis": f"{workspace}/10-analysis/requirement-analysis.md",
-            "testcases": f"{workspace}/20-testcases/testcases.md",
-            "api_test_plan": f"{workspace}/30-api-tests/api-test-plan.md",
-            "api_tests": f"{workspace}/30-api-tests/generated/",
-            "ui_tests": f"{workspace}/40-ui-tests/generated/",
-            "execution_results": f"{workspace}/50-execution-results/",
-            "execution_report": f"{workspace}/50-execution-results/execution-report.md",
-            "failure_analysis": f"{workspace}/60-failure-analysis/failure-analysis.md",
-            "bugs": f"{workspace}/70-bugs/",
-            "report_draft": f"{workspace}/80-reports/qa-report-draft.md",
-            "report": f"{workspace}/80-reports/qa-report.md",
-            "archive": f"{workspace}/90-archive/",
+            "requirement": f"{workspace}/input/requirement.md",
+            "api_doc": f"{workspace}/input/api.md",
+            "analysis": f"{workspace}/analysis/requirement-analysis.md",
+            "testcases": f"{workspace}/cases/test-cases.md",
+            "api_test_plan": f"{workspace}/automation/api/test-plan.md",
+            "api_tests": f"{workspace}/automation/api/generated/",
+            "ui_tests": f"{workspace}/automation/ui/generated/",
+            "execution_results": f"{workspace}/execution/runs/",
+            "execution_report": f"{workspace}/execution/runs/latest/summary.md",
+            "failure_analysis": f"{workspace}/defects/failure-analysis.md",
+            "bugs": f"{workspace}/defects/bug-drafts/",
+            "report_draft": f"{workspace}/report/qa-review.md",
+            "report": f"{workspace}/report/qa-report.md",
+            "archive": f"{workspace}/archive/",
         },
         "review_gates": [
             {
@@ -206,15 +211,15 @@ def create_workspace(
 
     resolved_title = title or slug.replace("-", " ").title()
     files = {
-        "requirement.md": requirement_placeholder(resolved_title),
-        "api-doc.md": api_doc_placeholder(resolved_title),
+        "input/requirement.md": requirement_placeholder(resolved_title),
+        "input/api.md": api_doc_placeholder(resolved_title),
     }
     for relative_path, content in files.items():
         target = workspace / relative_path
         if not target.exists():
             target.write_text(content, encoding="utf-8")
 
-    metadata_path = workspace / "metadata.yml"
+    metadata_path = workspace / "workspace.yml"
     if not metadata_path.exists():
         metadata = default_metadata(slug, resolved_title, owner, created_by)
         write_yaml(metadata_path, metadata)
@@ -265,22 +270,22 @@ def validate_workspace(workspace_path: Path | str) -> ValidationResult:
         if not (workspace / filename).is_file():
             errors.append(f"缺少文件: {filename}")
 
-    metadata_path = workspace / "metadata.yml"
+    metadata_path = workspace / "workspace.yml"
     if metadata_path.exists():
         try:
             metadata = read_yaml(metadata_path)
         except (OSError, ValueError, yaml.YAMLError) as exc:
-            errors.append(f"metadata.yml 无法解析: {exc}")
+            errors.append(f"workspace.yml 无法解析: {exc}")
         else:
             for key in REQUIRED_METADATA_KEYS:
                 if key not in metadata:
-                    errors.append(f"metadata.yml 缺少字段: {key}")
+                    errors.append(f"workspace.yml 缺少字段: {key}")
             status = metadata.get("status")
             if status not in ALLOWED_STATUSES:
-                errors.append(f"metadata.yml status 非法: {status}")
+                errors.append(f"workspace.yml status 非法: {status}")
             review_gates = metadata.get("review_gates")
             if not isinstance(review_gates, list) or not review_gates:
-                errors.append("metadata.yml review_gates 必须是非空列表")
+                errors.append("workspace.yml review_gates 必须是非空列表")
             else:
                 for index, gate in enumerate(review_gates, start=1):
                     if not isinstance(gate, dict):
@@ -290,26 +295,26 @@ def validate_workspace(workspace_path: Path | str) -> ValidationResult:
                     if gate_status not in ALLOWED_STATUSES:
                         errors.append(f"review_gates[{index}] status 非法: {gate_status}")
             if not isinstance(metadata.get("artifacts"), dict):
-                errors.append("metadata.yml artifacts 必须是对象")
+                errors.append("workspace.yml artifacts 必须是对象")
 
     return ValidationResult(workspace=workspace, errors=errors)
 
 
 ARTIFACT_RELATIVE_PATHS = {
-    "requirement": "requirement.md",
-    "api_doc": "api-doc.md",
-    "analysis": "10-analysis/requirement-analysis.md",
-    "testcases": "20-testcases/testcases.md",
-    "api_test_plan": "30-api-tests/api-test-plan.md",
-    "api_tests": "30-api-tests/generated",
-    "ui_tests": "40-ui-tests/generated",
-    "execution_results": "50-execution-results",
-    "execution_report": "50-execution-results/execution-report.md",
-    "failure_analysis": "60-failure-analysis/failure-analysis.md",
-    "bugs": "70-bugs",
-    "report_draft": "80-reports/qa-report-draft.md",
-    "report": "80-reports/qa-report.md",
-    "archive": "90-archive",
+    "requirement": "input/requirement.md",
+    "api_doc": "input/api.md",
+    "analysis": "analysis/requirement-analysis.md",
+    "testcases": "cases/test-cases.md",
+    "api_test_plan": "automation/api/test-plan.md",
+    "api_tests": "automation/api/generated",
+    "ui_tests": "automation/ui/generated",
+    "execution_results": "execution/runs",
+    "execution_report": "execution/runs/latest/summary.md",
+    "failure_analysis": "defects/failure-analysis.md",
+    "bugs": "defects/bug-drafts",
+    "report_draft": "report/qa-review.md",
+    "report": "report/qa-report.md",
+    "archive": "archive",
 }
 
 
@@ -438,7 +443,7 @@ def artifact_exists(workspace: Path, name: str, path_text: str) -> bool:
 def artifact_index(metadata: dict[str, Any], workspace: Path) -> str:
     artifacts = metadata.get("artifacts", {})
     if not isinstance(artifacts, dict) or not artifacts:
-        return "- metadata.yml 未记录 artifacts。"
+        return "- workspace.yml 未记录 artifacts。"
 
     lines = ["| 产物 | 路径 | 当前状态 |", "|---|---|---|"]
     for name, path_text in artifacts.items():
@@ -453,8 +458,8 @@ def artifact_index(metadata: dict[str, Any], workspace: Path) -> str:
 
 
 def summarize_requirement_analysis(workspace: Path) -> str:
-    analysis = read_text_if_exists(workspace / "10-analysis/requirement-analysis.md")
-    requirement = read_text_if_exists(workspace / "requirement.md")
+    analysis = read_text_if_exists(workspace / "analysis/requirement-analysis.md")
+    requirement = read_text_if_exists(workspace / "input/requirement.md")
     source = analysis or requirement
     if not source:
         return "- 未找到需求分析或需求原文。"
@@ -473,13 +478,13 @@ def summarize_requirement_analysis(workspace: Path) -> str:
 
 
 def summarize_testcases(workspace: Path) -> str:
-    content = read_text_if_exists(workspace / "20-testcases/testcases.md")
+    content = read_text_if_exists(workspace / "cases/test-cases.md")
     if not content:
         return "- 未找到测试用例草稿。"
 
     headers, rows = parse_markdown_table(content)
     if not rows:
-        return "- 未解析到测试用例表，需人工检查 `20-testcases/testcases.md`。"
+        return "- 未解析到测试用例表，需人工检查 `cases/test-cases.md`。"
 
     priority_counts: dict[str, int] = {}
     title_index = headers.index("标题") if "标题" in headers else 0
@@ -502,12 +507,12 @@ def summarize_testcases(workspace: Path) -> str:
     ]
     if titles:
         lines.append("- 代表性用例：" + "；".join(titles[:5]) + "。")
-    lines.append("- 完整用例请查看 `20-testcases/testcases.md`。")
+    lines.append("- 完整用例请查看 `cases/test-cases.md`。")
     return "\n".join(lines)
 
 
 def summarize_execution(workspace: Path) -> str:
-    content = read_text_if_exists(workspace / "50-execution-results/execution-report.md")
+    content = read_text_if_exists(workspace / "execution/runs/latest/summary.md")
     if not content:
         return "- 未找到执行报告，当前不提供真实执行结论。"
 
@@ -525,7 +530,7 @@ def summarize_execution(workspace: Path) -> str:
 
 
 def summarize_failure_analysis(workspace: Path) -> str:
-    content = read_text_if_exists(workspace / "60-failure-analysis/failure-analysis.md")
+    content = read_text_if_exists(workspace / "defects/failure-analysis.md")
     if not content:
         return "- 未找到失败分析草稿。"
 
@@ -552,11 +557,11 @@ def collect_human_confirmation_items(metadata: dict[str, Any], workspace: Path) 
                 items.append(f"{name}：{status}，负责人 {owner}。")
 
     paths = [
-        workspace / "10-analysis/requirement-analysis.md",
-        workspace / "20-testcases/testcases.md",
-        workspace / "30-api-tests/api-test-plan.md",
-        workspace / "50-execution-results/execution-report.md",
-        workspace / "60-failure-analysis/failure-analysis.md",
+        workspace / "analysis/requirement-analysis.md",
+        workspace / "cases/test-cases.md",
+        workspace / "automation/api/test-plan.md",
+        workspace / "execution/runs/latest/summary.md",
+        workspace / "defects/failure-analysis.md",
     ]
     for path in paths:
         content = read_text_if_exists(path)
@@ -578,10 +583,10 @@ def generate_markdown_report(workspace_path: Path | str) -> Path:
     if not result.ok:
         raise RuntimeError("PRD 工作区校验失败: " + "; ".join(result.errors))
 
-    metadata = read_yaml(workspace / "metadata.yml")
-    report_dir = workspace / "80-reports"
+    metadata = read_yaml(workspace / "workspace.yml")
+    report_dir = workspace / "report"
     report_dir.mkdir(parents=True, exist_ok=True)
-    report_path = report_dir / "qa-report-draft.md"
+    report_path = report_dir / "qa-review.md"
 
     artifacts = artifact_index(metadata, workspace)
     requirement_summary = summarize_requirement_analysis(workspace)
@@ -605,7 +610,7 @@ generated_by: scripts/generate_markdown_report.py
 - 当前状态：{metadata.get("status")}
 - 负责人：{metadata.get("owner")}
 - 报告生成时间：{now_iso()}
-- 正式报告路径：{workspace.as_posix()}/80-reports/qa-report.md
+- 正式报告路径：{workspace.as_posix()}/report/qa-report.md
 - 当前报告不得作为正式发布结论。
 
 ## 产物索引
@@ -650,7 +655,7 @@ generated_by: scripts/generate_markdown_report.py
 
 def collect_test_results(workspace_path: Path | str) -> Path:
     workspace = Path(workspace_path)
-    result_dir = workspace / "50-execution-results"
+    result_dir = workspace / "execution/runs"
     result_dir.mkdir(parents=True, exist_ok=True)
     summary_path = result_dir / "test-results-summary.md"
     files = sorted(
@@ -690,15 +695,15 @@ def archive_requirement(workspace_path: Path | str) -> Path:
     if not result.ok:
         raise RuntimeError("PRD 工作区校验失败: " + "; ".join(result.errors))
 
-    metadata_path = workspace / "metadata.yml"
+    metadata_path = workspace / "workspace.yml"
     metadata = read_yaml(metadata_path)
     blocked = find_blocking_statuses(metadata)
     if blocked:
         raise RuntimeError("存在未审核或未确认状态，拒绝归档: " + "; ".join(blocked))
 
-    archive_dir = workspace / "90-archive"
+    archive_dir = workspace / "archive"
     archive_dir.mkdir(parents=True, exist_ok=True)
-    archive_path = archive_dir / "archive-index.md"
+    archive_path = archive_dir / "index.md"
     artifacts = metadata.get("artifacts", {})
     artifact_lines = []
     if isinstance(artifacts, dict):

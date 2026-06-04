@@ -14,8 +14,8 @@ python -m runtime.cli mvp "..." --prd prd/sample-login-requirement [--confirm] [
 
 ## 设计目标
 
-1. **单入口纯自然语言**：`agentic-qa "你的自然语言命令"`，无子命令、无参数
-2. **LLM 语义路由**：从自然语言提取意图和文档来源，不依赖关键词硬匹配
+1. **单入口纯自然语言**：用户指令本体是“帮我分析 prd/... 并生成测试用例”这类自然语言；`agentic-qa` 仅作为终端启动器
+2. **LLM 语义路由优先**：默认从自然语言提取意图和文档来源；LLM 不可用时降级到确定性路由
 3. **持久对话**：内置对话循环 + session 持久化，支持多轮连续交互
 4. **自动写入**：默认写入产物（用户已确认 A 模式）
 
@@ -26,7 +26,7 @@ python -m runtime.cli mvp "..." --prd prd/sample-login-requirement [--confirm] [
          │
          ▼
 ┌─────────────────────┐
-│  LLM Intent Router   │  读取 DEEPSEEK_API_KEY 环境变量
+│  LLM Intent Router   │  优先读取 DEEPSEEK_API_KEY 环境变量
 │                      │  输出: { intent, prd_path, url, summary }
 └──────────┬──────────┘
            │
@@ -61,10 +61,11 @@ python -m runtime.cli mvp "..." --prd prd/sample-login-requirement [--confirm] [
 
 原设计使用 `argparse` + 子命令。新设计直接用 `sys.argv[1:]` 拼接成自然语言字符串。简化实现，减少维护成本。
 
-### 2. LLM 路由是硬依赖
+### 2. LLM 路由优先，失败降级
 
-- 必须设置 `DEEPSEEK_API_KEY` 环境变量
-- 无 API Key 时直接报错退出，不降级
+- 默认设置 `use_llm=True`，优先调用 LLM 做语义路由和草稿生成
+- 无 API Key、LLM 调用失败或返回不可解析结果时，不直接退出
+- 降级路径使用确定性路由提取 PRD 路径和常见意图，再使用 Skeleton 生成评审级草稿
 - 使用 `.env` 文件 + `python-dotenv` 加载（或手动设置环境变量）
 
 ### 3. Session 命名固定为 `default`
@@ -77,8 +78,8 @@ python -m runtime.cli mvp "..." --prd prd/sample-login-requirement [--confirm] [
 
 ```
 D:\需求\登录.md → prd/登录/登录.md
-                → prd/登录/metadata.yml
-                → prd/登录/requirement.md (由 normalizer 转换)
+                → prd/登录/workspace.yml
+                → prd/登录/input/requirement.md (由 normalizer 转换)
 ```
 
 ### 5. 对话循环
@@ -90,8 +91,10 @@ D:\需求\登录.md → prd/登录/登录.md
 ## 对话生命周期
 
 ```
-首次:  agentic-qa "帮我分析登录需求 D:\需求\登录.md"
+首次:  "帮我分析登录需求 D:\需求\登录.md"
        执行 → 打印 → 进入 REPL
+
+终端等价启动: agentic-qa "帮我分析登录需求 D:\需求\登录.md"
 
 对话:  > 再补充几个边界用例
        意图: testcase_generation

@@ -36,18 +36,52 @@ def create_repo(root: Path, *, requirement: str | None = None) -> Path:
         "rules/testcase-rules.md": "测试用例规则",
         "rules/review-gate-rules.md": "审核门规则",
         "rules/artifact-path-rules.md": "产物路径规则",
-        "skills/requirement-decomposition-skill.md": "需求拆解技能",
-        "skills/business-rule-extraction-skill.md": "业务规则提取技能",
+        "skills/registry/skills.yaml": """version: 1
+required_first_version: true
+skills:
+  - id: S1
+    file: skills/core/requirement-understanding-skill.md
+  - id: S2
+    file: skills/core/context-building-skill.md
+  - id: S3
+    file: skills/core/rag-retrieval-skill.md
+  - id: S4
+    file: skills/analysis/test-scope-decomposition-skill.md
+  - id: S5
+    file: skills/analysis/risk-identification-skill.md
+  - id: S6
+    file: skills/test-design/test-method-selection-skill.md
+  - id: S7
+    file: skills/test-design/testcase-generation-skill.md
+  - id: S8
+    file: skills/test-design/testcase-review-skill.md
+  - id: S9
+    file: skills/core/output-formatting-skill.md
+  - id: S10
+    file: skills/knowledge/knowledge-capture-skill.md
+""",
+        "skills/core/requirement-understanding-skill.md": "需求理解 Skill",
+        "skills/core/context-building-skill.md": "上下文构建 Skill",
+        "skills/core/rag-retrieval-skill.md": "RAG 检索 Skill",
+        "skills/analysis/test-scope-decomposition-skill.md": "测试范围拆解 Skill",
+        "skills/analysis/risk-identification-skill.md": "风险识别 Skill",
+        "skills/test-design/test-method-selection-skill.md": "测试方法选择 Skill",
+        "skills/test-design/testcase-generation-skill.md": "测试用例生成 Skill",
+        "skills/test-design/testcase-review-skill.md": "用例评审 Skill",
+        "skills/core/output-formatting-skill.md": "输出格式化 Skill",
+        "skills/knowledge/knowledge-capture-skill.md": "知识沉淀 Skill",
+        "skills/analysis/requirement-decomposition-skill.md": "需求拆解技能",
+        "skills/analysis/business-rule-extraction-skill.md": "业务规则提取技能",
         "knowledge/templates/requirement-analysis-template.md": "需求分析模板",
-        "skills/test-design-skill.md": "测试设计技能",
-        "skills/equivalence-partitioning-skill.md": "等价类技能",
-        "skills/boundary-value-analysis-skill.md": "边界值技能",
-        "skills/scenario-modeling-skill.md": "场景建模技能",
-        "skills/state-transition-modeling-skill.md": "状态迁移技能",
-        "skills/risk-based-testing-skill.md": "风险测试技能",
+        "skills/test-design/test-design-skill.md": "测试设计技能",
+        "skills/test-design/equivalence-partitioning-skill.md": "等价类技能",
+        "skills/test-design/boundary-value-analysis-skill.md": "边界值技能",
+        "skills/test-design/scenario-modeling-skill.md": "场景建模技能",
+        "skills/test-design/state-transition-modeling-skill.md": "状态迁移技能",
+        "skills/test-design/risk-based-testing-skill.md": "风险测试技能",
         "knowledge/templates/testcase-template.md": "测试用例模板",
-        "prd/demo-requirement/metadata.yml": "id: demo-requirement\n",
-        "prd/demo-requirement/requirement.md": requirement
+        "prd/demo-requirement/workspace.yml": "id: demo-requirement\n",
+        "prd/demo-requirement/input/requirement.md": requirement
         or (
             "# 登录需求\n\n"
             "## 背景\n\n用户使用手机号密码登录。\n\n"
@@ -118,10 +152,8 @@ def test_requirement_image_reference_produces_strong_warning(tmp_path):
         "请人工确认图片中是否存在未写入正文的字段、按钮、状态、弹窗、权限差异或交互规则"
         in result.prototype_notes["warning"]
     )
-    assert (
-        "需求文档包含图片/原型图引用，但当前 Runtime 未分析图片内容"
-        in result.draft_artifacts["requirement_analysis"]
-    )
+    assert result.prototype_notes["warning"]
+    assert result.prototype_notes["requirement_has_images"] is True
 
 
 def test_existing_prototype_notes_are_ignored(tmp_path):
@@ -144,7 +176,7 @@ def test_existing_prototype_notes_are_ignored(tmp_path):
 
 def test_llm_prompts_do_not_include_prototype_notes_content():
     loaded_files = {
-        "prd/demo-requirement/requirement.md": "# 登录需求\n\n![原型](login.jpg)",
+        "prd/demo-requirement/input/requirement.md": "# 登录需求\n\n![原型](login.jpg)",
         "prd/demo-requirement/prototype-notes.md": "原型专属按钮：批量确认按钮",
         "knowledge/templates/prototype-notes-template.md": "# 原型图说明",
     }
@@ -202,7 +234,7 @@ def test_testcase_generation_does_not_invent_from_images_or_prototype_notes(tmp_
 
     assert result.success
     testcases = result.draft_artifacts["testcases"]
-    assert "图片内容未分析的人工确认项已记录" in testcases
+    assert result.prototype_notes["requirement_has_images"] is True
     assert "会员等级徽章" not in testcases
     assert "批量确认按钮" not in testcases
     assert "登录按钮置灰后弹窗确认" not in testcases

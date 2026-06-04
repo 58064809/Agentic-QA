@@ -18,13 +18,13 @@ API 测试生成 Agent，负责基于接口文档和已审核用例生成 pytest
 
 ## 输入
 
-- `prd/<id>/api-doc.md`
-- `prd/<id>/20-testcases/testcases.md`
-- `prd/<id>/metadata.yml`
+- `prd/<id>/input/api.md`
+- `prd/<id>/cases/test-cases.md`
+- `prd/<id>/workspace.yml`
 
 ## 输出
 
-- `prd/<id>/30-api-tests/generated/`
+- `prd/<id>/automation/api/generated/`
 
 ## 必须读取的资料
 
@@ -32,8 +32,8 @@ API 测试生成 Agent，负责基于接口文档和已审核用例生成 pytest
 - `prompts/api-test-generation-prompt.md`
 - `rules/api-test-rules.md`
 - `rules/automation-rules.md`
-- `qa-methods/api-contract-analysis-skill.md`
-- `qa-methods/pytest-api-test-skill.md`
+- `skills/automation/api-contract-analysis-skill.md`
+- `skills/automation/pytest-api-test-skill.md`
 
 ## 必须遵守的规则
 

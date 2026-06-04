@@ -26,7 +26,7 @@
 必须满足以下任一条件，才算人工评审或确认：
 
 - 用户明确说“这版通过”“已评审”“确认可以作为后续输入”“按评审意见修改完成”。
-- 产物 front matter 或 `metadata.yml` 中已写入 `reviewed`、`approved`、reviewer 和 review 时间。
+- 产物 front matter 或 `workspace.yml` 中已写入 `reviewed`、`approved`、reviewer 和 review 时间。
 - 用户明确授权“基于未审核草稿继续生成草稿”，此时只能生成下游草稿，不得执行、归档或输出正式结论。
 
 以下情况不得视为通过：

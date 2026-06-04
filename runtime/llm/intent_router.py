@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any
 
 from runtime.llm.config import OpenAICompatibleConfig
 from runtime.llm.openai_compatible import OpenAICompatibleAdapter
@@ -13,6 +12,7 @@ from runtime.llm.openai_compatible import OpenAICompatibleAdapter
 # ── 支持的所有意图 ────────────────────────────────────────────
 
 SUPPORTED_INTENTS: dict[str, str] = {
+    "mvp": "需求分析 + 测试用例生成",
     "requirement_analysis": "需求分析",
     "testcase_generation": "测试用例生成",
     "api_test_generation": "API 接口测试生成",
@@ -29,7 +29,8 @@ INTENT_DESCRIPTIONS = "\n".join(
     f"   - {k}: {v}" for k, v in SUPPORTED_INTENTS.items()
 )
 
-INTENT_ROUTER_SYSTEM_PROMPT = f"""你是一个 QA 工作流路由助手。从用户输入中提取以下信息，只返回 JSON 格式：
+INTENT_ROUTER_SYSTEM_PROMPT = f"""你是一个 QA 工作流路由助手。
+从用户输入中提取以下信息，只返回 JSON 格式：
 
 {{
   "intent": "意图名称",
@@ -57,6 +58,17 @@ LOCAL_PATH_RE = re.compile(
     [a-zA-Z]:\\(?:[^\\"']+\\)*[^\\"']+\.(?:md|pdf|docx|txt|html|xlsx)
     |
     /(?:[^/"']+/)*[^/"']+\.(?:md|pdf|docx|txt|html|xlsx)
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+PRD_WORKSPACE_RE = re.compile(
+    r"""
+    (?:
+        [a-zA-Z]:\\(?:[^\\"']+\\)*prd\\[^\s\\"']+
+        |
+        prd[/\\][^\s\\"']+
+    )
     """,
     re.IGNORECASE | re.VERBOSE,
 )
@@ -95,12 +107,63 @@ def _extract_paths_fallback(user_input: str) -> tuple[str | None, str | None]:
     m = LOCAL_PATH_RE.search(user_input)
     if m:
         prd_path = m.group(0).strip()
+    else:
+        m = PRD_WORKSPACE_RE.search(user_input)
+        if m:
+            prd_path = m.group(0).strip().rstrip("，。；,;.)>")
 
     m = URL_RE.search(user_input)
     if m:
         url = m.group(0).strip().rstrip(".)>")
 
     return prd_path, url
+
+
+def _infer_intent_fallback(user_input: str) -> str:
+    """LLM 路由不可用时的确定性意图兜底。"""
+    text = user_input.lower()
+    has_analysis = any(keyword in user_input for keyword in ("分析", "拆解", "需求分析"))
+    has_testcases = any(
+        keyword in user_input for keyword in ("测试用例", "用例", "testcase", "test case")
+    )
+    if has_analysis and has_testcases:
+        return "mvp"
+    if has_analysis:
+        return "requirement_analysis"
+    if has_testcases:
+        return "testcase_generation"
+    if any(keyword in user_input for keyword in ("接口测试", "API", "api")):
+        return "api_test_generation"
+    if any(keyword in user_input for keyword in ("UI", "ui", "端到端", "E2E", "e2e")):
+        return "ui_test_generation"
+    if any(keyword in user_input for keyword in ("执行", "跑测试", "运行测试")):
+        return "test_execution"
+    if any(keyword in user_input for keyword in ("失败分析", "分析失败", "failure")):
+        return "failure_analysis"
+    if any(keyword in user_input for keyword in ("bug", "缺陷")):
+        return "bug_draft"
+    if any(keyword in user_input for keyword in ("报告", "QA报告", "qa report")):
+        return "report_generation"
+    if any(keyword in user_input for keyword in ("归档", "archive")):
+        return "archive"
+    if "resume" in text or "继续" in user_input:
+        return "resume"
+    return "resume"
+
+
+def route_intent_fallback(user_input: str, *, reason: str = "") -> IntentRouteResult:
+    """确定性兜底路由：保留自然语言入口，不因 LLM 不可用中断。"""
+    result = IntentRouteResult()
+    if _is_reset_request(user_input):
+        result.intent = "reset"
+        result.summary = "重置会话"
+        return result
+    prd_path, url = _extract_paths_fallback(user_input)
+    result.intent = _infer_intent_fallback(user_input)
+    result.prd_path = prd_path
+    result.url = url
+    result.summary = reason or "LLM 路由不可用，已使用确定性兜底路由"
+    return result
 
 
 def _is_reset_request(user_input: str) -> bool:
@@ -114,7 +177,7 @@ def _is_reset_request(user_input: str) -> bool:
 def route_intent(user_input: str, config: OpenAICompatibleConfig) -> IntentRouteResult:
     """用 LLM 从用户输入中提取意图和文档来源。
 
-    如果 LLM 不可用（无 API key），返回错误。
+    如果 LLM 不可用或调用失败，降级为确定性路由。
     """
     result = IntentRouteResult()
 
@@ -126,15 +189,10 @@ def route_intent(user_input: str, config: OpenAICompatibleConfig) -> IntentRoute
 
     # 检查 LLM 是否可用
     if not config.has_api_key:
-        result.errors.append(
-            "缺少 API Key（DEEPSEEK_API_KEY），无法进行语义路由。\n"
-            "请先设置环境变量，参考 .env.example。"
+        return route_intent_fallback(
+            user_input,
+            reason="缺少 DEEPSEEK_API_KEY，LLM 语义路由已降级为确定性路由",
         )
-        # 后备：用关键词匹配提取路径信息（至少能返回有用的错误信息）
-        prd_path, url = _extract_paths_fallback(user_input)
-        result.prd_path = prd_path
-        result.url = url
-        return result
 
     # 调用 LLM 路由
     try:
@@ -144,8 +202,10 @@ def route_intent(user_input: str, config: OpenAICompatibleConfig) -> IntentRoute
             f"{INTENT_ROUTER_SYSTEM_PROMPT}\n\n{prompt}"
         )
     except Exception as e:
-        result.errors.append(f"LLM 路由调用失败: {e}")
-        return result
+        return route_intent_fallback(
+            user_input,
+            reason=f"LLM 路由调用失败，已降级为确定性路由: {e}",
+        )
 
     # 解析 JSON
     result.raw_response = response_text
@@ -160,8 +220,10 @@ def route_intent(user_input: str, config: OpenAICompatibleConfig) -> IntentRoute
             json_str = "\n".join(lines[start:end])
         data = json.loads(json_str)
     except json.JSONDecodeError:
-        result.errors.append(f"LLM 返回非 JSON 格式: {response_text[:200]}")
-        return result
+        return route_intent_fallback(
+            user_input,
+            reason=f"LLM 返回非 JSON 格式，已降级为确定性路由: {response_text[:200]}",
+        )
 
     intent = data.get("intent", "")
     if intent not in SUPPORTED_INTENTS and intent != "reset":

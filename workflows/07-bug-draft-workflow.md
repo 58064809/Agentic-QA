@@ -21,18 +21,18 @@ Failure Analysis Agent 提供证据，Requirement Analysis Agent 提供需求依
 
 - `prompts/bug-draft-prompt.md`
 - `rules/failure-analysis-rules.md`
-- `skills/bug-report-writing-skill.md`
+- `skills/reporting/bug-report-writing-skill.md`
 - `knowledge/templates/bug-template.md`
 
 ## 输入文件
 
-- `prd/<id>/60-failure-analysis/failure-analysis.md`
-- `prd/<id>/50-execution-results/`
-- `prd/<id>/requirement.md`
+- `prd/<id>/defects/failure-analysis.md`
+- `prd/<id>/execution/runs/`
+- `prd/<id>/input/requirement.md`
 
 ## 输出路径
 
-- `prd/<id>/70-bugs/`
+- `prd/<id>/defects/bug-drafts/`
 
 ## 执行步骤
 

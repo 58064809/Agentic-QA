@@ -20,8 +20,8 @@ target_agent: UI Test Generation Agent
 
 ## 输入
 
-- 原始需求（`requirement.md`）
-- 测试用例（`20-testcases/testcases.md`）
+- 原始需求（`input/requirement.md`）
+- 测试用例（`cases/test-cases.md`）
 - UI 测试规则
 
 ## 输出格式
@@ -36,7 +36,7 @@ target_agent: UI Test Generation Agent
 
 - `rules/ui-test-rules.md`
 - `rules/automation-rules.md`
-- `qa-methods/playwright-ui-test-skill.md`
+- `skills/automation/playwright-ui-test-skill.md`
 - `knowledge/project-rules/assertion-rules.md`
 
 ## 质量要求
@@ -79,13 +79,13 @@ target_agent: UI Test Generation Agent
 ### 上游（输入依赖）
 | 数据项 | 来源 Prompt | 文件路径 | 说明 |
 |--------|-----------|---------|------|
-| 测试用例 | `testcase-design-prompt` | `prd/<id>/20-testcases/testcases.md` | UI 测试场景和预期 |
-| 需求文档 | 用户/产品 | `prd/<id>/requirement.md` | 页面交互流程描述 |
+| 测试用例 | `testcase-design-prompt` | `prd/<id>/cases/test-cases.md` | UI 测试场景和预期 |
+| 需求文档 | 用户/产品 | `prd/<id>/input/requirement.md` | 页面交互流程描述 |
 
 ### 下游（输出消费方）
 | 数据项 | 消费方 Prompt | 文件路径 | 说明 |
 |--------|-------------|---------|------|
-| UI 测试脚本 | `test-execution-prompt` | `prd/<id>/40-ui-tests/` | 可执行的 Playwright 脚本 |
+| UI 测试脚本 | `test-execution-prompt` | `prd/<id>/automation/ui/` | 可执行的 Playwright 脚本 |
 
 ### 关键约束
 - 使用稳定选择器（data-testid 优先），避免 CSS class 依赖

@@ -18,21 +18,21 @@
 
 ## 输入
 
-- `prd/<id>/requirement.md`
-- `prd/<id>/api-doc.md`
-- `prd/<id>/10-analysis/requirement-analysis.md`
-- `prd/<id>/metadata.yml`
+- `prd/<id>/input/requirement.md`
+- `prd/<id>/input/api.md`
+- `prd/<id>/analysis/requirement-analysis.md`
+- `prd/<id>/workspace.yml`
 
 ## 输出
 
-- `prd/<id>/20-testcases/testcases.md`
+- `prd/<id>/cases/test-cases.md`
 
 ## 必须读取的资料
 
 - `workflows/02-testcase-generation-workflow.md`
 - `prompts/testcase-design-prompt.md`
 - `rules/testcase-rules.md`
-- `qa-methods/test-design-skill.md`
+- `skills/test-design/test-design-skill.md`
 - `knowledge/templates/testcase-template.md`
 
 ## 必须遵守的规则

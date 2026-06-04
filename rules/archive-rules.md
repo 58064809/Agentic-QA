@@ -8,9 +8,9 @@
 
 ## 归档前置条件
 
-- `metadata.yml` 结构校验通过。
+- `workspace.yml` 结构校验通过。
 - 需求分析、测试用例、执行结果、失败分析、QA 报告均已有产物或明确说明不适用。
-- `qa-report.md` 已由人工确认生成；若只有 `qa-report-draft.md`，不得作为正式归档结论。
+- `qa-report.md` 已由人工确认生成；若只有 `qa-review.md`，不得作为正式归档结论。
 - 所有 review gate 不得处于 `needs_human_review`、`needs_revision`、`needs_human_confirmation`、`needs_changes` 或 `rejected`。
 - 旧状态 `needs_human_confirmation` 按 `needs_human_review` 处理，旧状态 `needs_changes` 按 `needs_revision` 处理，不能作为归档放行状态。
-- 归档脚本失败时，不允许手工伪造 `archive-index.md`。
+- 归档脚本失败时，不允许手工伪造 `index.md`。

@@ -22,9 +22,9 @@ from create_prd_workspace import (  # noqa: E402
 def test_create_prd_workspace_creates_standard_directories(tmp_path):
     workspace = create_workspace("demo-requirement", prd_root=tmp_path / "prd")
 
-    assert (workspace / "requirement.md").is_file()
-    assert (workspace / "api-doc.md").is_file()
-    assert (workspace / "metadata.yml").is_file()
+    assert (workspace / "input/requirement.md").is_file()
+    assert (workspace / "input/api.md").is_file()
+    assert (workspace / "workspace.yml").is_file()
     for directory in WORKSPACE_DIRS:
         assert (workspace / directory).is_dir()
 
@@ -67,7 +67,7 @@ human_review_required: true
 
 - [ ] 确认锁定策略。
 """
-    (workspace / "20-testcases" / "testcases.md").write_text(
+    (workspace / "cases" / "test-cases.md").write_text(
         testcase_table, encoding="utf-8"
     )
 
@@ -91,7 +91,7 @@ def test_archive_requirement_rejects_unreviewed_workspace(tmp_path):
 
 def test_validate_workspace_accepts_needs_revision_and_blocks_archive(tmp_path):
     workspace = create_workspace("demo-requirement", prd_root=tmp_path / "prd")
-    metadata_path = workspace / "metadata.yml"
+    metadata_path = workspace / "workspace.yml"
     metadata = read_yaml(metadata_path)
     for gate in metadata["review_gates"]:
         gate["status"] = "approved"

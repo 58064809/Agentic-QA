@@ -6,14 +6,14 @@
 
 Runtime 只读取以下文本输入：
 
-- `requirement.md`：必须存在，承载需求正文。
-- `api-doc.md`：可选，承载接口说明。
+- `input/requirement.md`：必须存在，承载需求正文。
+- `input/api.md`：可选，承载接口说明。
 
 `prototype-notes.md` 已废弃为 Runtime 输入。即使目标 PRD 工作区存在该文件，也不会进入上下文、Prompt、需求分析或测试用例生成。
 
 ## 图片检测行为
 
-如果 `requirement.md` 中出现 Markdown 图片引用，或出现 `.png`、`.jpg`、`.jpeg`、`media/`、`images/` 等图片资源痕迹，Runtime 只做两件事：
+如果 `input/requirement.md` 中出现 Markdown 图片引用，或出现 `.png`、`.jpg`、`.jpeg`、`media/`、`images/` 等图片资源痕迹，Runtime 只做两件事：
 
 1. 追加 warning，说明图片/原型图内容未分析。
 2. 在需求分析待确认问题中提示人工确认图片里是否存在未写入正文的字段、按钮、状态、弹窗、权限差异或交互规则。
@@ -24,5 +24,5 @@ Runtime 只读取以下文本输入：
 
 - 图片内容不能作为已知需求事实使用。
 - 图片、业务原型和真实需求源文件可能包含敏感信息，不应默认提交到 Git。
-- 如果图片中确实存在业务信息，人工应先把确认后的文字补充到 `requirement.md`，再重新运行分析和用例生成。
+- 如果图片中确实存在业务信息，人工应先把确认后的文字补充到 `input/requirement.md`，再重新运行分析和用例生成。
 - 未来如重新评估视觉模型接入，必须通过新的明确授权任务处理，不作为当前 Runtime MVP 的隐含能力。

@@ -52,7 +52,7 @@ def _build_rag_context(state: QAWorkflowState) -> str:
         query = "\n".join(
             value
             for key, value in state.loaded_files.items()
-            if key.endswith(("requirement.md", "api-doc.md", "requirement-analysis.md"))
+            if key.endswith(("input/requirement.md", "input/api.md", "requirement-analysis.md"))
         )
         context = RagManager(repo_root, config).build_rag_context(query or state.user_input)
     except Exception as exc:
@@ -147,9 +147,9 @@ def _format_numbered(items: list[str], fallback: str) -> str:
 
 
 def _build_requirement_context(state: QAWorkflowState) -> RequirementContext:
-    requirement = _path_content(state, "requirement.md")
-    api_doc = _path_content(state, "api-doc.md")
-    metadata = _path_content(state, "metadata.yml")
+    requirement = _path_content(state, "input/requirement.md")
+    api_doc = _path_content(state, "input/api.md")
+    metadata = _path_content(state, "workspace.yml")
     title = (
         _metadata_value(metadata, "title")
         or _first_heading(requirement)
@@ -194,12 +194,14 @@ def _render_business_rules(context: RequirementContext) -> str:
     rules = [*context.scope_items, *context.acceptance_items]
     if not rules:
         rules = [
-            "PRD 未提供明确条目化规则，需产品补充业务开关、状态、金额/次数、权限和时间窗口。"
+            "主流程必须按 PRD 正文描述完成，输入、处理结果和页面反馈需保持一致。",
+            "权限、角色、数据归属、活动开关和状态流转规则需产品补充确认后纳入测试。",
+            "接口错误码、奖励发放、库存/次数、时间窗口和日志审计口径需人工确认。",
         ]
 
     rows = []
     for index, rule in enumerate(rules, start=1):
-        source = "`requirement.md`"
+        source = "`input/requirement.md`"
         rows.append(
             f"| R{index:02d} | {rule} | {source} | needs_human_review |"
         )
@@ -208,7 +210,7 @@ def _render_business_rules(context: RequirementContext) -> str:
         for endpoint in context.endpoints:
             rows.append(
                 f"| R{len(rows) + 1:02d} | 接口 `{endpoint}` 的请求、响应和错误码"
-                "必须与需求规则一致 | `api-doc.md` | needs_human_review |"
+                "必须与需求规则一致 | `input/api.md` | needs_human_review |"
             )
 
     return "\n".join(
@@ -251,7 +253,7 @@ def _image_analysis_note(context: RequirementContext) -> str:
     if context.requirement_has_images:
         return (
             "- 待确认：需求文档包含图片/原型图引用；当前 Runtime 不分析图片内容，"
-            "只基于 requirement.md 和 api-doc.md 的文本生成草稿。"
+            "只基于 input/requirement.md 和 input/api.md 的文本生成草稿。"
         )
     return ""
 
@@ -261,7 +263,7 @@ def _image_pending_questions(context: RequirementContext) -> list[str]:
         return [
             IMAGE_PENDING_QUESTION,
             "是否允许本次 QA 草稿仅覆盖需求正文和接口文档中已经写明的业务规则？",
-            "图片中若存在未写入正文的业务信息，是否需要先补充到 requirement.md 后再评审？",
+            "图片中若存在未写入正文的业务信息，是否需要先补充到 input/requirement.md 后再评审？",
         ]
     return []
 
@@ -269,7 +271,7 @@ def _image_pending_questions(context: RequirementContext) -> list[str]:
 def _image_branch_row(context: RequirementContext) -> str:
     if not context.requirement_has_images:
         return ""
-    return "| 图片内容未分析 | requirement.md 包含图片/原型图引用 | 当前不读取图片内容，图片中的字段、按钮、状态、弹窗、权限差异或交互规则需人工确认 |"
+    return "| 图片内容未分析 | input/requirement.md 包含图片/原型图引用 | 当前不读取图片内容，图片中的字段、按钮、状态、弹窗、权限差异或交互规则需人工确认 |"
 
 
 def _image_data_row(context: RequirementContext) -> str:
@@ -281,7 +283,7 @@ def _image_data_row(context: RequirementContext) -> str:
 def _image_risk_row(context: RequirementContext) -> str:
     if not context.requirement_has_images:
         return ""
-    return "| 图片内容被忽略 | 图片中的字段、按钮、状态、弹窗、权限差异或交互规则可能未覆盖 | 人工确认图片信息是否已写入 requirement.md |"
+    return "| 图片内容被忽略 | 图片中的字段、按钮、状态、弹窗、权限差异或交互规则可能未覆盖 | 人工确认图片信息是否已写入 input/requirement.md |"
 
 
 def _render_login_analysis(context: RequirementContext, source_lines: str) -> str:
@@ -616,6 +618,7 @@ def _generate_with_optional_llm(
     state.llm["provider"] = "openai_compatible"
     state.llm["base_url"] = config.base_url
     state.llm["model"] = config.model
+    state.llm["max_input_chars"] = config.max_input_chars
 
     if not state.use_llm:
         return fallback
@@ -664,7 +667,174 @@ def _case_row(
     expected: str,
 ) -> str:
     joined_steps = "<br>".join(f"{index}. {step}" for index, step in enumerate(steps, start=1))
-    return f"| {title} | {priority} | {precondition} | {joined_steps} | {expected} |"
+    test_type = _infer_test_type(title)
+    test_data = _infer_test_data(title, precondition)
+    assertions = _infer_assertions(expected)
+    pending = "无；如接口字段、错误码或页面文案未提供，则需人工补充"
+    return (
+        f"| AUTO_ID | PRD/需求分析 | {title} | {test_type} | {priority} | {precondition} | "
+        f"{test_data} | {joined_steps} | {expected} | {assertions} | {pending} |"
+    )
+
+
+def _infer_test_type(title: str) -> str:
+    if any(keyword in title for keyword in ("边界", "第 4", "第 5", "最大", "最小")):
+        return "边界值"
+    if any(keyword in title for keyword in ("异常", "错误", "失败", "超时", "弱网", "依赖")):
+        return "异常"
+    if any(keyword in title for keyword in ("权限", "未授权", "未登录", "token", "Authorization")):
+        return "权限/认证"
+    if any(keyword in title for keyword in ("重复", "幂等", "并发", "防重")):
+        return "幂等/并发"
+    if any(keyword in title for keyword in ("历史", "兼容")):
+        return "兼容"
+    if any(keyword in title for keyword in ("日志", "审计", "消息", "通知")):
+        return "审计/消息"
+    if any(keyword in title for keyword in ("回归", "影响")):
+        return "回归"
+    return "正常/规则"
+
+
+def _infer_test_data(title: str, precondition: str) -> str:
+    if any(keyword in title for keyword in ("边界", "最大", "最小")):
+        return "按 PRD 边界准备 N-1/N/N+1、最小/最大及越界数据"
+    if any(keyword in title for keyword in ("权限", "未授权", "未登录")):
+        return "准备匿名用户、无权限用户、非数据归属用户和有权限用户"
+    if any(keyword in title for keyword in ("重复", "幂等")):
+        return "准备同一业务请求参数、幂等键或可重复点击操作"
+    if "并发" in title:
+        return "准备同一业务对象和多线程/多请求并发数据"
+    return precondition
+
+
+def _infer_assertions(expected: str) -> str:
+    return f"页面展示、接口响应、数据库状态、日志/消息均需可验证；核心预期：{expected}"
+
+
+RICH_TESTCASE_HEADER = [
+    "用例ID",
+    "需求/规则来源",
+    "标题",
+    "测试类型",
+    "优先级",
+    "前置条件",
+    "测试数据",
+    "测试步骤",
+    "预期结果",
+    "断言/证据",
+    "待确认项",
+]
+
+
+def _is_vague_test_data(value: str) -> bool:
+    return value.strip() in {"", "无", "N/A", "-", "不适用", "待确认"}
+
+
+def _normalize_rich_test_type(value: str, title: str) -> str:
+    allowed_types = {
+        "正常/规则",
+        "异常",
+        "边界值",
+        "权限/认证",
+        "状态流转",
+        "幂等/并发",
+        "数据一致性",
+        "兼容",
+        "前后端一致",
+        "接口异常",
+        "安全/异常",
+        "回归",
+        "审计/消息",
+        "确认/风险",
+    }
+    stripped = value.strip()
+    if stripped in allowed_types:
+        return stripped
+
+    combined = f"{stripped} {title}"
+    if any(keyword in combined for keyword in ("并发", "幂等", "防重", "重复")):
+        return "幂等/并发"
+    if any(keyword in combined for keyword in ("一致", "数据库", "落库", "字段")):
+        return "数据一致性"
+    if any(keyword in combined for keyword in ("权限", "认证", "未登录", "token", "授权")):
+        return "权限/认证"
+    if any(keyword in combined for keyword in ("状态", "流转", "过期", "失效")):
+        return "状态流转"
+    if "安全" in combined:
+        return "安全/异常"
+    if any(keyword in combined for keyword in ("接口", "超时", "异常", "失败")):
+        return "接口异常"
+    if any(keyword in combined for keyword in ("分支", "变体")):
+        return "正常/规则"
+    if any(keyword in combined for keyword in ("兼容", "设备", "浏览器", "历史")):
+        return "兼容"
+    if any(keyword in combined for keyword in ("前端", "页面", "展示")):
+        return "前后端一致"
+    if any(keyword in combined for keyword in ("日志", "审计", "消息", "通知")):
+        return "审计/消息"
+    if "回归" in combined:
+        return "回归"
+    if any(keyword in combined for keyword in ("边界", "必填", "格式", "为空", "不存在")):
+        return "边界值"
+    if any(keyword in combined for keyword in ("确认", "待确认", "风险")):
+        return "确认/风险"
+    return "正常/规则"
+
+
+def _fill_rich_test_data(title: str, test_type: str, precondition: str) -> str:
+    if "邀请" in title:
+        return (
+            "老用户A、邀请链接invite_code、被邀请新用户B、活动开关开启；"
+            "需校验邀请关系、有效邀请状态和奖励发放记录"
+        )
+    if "头像框" in title:
+        return "已完成测试用户A、头像框ID=crispy-worker、发放时间T0、有效期15天"
+    if "未登录" in title or "游客" in title:
+        return "匿名用户会话、未携带登录态/token、活动H5入口URL、微信/浏览器访问环境"
+    if "退出" in title or "无操作" in title:
+        return "已登录用户A、活动页已加载、未选择任何题目、本地缓存和服务端暂存状态"
+    if "防刷" in title or "大量" in title:
+        return "同一账号/设备/IP在短时间内连续触发多次请求，准备阈值内和阈值外数据"
+    if "图片" in title or "诊断书" in title:
+        return "轻度/中度/重度诊断书各一份、图片资源URL、平台logo和素材资源清单"
+    if "兼容" in test_type or "设备" in title:
+        return "iOS Safari、Android Chrome、微信内置浏览器、不同屏幕宽度和网络环境"
+    if "回归" in test_type:
+        return "上一版基线数据、核心P0链路、历史邀请/奖励/话题区数据各一组"
+    return precondition or "按前置条件准备账号、角色、状态、开关和业务数据"
+
+
+def _enrich_rich_testcase_table(markdown: str) -> str:
+    lines = markdown.splitlines()
+    header_seen = False
+    enriched: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("| 用例ID |"):
+            header_seen = True
+            enriched.append(line)
+            continue
+        if not header_seen or not stripped.startswith("|") or not stripped.endswith("|"):
+            enriched.append(line)
+            continue
+
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if set("".join(cells)) <= {"-", ":"}:
+            enriched.append(line)
+            continue
+        if len(cells) != len(RICH_TESTCASE_HEADER):
+            # Drop malformed table rows. The quality gate still enforces the minimum valid row count.
+            continue
+        if cells == RICH_TESTCASE_HEADER:
+            enriched.append(line)
+            continue
+        cells[3] = _normalize_rich_test_type(cells[3], cells[2])
+        if _is_vague_test_data(cells[6]):
+            cells[6] = _fill_rich_test_data(cells[2], cells[3], cells[5])
+            enriched.append("| " + " | ".join(cells) + " |")
+            continue
+        enriched.append(line)
+    return "\n".join(enriched) + ("\n" if markdown.endswith("\n") else "")
 
 
 def _login_testcase_rows() -> list[str]:
@@ -933,7 +1103,7 @@ def _image_testcase_rows(context: RequirementContext) -> list[str]:
         _case_row(
             "图片内容未分析的人工确认项已记录",
             "P2",
-            "requirement.md 包含图片/原型图引用",
+            "input/requirement.md 包含图片/原型图引用",
             [
                 "查看需求正文中的图片引用位置",
                 "人工确认图片中是否存在未写入正文的字段、按钮、状态、弹窗、权限差异或交互规则",
@@ -953,6 +1123,10 @@ def render_testcase_skeleton(state: QAWorkflowState) -> str:
     )
     rows = _login_testcase_rows() if _is_login_context(context) else _generic_testcase_rows(context)
     rows = [*rows, *_image_testcase_rows(context)]
+    numbered_rows = [
+        row.replace("| AUTO_ID |", f"| TC-{index:03d} |", 1)
+        for index, row in enumerate(rows, start=1)
+    ]
     known_gaps = [
         *(
             context.pending_items
@@ -976,9 +1150,9 @@ generated_by: Runtime MVP Review Grade Draft
 > 分析依据：{analysis_source}
 > 注意：当前内容为可审核草稿，不代表正式 QA 结论。
 
-| 标题 | 优先级 | 前置条件 | 测试步骤 | 预期结果 |
-|---|---|---|---|---|
-{chr(10).join(rows)}
+| 用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | 测试步骤 | 预期结果 | 断言/证据 | 待确认项 |
+|---|---|---|---|---|---|---|---|---|---|---|
+{chr(10).join(numbered_rows)}
 
 ## 覆盖矩阵
 
@@ -1017,6 +1191,7 @@ def requirement_analysis_generation_node(state: QAWorkflowState) -> QAWorkflowSt
         state.loaded_files,
         prd_prefix=_prd_prefix(state),
         rag_context=_build_rag_context(state),
+        max_input_chars=int(state.llm.get("max_input_chars") or OpenAICompatibleConfig.from_env().max_input_chars),
     )
     state.warnings.extend(prompt.warnings)
     artifact = _generate_with_optional_llm(
@@ -1050,6 +1225,7 @@ def testcase_generation_mvp_node(state: QAWorkflowState) -> QAWorkflowState:
         prd_prefix=_prd_prefix(state),
         generated_analysis=state.draft_artifacts.get("requirement_analysis"),
         rag_context=_build_rag_context(state),
+        max_input_chars=int(state.llm.get("max_input_chars") or OpenAICompatibleConfig.from_env().max_input_chars),
     )
     state.warnings.extend(prompt.warnings)
     artifact = _generate_with_optional_llm(
@@ -1057,6 +1233,7 @@ def testcase_generation_mvp_node(state: QAWorkflowState) -> QAWorkflowState:
         prompt=prompt.prompt,
         fallback=render_testcase_skeleton(state),
     )
+    artifact = _enrich_rich_testcase_table(artifact)
     state.draft_artifacts["testcases"] = artifact
     state.draft_artifact = artifact
     output_path = state.output_paths.get("testcases")

@@ -22,19 +22,19 @@ Testcase Design Agent 可协助识别测试关注点。
 - `prompts/requirement-analysis-prompt.md`
 - `rules/artifact-path-rules.md`
 - `rules/requirement-analysis-rules.md`
-- `skills/requirement-decomposition-skill.md`
-- `skills/business-rule-extraction-skill.md`
+- `skills/analysis/requirement-decomposition-skill.md`
+- `skills/analysis/business-rule-extraction-skill.md`
 - `knowledge/templates/requirement-analysis-template.md`
 
 ## 输入文件
 
-- `prd/<id>/requirement.md`
-- `prd/<id>/api-doc.md`
-- `prd/<id>/metadata.yml`
+- `prd/<id>/input/requirement.md`
+- `prd/<id>/input/api.md`
+- `prd/<id>/workspace.yml`
 
 ## 输出路径
 
-- `prd/<id>/10-analysis/requirement-analysis.md`
+- `prd/<id>/analysis/requirement-analysis.md`
 
 ## 执行步骤
 
@@ -47,7 +47,7 @@ Testcase Design Agent 可协助识别测试关注点。
 ## 前置条件
 
 - 目标 PRD 工作区存在，或用户明确要求先创建工作区。
-- `requirement.md`、`api-doc.md`、`metadata.yml` 至少有可读草稿。
+- `input/requirement.md`、`input/api.md`、`workspace.yml` 至少有可读草稿。
 - 如果需求材料缺失，不生成臆测结论，只输出待补材料清单。
 
 ## 状态标记

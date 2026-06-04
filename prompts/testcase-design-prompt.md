@@ -20,9 +20,9 @@ target_agent: Testcase Design Agent
 
 ## 输入
 
-- 原始需求（`requirement.md`）
-- 接口文档（`api-doc.md`）
-- 需求分析（`10-analysis/requirement-analysis.md`）
+- 原始需求（`input/requirement.md`）
+- 接口文档（`input/api.md`）
+- 需求分析（`analysis/requirement-analysis.md`）
 - 用例规则和测试设计技能
 
 ## 输出格式
@@ -38,12 +38,12 @@ target_agent: Testcase Design Agent
 
 - `rules/testcase-rules.md`
 - `rules/review-gate-rules.md`
-- `qa-methods/test-design-skill.md`
-- `qa-methods/equivalence-partitioning-skill.md`
-- `qa-methods/boundary-value-analysis-skill.md`
-- `qa-methods/scenario-modeling-skill.md`
-- `qa-methods/state-transition-modeling-skill.md`
-- `qa-methods/risk-based-testing-skill.md`
+- `skills/test-design/test-design-skill.md`
+- `skills/test-design/equivalence-partitioning-skill.md`
+- `skills/test-design/boundary-value-analysis-skill.md`
+- `skills/test-design/scenario-modeling-skill.md`
+- `skills/test-design/state-transition-modeling-skill.md`
+- `skills/test-design/risk-based-testing-skill.md`
 - `knowledge/templates/testcase-template.md`
 
 ## 覆盖要求
@@ -112,15 +112,15 @@ target_agent: Testcase Design Agent
 ### 上游（输入依赖）
 | 数据项 | 来源 Prompt | 文件路径 | 说明 |
 |--------|-----------|---------|------|
-| 需求分析 | `requirement-analysis-prompt` | `prd/<id>/10-analysis/requirement-analysis.md` | 结构化的需求分析产物 |
-| 原始需求 | 用户/产品 | `prd/<id>/requirement.md` | 原始需求描述 |
-| 接口文档 | 产品/开发 | `prd/<id>/api-doc.md` | 接口定义（可选）|
+| 需求分析 | `requirement-analysis-prompt` | `prd/<id>/analysis/requirement-analysis.md` | 结构化的需求分析产物 |
+| 原始需求 | 用户/产品 | `prd/<id>/input/requirement.md` | 原始需求描述 |
+| 接口文档 | 产品/开发 | `prd/<id>/input/api.md` | 接口定义（可选）|
 
 ### 下游（输出消费方）
 | 数据项 | 消费方 Prompt | 文件路径 | 说明 |
 |--------|-------------|---------|------|
-| 测试用例草稿 | `api-test-generation-prompt` | `prd/<id>/20-testcases/testcases.md` | 用于生成 API 自动化的用例基线 |
-| 测试用例草稿 | `ui-test-generation-prompt` | `prd/<id>/20-testcases/testcases.md` | 用于生成 UI 自动化的用例基线 |
+| 测试用例草稿 | `api-test-generation-prompt` | `prd/<id>/cases/test-cases.md` | 用于生成 API 自动化的用例基线 |
+| 测试用例草稿 | `ui-test-generation-prompt` | `prd/<id>/cases/test-cases.md` | 用于生成 UI 自动化的用例基线 |
 
 ### 关键约束
 - 上游 `requirement-analysis.md` 的 `status` 必须为 `approved` 后才可消费

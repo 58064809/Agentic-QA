@@ -19,24 +19,24 @@
 
 ## 输入
 
-- `prd/<id>/10-analysis/`
-- `prd/<id>/20-testcases/`
-- `prd/<id>/50-execution-results/`
-- `prd/<id>/60-failure-analysis/`
-- `prd/<id>/70-bugs/`
-- `prd/<id>/metadata.yml`
+- `prd/<id>/analysis/`
+- `prd/<id>/cases/`
+- `prd/<id>/execution/runs/`
+- `prd/<id>/defects/`
+- `prd/<id>/defects/bug-drafts/`
+- `prd/<id>/workspace.yml`
 
 ## 输出
 
-- `prd/<id>/80-reports/qa-report-draft.md`
+- `prd/<id>/report/qa-review.md`
 
-说明：`qa-report-draft.md` 是 AI 生成草稿；`qa-report.md` 是人工确认后的正式报告，可后续生成。
+说明：`qa-review.md` 是 AI 生成草稿；`qa-report.md` 是人工确认后的正式报告，可后续生成。
 
 ## 必须读取的资料
 
 - `workflows/08-report-generation-workflow.md`
 - `prompts/report-generation-prompt.md`
-- `qa-methods/qa-report-writing-skill.md`
+- `skills/reporting/qa-report-writing-skill.md`
 - `knowledge/templates/qa-report-template.md`
 
 ## 必须遵守的规则
@@ -67,6 +67,6 @@
 
 ## 输出质量判断
 
-- 只生成 `prd/<id>/80-reports/qa-report-draft.md`。
+- 只生成 `prd/<id>/report/qa-review.md`。
 - 报告包含范围、执行概况、失败分析、风险、未覆盖范围和待确认项。
 - 状态为 `needs_human_confirmation`。

@@ -6,29 +6,33 @@
 
 | 产物 | 路径 |
 |---|---|
-| 原始需求 | `prd/<id>/requirement.md` |
-| 接口文档 | `prd/<id>/api-doc.md` |
-| 元数据 | `prd/<id>/metadata.yml` |
-| 需求分析 | `prd/<id>/10-analysis/requirement-analysis.md` |
-| 测试用例 | `prd/<id>/20-testcases/testcases.md` |
-| API 测试计划 | `prd/<id>/30-api-tests/api-test-plan.md` |
-| API 测试脚本 | `prd/<id>/30-api-tests/generated/` |
-| UI 测试脚本 | `prd/<id>/40-ui-tests/generated/` |
-| 执行结果 | `prd/<id>/50-execution-results/` |
-| 执行报告 | `prd/<id>/50-execution-results/execution-report.md` |
-| 失败分析 | `prd/<id>/60-failure-analysis/failure-analysis.md` |
-| 缺陷草稿 | `prd/<id>/70-bugs/` |
-| AI 生成 QA 报告草稿 | `prd/<id>/80-reports/qa-report-draft.md` |
-| 人工确认正式 QA 报告 | `prd/<id>/80-reports/qa-report.md` |
+| 原始需求 | `prd/<id>/input/requirement.md` |
+| 接口文档 | `prd/<id>/input/api.md` |
+| 元数据 | `prd/<id>/workspace.yml` |
+| 需求分析 | `prd/<id>/runs/<run_id>/analysis/requirement-analysis.md` |
+| 测试用例 | `prd/<id>/runs/<run_id>/cases/test-cases.md` |
+| API 测试计划 | `prd/<id>/automation/api/test-plan.md` |
+| API 测试脚本 | `prd/<id>/automation/api/generated/` |
+| UI 测试脚本 | `prd/<id>/automation/ui/generated/` |
+| QA 产物最新指针 | `prd/<id>/runs/latest.yml` |
+| QA 产物历史索引 | `prd/<id>/runs/index.jsonl` |
+| 执行结果 | `prd/<id>/execution/runs/` |
+| 执行报告 | `prd/<id>/execution/runs/latest/summary.md` |
+| 失败分析 | `prd/<id>/defects/failure-analysis.md` |
+| 缺陷草稿 | `prd/<id>/defects/bug-drafts/` |
+| AI 生成 QA 报告草稿 | `prd/<id>/report/qa-review.md` |
+| 人工确认正式 QA 报告 | `prd/<id>/report/qa-report.md` |
 | 对外评审导出 | `prd/<id>/exports/` |
-| 归档索引 | `prd/<id>/90-archive/archive-index.md` |
+| 归档索引 | `prd/<id>/archive/index.md` |
 
 ## 规则
 
 - 不允许把同一需求的产物散落在仓库根目录。
+- Runtime 每轮分析/用例产物必须写入 `prd/<id>/runs/<run_id>/`，不得继续堆放在 `analysis/` 或 `cases/` 根目录。
+- `prd/<id>/runs/latest.yml` 指向最新一轮，`prd/<id>/runs/index.jsonl` 追加记录历史轮次。
 - 不允许覆盖人工已确认产物；需要修改时生成修订记录、补充文件或新版本。
 - 自动化脚本必须放入 `generated/`，人工维护脚本可另建 `manual/`。
-- AI 只能生成 `qa-report-draft.md`；`qa-report.md` 是人工确认后的正式报告，可后续生成。
+- AI 只能生成 `qa-review.md`；`qa-report.md` 是人工确认后的正式报告，可后续生成。
 - 内部主产物路径保持英文固定命名，便于脚本、路由和校验。
 - 对外评审文件可以使用中文命名，但只能放入 `prd/<id>/exports/`，不得替代内部主文件。
 
@@ -42,9 +46,9 @@
 
 ## Markdown 清洗产物
 
-- 文档转换后的主输入仍是 `prd/<id>/requirement.md`。
-- 轻量清洗输出使用 `prd/<id>/requirement.cleaned.md`。
-- 清洗默认不得覆盖 `requirement.md`；覆盖必须由用户显式确认。
+- 文档转换后的主输入仍是 `prd/<id>/input/requirement.md`。
+- 轻量清洗输出使用 `prd/<id>/input/requirement.cleaned.md`。
+- 清洗默认不得覆盖 `input/requirement.md`；覆盖必须由用户显式确认。
 - 清洗只能处理控制字符、分页符、异常空行和连续异常空格，不得修改业务语义。
 - 不处理图片，不做 OCR，不分析原型图。
 

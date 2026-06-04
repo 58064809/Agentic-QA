@@ -18,20 +18,20 @@ UI 测试生成 Agent，负责生成 Playwright UI 自动化脚本草稿。
 
 ## 输入
 
-- `prd/<id>/requirement.md`
-- `prd/<id>/20-testcases/testcases.md`
-- `prd/<id>/metadata.yml`
+- `prd/<id>/input/requirement.md`
+- `prd/<id>/cases/test-cases.md`
+- `prd/<id>/workspace.yml`
 
 ## 输出
 
-- `prd/<id>/40-ui-tests/generated/`
+- `prd/<id>/automation/ui/generated/`
 
 ## 必须读取的资料
 
 - `workflows/04-ui-test-generation-workflow.md`
 - `prompts/ui-test-generation-prompt.md`
 - `rules/ui-test-rules.md`
-- `qa-methods/playwright-ui-test-skill.md`
+- `skills/automation/playwright-ui-test-skill.md`
 
 ## 必须遵守的规则
 
@@ -62,4 +62,4 @@ UI 测试生成 Agent，负责生成 Playwright UI 自动化脚本草稿。
 
 - 使用稳定选择器策略。
 - 明确不可自动化步骤和人工验证方案。
-- 输出路径位于 `prd/<id>/40-ui-tests/generated/`。
+- 输出路径位于 `prd/<id>/automation/ui/generated/`。

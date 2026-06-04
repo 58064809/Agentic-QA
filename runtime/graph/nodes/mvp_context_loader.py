@@ -21,34 +21,51 @@ ANALYSIS_CONTEXT_FILES = [
     "AGENTS.md",
     "COMMANDS.md",
     "docs/production-agent-runtime-roadmap.md",
+    "skills/registry/skills.yaml",
+    "skills/core/requirement-understanding-skill.md",
+    "skills/core/context-building-skill.md",
+    "skills/core/rag-retrieval-skill.md",
+    "skills/analysis/test-scope-decomposition-skill.md",
+    "skills/analysis/risk-identification-skill.md",
+    "skills/core/output-formatting-skill.md",
     "workflows/01-requirement-analysis-workflow.md",
     "prompts/requirement-analysis-prompt.md",
     "rules/requirement-analysis-rules.md",
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
-    "qa-methods/requirement-decomposition-skill.md",
-    "qa-methods/business-rule-extraction-skill.md",
+    "skills/analysis/requirement-decomposition-skill.md",
+    "skills/analysis/business-rule-extraction-skill.md",
     "knowledge/templates/requirement-analysis-template.md",
 ]
 TESTCASE_CONTEXT_FILES = [
     "AGENTS.md",
     "COMMANDS.md",
     "docs/production-agent-runtime-roadmap.md",
+    "skills/registry/skills.yaml",
+    "skills/core/requirement-understanding-skill.md",
+    "skills/core/context-building-skill.md",
+    "skills/core/rag-retrieval-skill.md",
+    "skills/analysis/test-scope-decomposition-skill.md",
+    "skills/analysis/risk-identification-skill.md",
+    "skills/test-design/test-method-selection-skill.md",
+    "skills/test-design/testcase-generation-skill.md",
+    "skills/test-design/testcase-review-skill.md",
+    "skills/core/output-formatting-skill.md",
     "workflows/10-runtime-testcase-generation-workflow.md",
     "workflows/02-testcase-generation-workflow.md",
     "prompts/testcase-design-prompt.md",
     "rules/testcase-rules.md",
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
-    "qa-methods/test-design-skill.md",
-    "qa-methods/equivalence-partitioning-skill.md",
-    "qa-methods/boundary-value-analysis-skill.md",
-    "qa-methods/scenario-modeling-skill.md",
-    "qa-methods/state-transition-modeling-skill.md",
-    "qa-methods/risk-based-testing-skill.md",
+    "skills/test-design/test-design-skill.md",
+    "skills/test-design/equivalence-partitioning-skill.md",
+    "skills/test-design/boundary-value-analysis-skill.md",
+    "skills/test-design/scenario-modeling-skill.md",
+    "skills/test-design/state-transition-modeling-skill.md",
+    "skills/test-design/risk-based-testing-skill.md",
     "knowledge/templates/testcase-template.md",
 ]
-REQUIRED_PRD_FILES = ["metadata.yml", "requirement.md"]
+REQUIRED_PRD_FILES = ["workspace.yml", "input/requirement.md"]
 ROADMAP_CANDIDATES = [
     "docs/production-agent-runtime-roadmap.md",
     "docs/architecture/production-agent-runtime-roadmap.md",
@@ -59,7 +76,7 @@ IMAGE_REFERENCE_RE = re.compile(
 )
 IMAGE_IGNORED_WARNING = (
     "检测到需求文档包含图片/原型图引用；当前 Runtime 不分析图片内容，只基于 "
-    "requirement.md 和 api-doc.md 的文本生成需求分析和测试用例。请人工确认图片中"
+    "input/requirement.md 和 input/api.md 的文本生成需求分析和测试用例。请人工确认图片中"
     "是否存在未写入正文的字段、按钮、状态、弹窗、权限差异或交互规则。"
 )
 
@@ -113,11 +130,12 @@ def _resolve_context_files(repo_root: Path, task_type: str | None) -> list[str]:
 
 
 def _set_output_paths(state: QAWorkflowState, repo_root: Path, prd_path: Path) -> None:
+    run_segment = state.run_id or "runtime"
     analysis_path = (
-        prd_path / "10-analysis" / "requirement-analysis.md"
+        prd_path / "runs" / run_segment / "analysis" / "requirement-analysis.md"
     ).relative_to(repo_root).as_posix()
     testcase_path = (
-        prd_path / "20-testcases" / "testcases.md"
+        prd_path / "runs" / run_segment / "cases" / "test-cases.md"
     ).relative_to(repo_root).as_posix()
 
     if state.task_type in {TASK_ANALYSIS, TASK_MVP}:
@@ -178,22 +196,23 @@ def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkfl
             continue
         content = read_utf8(path)
         state.loaded_files[relative_path] = content
-        if filename == "requirement.md":
+        if filename == "input/requirement.md":
             requirement_content = content
 
     _detect_requirement_images(state, requirement_content)
 
-    api_doc = prd_path / "api-doc.md"
+    api_doc = prd_path / "input/api.md"
     if api_doc.is_file():
         state.loaded_files[api_doc.relative_to(repo_root).as_posix()] = read_utf8(api_doc)
 
-    analysis_file = prd_path / "10-analysis" / "requirement-analysis.md"
+    analysis_file = prd_path / "analysis" / "requirement-analysis.md"
     analysis_relative_path = analysis_file.relative_to(repo_root).as_posix()
     if analysis_file.is_file():
         state.loaded_files[analysis_relative_path] = read_utf8(analysis_file)
     elif state.task_type == TASK_TESTCASE_GENERATION:
         state.warnings.append(
-            f"需求分析文件不存在，将基于 requirement.md 生成测试用例草稿: {analysis_relative_path}"
+            "需求分析文件不存在，将基于 input/requirement.md 生成测试用例草稿: "
+            f"{analysis_relative_path}"
         )
 
     _set_output_paths(state, repo_root, prd_path)

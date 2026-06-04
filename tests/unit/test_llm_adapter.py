@@ -59,10 +59,10 @@ def test_openai_compatible_config_reads_env_without_serializing_key(monkeypatch)
 
 def test_prompt_builder_truncates_large_context():
     loaded_files = {
-        "prd/demo-requirement/requirement.md": "a" * 200,
+        "prd/demo-requirement/input/requirement.md": "a" * 200,
         "rules/requirement-analysis-rules.md": "b" * 200,
-        "skills/requirement-decomposition-skill.md": "c" * 200,
-        "skills/business-rule-extraction-skill.md": "d" * 200,
+        "skills/analysis/requirement-decomposition-skill.md": "c" * 200,
+        "skills/analysis/business-rule-extraction-skill.md": "d" * 200,
         "prompts/requirement-analysis-prompt.md": "e" * 200,
     }
 

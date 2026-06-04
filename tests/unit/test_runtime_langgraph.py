@@ -31,14 +31,14 @@ def create_runtime_repo(root: Path) -> Path:
         "rules/testcase-rules.md",
         "rules/review-gate-rules.md",
         "rules/artifact-path-rules.md",
-        "skills/test-design-skill.md",
+        "skills/test-design/test-design-skill.md",
         "knowledge/templates/testcase-template.md",
-        "prd/demo-requirement/metadata.yml",
-        "prd/demo-requirement/requirement.md",
+        "prd/demo-requirement/workspace.yml",
+        "prd/demo-requirement/input/requirement.md",
     ]
     for relative_path in required_files:
         write_file(root / relative_path)
-    (root / "prd/demo-requirement/20-testcases").mkdir(parents=True, exist_ok=True)
+    (root / "prd/demo-requirement/cases").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -65,7 +65,7 @@ def test_langgraph_dry_run_does_not_write_testcases(tmp_path):
     assert result.review_status == "needs_human_review"
     assert not result.wrote_file
     assert "artifact_writer_node" not in result.executed_nodes
-    assert not (repo_root / "prd/demo-requirement/20-testcases/testcases.md").exists()
+    assert not (repo_root / "prd/demo-requirement/cases/test-cases.md").exists()
 
 
 def test_langgraph_approve_write_creates_testcase_draft(tmp_path):
@@ -77,7 +77,7 @@ def test_langgraph_approve_write_creates_testcase_draft(tmp_path):
         repo_root=repo_root,
         approve_write=True,
     )
-    output_path = repo_root / "prd/demo-requirement/20-testcases/testcases.md"
+    output_path = repo_root / "prd/demo-requirement/cases/test-cases.md"
     assert result.success
     assert result.wrote_file
     assert result.run_status == "completed"
@@ -86,7 +86,7 @@ def test_langgraph_approve_write_creates_testcase_draft(tmp_path):
 
     assert result.run_record_dir is not None
     metadata = yaml.safe_load(
-        (repo_root / "prd/demo-requirement/metadata.yml").read_text(encoding="utf-8")
+        (repo_root / "prd/demo-requirement/workspace.yml").read_text(encoding="utf-8")
     )
     assert metadata["status"] == "needs_human_review"
     assert metadata["last_runtime_run"]["run_id"] == result.run_id
@@ -96,7 +96,7 @@ def test_langgraph_approve_write_creates_testcase_draft(tmp_path):
 
 def test_langgraph_approve_write_does_not_overwrite_existing_testcases(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
-    output_path = repo_root / "prd/demo-requirement/20-testcases/testcases.md"
+    output_path = repo_root / "prd/demo-requirement/cases/test-cases.md"
     write_file(output_path, "人工已有内容")
 
     result = run_langgraph_testcase_generation_workflow(
@@ -146,7 +146,7 @@ def test_langgraph_unknown_intent_stops_before_workflow_selector(tmp_path):
 
 def test_langgraph_missing_prd_required_file_stops_before_generation(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
-    (repo_root / "prd/demo-requirement/requirement.md").unlink()
+    (repo_root / "prd/demo-requirement/input/requirement.md").unlink()
 
     result = run_langgraph_testcase_generation_workflow(
         "请生成测试用例",
@@ -159,7 +159,7 @@ def test_langgraph_missing_prd_required_file_stops_before_generation(tmp_path):
     assert "context_loader_node" in result.executed_nodes
     assert "artifact_generation_node" not in result.executed_nodes
     assert "artifact_writer_node" not in result.executed_nodes
-    assert not (repo_root / "prd/demo-requirement/20-testcases/testcases.md").exists()
+    assert not (repo_root / "prd/demo-requirement/cases/test-cases.md").exists()
 
 
 def test_langgraph_quality_failure_stops_before_writer(tmp_path, monkeypatch):

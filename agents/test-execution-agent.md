@@ -18,13 +18,13 @@
 
 ## 输入
 
-- `prd/<id>/30-api-tests/generated/`
-- `prd/<id>/40-ui-tests/generated/`
-- `prd/<id>/metadata.yml`
+- `prd/<id>/automation/api/generated/`
+- `prd/<id>/automation/ui/generated/`
+- `prd/<id>/workspace.yml`
 
 ## 输出
 
-- `prd/<id>/50-execution-results/`
+- `prd/<id>/execution/runs/`
 
 ## 必须读取的资料
 
@@ -62,5 +62,5 @@
 ## 输出质量判断
 
 - 记录执行命令、时间、环境、结果摘要和未执行原因。
-- 默认输出进入 `50-execution-results/`。
+- 默认输出进入 `execution/runs/`。
 - 结果标记为 `needs_human_confirmation`。

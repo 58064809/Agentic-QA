@@ -43,17 +43,17 @@ metadata_update_node
 | `testcase_quality_check_node` | 检查覆盖、格式、路径和审核状态 | 半 Agent，规则优先 |
 | `testcase_revision_node` | 根据质量问题修正草稿 | 是 |
 | `human_review_node` | 暂停并等待人工审核 | 否 |
-| `artifact_writer_node` | 写入 `20-testcases/testcases.md` | 否 |
+| `artifact_writer_node` | 写入 `runs/<run_id>/cases/test-cases.md`，并更新 `runs/latest.yml`、`runs/index.jsonl` | 否 |
 | `metadata_update_node` | 更新 metadata 或运行记录状态 | 否 |
 
 ## 输入状态
 
 - 用户自然语言命令。
 - 目标 PRD 工作区路径。
-- `metadata.yml`。
-- `requirement.md`。
-- `api-doc.md`。
-- 已有 `10-analysis/requirement-analysis.md`。
+- `workspace.yml`。
+- `input/requirement.md`。
+- `input/api.md`。
+- 已有 `analysis/requirement-analysis.md`。
 - Runtime 当前运行记录。
 
 ## 输出状态
@@ -61,7 +61,7 @@ metadata_update_node
 - 测试用例草稿内容。
 - 质量检查结果。
 - Human Review Gate 状态。
-- 写入路径：`prd/<id>/20-testcases/testcases.md`。
+- 写入路径：`prd/<id>/runs/<run_id>/cases/test-cases.md`。
 - metadata 或运行记录中的 `needs_human_review` 状态。
 
 ## 必须读取的文件
@@ -71,11 +71,11 @@ metadata_update_node
 - `prompts/testcase-design-prompt.md`
 - `rules/testcase-rules.md`
 - `rules/review-gate-rules.md`
-- `skills/test-design-skill.md`
+- `skills/test-design/test-design-skill.md`
 - `knowledge/templates/testcase-template.md`
-- `prd/<id>/metadata.yml`
-- `prd/<id>/requirement.md`
-- `prd/<id>/api-doc.md`
+- `prd/<id>/workspace.yml`
+- `prd/<id>/input/requirement.md`
+- `prd/<id>/input/api.md`
 
 ## Human Review Gate
 
@@ -86,7 +86,7 @@ metadata_update_node
 ## Artifact Writer 规则
 
 - 只允许写入目标 PRD 工作区。
-- 默认写入 `prd/<id>/20-testcases/testcases.md`。
+- 默认写入 `prd/<id>/runs/<run_id>/cases/test-cases.md`，并更新最新指针和历史索引。
 - 不允许覆盖人工已审核内容，除非用户明确要求。
 - 不允许把 Prompt、Rules、Skills 硬编码进 Runtime 代码。
 

@@ -56,7 +56,7 @@ target_agent: Failure Analysis Agent
 
 - `rules/failure-analysis-rules.md`
 - `rules/test-execution-rules.md`
-- `qa-methods/failure-log-analysis-skill.md`
+- `skills/reporting/failure-log-analysis-skill.md`
 
 ## 质量要求
 
@@ -95,14 +95,14 @@ target_agent: Failure Analysis Agent
 ### 上游（输入依赖）
 | 数据项 | 来源 Prompt | 文件路径 | 说明 |
 |--------|-----------|---------|------|
-| 执行结果 | `test-execution-prompt` | `prd/<id>/50-execution-results/` | 测试执行结果和日志 |
-| 测试用例 | `testcase-design-prompt` | `prd/<id>/20-testcases/testcases.md` | 用例描述和预期结果 |
+| 执行结果 | `test-execution-prompt` | `prd/<id>/execution/runs/` | 测试执行结果和日志 |
+| 测试用例 | `testcase-design-prompt` | `prd/<id>/cases/test-cases.md` | 用例描述和预期结果 |
 
 ### 下游（输出消费方）
 | 数据项 | 消费方 Prompt | 文件路径 | 说明 |
 |--------|-------------|---------|------|
-| 失败分析结果 | `bug-draft-prompt` | `prd/<id>/60-failure-analysis/failure-analysis.md` | 分类为「真实缺陷」的分析条目 |
-| 失败分析汇总 | `report-generation-prompt` | `prd/<id>/60-failure-analysis/failure-analysis.md` | 全部分类统计和汇总 |
+| 失败分析结果 | `bug-draft-prompt` | `prd/<id>/defects/failure-analysis.md` | 分类为「真实缺陷」的分析条目 |
+| 失败分析汇总 | `report-generation-prompt` | `prd/<id>/defects/failure-analysis.md` | 全部分类统计和汇总 |
 
 ### 关键约束
 - 不武断归因为产品缺陷，始终先排除脚本/环境/数据问题

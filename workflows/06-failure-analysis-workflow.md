@@ -22,19 +22,19 @@ Test Execution Agent 提供执行上下文，Bug Draft Agent 准备缺陷草稿�
 - `prompts/failure-analysis-prompt.md`
 - `rules/failure-analysis-rules.md`
 - `rules/test-execution-rules.md`
-- `skills/failure-log-analysis-skill.md`
+- `skills/reporting/failure-log-analysis-skill.md`
 - `knowledge/historical-lessons/README.md`
 
 ## 输入文件
 
-- `prd/<id>/50-execution-results/`
-- `prd/<id>/20-testcases/testcases.md`
-- `prd/<id>/requirement.md`
-- `prd/<id>/api-doc.md`
+- `prd/<id>/execution/runs/`
+- `prd/<id>/cases/test-cases.md`
+- `prd/<id>/input/requirement.md`
+- `prd/<id>/input/api.md`
 
 ## 输出路径
 
-- `prd/<id>/60-failure-analysis/failure-analysis.md`
+- `prd/<id>/defects/failure-analysis.md`
 
 ## 执行步骤
 

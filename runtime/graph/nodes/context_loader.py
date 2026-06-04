@@ -16,8 +16,8 @@ INTENT_CONTEXT_FILES: dict[str, list[str]] = {
         "rules/requirement-analysis-rules.md",
         "rules/review-gate-rules.md",
         "rules/artifact-path-rules.md",
-        "qa-methods/requirement-decomposition-skill.md",
-        "qa-methods/business-rule-extraction-skill.md",
+        "skills/analysis/requirement-decomposition-skill.md",
+        "skills/analysis/business-rule-extraction-skill.md",
     ],
     "testcase_generation": [
         "AGENTS.md",
@@ -28,7 +28,7 @@ INTENT_CONTEXT_FILES: dict[str, list[str]] = {
         "rules/testcase-rules.md",
         "rules/review-gate-rules.md",
         "rules/artifact-path-rules.md",
-        "qa-methods/test-design-skill.md",
+        "skills/test-design/test-design-skill.md",
         "knowledge/templates/testcase-template.md",
     ],
     "api_test_generation": [
@@ -40,7 +40,7 @@ INTENT_CONTEXT_FILES: dict[str, list[str]] = {
         "rules/testcase-rules.md",
         "rules/review-gate-rules.md",
         "rules/artifact-path-rules.md",
-        "qa-methods/test-design-skill.md",
+        "skills/test-design/test-design-skill.md",
         "knowledge/templates/testcase-template.md",
     ],
     "ui_test_generation": [
@@ -52,7 +52,7 @@ INTENT_CONTEXT_FILES: dict[str, list[str]] = {
         "rules/testcase-rules.md",
         "rules/review-gate-rules.md",
         "rules/artifact-path-rules.md",
-        "qa-methods/test-design-skill.md",
+        "skills/test-design/test-design-skill.md",
         "knowledge/templates/testcase-template.md",
     ],
     "test_execution": [
@@ -102,7 +102,7 @@ DEFAULT_CONTEXT_FILES = [
     "rules/testcase-rules.md",
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
-    "qa-methods/test-design-skill.md",
+    "skills/test-design/test-design-skill.md",
     "knowledge/templates/testcase-template.md",
     "knowledge/templates/testcase-template.md",
 ]
@@ -119,7 +119,7 @@ REQUIREMENT_LOADING_INTENTS = {
     "report_generation",
 }
 
-REQUIRED_PRD_FILES = ["metadata.yml", "requirement.md"]
+REQUIRED_PRD_FILES = ["workspace.yml", "input/requirement.md"]
 
 
 def resolve_prd_path(repo_root: Path, prd_path: str) -> Path:
@@ -130,14 +130,14 @@ def resolve_prd_path(repo_root: Path, prd_path: str) -> Path:
 def _output_path_for_intent(prd_path: Path, repo_root: Path, intent: str | None) -> str | None:
     """根据意图确定产物输出路径。intent=None 时默认走 testcase 路径。"""
     output_mapping = {
-        "requirement_analysis": prd_path / "10-analysis" / "requirement-analysis.md",
-        "testcase_generation": prd_path / "20-testcases" / "testcases.md",
-        "api_test_generation": prd_path / "20-testcases" / "api-tests.md",
-        "ui_test_generation": prd_path / "20-testcases" / "ui-tests.md",
-        "test_execution": prd_path / "20-testcases" / "execution-results.md",
-        "failure_analysis": prd_path / "20-testcases" / "failure-analysis.md",
-        "bug_draft": prd_path / "20-testcases" / "bug-draft.md",
-        "report_generation": prd_path / "20-testcases" / "qa-report.md",
+        "requirement_analysis": prd_path / "analysis" / "requirement-analysis.md",
+        "testcase_generation": prd_path / "cases" / "test-cases.md",
+        "api_test_generation": prd_path / "automation" / "api" / "test-plan.md",
+        "ui_test_generation": prd_path / "automation" / "ui" / "test-plan.md",
+        "test_execution": prd_path / "execution" / "runs" / "latest" / "summary.md",
+        "failure_analysis": prd_path / "defects" / "failure-analysis.md",
+        "bug_draft": prd_path / "defects" / "bug-drafts" / "bug-draft.md",
+        "report_generation": prd_path / "report" / "qa-review.md",
         "archive": None,  # 归档不需要写入产物
     }
     # intent=None 时默认走 testcase_generation 路径（后向兼容）

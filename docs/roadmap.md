@@ -2,7 +2,7 @@
 
 ## 001：保留并完善现有声明式工作台
 
-继续维护 `AGENTS.md`、`COMMANDS.md`、`workflows/`、`agents/`、`prompts/`、`rules/`、`qa-methods/`、`knowledge/`、`prd/`、`scripts/` 和 `tests/`。当前默认模式为 Runtime 驱动的自然语言执行引擎。
+继续维护 `AGENTS.md`、`COMMANDS.md`、`workflows/`、`agents/`、`prompts/`、`rules/`、`skills/`、`knowledge/`、`prd/`、`scripts/` 和 `tests/`。当前默认模式为 Runtime 驱动的自然语言执行引擎。
 
 ## 002：新增 Runtime 最小骨架
 
@@ -10,7 +10,7 @@
 
 ## 003：做第一个 LangGraph 流程：测试用例生成
 
-第一条 Runtime 闭环聚焦 `workflows/02-testcase-generation-workflow.md`，读取现有 Prompt、Rules、Skills、Knowledge，生成 `prd/<需求名>/20-testcases/testcases.md` 草稿。
+第一条 Runtime 闭环聚焦 `workflows/02-testcase-generation-workflow.md`，读取现有 Prompt、Rules、Skills、Knowledge，生成 `prd/<需求名>/cases/test-cases.md` 草稿。
 
 ## 004：加入 Human-in-the-loop
 

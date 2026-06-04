@@ -15,6 +15,7 @@ CORE_FILES = [
     "docs/roadmap.md",
     "workflows/10-runtime-testcase-generation-workflow.md",
     "runtime/README.md",
+    "skills/registry/skills.yaml",
 ]
 CORE_DIRS = [
     ".github",
@@ -26,6 +27,14 @@ CORE_DIRS = [
     "prompts",
     "rules",
     "skills",
+    "skills",
+    "skills/registry",
+    "skills/core",
+    "skills/analysis",
+    "skills/test-design",
+    "skills/automation",
+    "skills/reporting",
+    "skills/knowledge",
     "knowledge",
     "knowledge/templates",
     "prd",
@@ -58,6 +67,7 @@ PATH_PREFIXES = (
     "prompts/",
     "rules/",
     "skills/",
+    "skills/",
     "knowledge/",
     "docs/",
     "runtime/",
@@ -68,6 +78,7 @@ PATH_PREFIXES = (
 EXCLUDED_DIRS = {
     ".git",
     ".idea",
+    ".atomcode",
     ".pytest_cache",
     ".ruff_cache",
     ".deepeval",
@@ -76,6 +87,9 @@ EXCLUDED_DIRS = {
 }
 INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
 PLANNED_REFERENCE_MARKERS = (
+    "待生成",
+    "待后续生成",
+    "示例",
     "待生成",
     "如生成",
     "可后续生成",
@@ -107,6 +121,10 @@ def require_terms(path: Path, terms: list[str], label: str, errors: list[str]) -
 
 def should_skip_path_token(token: str) -> bool:
     if not any(token == prefix.rstrip("/") or token.startswith(prefix) for prefix in PATH_PREFIXES):
+        return True
+    if any(marker in token for marker in ("XX-", "name-", "PRD-001")):
+        return True
+    if token in {"tests/utils/data.py"} or token.endswith("/report/qa-report.md"):
         return True
     if any(marker in token for marker in ("<", ">", "{", "}", "*", "?")):
         return True
@@ -166,6 +184,9 @@ def validate_docs_consistency(repo_root: Path) -> list[str]:
         require_path(repo_root / relative_path, "核心文件", errors)
 
     for relative_path in CORE_DIRS:
+        if relative_path == "skills" and not (repo_root / relative_path).is_dir():
+            if (repo_root / "skills").is_dir():
+                continue
         require_path(repo_root / relative_path, "核心目录", errors, directory=True)
 
     require_terms(

@@ -1,0 +1,34 @@
+requirement_id: sample-login-requirement
+title: Mobile password login
+status: needs_human_review
+owner: QA Owner
+created_by: Codex
+last_updated_by: Codex
+artifacts:
+  requirement: prd/sample-login-requirement/input/requirement.md
+  api_doc: prd/sample-login-requirement/input/api.md
+  analysis: prd/sample-login-requirement/analysis/requirement-analysis.md
+  testcases: prd/sample-login-requirement/cases/test-cases.md
+  api_test_plan: prd/sample-login-requirement/automation/api/test-plan.md
+  api_tests: prd/sample-login-requirement/automation/api/generated/
+  ui_tests: prd/sample-login-requirement/automation/ui/generated/
+  execution_results: prd/sample-login-requirement/execution/runs/
+  execution_report: prd/sample-login-requirement/execution/runs/latest/summary.md
+  failure_analysis: prd/sample-login-requirement/defects/failure-analysis.md
+  bugs: prd/sample-login-requirement/defects/bug-drafts/
+  report_draft: prd/sample-login-requirement/report/qa-review.md
+  report: prd/sample-login-requirement/report/qa-report.md
+  archive: prd/sample-login-requirement/archive/
+review_gates:
+- name: requirement_analysis_review
+  status: needs_human_review
+  owner: Product Owner
+  required_before: testcase_generation
+- name: testcase_review
+  status: needs_human_review
+  owner: QA Owner
+  required_before: automation_generation
+- name: execution_review
+  status: needs_human_review
+  owner: QA Owner
+  required_before: archive

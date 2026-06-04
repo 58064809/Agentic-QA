@@ -18,14 +18,14 @@
 
 ## 输入
 
-- `prd/<id>/metadata.yml`
-- `prd/<id>/80-reports/qa-report.md`，人工确认后的正式报告。
-- `prd/<id>/80-reports/qa-report-draft.md`，如正式报告尚未生成，则必须作为待确认草稿处理。
+- `prd/<id>/workspace.yml`
+- `prd/<id>/report/qa-report.md`，人工确认后的正式报告。
+- `prd/<id>/report/qa-review.md`，如正式报告尚未生成，则必须作为待确认草稿处理。
 - 所有关联 QA 产物
 
 ## 输出
 
-- `prd/<id>/90-archive/archive-index.md`
+- `prd/<id>/archive/index.md`
 
 ## 必须读取的资料
 
@@ -56,7 +56,7 @@
 ## 必须暂停并等待人工确认
 
 - metadata 中存在阻塞状态。
-- 只有 `qa-report-draft.md`，没有人工确认的 `qa-report.md`。
+- 只有 `qa-review.md`，没有人工确认的 `qa-report.md`。
 - 关键产物缺失或路径不一致。
 
 ## 输出质量判断

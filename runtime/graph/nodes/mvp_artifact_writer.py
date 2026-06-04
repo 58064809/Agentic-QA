@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -12,6 +13,14 @@ from runtime.graph.nodes.mvp_context_loader import (
 )
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.artifact_writer import write_new_text
+
+RUNS_DIR_NAME = "runs"
+LATEST_FILE = "latest.yml"
+INDEX_FILE = "index.jsonl"
+
+
+def _now_iso() -> str:
+    return datetime.now(tz=UTC).replace(microsecond=0).isoformat()
 
 
 def _artifact_keys_for_task(state: QAWorkflowState) -> list[str]:
@@ -76,6 +85,114 @@ def _write_structured_companions(
     )
 
 
+def _prd_root_from_output_path(repo_root: Path, output_path: str) -> Path | None:
+    parts = Path(output_path).parts
+    if RUNS_DIR_NAME not in parts:
+        return None
+    runs_index = parts.index(RUNS_DIR_NAME)
+    if runs_index == 0:
+        return None
+    return (repo_root / Path(*parts[:runs_index])).resolve()
+
+
+def _write_run_pointers(repo_root: Path, state: QAWorkflowState, keys: list[str]) -> None:
+    first_output = next((state.output_paths.get(key) for key in keys), None)
+    if not first_output:
+        return
+    prd_root = _prd_root_from_output_path(repo_root, first_output)
+    if prd_root is None:
+        return
+
+    runs_dir = prd_root / RUNS_DIR_NAME
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": "agentic-qa.run-index.v1",
+        "run_id": state.run_id,
+        "thread_id": state.thread_id,
+        "task_type": state.task_type,
+        "prd_path": state.prd_path,
+        "updated_at": _now_iso(),
+        "output_paths": {key: state.output_paths[key] for key in keys},
+        "review_status": state.review_status,
+        "quality_errors": list(state.quality_errors),
+        "warnings": list(state.warnings),
+    }
+
+    (runs_dir / LATEST_FILE).write_text(
+        yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    with (runs_dir / INDEX_FILE).open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _candidate_markdown_path(path: Path, run_id: str | None) -> Path:
+    suffix = run_id or "runtime"
+    return path.with_name(f"{path.stem}.{suffix}{path.suffix}")
+
+
+def _next_available_markdown_path(path: Path, run_id: str | None) -> Path:
+    candidate = _candidate_markdown_path(path, run_id)
+    if not any(
+        companion.exists()
+        for companion in (candidate, candidate.with_suffix(".json"), candidate.with_suffix(".yml"))
+    ):
+        return candidate
+
+    index = 2
+    while True:
+        indexed = candidate.with_name(f"{candidate.stem}-{index}{candidate.suffix}")
+        if not any(
+            companion.exists()
+            for companion in (indexed, indexed.with_suffix(".json"), indexed.with_suffix(".yml"))
+        ):
+            return indexed
+        index += 1
+
+
+def _remap_existing_output_paths(
+    repo_root: Path,
+    state: QAWorkflowState,
+    keys: list[str],
+) -> None:
+    remapped: dict[str, str] = {}
+    for key in keys:
+        output_path = state.output_paths[key]
+        markdown_path = repo_root / Path(output_path)
+        companion_paths = [
+            markdown_path,
+            markdown_path.with_suffix(".json"),
+            markdown_path.with_suffix(".yml"),
+        ]
+        if not any(path.exists() for path in companion_paths):
+            continue
+
+        candidate = _next_available_markdown_path(markdown_path, state.run_id)
+        relative_candidate = candidate.relative_to(repo_root).as_posix()
+        state.output_paths[key] = relative_candidate
+        remapped[output_path] = relative_candidate
+
+    if not remapped:
+        return
+
+    updated = []
+    for artifact in state.artifacts:
+        next_artifact = dict(artifact)
+        artifact_path = next_artifact.get("output_path")
+        if artifact_path in remapped:
+            next_artifact["output_path"] = remapped[artifact_path]
+        updated.append(next_artifact)
+    state.artifacts = updated
+
+    if state.output_path in remapped:
+        state.output_path = remapped[state.output_path]
+
+    state.warnings.append(
+        "检测到目标草稿已存在，已改写入本次 run 候选文件: "
+        + ", ".join(f"{source} -> {target}" for source, target in sorted(remapped.items()))
+    )
+
+
 def mvp_artifact_writer_node(
     state: QAWorkflowState, repo_root: Path
 ) -> QAWorkflowState:
@@ -101,25 +218,7 @@ def mvp_artifact_writer_node(
         state.errors.append(f"缺少产物内容或输出路径，拒绝写入: {', '.join(missing)}")
         return state
 
-    existing_paths = []
-    for key in keys:
-        markdown_path = repo_root / Path(state.output_paths[key])
-        companion_paths = [
-            markdown_path,
-            markdown_path.with_suffix(".json"),
-            markdown_path.with_suffix(".yml"),
-        ]
-        existing_paths.extend(
-            path.relative_to(repo_root).as_posix()
-            for path in companion_paths
-            if path.exists()
-        )
-    if existing_paths:
-        state.errors.append(
-            "目标文件已存在，默认不覆盖；本次未写入任何产物: "
-            + ", ".join(existing_paths)
-        )
-        return state
+    _remap_existing_output_paths(repo_root, state, keys)
 
     try:
         for key in keys:
@@ -128,6 +227,7 @@ def mvp_artifact_writer_node(
                 state.draft_artifacts[key],
             )
             _write_structured_companions(repo_root, state, key)
+        _write_run_pointers(repo_root, state, keys)
     except FileExistsError as exc:
         state.errors.append(str(exc))
         return state

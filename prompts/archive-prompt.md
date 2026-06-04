@@ -20,8 +20,8 @@ target_agent: Archive Agent
 
 ## 输入
 
-- metadata（`metadata.yml`）
-- QA 报告（`80-reports/qa-report-draft.md`）
+- metadata（`workspace.yml`）
+- QA 报告（`report/qa-review.md`）
 - 所有关联产物
 
 ## 输出格式
@@ -36,10 +36,10 @@ target_agent: Archive Agent
 | 检查项 | 说明 |
 |---|---|
 | 需求分析已审核通过 | `requirement-analysis.md` 的 status 为 approved |
-| 测试用例已审核通过 | `testcases.md` 的 status 为 approved |
+| 测试用例已审核通过 | `test-cases.md` 的 status 为 approved |
 | 测试执行完成且通过率达标 | 执行覆盖率 >= 约定阈值（默认 90%）|
 | P0 缺陷已解决或已确认风险 | 无未关闭的 P0 缺陷，或有风险确认记录 |
-| QA 报告已审核 | `qa-report-draft.md` 已有人工审核记录 |
+| QA 报告已审核 | `qa-review.md` 已有人工审核记录 |
 | 无阻塞状态存在 | 上述所有项均为通过状态 |
 
 ## 必须参考的规则
@@ -84,8 +84,8 @@ target_agent: Archive Agent
 ### 上游（输入依赖）
 | 数据项 | 来源 Prompt | 文件路径 | 说明 |
 |--------|-----------|---------|------|
-| QA 报告 | `report-generation-prompt` | `prd/<id>/80-reports/qa-report-draft.md` | 已审核的 QA 报告 |
-| metadata | 用户/系统 | `prd/<id>/metadata.yml` | 审核状态信息 |
+| QA 报告 | `report-generation-prompt` | `prd/<id>/report/qa-review.md` | 已审核的 QA 报告 |
+| metadata | 用户/系统 | `prd/<id>/workspace.yml` | 审核状态信息 |
 
 ### 下游（输出消费方）
 | 数据项 | 消费方 Prompt | 说明 |

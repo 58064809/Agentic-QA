@@ -53,12 +53,12 @@ def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
         return state
 
     if not state.wrote_file:
-        state.warnings.append("metadata.yml 未更新：本次 Runtime 未写入产物。")
+        state.warnings.append("workspace.yml 未更新：本次 Runtime 未写入产物。")
         return state
 
-    metadata_path = repo_root / Path(state.prd_path) / "metadata.yml"
+    metadata_path = repo_root / Path(state.prd_path) / "workspace.yml"
     if not metadata_path.is_file():
-        state.warnings.append(f"metadata.yml 不存在，跳过 Runtime 写入记录: {metadata_path}")
+        state.warnings.append(f"workspace.yml 不存在，跳过 Runtime 写入记录: {metadata_path}")
         return state
 
     updated_at = _now_iso()
@@ -89,5 +89,5 @@ def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
 
     with metadata_path.open("w", encoding="utf-8") as stream:
         yaml.safe_dump(metadata, stream, allow_unicode=True, sort_keys=False)
-    state.warnings.append("metadata.yml 已记录 Runtime 写入和审批状态。")
+    state.warnings.append("workspace.yml 已记录 Runtime 写入和审批状态。")
     return state

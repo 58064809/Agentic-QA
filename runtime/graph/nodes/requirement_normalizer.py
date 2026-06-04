@@ -9,19 +9,19 @@ from runtime.tools.artifact_writer import ensure_within_directory
 from runtime.tools.document_converter import convert_requirement_to_markdown
 
 SUPPORTED_REQUIREMENT_SOURCES = [
-    "requirement.md",
-    "requirement.docx",
-    "requirement.pdf",
-    "requirement.txt",
-    "requirement.html",
-    "requirement.htm",
-    "requirement.rtf",
-    "需求.md",
-    "需求.docx",
-    "需求.pdf",
-    "需求.txt",
-    "需求.html",
-    "需求.htm",
+    "input/requirement.md",
+    "input/requirement.docx",
+    "input/requirement.pdf",
+    "input/requirement.txt",
+    "input/requirement.html",
+    "input/requirement.htm",
+    "input/requirement.rtf",
+    "input/需求.md",
+    "input/需求.docx",
+    "input/需求.pdf",
+    "input/需求.txt",
+    "input/需求.html",
+    "input/需求.htm",
 ]
 
 
@@ -78,7 +78,7 @@ def normalize_requirement_document(
         state.errors.append(f"PRD 工作区必须位于 prd/ 下: {state.prd_path}")
         return state
 
-    requirement_md = prd_path / "requirement.md"
+    requirement_md = prd_path / "input/requirement.md"
     if requirement_md.is_file():
         _set_normalization(
             state,
@@ -86,7 +86,7 @@ def normalize_requirement_document(
             source_path=requirement_md,
             output_path=requirement_md,
             source_type="markdown",
-            skipped_reason="requirement.md already exists",
+            skipped_reason="input/requirement.md already exists",
             repo_root=repo_root,
         )
         return state
@@ -94,7 +94,7 @@ def normalize_requirement_document(
     existing_sources = [
         source
         for source in _candidate_sources(prd_path)
-        if source.name != "requirement.md" and source.is_file()
+        if source != requirement_md and source.is_file()
     ]
     if not existing_sources:
         _set_normalization(

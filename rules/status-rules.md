@@ -2,7 +2,7 @@
 
 ## 推荐合法状态
 
-新生成或修订的 QA 产物默认使用以下状态。状态可以写入 `metadata.yml`，也可以写入产物 front matter。
+新生成或修订的 QA 产物默认使用以下状态。状态可以写入 `workspace.yml`，也可以写入产物 front matter。
 
 | 状态 | 含义 |
 |---|---|
@@ -21,7 +21,7 @@
 
 - 人工打开并阅读了对应产物。
 - 用户在 Chat 中明确说“这版通过”“已评审”“按评审意见修改完成”“确认可以作为后续输入”。
-- 产物 front matter 或 `metadata.yml` 中写入了状态、reviewer 和 review 时间。
+- 产物 front matter 或 `workspace.yml` 中写入了状态、reviewer 和 review 时间。
 
 以下情况不算人工评审或确认：
 

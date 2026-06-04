@@ -20,8 +20,8 @@ target_agent: API Test Generation Agent
 
 ## 输入
 
-- `api-doc.md` — 接口文档
-- `20-testcases/testcases.md` — 已审核用例
+- `input/api.md` — 接口文档
+- `cases/test-cases.md` — 已审核用例
 - API 规则和自动化编码规则
 
 ## 输出格式
@@ -41,8 +41,8 @@ target_agent: API Test Generation Agent
 - `rules/automation-rules.md`
 - `knowledge/project-rules/assertion-rules.md`
 - `knowledge/project-rules/automation-coding-rules.md`
-- `qa-methods/api-contract-analysis-skill.md`
-- `qa-methods/pytest-api-test-skill.md`
+- `skills/automation/api-contract-analysis-skill.md`
+- `skills/automation/pytest-api-test-skill.md`
 
 ## 质量要求
 
@@ -86,13 +86,13 @@ target_agent: API Test Generation Agent
 ### 上游（输入依赖）
 | 数据项 | 来源 Prompt | 文件路径 | 说明 |
 |--------|-----------|---------|------|
-| 测试用例 | `testcase-design-prompt` | `prd/<id>/20-testcases/testcases.md` | 已审核的测试用例 |
-| 接口文档 | 产品/开发 | `prd/<id>/api-doc.md` | API 路径、请求/响应结构 |
+| 测试用例 | `testcase-design-prompt` | `prd/<id>/cases/test-cases.md` | 已审核的测试用例 |
+| 接口文档 | 产品/开发 | `prd/<id>/input/api.md` | API 路径、请求/响应结构 |
 
 ### 下游（输出消费方）
 | 数据项 | 消费方 Prompt | 文件路径 | 说明 |
 |--------|-------------|---------|------|
-| API 测试脚本 | `test-execution-prompt` | `prd/<id>/30-api-tests/generated/` | 可执行的 pytest 脚本 |
+| API 测试脚本 | `test-execution-prompt` | `prd/<id>/automation/api/generated/` | 可执行的 pytest 脚本 |
 
 ### 关键约束
 - 下游执行必须在明确授权环境中运行

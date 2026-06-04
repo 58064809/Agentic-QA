@@ -29,7 +29,7 @@ def convert_requirement_to_markdown(
     if not source_path.is_file():
         raise FileNotFoundError(f"需求源文件不存在: {source_path}")
     if output_path.exists() and not overwrite:
-        raise FileExistsError(f"目标 requirement.md 已存在，默认不覆盖: {output_path}")
+        raise FileExistsError(f"目标 input/requirement.md 已存在，默认不覆盖: {output_path}")
 
     try:
         result = _load_markitdown()().convert(source_path)

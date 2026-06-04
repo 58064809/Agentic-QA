@@ -33,21 +33,55 @@ def create_repo(root: Path, *, with_requirement_md: bool = False) -> Path:
         "rules/testcase-rules.md": "测试用例规则",
         "rules/review-gate-rules.md": "审核门规则",
         "rules/artifact-path-rules.md": "产物路径规则",
-        "skills/requirement-decomposition-skill.md": "需求拆解技能",
-        "skills/business-rule-extraction-skill.md": "业务规则提取技能",
+        "skills/registry/skills.yaml": """version: 1
+required_first_version: true
+skills:
+  - id: S1
+    file: skills/core/requirement-understanding-skill.md
+  - id: S2
+    file: skills/core/context-building-skill.md
+  - id: S3
+    file: skills/core/rag-retrieval-skill.md
+  - id: S4
+    file: skills/analysis/test-scope-decomposition-skill.md
+  - id: S5
+    file: skills/analysis/risk-identification-skill.md
+  - id: S6
+    file: skills/test-design/test-method-selection-skill.md
+  - id: S7
+    file: skills/test-design/testcase-generation-skill.md
+  - id: S8
+    file: skills/test-design/testcase-review-skill.md
+  - id: S9
+    file: skills/core/output-formatting-skill.md
+  - id: S10
+    file: skills/knowledge/knowledge-capture-skill.md
+""",
+        "skills/core/requirement-understanding-skill.md": "需求理解 Skill",
+        "skills/core/context-building-skill.md": "上下文构建 Skill",
+        "skills/core/rag-retrieval-skill.md": "RAG 检索 Skill",
+        "skills/analysis/test-scope-decomposition-skill.md": "测试范围拆解 Skill",
+        "skills/analysis/risk-identification-skill.md": "风险识别 Skill",
+        "skills/test-design/test-method-selection-skill.md": "测试方法选择 Skill",
+        "skills/test-design/testcase-generation-skill.md": "测试用例生成 Skill",
+        "skills/test-design/testcase-review-skill.md": "用例评审 Skill",
+        "skills/core/output-formatting-skill.md": "输出格式化 Skill",
+        "skills/knowledge/knowledge-capture-skill.md": "知识沉淀 Skill",
+        "skills/analysis/requirement-decomposition-skill.md": "需求拆解技能",
+        "skills/analysis/business-rule-extraction-skill.md": "业务规则提取技能",
         "knowledge/templates/requirement-analysis-template.md": "需求分析模板",
-        "skills/test-design-skill.md": "测试设计技能",
-        "skills/equivalence-partitioning-skill.md": "等价类技能",
-        "skills/boundary-value-analysis-skill.md": "边界值技能",
-        "skills/scenario-modeling-skill.md": "场景建模技能",
-        "skills/state-transition-modeling-skill.md": "状态迁移技能",
-        "skills/risk-based-testing-skill.md": "风险测试技能",
+        "skills/test-design/test-design-skill.md": "测试设计技能",
+        "skills/test-design/equivalence-partitioning-skill.md": "等价类技能",
+        "skills/test-design/boundary-value-analysis-skill.md": "边界值技能",
+        "skills/test-design/scenario-modeling-skill.md": "场景建模技能",
+        "skills/test-design/state-transition-modeling-skill.md": "状态迁移技能",
+        "skills/test-design/risk-based-testing-skill.md": "风险测试技能",
         "knowledge/templates/testcase-template.md": "测试用例模板",
-        "prd/demo-requirement/metadata.yml": "id: demo-requirement\n",
+        "prd/demo-requirement/workspace.yml": "id: demo-requirement\n",
     }.items():
         write_file(root / relative_path, content)
     if with_requirement_md:
-        write_file(root / "prd/demo-requirement/requirement.md", "# Requirement\n")
+        write_file(root / "prd/demo-requirement/input/requirement.md", "# Requirement\n")
     return root
 
 
@@ -58,19 +92,19 @@ def normalize(repo_root: Path) -> QAWorkflowState:
 
 def test_existing_requirement_markdown_skips_conversion(tmp_path):
     repo_root = create_repo(tmp_path, with_requirement_md=True)
-    write_file(repo_root / "prd/demo-requirement/requirement.txt", "# Source\n")
+    write_file(repo_root / "prd/demo-requirement/input/requirement.txt", "# Source\n")
 
     state = normalize(repo_root)
 
     assert not state.errors
     assert state.requirement_normalization == {
         "performed": False,
-        "source_path": "prd/demo-requirement/requirement.md",
-        "output_path": "prd/demo-requirement/requirement.md",
+        "source_path": "prd/demo-requirement/input/requirement.md",
+        "output_path": "prd/demo-requirement/input/requirement.md",
         "source_type": "markdown",
-        "skipped_reason": "requirement.md already exists",
+        "skipped_reason": "input/requirement.md already exists",
     }
-    assert (repo_root / "prd/demo-requirement/requirement.md").read_text(
+    assert (repo_root / "prd/demo-requirement/input/requirement.md").read_text(
         encoding="utf-8"
     ) == "# Requirement\n"
 
@@ -78,7 +112,7 @@ def test_existing_requirement_markdown_skips_conversion(tmp_path):
 def test_requirement_txt_converts_to_markdown(tmp_path):
     repo_root = create_repo(tmp_path)
     write_file(
-        repo_root / "prd/demo-requirement/requirement.txt",
+        repo_root / "prd/demo-requirement/input/requirement.txt",
         "# Login Requirement\n\nUser can login.",
     )
 
@@ -87,7 +121,7 @@ def test_requirement_txt_converts_to_markdown(tmp_path):
     assert not state.errors
     assert state.requirement_normalization["performed"] is True
     assert state.requirement_normalization["source_type"] == "txt"
-    assert (repo_root / "prd/demo-requirement/requirement.md").is_file()
+    assert (repo_root / "prd/demo-requirement/input/requirement.md").is_file()
 
 
 def test_missing_requirement_source_returns_clear_error(tmp_path):
@@ -105,20 +139,23 @@ def test_missing_requirement_source_returns_clear_error(tmp_path):
 
 def test_multiple_requirement_sources_use_priority_with_warning(tmp_path):
     repo_root = create_repo(tmp_path)
-    write_file(repo_root / "prd/demo-requirement/requirement.pdf", "fake pdf")
-    write_file(repo_root / "prd/demo-requirement/requirement.txt", "# Text Requirement\n")
+    write_file(repo_root / "prd/demo-requirement/input/requirement.pdf", "fake pdf")
+    write_file(repo_root / "prd/demo-requirement/input/requirement.txt", "# Text Requirement\n")
 
     state = normalize(repo_root)
 
-    assert state.requirement_normalization["source_path"] == "prd/demo-requirement/requirement.pdf"
-    assert (repo_root / "prd/demo-requirement/requirement.md").is_file()
+    assert (
+        state.requirement_normalization["source_path"]
+        == "prd/demo-requirement/input/requirement.pdf"
+    )
+    assert (repo_root / "prd/demo-requirement/input/requirement.md").is_file()
     assert any("发现多个需求源文件" in warning for warning in state.warnings)
 
 
 def test_normalize_then_analyze_flow_reads_generated_markdown(tmp_path):
     repo_root = create_repo(tmp_path)
     write_file(
-        repo_root / "prd/demo-requirement/requirement.txt",
+        repo_root / "prd/demo-requirement/input/requirement.txt",
         "# 登录需求\n\n"
         "## 背景\n\n用户通过手机号密码登录，成功后返回 token。\n\n"
         "## 功能范围\n\n"
@@ -138,12 +175,12 @@ def test_normalize_then_analyze_flow_reads_generated_markdown(tmp_path):
 
     assert result.success
     assert result.requirement_normalization["performed"] is True
-    assert "prd/demo-requirement/requirement.md" in result.loaded_files
+    assert "prd/demo-requirement/input/requirement.md" in result.loaded_files
 
 
 def test_conversion_failure_is_reported(tmp_path, monkeypatch):
     repo_root = create_repo(tmp_path)
-    write_file(repo_root / "prd/demo-requirement/requirement.txt", "source")
+    write_file(repo_root / "prd/demo-requirement/input/requirement.txt", "source")
 
     def fail_conversion(*args, **kwargs):
         raise RuntimeError("MarkItDown 转换失败: boom")

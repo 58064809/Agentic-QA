@@ -57,6 +57,7 @@ HELP_TEXT = """用法:
 def _task_type_from_intent(intent: str) -> str | None:
     """将 LLM 路由意图映射到 Graph 的 task_type。"""
     mapping = {
+        "mvp": "mvp_analysis_testcases",
         "requirement_analysis": "analysis",
         "testcase_generation": "testcase_generation",
         "api_test_generation": "testcase_generation",
@@ -173,14 +174,14 @@ def _workspace_name(path: Path) -> str:
 
 
 def _init_workspace_metadata(workspace_dir: Path, name: str) -> None:
-    """创建初始 metadata.yml。"""
+    """创建初始 workspace.yml。"""
     metadata = {
         "requirement_id": name,
         "title": name,
         "status": "active",
         "created_by": "agentic-qa",
     }
-    metadata_path = workspace_dir / "metadata.yml"
+    metadata_path = workspace_dir / "workspace.yml"
     if not metadata_path.is_file():
         metadata_path.write_text(
             yaml.dump(metadata, allow_unicode=True, encoding="utf-8").decode("utf-8"),
@@ -206,7 +207,8 @@ def _import_markdown_requirement(
     workspace_dir = repo_root / prd_rel
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    requirement_path = workspace_dir / "requirement.md"
+    requirement_path = workspace_dir / "input/requirement.md"
+    requirement_path.parent.mkdir(parents=True, exist_ok=True)
     if not requirement_path.is_file():
         requirement_path.write_text(markdown.strip() + "\n", encoding="utf-8")
 
@@ -219,7 +221,7 @@ def _import_markdown_requirement(
     }
     if source_url:
         metadata["source_url"] = source_url
-    metadata_path = workspace_dir / "metadata.yml"
+    metadata_path = workspace_dir / "workspace.yml"
     if not metadata_path.is_file():
         metadata_path.write_text(
             yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False),
@@ -246,7 +248,7 @@ def _import_feishu_url(repo_root: Path, url: str) -> str:
         raise ValueError(f"无法识别飞书文档链接: {url}")
     title, markdown = fetch_feishu_doc(url)
     if not markdown.strip():
-        raise ValueError("飞书文档内容为空，无法生成 requirement.md")
+        raise ValueError("飞书文档内容为空，无法生成 input/requirement.md")
     return _import_markdown_requirement(
         repo_root,
         markdown,
@@ -269,8 +271,12 @@ def _import_source_file(repo_root: Path, source_path: Path) -> str:
     workspace_dir = repo_root / prd_rel
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
-    # 复制源文件
-    dest = workspace_dir / source_path.name
+    input_dir = workspace_dir / "input"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    if source_path.suffix.lower() in {".md", ".markdown", ".txt"}:
+        dest = input_dir / "requirement.md"
+    else:
+        dest = input_dir / f"requirement{source_path.suffix.lower()}"
     if not dest.is_file():
         shutil.copy2(source_path, dest)
 
@@ -288,11 +294,14 @@ def _import_external_directory(repo_root: Path, external_dir: Path) -> str:
     workspace_dir = repo_root / prd_rel
     workspace_dir.mkdir(parents=True, exist_ok=True)
 
+    input_dir = workspace_dir / "input"
+    input_dir.mkdir(parents=True, exist_ok=True)
     # 复制目录下的需求文档
     for ext in ("*.md", "*.pdf", "*.docx", "*.txt", "*.html"):
         for f in external_dir.glob(ext):
-            if not (workspace_dir / f.name).is_file():
-                shutil.copy2(f, workspace_dir)
+            dest = input_dir / f.name
+            if not dest.is_file():
+                shutil.copy2(f, dest)
 
     _init_workspace_metadata(workspace_dir, name)
     print(f"📁 导入外部工作区: {prd_rel} （来源: {external_dir}）")
@@ -459,18 +468,8 @@ def main() -> int:
     session_manager = SessionManager(repo_root)
     session = session_manager.get_or_create("default")
 
-    # 路由意图
+    # 路由意图。默认尝试 LLM，LLM 不可用时由 route_intent 降级为确定性路由。
     config = OpenAICompatibleConfig.from_env()
-    if not config.has_api_key:
-        print(
-            "❌ 缺少 DEEPSEEK_API_KEY 环境变量。\n"
-            "   请复制 .env.example 为 .env 并填写密钥，然后运行:\n"
-            "   set -a && source .env && set +a   (Git Bash)\n"
-            "   或手动设置:\n"
-            "   set DEEPSEEK_API_KEY=your-key    (Cmd)\n"
-        )
-        return 1
-
     route = route_intent(user_input, config)
 
     if not route.is_valid:

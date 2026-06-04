@@ -26,7 +26,20 @@ REQUIRED_ANALYSIS_SECTIONS = [
     "待确认问题",
     "需求到测试覆盖映射",
 ]
-REQUIRED_TESTCASE_COLUMNS = ["标题", "优先级", "前置条件", "测试步骤", "预期结果"]
+LEGACY_TESTCASE_COLUMNS = ["标题", "优先级", "前置条件", "测试步骤", "预期结果"]
+RICH_TESTCASE_COLUMNS = [
+    "用例ID",
+    "需求/规则来源",
+    "标题",
+    "测试类型",
+    "优先级",
+    "前置条件",
+    "测试数据",
+    "测试步骤",
+    "预期结果",
+    "断言/证据",
+    "待确认项",
+]
 ALLOWED_PRIORITIES = {"P0", "P1", "P2", "P3"}
 PLACEHOLDER_PATTERNS = [
     "待接入 LangChain",
@@ -64,7 +77,15 @@ def _has_section(markdown: str, section: str) -> bool:
 
 
 def _contains_placeholder(markdown: str) -> list[str]:
-    return [pattern for pattern in PLACEHOLDER_PATTERNS if pattern in markdown]
+    placeholders = []
+    for pattern in PLACEHOLDER_PATTERNS:
+        if pattern == "占位":
+            if re.search(r"(^|\|)\s*占位\s*(\||$)", markdown, flags=re.MULTILINE):
+                placeholders.append(pattern)
+            continue
+        if pattern in markdown:
+            placeholders.append(pattern)
+    return placeholders
 
 
 def _section_body(markdown: str, section: str) -> str:
@@ -100,7 +121,7 @@ def _testcase_rows(markdown: str) -> tuple[list[list[str]], list[str]]:
         (
             index
             for index, line in enumerate(lines)
-            if line.strip().startswith("| 标题 |")
+            if line.strip().startswith("| 标题 |") or line.strip().startswith("| 用例ID |")
         ),
         None,
     )
@@ -111,12 +132,14 @@ def _testcase_rows(markdown: str) -> tuple[list[list[str]], list[str]]:
     rows: list[list[str]] = []
     for line in lines[header_index + 1 :]:
         stripped = line.strip()
-        if stripped.startswith("## "):
+        if stripped.startswith("#"):
             break
         if not stripped.startswith("|") or not stripped.endswith("|"):
             continue
         cells = [cell.strip() for cell in stripped.strip("|").split("|")]
         if _is_separator_row(cells):
+            continue
+        if cells == header:
             continue
         rows.append(cells)
     return rows, header
@@ -163,6 +186,11 @@ def _covered_keyword_groups(markdown: str) -> set[str]:
     return covered
 
 
+def _blank_or_vague(value: str) -> bool:
+    stripped = value.strip()
+    return not stripped or stripped in {"无", "N/A", "-", "待确认"}
+
+
 def _check_output_path(
     state: QAWorkflowState,
     repo_root: Path,
@@ -180,7 +208,14 @@ def _check_output_path(
     absolute_output = repo_root / output_path
     if not ensure_within_directory(absolute_output, prd_path):
         state.quality_errors.append(f"{label}输出路径必须位于目标 PRD 工作区内。")
-    if Path(output_path).as_posix().split("/")[-3:] != expected_suffix:
+    output_parts = Path(output_path).as_posix().split("/")
+    uses_run_layout = (
+        len(output_parts) >= 4
+        and output_parts[-4] == "runs"
+        and output_parts[-2:] == expected_suffix[-2:]
+    )
+    uses_legacy_layout = output_parts[-3:] == expected_suffix
+    if not (uses_run_layout or uses_legacy_layout):
         state.quality_errors.append(
             f"{label}输出路径不符合约定: {'/'.join(expected_suffix)}"
         )
@@ -194,6 +229,7 @@ def requirement_analysis_quality_check_node(
     state.record_node("requirement_analysis_quality_check_node")
     if state.errors:
         return state
+    quality_error_start = len(state.quality_errors)
 
     artifact = state.draft_artifacts.get("requirement_analysis")
     if not artifact:
@@ -243,12 +279,27 @@ def requirement_analysis_quality_check_node(
     if artifact.count("待补充") >= 8:
         state.warnings.append("需求分析草稿包含较多待补充内容，请人工重点确认 PRD 信息完整性。")
 
+    if (
+        len(state.quality_errors) > quality_error_start
+        and state.llm.get("used") is True
+        and not state.llm.get("requirement_analysis_quality_fallback_used")
+    ):
+        from runtime.graph.nodes.mvp_generation import render_requirement_analysis_skeleton
+
+        state.llm["requirement_analysis_quality_fallback_used"] = True
+        state.warnings.append("LLM 需求分析草稿未通过质量门，已降级为确定性 Skeleton 重新生成。")
+        del state.quality_errors[quality_error_start:]
+        fallback = render_requirement_analysis_skeleton(state)
+        state.draft_artifacts["requirement_analysis"] = fallback
+        state.draft_artifact = fallback
+        return requirement_analysis_quality_check_node(state, repo_root)
+
     prd_name = resolve_prd_path(repo_root, state.prd_path).name
     _check_output_path(
         state,
         repo_root,
         key="requirement_analysis",
-        expected_suffix=[prd_name, "10-analysis", "requirement-analysis.md"],
+        expected_suffix=[prd_name, "analysis", "requirement-analysis.md"],
         label="需求分析",
     )
     return state
@@ -262,6 +313,7 @@ def testcase_mvp_quality_check_node(
     state.record_node("testcase_quality_check_node")
     if state.errors:
         return state
+    quality_error_start = len(state.quality_errors)
 
     artifact = state.draft_artifacts.get("testcases")
     if not artifact:
@@ -270,33 +322,108 @@ def testcase_mvp_quality_check_node(
 
     if "needs_human_review" not in artifact:
         state.quality_errors.append("测试用例草稿缺少 needs_human_review 状态。")
-    expected_header = "| 标题 | 优先级 | 前置条件 | 测试步骤 | 预期结果 |"
-    if expected_header not in artifact:
-        state.quality_errors.append("测试用例草稿缺少固定表头。")
     rows, header = _testcase_rows(artifact)
+    if not header:
+        state.quality_errors.append("测试用例草稿缺少固定表头。")
     if "用例类型" in header:
         state.quality_errors.append("测试用例草稿表头不允许新增“用例类型”列。")
-    if header and header != REQUIRED_TESTCASE_COLUMNS:
-        state.quality_errors.append("测试用例草稿表格列必须严格等于固定 5 列。")
+    allowed_headers = {tuple(LEGACY_TESTCASE_COLUMNS), tuple(RICH_TESTCASE_COLUMNS)}
+    if header and tuple(header) not in allowed_headers:
+        state.quality_errors.append("测试用例草稿表格列必须严格等于固定 5 列或富用例 11 列。")
 
-    invalid_column_rows = [index for index, row in enumerate(rows, start=1) if len(row) != 5]
+    expected_column_count = len(header) if header else 0
+    invalid_column_rows = [
+        index for index, row in enumerate(rows, start=1) if len(row) != expected_column_count
+    ]
     if invalid_column_rows:
         state.quality_errors.append(
-            "测试用例草稿存在列数不等于 5 的用例行: "
+            f"测试用例草稿存在列数不等于 {expected_column_count} 的用例行: "
             + ", ".join(str(index) for index in invalid_column_rows[:5])
         )
 
+    priority_index = header.index("优先级") if "优先级" in header else -1
     if len(rows) < 15:
         state.quality_errors.append("测试用例草稿非表头用例少于 15 条。")
-    if rows and not any(row[1] == "P0" for row in rows if len(row) > 1):
+    if rows and priority_index >= 0 and not any(
+        row[priority_index] == "P0" for row in rows if len(row) > priority_index
+    ):
         state.quality_errors.append("测试用例草稿缺少 P0 用例。")
     invalid_priorities = sorted(
-        {row[1] for row in rows if len(row) > 1 and row[1] not in ALLOWED_PRIORITIES}
+        {
+            row[priority_index]
+            for row in rows
+            if priority_index >= 0
+            and len(row) > priority_index
+            and row[priority_index] not in ALLOWED_PRIORITIES
+        }
     )
     if invalid_priorities:
         state.quality_errors.append(
             "测试用例草稿包含非法优先级: " + ", ".join(invalid_priorities)
         )
+
+    if header == RICH_TESTCASE_COLUMNS and rows:
+        source_index = header.index("需求/规则来源")
+        type_index = header.index("测试类型")
+        data_index = header.index("测试数据")
+        assertion_index = header.index("断言/证据")
+        pending_index = header.index("待确认项")
+        valid_types = {
+            "正常/规则",
+            "异常",
+            "边界值",
+            "权限/认证",
+            "状态流转",
+            "幂等/并发",
+            "数据一致性",
+            "兼容",
+            "前后端一致",
+            "接口异常",
+            "安全/异常",
+            "审计/消息",
+            "回归",
+            "确认/风险",
+        }
+        invalid_types = sorted(
+            {
+                row[type_index]
+                for row in rows
+                if len(row) > type_index and row[type_index] not in valid_types
+            }
+        )
+        if invalid_types:
+            state.warnings.append(
+                "测试用例草稿包含非法测试类型: " + ", ".join(invalid_types)
+            )
+        for label, index in {
+            "需求/规则来源": source_index,
+            "断言/证据": assertion_index,
+        }.items():
+            vague_rows = [
+                row_number
+                for row_number, row in enumerate(rows, start=1)
+                if len(row) <= index or _blank_or_vague(row[index])
+            ]
+            if vague_rows:
+                state.warnings.append(
+                    f"测试用例草稿富表格 {label} 列存在空泛内容: "
+                    + ", ".join(str(row_number) for row_number in vague_rows[:5])
+                )
+        vague_data_rows = [
+            row_number
+            for row_number, row in enumerate(rows, start=1)
+            if len(row) <= data_index or _blank_or_vague(row[data_index])
+        ]
+        if vague_data_rows:
+            state.warnings.append(
+                "测试用例草稿富表格测试数据列存在空泛内容，需人工补充: "
+                + ", ".join(str(row_number) for row_number in vague_data_rows[:5])
+            )
+        if all(
+            len(row) > pending_index and row[pending_index].strip() == "无"
+            for row in rows
+        ):
+            state.warnings.append("测试用例草稿富表格待确认项全部为“无”，需人工补充。")
 
     covered_groups = _covered_keyword_groups(artifact)
     if len(covered_groups) < 4:
@@ -309,12 +436,29 @@ def testcase_mvp_quality_check_node(
             "测试用例草稿包含纯模板或占位内容: " + ", ".join(placeholders)
         )
 
+    if (
+        len(state.quality_errors) > quality_error_start
+        and state.llm.get("used") is True
+        and not state.llm.get("testcase_quality_fallback_used")
+    ):
+        from runtime.graph.nodes.mvp_generation import render_testcase_skeleton
+
+        state.llm["testcase_quality_fallback_used"] = True
+        fallback_errors = state.quality_errors[quality_error_start:]
+        state.warnings.append("LLM 测试用例草稿未通过质量门，已降级为确定性 Skeleton 重新生成。")
+        state.warnings.append("LLM 测试用例草稿触发降级的质量错误: " + "; ".join(fallback_errors))
+        del state.quality_errors[quality_error_start:]
+        fallback = render_testcase_skeleton(state)
+        state.draft_artifacts["testcases"] = fallback
+        state.draft_artifact = fallback
+        return testcase_mvp_quality_check_node(state, repo_root)
+
     prd_name = resolve_prd_path(repo_root, state.prd_path).name
     _check_output_path(
         state,
         repo_root,
         key="testcases",
-        expected_suffix=[prd_name, "20-testcases", "testcases.md"],
+        expected_suffix=[prd_name, "cases", "test-cases.md"],
         label="测试用例",
     )
     return state

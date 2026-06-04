@@ -18,21 +18,21 @@
 
 ## 输入
 
-- `prd/<id>/50-execution-results/`
-- `prd/<id>/20-testcases/testcases.md`
-- `prd/<id>/requirement.md`
-- `prd/<id>/api-doc.md`
+- `prd/<id>/execution/runs/`
+- `prd/<id>/cases/test-cases.md`
+- `prd/<id>/input/requirement.md`
+- `prd/<id>/input/api.md`
 
 ## 输出
 
-- `prd/<id>/60-failure-analysis/failure-analysis.md`
+- `prd/<id>/defects/failure-analysis.md`
 
 ## 必须读取的资料
 
 - `workflows/06-failure-analysis-workflow.md`
 - `prompts/failure-analysis-prompt.md`
 - `rules/failure-analysis-rules.md`
-- `qa-methods/failure-log-analysis-skill.md`
+- `skills/reporting/failure-log-analysis-skill.md`
 
 ## 必须遵守的规则
 

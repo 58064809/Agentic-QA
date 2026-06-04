@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 import sys
 from pathlib import Path
 
@@ -32,14 +31,14 @@ def create_runtime_repo(root: Path) -> Path:
         "rules/testcase-rules.md",
         "rules/review-gate-rules.md",
         "rules/artifact-path-rules.md",
-        "skills/test-design-skill.md",
+        "skills/test-design/test-design-skill.md",
         "knowledge/templates/testcase-template.md",
-        "prd/demo-requirement/metadata.yml",
-        "prd/demo-requirement/requirement.md",
+        "prd/demo-requirement/workspace.yml",
+        "prd/demo-requirement/input/requirement.md",
     ]
     for relative_path in required_files:
         write_file(root / relative_path)
-    (root / "prd/demo-requirement/20-testcases").mkdir(parents=True, exist_ok=True)
+    (root / "prd/demo-requirement/cases").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -102,9 +101,9 @@ def test_context_loader_loads_sample_prd_required_files():
 
     context_loader_node(state, REPO_ROOT)
 
-    assert "prd/sample-login-requirement/metadata.yml" in state.loaded_files
-    assert "prd/sample-login-requirement/requirement.md" in state.loaded_files
-    assert state.output_path == "prd/sample-login-requirement/20-testcases/testcases.md"
+    assert "prd/sample-login-requirement/workspace.yml" in state.loaded_files
+    assert "prd/sample-login-requirement/input/requirement.md" in state.loaded_files
+    assert state.output_path == "prd/sample-login-requirement/cases/test-cases.md"
 
 
 def test_dry_run_does_not_write_testcases(tmp_path):
@@ -119,7 +118,7 @@ def test_dry_run_does_not_write_testcases(tmp_path):
     assert result.success
     assert result.dry_run
     assert not result.wrote_file
-    assert not (repo_root / "prd/demo-requirement/20-testcases/testcases.md").exists()
+    assert not (repo_root / "prd/demo-requirement/cases/test-cases.md").exists()
 
 
 def test_approve_write_creates_testcase_draft_when_missing(tmp_path):
@@ -131,7 +130,7 @@ def test_approve_write_creates_testcase_draft_when_missing(tmp_path):
         repo_root=repo_root,
         approve_write=True,
     )
-    output_path = repo_root / "prd/demo-requirement/20-testcases/testcases.md"
+    output_path = repo_root / "prd/demo-requirement/cases/test-cases.md"
     content = output_path.read_text(encoding="utf-8")
     assert result.success
     assert result.wrote_file
@@ -141,7 +140,7 @@ def test_approve_write_creates_testcase_draft_when_missing(tmp_path):
 
 def test_approve_write_does_not_overwrite_existing_testcases(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
-    output_path = repo_root / "prd/demo-requirement/20-testcases/testcases.md"
+    output_path = repo_root / "prd/demo-requirement/cases/test-cases.md"
     write_file(output_path, "人工已有内容")
 
     result = run_testcase_generation_workflow(
@@ -162,7 +161,7 @@ def test_quality_check_reports_missing_review_status_and_headers(tmp_path):
         user_input="请生成测试用例",
         prd_path="prd/demo-requirement",
         draft_artifact="缺少表格和审核状态",
-        output_path="prd/demo-requirement/20-testcases/testcases.md",
+        output_path="prd/demo-requirement/cases/test-cases.md",
     )
 
     quality_check_node(state, repo_root)

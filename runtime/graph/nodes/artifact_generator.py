@@ -89,7 +89,7 @@ def _testcase_table_skeleton() -> str:
 
 def _build_analysis_sections(state: QAWorkflowState) -> str:
     requirement_content = state.loaded_files.get(
-        next((k for k in state.loaded_files if k.endswith("requirement.md")), "")
+        next((k for k in state.loaded_files if k.endswith("input/requirement.md")), "")
     ) or ""
     if len(requirement_content) > 200:
         requirement_summary = requirement_content[:200] + "..."
@@ -109,10 +109,10 @@ def _build_analysis_sections(state: QAWorkflowState) -> str:
 
 def _build_testcase_sections(state: QAWorkflowState) -> str:
     """解析需求文档中的功能点，生成有针对性的测试用例。"""
-    # ── 从 loaded_files 中提取 requirement.md 内容 ──
+    # ── 从 loaded_files 中提取 input/requirement.md 内容 ──
     req_content = ""
     for path in sorted(state.loaded_files.keys()):
-        if "requirement.md" in path:
+        if "input/requirement.md" in path:
             content = state.loaded_files.get(path, "")
             if isinstance(content, str) and len(content) > len(req_content):
                 req_content = content

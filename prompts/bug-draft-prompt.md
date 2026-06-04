@@ -20,7 +20,7 @@ target_agent: Bug Draft Agent
 
 ## 输入
 
-- 失败分析（`60-failure-analysis/failure-analysis.md`）
+- 失败分析（`defects/failure-analysis.md`）
 - 执行证据
 - 需求和用例
 
@@ -43,7 +43,7 @@ target_agent: Bug Draft Agent
 ## 必须参考的规则
 
 - `rules/failure-analysis-rules.md`
-- `qa-methods/bug-report-writing-skill.md`
+- `skills/reporting/bug-report-writing-skill.md`
 - `knowledge/templates/bug-template.md`
 
 ## 质量要求
@@ -85,13 +85,13 @@ target_agent: Bug Draft Agent
 ### 上游（输入依赖）
 | 数据项 | 来源 Prompt | 文件路径 | 说明 |
 |--------|-----------|---------|------|
-| 失败分析 | `failure-analysis-prompt` | `prd/<id>/60-failure-analysis/failure-analysis.md` | 已按 9 类分类的失败分析结果 |
-| 执行证据 | `test-execution-prompt` | `prd/<id>/50-execution-results/` | 测试执行日志和证据 |
+| 失败分析 | `failure-analysis-prompt` | `prd/<id>/defects/failure-analysis.md` | 已按 9 类分类的失败分析结果 |
+| 执行证据 | `test-execution-prompt` | `prd/<id>/execution/runs/` | 测试执行日志和证据 |
 
 ### 下游（输出消费方）
 | 数据项 | 消费方 Prompt | 文件路径 | 说明 |
 |--------|-------------|---------|------|
-| 缺陷草稿 | `report-generation-prompt` | `prd/<id>/70-bugs/` | 用于汇总到 QA 报告的缺陷数据 |
+| 缺陷草稿 | `report-generation-prompt` | `prd/<id>/defects/bug-drafts/` | 用于汇总到 QA 报告的缺陷数据 |
 
 ### 关键约束
 - 只处理分类为「真实缺陷」的失败分析条目，忽略脚本/环境/数据问题

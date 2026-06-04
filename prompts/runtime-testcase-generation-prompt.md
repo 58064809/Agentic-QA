@@ -25,19 +25,19 @@ target_agent: Runtime 测试用例生成 Agent (LangGraph Node)
 
 上游 `context_loader_node` 加载的上下文：
 
-- `prd/<id>/requirement.md` — 原始需求
-- `prd/<id>/api-doc.md` — 接口文档
-- `prd/<id>/metadata.yml` — 元数据
-- `prd/<id>/10-analysis/requirement-analysis.md` — 已审核需求分析
+- `prd/<id>/input/requirement.md` — 原始需求
+- `prd/<id>/input/api.md` — 接口文档
+- `prd/<id>/workspace.yml` — 元数据
+- `prd/<id>/analysis/requirement-analysis.md` — 已审核需求分析
 - `workflows/02-testcase-generation-workflow.md` — 测试用例生成工作流定义
 - `workflows/10-runtime-testcase-generation-workflow.md` — 本节点的工作流定义
 - `rules/testcase-rules.md` — 测试用例规则
 - `rules/review-gate-rules.md` — 审核门规则
 - `rules/artifact-path-rules.md` — 产物路径规则
-- `qa-methods/test-design-skill.md` — 测试设计技能
-- `qa-methods/equivalence-partitioning-skill.md` — 等价类划分技能
-- `qa-methods/boundary-value-analysis-skill.md` — 边界值分析技能
-- `qa-methods/state-transition-modeling-skill.md` — 状态流转建模技能
+- `skills/test-design/test-design-skill.md` — 测试设计技能
+- `skills/test-design/equivalence-partitioning-skill.md` — 等价类划分技能
+- `skills/test-design/boundary-value-analysis-skill.md` — 边界值分析技能
+- `skills/test-design/state-transition-modeling-skill.md` — 状态流转建模技能
 - `knowledge/templates/testcase-template.md` — 测试用例模板
 - `prompts/testcase-design-prompt.md` — 测试用例设计 Prompt（质量要求参考）
 - Runtime 当前运行记录（`run_id`、会话上下文、状态追踪）
@@ -45,7 +45,7 @@ target_agent: Runtime 测试用例生成 Agent (LangGraph Node)
 ## 输出格式
 
 ### 输出路径
-- `prd/<id>/20-testcases/testcases.md`
+- `prd/<id>/cases/test-cases.md`
 
 ### Front Matter
 ```yaml
@@ -71,10 +71,10 @@ run_id: <current_run_id>
 - `rules/testcase-rules.md`
 - `rules/review-gate-rules.md`
 - `rules/artifact-path-rules.md`
-- `qa-methods/test-design-skill.md`
-- `qa-methods/equivalence-partitioning-skill.md`
-- `qa-methods/boundary-value-analysis-skill.md`
-- `qa-methods/state-transition-modeling-skill.md`
+- `skills/test-design/test-design-skill.md`
+- `skills/test-design/equivalence-partitioning-skill.md`
+- `skills/test-design/boundary-value-analysis-skill.md`
+- `skills/test-design/state-transition-modeling-skill.md`
 - `knowledge/templates/testcase-template.md`
 - `prompts/testcase-design-prompt.md`（质量要求和禁止事项保持一致）
 
@@ -92,7 +92,7 @@ run_id: <current_run_id>
 
 在输出测试用例草稿前，按以下步骤推理（推理过程不写入输出）：
 
-1. **理解上下文**：读取 requirement.md、api-doc.md、requirement-analysis.md，理解业务逻辑和约束
+1. **理解上下文**：读取 input/requirement.md、input/api.md、requirement-analysis.md，理解业务逻辑和约束
 2. **确定测试策略**：根据需求复杂度选择等价类/边界值/状态流转/场景建模方法的组合
 3. **按覆盖维度检查**：对照「覆盖要求」表格逐项检查是否覆盖了所有维度
 4. **数量评估**：评估需求复杂度（简单/中等/复杂），确保用例数量达标
@@ -144,14 +144,14 @@ run_id: <current_run_id>
 | 数据项 | 来源 Prompt / Node | 文件路径 | 说明 |
 |--------|------------------|---------|------|
 | 上下文文件 | `context_loader_node`（Runtime）| 多种 | 由 `context_loader_node` 加载的所有文件 |
-| 需求分析 | `requirement-analysis-prompt` | `prd/<id>/10-analysis/requirement-analysis.md` | 已审核的需求分析 |
+| 需求分析 | `requirement-analysis-prompt` | `prd/<id>/analysis/requirement-analysis.md` | 已审核的需求分析 |
 | 测试设计 Prompt | — | `prompts/testcase-design-prompt.md` | 质量要求和覆盖要求参考 |
 
 ### 下游（输出消费方）
 | 数据项 | 消费方 Prompt / Node | 文件路径 | 说明 |
 |--------|--------------------|---------|------|
-| 测试用例草稿 | `testcase_quality_check_node`（Runtime）| `prd/<id>/20-testcases/testcases.md` | 质量检查节点的输入 |
-| 测试用例草稿 | 人工审核 | `prd/<id>/20-testcases/testcases.md` | 供人工审核的测试用例 |
+| 测试用例草稿 | `testcase_quality_check_node`（Runtime）| `prd/<id>/cases/test-cases.md` | 质量检查节点的输入 |
+| 测试用例草稿 | 人工审核 | `prd/<id>/cases/test-cases.md` | 供人工审核的测试用例 |
 
 ### 关键约束
 - 输出必须通过 `testcase_quality_check_node` 的质量检查
@@ -190,9 +190,9 @@ run_id: <current_run_id>
 ## 示例
 
 **输入**：
-- requirement.md：登录需求
+- input/requirement.md：登录需求
 - requirement-analysis.md：已审核的需求分析
-- api-doc.md：登录接口文档
+- input/api.md：登录接口文档
 
 **输出**（仅摘录示例格式）：
 

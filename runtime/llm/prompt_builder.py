@@ -5,17 +5,73 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-MAX_INPUT_CHARS = 12000
+from runtime.llm.config import DEFAULT_MAX_INPUT_CHARS
+
+MAX_INPUT_CHARS = DEFAULT_MAX_INPUT_CHARS
 IMAGE_REFERENCE_RE = re.compile(
     r"!\[[^\]]*]\([^)]+\)|\.(?:png|jpe?g)\b|(?:^|[^A-Za-z0-9_])(?:media|images)[\\/]",
     re.IGNORECASE | re.MULTILINE,
 )
+MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*]\([^)]+\)")
+LONG_IMAGE_URL_RE = re.compile(
+    r"https?://[^\s)>\]]*(?:feishu|larksuite|drive|image|media|png|jpe?g)[^\s)>\]]*",
+    re.IGNORECASE,
+)
+DEFAULT_SECTION_BUDGET = 700
 
 
 @dataclass(frozen=True)
 class PromptBuildResult:
     prompt: str
     warnings: list[str]
+
+
+def _compact_prompt_content(content: str) -> str:
+    compacted = MARKDOWN_IMAGE_RE.sub("[图片引用已省略：当前 Runtime 不分析图片内容]", content)
+    return LONG_IMAGE_URL_RE.sub("[图片链接已省略]", compacted)
+
+
+def _section_budget(title_or_path: str, max_input_chars: int) -> int:
+    """Bound each context source so one long file cannot crowd out key inputs."""
+    capped = max(200, max_input_chars)
+    if title_or_path.endswith("/input/requirement.md"):
+        return min(6000, capped)
+    if title_or_path.endswith("/input/api.md"):
+        return min(3000, capped)
+    if title_or_path.endswith("/analysis/requirement-analysis.md"):
+        return min(6000, capped)
+    if "本次运行" in title_or_path or "需求分析草稿" in title_or_path:
+        return min(7000, capped)
+    if "RAG" in title_or_path:
+        return min(3500, capped)
+    if title_or_path == "图片检测":
+        return min(1000, capped)
+    if title_or_path.endswith("skills/registry/skills.yaml"):
+        return min(900, capped)
+    if title_or_path.startswith("skills/"):
+        return min(DEFAULT_SECTION_BUDGET, capped)
+    if title_or_path.startswith("rules/") or title_or_path.startswith("knowledge/templates/"):
+        return min(1000, capped)
+    if title_or_path.startswith("prompts/"):
+        return min(900, capped)
+    return min(DEFAULT_SECTION_BUDGET, capped)
+
+
+def _clip_section(content: str, budget: int) -> str:
+    if len(content) <= budget:
+        return content
+    marker = "\n\n[上下文已按优先级裁剪，省略中间低价值内容]\n\n"
+    if budget <= len(marker) + 40:
+        return content[:budget]
+    head_budget = max(80, int((budget - len(marker)) * 0.7))
+    tail_budget = budget - len(marker) - head_budget
+    return content[:head_budget].rstrip() + marker + content[-tail_budget:].lstrip()
+
+
+def _render_section(title: str, content: str, max_input_chars: int) -> str:
+    compacted = _compact_prompt_content(content)
+    budget = _section_budget(title, max_input_chars)
+    return f"## {title}\n\n{_clip_section(compacted, budget)}"
 
 
 def _render_file_bundle(
@@ -31,11 +87,11 @@ def _render_file_bundle(
 
     for path in selected_paths:
         if path in loaded_files:
-            sections.append(f"## {path}\n\n{loaded_files[path]}")
+            sections.append(_render_section(path, loaded_files[path], max_input_chars))
 
     for title, content in injected_sections.items():
         if content:
-            sections.append(f"## {title}\n\n{content}")
+            sections.append(_render_section(title, content, max_input_chars))
 
     bundle = "\n\n".join(sections)
     if len(bundle) > max_input_chars:
@@ -45,12 +101,12 @@ def _render_file_bundle(
 
 
 def _image_detection_section(loaded_files: dict[str, str], prd_prefix: str) -> str:
-    requirement = loaded_files.get(f"{prd_prefix}/requirement.md", "")
+    requirement = loaded_files.get(f"{prd_prefix}/input/requirement.md", "")
     if not IMAGE_REFERENCE_RE.search(requirement):
         return ""
     return (
-        "检测到 requirement.md 包含图片/原型图引用。当前 Runtime 不分析图片内容，"
-        "只允许基于 requirement.md 和 api-doc.md 的文本生成草稿。必须把图片内容"
+        "检测到 input/requirement.md 包含图片/原型图引用。当前 Runtime 不分析图片内容，"
+        "只允许基于 input/requirement.md 和 input/api.md 的文本生成草稿。必须把图片内容"
         "未分析写入待确认问题，禁止猜测图片中的字段、按钮、页面布局和交互。"
     )
 
@@ -119,11 +175,18 @@ def build_requirement_analysis_prompt(
     max_input_chars: int = MAX_INPUT_CHARS,
 ) -> PromptBuildResult:
     selected_paths = [
-        f"{prd_prefix}/requirement.md",
-        f"{prd_prefix}/api-doc.md",
+        f"{prd_prefix}/input/requirement.md",
+        f"{prd_prefix}/input/api.md",
+        "skills/registry/skills.yaml",
+        "skills/core/requirement-understanding-skill.md",
+        "skills/core/context-building-skill.md",
+        "skills/core/rag-retrieval-skill.md",
+        "skills/analysis/test-scope-decomposition-skill.md",
+        "skills/analysis/risk-identification-skill.md",
+        "skills/core/output-formatting-skill.md",
         "rules/requirement-analysis-rules.md",
-        "qa-methods/requirement-decomposition-skill.md",
-        "qa-methods/business-rule-extraction-skill.md",
+        "skills/analysis/requirement-decomposition-skill.md",
+        "skills/analysis/business-rule-extraction-skill.md",
         "knowledge/templates/requirement-analysis-template.md",
         "prompts/requirement-analysis-prompt.md",
     ]
@@ -203,19 +266,30 @@ def build_testcase_prompt(
     max_input_chars: int = MAX_INPUT_CHARS,
 ) -> PromptBuildResult:
     selected_paths = [
-        f"{prd_prefix}/requirement.md",
-        f"{prd_prefix}/api-doc.md",
-        f"{prd_prefix}/10-analysis/requirement-analysis.md",
+        f"{prd_prefix}/input/requirement.md",
+        f"{prd_prefix}/input/api.md",
+        "skills/registry/skills.yaml",
+        "skills/core/requirement-understanding-skill.md",
+        "skills/core/context-building-skill.md",
+        "skills/core/rag-retrieval-skill.md",
+        "skills/analysis/test-scope-decomposition-skill.md",
+        "skills/analysis/risk-identification-skill.md",
+        "skills/test-design/test-method-selection-skill.md",
+        "skills/test-design/testcase-generation-skill.md",
+        "skills/test-design/testcase-review-skill.md",
+        "skills/core/output-formatting-skill.md",
         "rules/testcase-rules.md",
-        "qa-methods/test-design-skill.md",
-        "qa-methods/equivalence-partitioning-skill.md",
-        "qa-methods/boundary-value-analysis-skill.md",
-        "qa-methods/scenario-modeling-skill.md",
-        "qa-methods/state-transition-modeling-skill.md",
-        "qa-methods/risk-based-testing-skill.md",
+        "skills/test-design/test-design-skill.md",
+        "skills/test-design/equivalence-partitioning-skill.md",
+        "skills/test-design/boundary-value-analysis-skill.md",
+        "skills/test-design/scenario-modeling-skill.md",
+        "skills/test-design/state-transition-modeling-skill.md",
+        "skills/test-design/risk-based-testing-skill.md",
         "knowledge/templates/testcase-template.md",
         "prompts/testcase-design-prompt.md",
     ]
+    if not generated_analysis:
+        selected_paths.insert(2, f"{prd_prefix}/analysis/requirement-analysis.md")
     injected = {"图片检测": _image_detection_section(loaded_files, prd_prefix)}
     if generated_analysis:
         injected["本次运行生成的需求分析草稿"] = generated_analysis
@@ -243,8 +317,17 @@ artifact_type: testcase_draft
 human_review_required: true
 ---
 
-测试用例表格必须使用列：**标题 | 优先级 | 前置条件 | 测试步骤 | 预期结果**
-不允许新增"用例类型"列。
+测试用例主表必须使用列：**用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | 测试步骤 | 预期结果 | 断言/证据 | 待确认项**
+不得使用旧 5 列表格（标题 | 优先级 | 前置条件 | 测试步骤 | 预期结果）。
+测试类型只能从以下集合选择：正常/规则、异常、边界值、权限/认证、状态流转、幂等/并发、数据一致性、兼容、前后端一致、接口异常、安全/异常、审计/消息、回归、确认/风险。
+需求/规则来源必须写清楚来自哪条需求、业务规则、风险点或待确认项；可使用 R01/R02、PRD-段落名、分析-业务规则等可追踪标识。
+测试数据必须给出具体数据组合、边界值、用户角色、状态、库存/奖励/邀请关系、分数区间或接口参数；信息缺失时写“待确认：缺少 XXX”，不能留空。
+测试数据列禁止写“无”“不适用”“无具体数据”；如果是页面入口类，写具体入口、登录态、设备/浏览器、活动开关；如果是兼容/回归类，写具体设备矩阵、基线版本、回归链路；如果是图片确认类，写等级、图片资源、素材ID或待确认的资源清单。
+断言/证据必须覆盖至少两类可观察对象：页面展示、接口响应、数据库/状态、消息/通知、日志/审计、埋点、文件/图片产物。
+待确认项必须具体到缺口，例如“待确认：提交接口错误码”“待确认：头像框有效期自然日/工作日口径”，不得写“无”作为所有行的默认值。
+只输出一个测试用例主表，不得在主表中间重复表头或分隔行。
+所有测试用例优先级必须严格为 P0/P1/P2/P3，不得输出"优先级"、"高"、"中"、"低"等其他值。
+禁止输出"占位"、"TODO"、"示例"、"待接入"、"模板"等非用例内容；信息不足时写"待确认"，但仍必须给出可执行步骤和可观察预期结果。
 
 ## 覆盖要求（必须全部覆盖）
 
@@ -271,6 +354,8 @@ human_review_required: true
 4. 预期结果应包含页面、接口、数据库、状态、日志或消息等可观察结果
 5. 检测到图片时，禁止猜测图片中的字段、按钮、页面布局和交互
 6. 可以增加待确认类用例或风险说明，提醒图片内容未覆盖
+7. 必须显式覆盖业务规则追踪、测试数据设计、断言证据和待确认缺口，不能只输出通用操作步骤
+8. 对边界值用例必须给出具体 N-1/N/N+1 或区间临界值；对奖励/库存/邀请/抽奖必须给出数据组合和去重规则验证
 
 ## 禁止事项
 
@@ -279,7 +364,7 @@ human_review_required: true
 - 不输出"待接入 LangChain 后生成"或少量示例用例
 - 不得生成 API/UI 自动化脚本
 - 不得输出正式 QA 结论
-- 不得新增"用例类型"列
+- 不得输出旧版 5 列表格或缺失“测试数据”“断言/证据”“需求/规则来源”的表格
 
 {cot}
 
@@ -300,15 +385,15 @@ def build_api_test_prompt(
     max_input_chars: int = MAX_INPUT_CHARS,
 ) -> PromptBuildResult:
     selected_paths = [
-        f"{prd_prefix}/requirement.md",
-        f"{prd_prefix}/api-doc.md",
-        f"{prd_prefix}/20-testcases/testcases.md",
+        f"{prd_prefix}/input/requirement.md",
+        f"{prd_prefix}/input/api.md",
+        f"{prd_prefix}/cases/test-cases.md",
         "rules/api-test-rules.md",
         "rules/automation-rules.md",
         "knowledge/project-rules/assertion-rules.md",
         "knowledge/project-rules/automation-coding-rules.md",
-        "qa-methods/api-contract-analysis-skill.md",
-        "qa-methods/pytest-api-test-skill.md",
+        "skills/automation/api-contract-analysis-skill.md",
+        "skills/automation/pytest-api-test-skill.md",
         "prompts/api-test-generation-prompt.md",
     ]
     injected = {}
@@ -372,12 +457,12 @@ def build_ui_test_prompt(
     max_input_chars: int = MAX_INPUT_CHARS,
 ) -> PromptBuildResult:
     selected_paths = [
-        f"{prd_prefix}/requirement.md",
-        f"{prd_prefix}/api-doc.md",
-        f"{prd_prefix}/20-testcases/testcases.md",
+        f"{prd_prefix}/input/requirement.md",
+        f"{prd_prefix}/input/api.md",
+        f"{prd_prefix}/cases/test-cases.md",
         "rules/ui-test-rules.md",
         "rules/automation-rules.md",
-        "qa-methods/playwright-ui-test-skill.md",
+        "skills/automation/playwright-ui-test-skill.md",
         "knowledge/project-rules/assertion-rules.md",
         "prompts/ui-test-generation-prompt.md",
     ]
@@ -437,9 +522,9 @@ def build_test_execution_prompt(
     max_input_chars: int = MAX_INPUT_CHARS,
 ) -> PromptBuildResult:
     selected_paths = [
-        f"{prd_prefix}/metadata.yml",
-        f"{prd_prefix}/30-api-tests/",
-        f"{prd_prefix}/40-ui-tests/",
+        f"{prd_prefix}/workspace.yml",
+        f"{prd_prefix}/automation/api/",
+        f"{prd_prefix}/automation/ui/",
         "rules/test-execution-rules.md",
         "rules/automation-rules.md",
         "scripts/run_pytest.py",
@@ -501,13 +586,13 @@ def build_failure_analysis_prompt(
     max_input_chars: int = MAX_INPUT_CHARS,
 ) -> PromptBuildResult:
     selected_paths = [
-        f"{prd_prefix}/requirement.md",
-        f"{prd_prefix}/api-doc.md",
-        f"{prd_prefix}/20-testcases/testcases.md",
-        f"{prd_prefix}/50-execution-results/",
+        f"{prd_prefix}/input/requirement.md",
+        f"{prd_prefix}/input/api.md",
+        f"{prd_prefix}/cases/test-cases.md",
+        f"{prd_prefix}/execution/runs/",
         "rules/failure-analysis-rules.md",
         "rules/test-execution-rules.md",
-        "qa-methods/failure-log-analysis-skill.md",
+        "skills/reporting/failure-log-analysis-skill.md",
         "prompts/failure-analysis-prompt.md",
     ]
     injected = {}
@@ -585,12 +670,12 @@ def build_bug_draft_prompt(
     max_input_chars: int = MAX_INPUT_CHARS,
 ) -> PromptBuildResult:
     selected_paths = [
-        f"{prd_prefix}/requirement.md",
-        f"{prd_prefix}/api-doc.md",
-        f"{prd_prefix}/20-testcases/testcases.md",
-        f"{prd_prefix}/60-failure-analysis/failure-analysis.md",
+        f"{prd_prefix}/input/requirement.md",
+        f"{prd_prefix}/input/api.md",
+        f"{prd_prefix}/cases/test-cases.md",
+        f"{prd_prefix}/defects/failure-analysis.md",
         "rules/failure-analysis-rules.md",
-        "qa-methods/bug-report-writing-skill.md",
+        "skills/reporting/bug-report-writing-skill.md",
         "knowledge/templates/bug-template.md",
         "prompts/bug-draft-prompt.md",
     ]
@@ -655,13 +740,13 @@ def build_report_prompt(
     max_input_chars: int = MAX_INPUT_CHARS,
 ) -> PromptBuildResult:
     selected_paths = [
-        f"{prd_prefix}/metadata.yml",
-        f"{prd_prefix}/10-analysis/requirement-analysis.md",
-        f"{prd_prefix}/20-testcases/testcases.md",
-        f"{prd_prefix}/50-execution-results/",
-        f"{prd_prefix}/60-failure-analysis/failure-analysis.md",
-        f"{prd_prefix}/70-bugs/",
-        "qa-methods/qa-report-writing-skill.md",
+        f"{prd_prefix}/workspace.yml",
+        f"{prd_prefix}/analysis/requirement-analysis.md",
+        f"{prd_prefix}/cases/test-cases.md",
+        f"{prd_prefix}/execution/runs/",
+        f"{prd_prefix}/defects/failure-analysis.md",
+        f"{prd_prefix}/defects/bug-drafts/",
+        "skills/reporting/qa-report-writing-skill.md",
         "knowledge/templates/qa-report-template.md",
         "prompts/report-generation-prompt.md",
     ]
@@ -680,8 +765,8 @@ def build_report_prompt(
 
 ## 输出格式
 
-- 文件路径：`prd/<id>/80-reports/qa-report-draft.md`
-- `qa-report-draft.md` 是 AI 生成草稿；最终 `qa-report.md` 由人工确认后生成
+- 文件路径：`prd/<id>/report/qa-review.md`
+- `qa-review.md` 是 AI 生成草稿；最终 `qa-report.md` 由人工确认后生成
 - 包含以下章节：
   1. **基本信息** — 需求名称、版本、测试时间、测试范围概述
   2. **产物索引** — 各阶段产出物路径和状态
@@ -728,8 +813,8 @@ def build_archive_prompt(
     max_input_chars: int = MAX_INPUT_CHARS,
 ) -> PromptBuildResult:
     selected_paths = [
-        f"{prd_prefix}/metadata.yml",
-        f"{prd_prefix}/80-reports/qa-report-draft.md",
+        f"{prd_prefix}/workspace.yml",
+        f"{prd_prefix}/report/qa-review.md",
         "rules/archive-rules.md",
         "rules/status-rules.md",
         "scripts/archive_requirement.py",

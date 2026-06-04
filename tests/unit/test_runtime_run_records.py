@@ -28,14 +28,14 @@ def create_runtime_repo(root: Path) -> Path:
         "rules/testcase-rules.md",
         "rules/review-gate-rules.md",
         "rules/artifact-path-rules.md",
-        "skills/test-design-skill.md",
+        "skills/test-design/test-design-skill.md",
         "knowledge/templates/testcase-template.md",
-        "prd/demo-requirement/metadata.yml",
-        "prd/demo-requirement/requirement.md",
+        "prd/demo-requirement/workspace.yml",
+        "prd/demo-requirement/input/requirement.md",
     ]
     for relative_path in required_files:
         write_file(root / relative_path)
-    (root / "prd/demo-requirement/20-testcases").mkdir(parents=True, exist_ok=True)
+    (root / "prd/demo-requirement/cases").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -72,7 +72,7 @@ def test_dry_run_generates_run_record_by_default(tmp_path):
     assert (repo_root / result.run_record_dir / "checkpointer.pkl").is_file()
     assert (repo_root / result.run_record_dir / "graph-state.json").is_file()
     assert (repo_root / result.run_record_dir / "run-state.json").is_file()
-    assert not (repo_root / "prd/demo-requirement/20-testcases/testcases.md").exists()
+    assert not (repo_root / "prd/demo-requirement/cases/test-cases.md").exists()
 
 
 def test_record_run_false_does_not_generate_run_record(tmp_path):

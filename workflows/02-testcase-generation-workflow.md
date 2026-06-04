@@ -22,24 +22,24 @@ Requirement Analysis Agent 协助解释需求，Failure Analysis Agent 提供历
 - `prompts/testcase-design-prompt.md`
 - `rules/testcase-rules.md`
 - `rules/review-gate-rules.md`
-- `skills/test-design-skill.md`
-- `skills/equivalence-partitioning-skill.md`
-- `skills/boundary-value-analysis-skill.md`
-- `skills/scenario-modeling-skill.md`
-- `skills/state-transition-modeling-skill.md`
-- `skills/risk-based-testing-skill.md`
+- `skills/test-design/test-design-skill.md`
+- `skills/test-design/equivalence-partitioning-skill.md`
+- `skills/test-design/boundary-value-analysis-skill.md`
+- `skills/test-design/scenario-modeling-skill.md`
+- `skills/test-design/state-transition-modeling-skill.md`
+- `skills/test-design/risk-based-testing-skill.md`
 - `knowledge/templates/testcase-template.md`
 
 ## 输入文件
 
-- `prd/<id>/requirement.md`
-- `prd/<id>/api-doc.md`
-- `prd/<id>/10-analysis/requirement-analysis.md`
-- `prd/<id>/metadata.yml`
+- `prd/<id>/input/requirement.md`
+- `prd/<id>/input/api.md`
+- `prd/<id>/analysis/requirement-analysis.md`
+- `prd/<id>/workspace.yml`
 
 ## 输出路径
 
-- `prd/<id>/20-testcases/testcases.md`
+- `prd/<id>/cases/test-cases.md`
 
 ## 执行步骤
 

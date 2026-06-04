@@ -1,6 +1,6 @@
 # 生产级 Agent 与 LangGraph Runtime 路线
 
-本文档用于明确 Agentic-QA 的 Runtime 从当前轻量执行引擎逐步升级到生产级 Agent 工作流的路线。Runtime 不替代现有声明式资产（`AGENTS.md`、`COMMANDS.md`、`workflows/`、`agents/`、`prompts/`、`rules/`、`qa-methods/`、`knowledge/` 和 `prd/`），而是在这些资产之上增加可执行编排层。
+本文档用于明确 Agentic-QA 的 Runtime 从当前轻量执行引擎逐步升级到生产级 Agent 工作流的路线。Runtime 不替代现有声明式资产（`AGENTS.md`、`COMMANDS.md`、`workflows/`、`agents/`、`prompts/`、`rules/`、`skills/`、`knowledge/` 和 `prd/`），而是在这些资产之上增加可执行编排层。
 
 ## 终极目标
 
@@ -93,7 +93,7 @@ Agentic-QA/
 ├── agents/
 ├── prompts/
 ├── rules/
-├── qa-methods/
+├── skills/
 ├── knowledge/
 ├── prd/
 ├── runtime/
@@ -123,7 +123,7 @@ Agentic-QA/
 
 其中：
 
-- `workflows/`、`agents/`、`prompts/`、`rules/`、`qa-methods/`、`knowledge/` 是声明式资产。
+- `workflows/`、`agents/`、`prompts/`、`rules/`、`skills/`、`knowledge/` 是声明式资产。
 - `runtime/` 是执行引擎。
 - `prd/` 是需求级资产工作区。
 - `scripts/` 是确定性工程脚本。

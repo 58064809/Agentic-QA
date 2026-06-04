@@ -20,7 +20,7 @@ target_agent: Test Execution Agent
 
 ## 输入
 
-- 测试脚本（30-api-tests/、40-ui-tests/）
+- 测试脚本（automation/api/、automation/ui/）
 - metadata 审核状态
 - 执行环境说明
 
@@ -78,14 +78,14 @@ target_agent: Test Execution Agent
 ### 上游（输入依赖）
 | 数据项 | 来源 Prompt | 文件路径 | 说明 |
 |--------|-----------|---------|------|
-| API 测试脚本 | `api-test-generation-prompt` | `prd/<id>/30-api-tests/generated/` | 可执行的 API 测试套件 |
-| UI 测试脚本 | `ui-test-generation-prompt` | `prd/<id>/40-ui-tests/` | 可执行的 UI 测试套件 |
+| API 测试脚本 | `api-test-generation-prompt` | `prd/<id>/automation/api/generated/` | 可执行的 API 测试套件 |
+| UI 测试脚本 | `ui-test-generation-prompt` | `prd/<id>/automation/ui/` | 可执行的 UI 测试套件 |
 | 环境说明 | 人工/DevOps | — | 目标环境 URL、账号、凭据 |
 
 ### 下游（输出消费方）
 | 数据项 | 消费方 Prompt | 文件路径 | 说明 |
 |--------|-------------|---------|------|
-| 执行结果 | `failure-analysis-prompt` | `prd/<id>/50-execution-results/` | 执行命令、结果、失败摘要 |
+| 执行结果 | `failure-analysis-prompt` | `prd/<id>/execution/runs/` | 执行命令、结果、失败摘要 |
 
 ### 关键约束
 - 必须在明确授权环境中执行，默认不连接生产环境

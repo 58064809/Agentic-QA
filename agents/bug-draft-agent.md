@@ -18,19 +18,19 @@
 
 ## 输入
 
-- `prd/<id>/60-failure-analysis/failure-analysis.md`
-- `prd/<id>/50-execution-results/`
-- `prd/<id>/requirement.md`
+- `prd/<id>/defects/failure-analysis.md`
+- `prd/<id>/execution/runs/`
+- `prd/<id>/input/requirement.md`
 
 ## 输出
 
-- `prd/<id>/70-bugs/bug-*.md`
+- `prd/<id>/defects/bug-drafts/bug-*.md`
 
 ## 必须读取的资料
 
 - `workflows/07-bug-draft-workflow.md`
 - `prompts/bug-draft-prompt.md`
-- `qa-methods/bug-report-writing-skill.md`
+- `skills/reporting/bug-report-writing-skill.md`
 - `knowledge/templates/bug-template.md`
 
 ## 必须遵守的规则

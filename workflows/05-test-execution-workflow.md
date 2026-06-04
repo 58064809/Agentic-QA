@@ -27,13 +27,13 @@ API Test Generation Agent 和 UI Test Generation Agent 协助解释脚本，Fail
 
 ## 输入文件
 
-- `prd/<id>/30-api-tests/generated/`
-- `prd/<id>/40-ui-tests/generated/`
-- `prd/<id>/metadata.yml`
+- `prd/<id>/automation/api/generated/`
+- `prd/<id>/automation/ui/generated/`
+- `prd/<id>/workspace.yml`
 
 ## 输出路径
 
-- `prd/<id>/50-execution-results/`
+- `prd/<id>/execution/runs/`
 
 ## 执行步骤
 

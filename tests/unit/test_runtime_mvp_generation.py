@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
@@ -14,6 +16,11 @@ from runtime.graph.mvp_graph import (  # noqa: E402
 )
 from runtime.graph.nodes import mvp_generation  # noqa: E402
 from runtime.llm.openai_compatible import OpenAICompatibleAdapter  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def disable_real_llm_by_default(monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
 
 
 def write_file(path: Path, content: str = "placeholder") -> None:
@@ -35,18 +42,43 @@ def create_mvp_repo(root: Path) -> Path:
         "rules/testcase-rules.md": "测试用例规则",
         "rules/review-gate-rules.md": "审核门规则",
         "rules/artifact-path-rules.md": "产物路径规则",
-        "skills/requirement-decomposition-skill.md": "需求拆解技能",
-        "skills/business-rule-extraction-skill.md": "业务规则提取技能",
+        "skills/registry/skills.yaml": (
+            "version: 1\n"
+            "required_first_version: true\n"
+            "skills:\n"
+            "  - id: S1\n    file: skills/core/requirement-understanding-skill.md\n"
+            "  - id: S2\n    file: skills/core/context-building-skill.md\n"
+            "  - id: S3\n    file: skills/core/rag-retrieval-skill.md\n"
+            "  - id: S4\n    file: skills/analysis/test-scope-decomposition-skill.md\n"
+            "  - id: S5\n    file: skills/analysis/risk-identification-skill.md\n"
+            "  - id: S6\n    file: skills/test-design/test-method-selection-skill.md\n"
+            "  - id: S7\n    file: skills/test-design/testcase-generation-skill.md\n"
+            "  - id: S8\n    file: skills/test-design/testcase-review-skill.md\n"
+            "  - id: S9\n    file: skills/core/output-formatting-skill.md\n"
+            "  - id: S10\n    file: skills/knowledge/knowledge-capture-skill.md\n"
+        ),
+        "skills/core/requirement-understanding-skill.md": "需求理解 Skill",
+        "skills/core/context-building-skill.md": "上下文构建 Skill",
+        "skills/core/rag-retrieval-skill.md": "RAG 检索 Skill",
+        "skills/analysis/test-scope-decomposition-skill.md": "测试范围拆解 Skill",
+        "skills/analysis/risk-identification-skill.md": "风险识别 Skill",
+        "skills/test-design/test-method-selection-skill.md": "测试方法选择 Skill",
+        "skills/test-design/testcase-generation-skill.md": "测试用例生成 Skill",
+        "skills/test-design/testcase-review-skill.md": "用例评审 Skill",
+        "skills/core/output-formatting-skill.md": "输出格式化 Skill",
+        "skills/knowledge/knowledge-capture-skill.md": "知识沉淀 Skill",
+        "skills/analysis/requirement-decomposition-skill.md": "需求拆解技能",
+        "skills/analysis/business-rule-extraction-skill.md": "业务规则提取技能",
         "knowledge/templates/requirement-analysis-template.md": "需求分析模板",
-        "skills/test-design-skill.md": "测试设计技能",
-        "skills/equivalence-partitioning-skill.md": "等价类技能",
-        "skills/boundary-value-analysis-skill.md": "边界值技能",
-        "skills/scenario-modeling-skill.md": "场景建模技能",
-        "skills/state-transition-modeling-skill.md": "状态迁移技能",
-        "skills/risk-based-testing-skill.md": "风险测试技能",
+        "skills/test-design/test-design-skill.md": "测试设计技能",
+        "skills/test-design/equivalence-partitioning-skill.md": "等价类技能",
+        "skills/test-design/boundary-value-analysis-skill.md": "边界值技能",
+        "skills/test-design/scenario-modeling-skill.md": "场景建模技能",
+        "skills/test-design/state-transition-modeling-skill.md": "状态迁移技能",
+        "skills/test-design/risk-based-testing-skill.md": "风险测试技能",
         "knowledge/templates/testcase-template.md": "测试用例模板",
-        "prd/demo-requirement/metadata.yml": "id: demo-requirement\n",
-        "prd/demo-requirement/requirement.md": (
+        "prd/demo-requirement/workspace.yml": "id: demo-requirement\n",
+        "prd/demo-requirement/input/requirement.md": (
             "# 登录需求\n\n"
             "## 背景\n\n用户使用手机号密码登录。\n\n"
             "## 功能范围\n\n"
@@ -56,7 +88,7 @@ def create_mvp_repo(root: Path) -> Path:
             "- 正确手机号和正确密码可以登录成功。\n"
             "- token 过期后必须重新登录。\n"
         ),
-        "prd/demo-requirement/api-doc.md": (
+        "prd/demo-requirement/input/api.md": (
             "# 登录 API\n\n"
             "## POST /api/v1/auth/login\n\n"
             "```json\n{\"phone\":\"13800138000\",\"password\":\"pwd\"}\n```\n"
@@ -69,13 +101,18 @@ def create_mvp_repo(root: Path) -> Path:
 
 def count_testcase_rows(markdown: str) -> int:
     rows = 0
+    header_seen = False
     for line in markdown.splitlines():
         stripped = line.strip()
-        if not stripped.startswith("|") or stripped.startswith("| 标题 |"):
+        if not stripped.startswith("|"):
+            continue
+        if stripped.startswith("| 标题 |") or stripped.startswith("| 用例ID |"):
+            header_seen = True
             continue
         if set(stripped.replace("|", "").strip()) <= {"-", ":"}:
             continue
-        rows += 1
+        if header_seen:
+            rows += 1
     return rows
 
 
@@ -204,7 +241,7 @@ def test_analyze_dry_run_generates_analysis_without_writing(tmp_path):
     assert "## 1. 需求背景与目标" in analysis
     assert "## 12. 需求到测试覆盖映射" in analysis
     assert "Runtime MVP Skeleton" not in analysis
-    assert not (repo_root / "prd/demo-requirement/10-analysis/requirement-analysis.md").exists()
+    assert not (repo_root / "prd/demo-requirement/analysis/requirement-analysis.md").exists()
 
 
 def test_analyze_approve_write_creates_analysis_draft(tmp_path):
@@ -216,16 +253,19 @@ def test_analyze_approve_write_creates_analysis_draft(tmp_path):
         repo_root=repo_root,
         approve_write=True,
     )
-    output_path = repo_root / "prd/demo-requirement/10-analysis/requirement-analysis.md"
+    output_path = repo_root / result.output_paths["requirement_analysis"]
     assert result.success
     assert output_path.exists()
+    assert output_path.as_posix().endswith(
+        f"/prd/demo-requirement/runs/{result.run_id}/analysis/requirement-analysis.md"
+    )
     structured_json = output_path.with_suffix(".json")
     structured_yaml = output_path.with_suffix(".yml")
     assert structured_json.exists()
     assert structured_yaml.exists()
     structured = json.loads(structured_json.read_text(encoding="utf-8"))
     assert structured["schema_version"] == "agentic-qa.artifact.v1"
-    assert structured["markdown_path"] == "prd/demo-requirement/10-analysis/requirement-analysis.md"
+    assert structured["markdown_path"] == result.output_paths["requirement_analysis"]
     assert result.wrote_file
     assert result.review_status == "write_approved"
     assert "artifact_type: requirement_analysis" in output_path.read_text(encoding="utf-8")
@@ -247,10 +287,14 @@ def test_generate_testcases_dry_run_generates_testcases_without_writing(tmp_path
     assert result.review_status == "needs_human_review"
     assert "testcases" in result.draft_artifacts
     testcases = result.draft_artifacts["testcases"]
-    assert "| 标题 | 优先级 | 前置条件 | 测试步骤 | 预期结果 |" in testcases
+    rich_header = (
+        "| 用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | "
+        "测试步骤 | 预期结果 | 断言/证据 | 待确认项 |"
+    )
+    assert rich_header in testcases
     assert count_testcase_rows(testcases) >= 15
     assert "用例类型" not in testcases.splitlines()[10:20]
-    assert not (repo_root / "prd/demo-requirement/20-testcases/testcases.md").exists()
+    assert not (repo_root / "prd/demo-requirement/cases/test-cases.md").exists()
 
 
 def test_generate_testcases_approve_write_creates_testcase_draft(tmp_path):
@@ -262,11 +306,17 @@ def test_generate_testcases_approve_write_creates_testcase_draft(tmp_path):
         repo_root=repo_root,
         approve_write=True,
     )
-    output_path = repo_root / "prd/demo-requirement/20-testcases/testcases.md"
+    output_path = repo_root / result.output_paths["testcases"]
     assert result.success
     assert result.wrote_file
     assert result.review_status == "write_approved"
+    assert output_path.as_posix().endswith(
+        f"/prd/demo-requirement/runs/{result.run_id}/cases/test-cases.md"
+    )
     assert "artifact_type: testcase_draft" in output_path.read_text(encoding="utf-8")
+    assert result.run_id in (
+        repo_root / "prd/demo-requirement/runs/latest.yml"
+    ).read_text(encoding="utf-8")
 
 
 def test_mvp_dry_run_generates_two_drafts_without_writing(tmp_path):
@@ -286,8 +336,8 @@ def test_mvp_dry_run_generates_two_drafts_without_writing(tmp_path):
     assert set(result.draft_artifacts) == {"requirement_analysis", "testcases"}
     assert "## 12. 需求到测试覆盖映射" in result.draft_artifacts["requirement_analysis"]
     assert count_testcase_rows(result.draft_artifacts["testcases"]) >= 15
-    assert not (repo_root / "prd/demo-requirement/10-analysis/requirement-analysis.md").exists()
-    assert not (repo_root / "prd/demo-requirement/20-testcases/testcases.md").exists()
+    assert not (repo_root / "prd/demo-requirement/analysis/requirement-analysis.md").exists()
+    assert not (repo_root / "prd/demo-requirement/cases/test-cases.md").exists()
 
 
 def test_mvp_approve_write_creates_analysis_and_testcases(tmp_path):
@@ -302,13 +352,25 @@ def test_mvp_approve_write_creates_analysis_and_testcases(tmp_path):
     assert result.success
     assert result.wrote_file
     assert result.review_status == "write_approved"
-    assert (repo_root / "prd/demo-requirement/10-analysis/requirement-analysis.md").is_file()
-    assert (repo_root / "prd/demo-requirement/20-testcases/testcases.md").is_file()
+    analysis_path = repo_root / result.output_paths["requirement_analysis"]
+    testcases_path = repo_root / result.output_paths["testcases"]
+    assert analysis_path.is_file()
+    assert testcases_path.is_file()
+    assert analysis_path.as_posix().endswith(
+        f"/prd/demo-requirement/runs/{result.run_id}/analysis/requirement-analysis.md"
+    )
+    assert testcases_path.as_posix().endswith(
+        f"/prd/demo-requirement/runs/{result.run_id}/cases/test-cases.md"
+    )
+    assert (repo_root / "prd/demo-requirement/runs/latest.yml").is_file()
+    assert (repo_root / "prd/demo-requirement/runs/index.jsonl").is_file()
+    assert not (repo_root / "prd/demo-requirement/analysis/requirement-analysis.md").exists()
+    assert not (repo_root / "prd/demo-requirement/cases/test-cases.md").exists()
 
 
-def test_mvp_approve_write_refuses_partial_overwrite(tmp_path):
+def test_mvp_approve_write_writes_run_candidates_when_defaults_exist(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
-    existing_analysis = repo_root / "prd/demo-requirement/10-analysis/requirement-analysis.md"
+    existing_analysis = repo_root / "prd/demo-requirement/analysis/requirement-analysis.md"
     write_file(existing_analysis, "人工已有分析")
 
     result = run_mvp_analysis_and_testcases_workflow(
@@ -317,11 +379,27 @@ def test_mvp_approve_write_refuses_partial_overwrite(tmp_path):
         repo_root=repo_root,
         approve_write=True,
     )
-    assert not result.success
-    assert not result.wrote_file
+    assert result.success
+    assert result.wrote_file
     assert existing_analysis.read_text(encoding="utf-8") == "人工已有分析"
-    assert not (repo_root / "prd/demo-requirement/20-testcases/testcases.md").exists()
-    assert any("本次未写入任何产物" in error for error in result.errors)
+    candidate_analysis = repo_root / result.output_paths["requirement_analysis"]
+    candidate_testcases = repo_root / result.output_paths["testcases"]
+    assert candidate_analysis.exists()
+    assert candidate_analysis.with_suffix(".json").exists()
+    assert candidate_analysis.with_suffix(".yml").exists()
+    assert candidate_analysis.as_posix().endswith(
+        f"/prd/demo-requirement/runs/{result.run_id}/analysis/requirement-analysis.md"
+    )
+    assert candidate_testcases.as_posix().endswith(
+        f"/prd/demo-requirement/runs/{result.run_id}/cases/test-cases.md"
+    )
+    assert candidate_testcases.exists()
+    latest = repo_root / "prd/demo-requirement/runs/latest.yml"
+    index = repo_root / "prd/demo-requirement/runs/index.jsonl"
+    assert latest.is_file()
+    assert index.is_file()
+    assert result.run_id in latest.read_text(encoding="utf-8")
+    assert result.run_id in index.read_text(encoding="utf-8")
 
 
 def test_review_grade_analysis_quality_rejects_old_section_skeleton(tmp_path, monkeypatch):
@@ -514,6 +592,105 @@ def test_llm_generated_review_grade_testcases_pass_quality_gate(tmp_path, monkey
     assert result.success
     assert result.llm["used"] is True
     assert count_testcase_rows(result.draft_artifacts["testcases"]) == 15
+
+
+def test_llm_prompt_uses_configured_max_and_compacts_image_links(tmp_path, monkeypatch):
+    repo_root = create_mvp_repo(tmp_path)
+    requirement = repo_root / "prd/demo-requirement/input/requirement.md"
+    requirement.write_text(
+        requirement.read_text(encoding="utf-8")
+        + "\n![原型图](https://internal-api-drive-stream.feishu.cn/space/image/demo.png)\n",
+        encoding="utf-8",
+    )
+    captured_prompts: list[str] = []
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "local-secret")
+    monkeypatch.setenv("DEEPSEEK_MAX_INPUT_CHARS", "64000")
+
+    def fake_generate(self, prompt: str) -> str:
+        captured_prompts.append(prompt)
+        return build_valid_testcases(row_count=15)
+
+    monkeypatch.setattr(OpenAICompatibleAdapter, "generate_text", fake_generate)
+
+    result = run_mvp_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        use_llm=True,
+        record_run=False,
+    )
+
+    assert result.success
+    assert result.llm["max_input_chars"] == 64000
+    assert captured_prompts
+    assert "internal-api-drive-stream.feishu.cn" not in captured_prompts[0]
+    assert "图片引用已省略" in captured_prompts[0]
+
+
+def test_llm_testcases_allow_repeated_table_header(tmp_path, monkeypatch):
+    repo_root = create_mvp_repo(tmp_path)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "local-secret")
+    valid = build_valid_testcases(row_count=15)
+    duplicated_header = valid.replace(
+        "| 权限不足不能操作 | P0 |",
+        "| 标题 | 优先级 | 前置条件 | 测试步骤 | 预期结果 |\n"
+        "|---|---|---|---|---|\n"
+        "| 权限不足不能操作 | P0 |",
+        1,
+    )
+    monkeypatch.setattr(
+        OpenAICompatibleAdapter,
+        "generate_text",
+        lambda self, prompt: duplicated_header,
+    )
+
+    result = run_mvp_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        use_llm=True,
+        record_run=False,
+    )
+
+    assert result.success
+    assert not any("非法优先级" in error for error in result.quality_errors)
+    assert result.llm["used"] is True
+
+
+def test_llm_invalid_testcases_fallback_to_skeleton(tmp_path, monkeypatch):
+    repo_root = create_mvp_repo(tmp_path)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "local-secret")
+    monkeypatch.setattr(
+        OpenAICompatibleAdapter,
+        "generate_text",
+        lambda self, prompt: """---
+status: needs_human_review
+artifact_type: testcase_draft
+human_review_required: true
+---
+
+# 测试用例草稿
+
+| 标题 | 优先级 | 前置条件 | 测试步骤 | 预期结果 |
+|---|---|---|---|---|
+| 占位 | 优先级 | 占位 | TODO | 占位 |
+""",
+    )
+
+    result = run_mvp_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        use_llm=True,
+        record_run=False,
+    )
+
+    assert result.success
+    assert result.llm["used"] is True
+    assert result.llm["testcase_quality_fallback_used"] is True
+    assert any("LLM 测试用例草稿未通过质量门" in warning for warning in result.warnings)
+    assert not result.quality_errors
+    assert count_testcase_rows(result.draft_artifacts["testcases"]) >= 15
 
 
 def test_use_llm_without_api_key_degrades_to_skeleton(tmp_path, monkeypatch):

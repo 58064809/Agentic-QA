@@ -18,21 +18,21 @@
 
 ## 输入
 
-- `prd/<id>/requirement.md`
-- `prd/<id>/api-doc.md`
-- `prd/<id>/metadata.yml`
+- `prd/<id>/input/requirement.md`
+- `prd/<id>/input/api.md`
+- `prd/<id>/workspace.yml`
 
 ## 输出
 
-- `prd/<id>/10-analysis/requirement-analysis.md`
+- `prd/<id>/analysis/requirement-analysis.md`
 
 ## 必须读取的资料
 
 - `workflows/01-requirement-analysis-workflow.md`
 - `prompts/requirement-analysis-prompt.md`
 - `rules/requirement-analysis-rules.md`
-- `qa-methods/requirement-decomposition-skill.md`
-- `qa-methods/business-rule-extraction-skill.md`
+- `skills/analysis/requirement-decomposition-skill.md`
+- `skills/analysis/business-rule-extraction-skill.md`
 
 ## 必须遵守的规则
 

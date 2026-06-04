@@ -226,6 +226,25 @@ def format_list(items: list[str], empty_text: str = "无") -> str:
     return "\n".join(f"- {item}" for item in items)
 
 
+def format_mapping(mapping: dict[str, str], empty_text: str = "无") -> str:
+    if not mapping:
+        return f"- {empty_text}"
+    return "\n".join(f"- {key}：{value}" for key, value in sorted(mapping.items()))
+
+
+def format_artifacts(artifacts: list[dict[str, object]], empty_text: str = "无") -> str:
+    if not artifacts:
+        return f"- {empty_text}"
+    lines = []
+    for artifact in artifacts:
+        name = artifact.get("name") or "unknown"
+        output_path = artifact.get("output_path") or "未生成"
+        wrote_file = "是" if artifact.get("wrote_file") else "否"
+        status = artifact.get("status") or "unknown"
+        lines.append(f"- {name}：{output_path}；wrote_file={wrote_file}；status={status}")
+    return "\n".join(lines)
+
+
 def render_markdown_summary(summary: dict[str, object]) -> str:
     mode = summary["mode"]
     return f"""# Runtime 运行记录
@@ -274,7 +293,11 @@ def render_markdown_summary(summary: dict[str, object]) -> str:
 ## 文件与产物
 
 - 输出路径：{summary["output_path"] or "未生成"}
+- 多产物输出路径：
+{format_mapping(dict(summary["output_paths"]))}
 - 是否写入：{"是" if summary["wrote_file"] else "否"}
+- 产物清单：
+{format_artifacts(list(summary["artifacts"]))}
 
 ## 加载文件
 

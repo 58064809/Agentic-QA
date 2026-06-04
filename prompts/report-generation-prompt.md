@@ -16,21 +16,21 @@ target_agent: Report Generation Agent
 
 ## 任务目标
 
-生成 `qa-report-draft.md`，清晰披露测试范围、执行概况、风险、未覆盖项和待人工确认项。只写结构化摘要、统计和关键风险，不大段复制上游原文。
+生成 `qa-review.md`，清晰披露测试范围、执行概况、风险、未覆盖项和待人工确认项。只写结构化摘要、统计和关键风险，不大段复制上游原文。
 
 ## 输入
 
-- 需求分析（`10-analysis/requirement-analysis.md`）
-- 测试用例（`20-testcases/testcases.md`）
-- 执行结果（`50-execution-results/`）
-- 失败分析（`60-failure-analysis/failure-analysis.md`）
-- 缺陷草稿（`70-bugs/`）
+- 需求分析（`analysis/requirement-analysis.md`）
+- 测试用例（`cases/test-cases.md`）
+- 执行结果（`execution/runs/`）
+- 失败分析（`defects/failure-analysis.md`）
+- 缺陷草稿（`defects/bug-drafts/`）
 - metadata
 
 ## 输出格式
 
-- 文件路径：`prd/<id>/80-reports/qa-report-draft.md`
-- `qa-report-draft.md` 是 AI 生成草稿；`qa-report.md` 是人工确认后的正式报告，可后续生成
+- 文件路径：`prd/<id>/report/qa-review.md`
+- `qa-review.md` 是 AI 生成草稿；`qa-report.md` 是人工确认后的正式报告，可后续生成
 
 包含以下章节：
 1. **基本信息** — 需求名称、版本、测试时间、测试范围概述
@@ -44,7 +44,7 @@ target_agent: Report Generation Agent
 
 ## 必须参考的规则
 
-- `qa-methods/qa-report-writing-skill.md`
+- `skills/reporting/qa-report-writing-skill.md`
 - `knowledge/templates/qa-report-template.md`
 
 ## 质量要求
@@ -86,16 +86,16 @@ target_agent: Report Generation Agent
 ### 上游（输入依赖）
 | 数据项 | 来源 Prompt | 文件路径 | 说明 |
 |--------|-----------|---------|------|
-| 需求分析 | `requirement-analysis-prompt` | `prd/<id>/10-analysis/requirement-analysis.md` | 测试范围依据 |
-| 测试用例 | `testcase-design-prompt` | `prd/<id>/20-testcases/testcases.md` | 覆盖统计依据 |
-| 执行结果 | `test-execution-prompt` | `prd/<id>/50-execution-results/` | 通过率统计 |
-| 失败分析 | `failure-analysis-prompt` | `prd/<id>/60-failure-analysis/failure-analysis.md` | 失败分类统计 |
-| 缺陷草稿 | `bug-draft-prompt` | `prd/<id>/70-bugs/` | 缺陷汇总 |
+| 需求分析 | `requirement-analysis-prompt` | `prd/<id>/analysis/requirement-analysis.md` | 测试范围依据 |
+| 测试用例 | `testcase-design-prompt` | `prd/<id>/cases/test-cases.md` | 覆盖统计依据 |
+| 执行结果 | `test-execution-prompt` | `prd/<id>/execution/runs/` | 通过率统计 |
+| 失败分析 | `failure-analysis-prompt` | `prd/<id>/defects/failure-analysis.md` | 失败分类统计 |
+| 缺陷草稿 | `bug-draft-prompt` | `prd/<id>/defects/bug-drafts/` | 缺陷汇总 |
 
 ### 下游（输出消费方）
 | 数据项 | 消费方 Prompt | 文件路径 | 说明 |
 |--------|-------------|---------|------|
-| QA 报告草稿 | `archive-prompt` | `prd/<id>/80-reports/qa-report-draft.md` | 归档检查的依据文档 |
+| QA 报告草稿 | `archive-prompt` | `prd/<id>/report/qa-review.md` | 归档检查的依据文档 |
 
 ### 关键约束
 - 不复制上游原文内容，使用结构化摘要和统计表述

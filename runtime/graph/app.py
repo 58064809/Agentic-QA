@@ -41,7 +41,7 @@ def run_requirement_analysis_workflow(
     repo_root: Path | None = None,
     approve_write: bool = False,
     record_run: bool = True,
-    use_llm: bool = False,
+    use_llm: bool = True,
 ) -> RuntimeResult:
     try:
         from runtime.graph.mvp_graph import run_requirement_analysis_workflow as run_mvp
@@ -67,7 +67,7 @@ def run_mvp_testcase_generation_workflow(
     repo_root: Path | None = None,
     approve_write: bool = False,
     record_run: bool = True,
-    use_llm: bool = False,
+    use_llm: bool = True,
 ) -> RuntimeResult:
     try:
         from runtime.graph.mvp_graph import run_mvp_testcase_generation_workflow as run_mvp
@@ -93,7 +93,7 @@ def run_mvp_analysis_and_testcases_workflow(
     repo_root: Path | None = None,
     approve_write: bool = False,
     record_run: bool = True,
-    use_llm: bool = False,
+    use_llm: bool = True,
 ) -> RuntimeResult:
     try:
         from runtime.graph.mvp_graph import run_mvp_analysis_and_testcases_workflow as run_mvp

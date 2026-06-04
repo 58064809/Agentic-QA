@@ -225,7 +225,7 @@ def run_mvp_generation_workflow(
     repo_root: Path | None = None,
     approve_write: bool = False,
     record_run: bool = True,
-    use_llm: bool = False,
+    use_llm: bool = True,
 ) -> RuntimeResult:
     root = (repo_root or default_repo_root()).resolve()
     run_id, thread_id = create_run_identity()
@@ -331,7 +331,7 @@ def run_requirement_analysis_workflow(
     repo_root: Path | None = None,
     approve_write: bool = False,
     record_run: bool = True,
-    use_llm: bool = False,
+    use_llm: bool = True,
 ) -> RuntimeResult:
     return run_mvp_generation_workflow(
         user_input,
@@ -351,7 +351,7 @@ def run_mvp_testcase_generation_workflow(
     repo_root: Path | None = None,
     approve_write: bool = False,
     record_run: bool = True,
-    use_llm: bool = False,
+    use_llm: bool = True,
 ) -> RuntimeResult:
     return run_mvp_generation_workflow(
         user_input,
@@ -371,7 +371,7 @@ def run_mvp_analysis_and_testcases_workflow(
     repo_root: Path | None = None,
     approve_write: bool = False,
     record_run: bool = True,
-    use_llm: bool = False,
+    use_llm: bool = True,
 ) -> RuntimeResult:
     return run_mvp_generation_workflow(
         user_input,
