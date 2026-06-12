@@ -15,6 +15,7 @@ Agentic-QA 的最终目标是让用户通过 **Chat、Bot 或 CLI** 以自然语
 - **工作流选择**：根据任务意图匹配对应的 QA 工作流。
 - **Runtime 编排**：负责任务执行、节点流转、状态管理、质量检查、确认门禁和产物写入。
 - **运行可靠性策略**：支持节点失败处理、重试、降级、部分产物保留、原子写入、幂等执行和恢复。
+- **产物版本管理**：正式产物保持稳定路径，修订结果先生成候选版本，确认后再提升为当前版本，历史版本可追溯。
 - **RAG 上下文检索**：从需求、接口文档、规则、Skills、Prompts、Knowledge 和历史资产中检索相关上下文。
 - **专业 QA Agent**：覆盖需求分析、测试设计、接口测试生成、UI 测试生成、测试执行、失败分析、Bug 草稿和 QA 报告等任务。
 - **测试方法论沉淀**：内置等价类、边界值、场景法、状态迁移、风险测试、接口契约分析等测试设计能力。
@@ -87,6 +88,7 @@ Runtime
 ├── 确认门禁
 ├── 失败处理
 ├── 幂等与恢复
+├── 产物版本管理
 ├── 产物写入
 └── 运行记录
 
@@ -120,7 +122,7 @@ QA Agent
 
 ## 需求工作区
 
-每个需求使用独立工作区管理输入、产物、确认状态和运行记录。
+每个需求使用独立工作区管理输入、产物、确认状态、历史版本和运行记录。
 
 ```text
 prd/<需求ID>/
@@ -137,7 +139,14 @@ prd/<需求ID>/
 │   ├── failure-analysis.md
 │   ├── bug-draft.md
 │   ├── qa-report.md
-│   └── archive-index.md
+│   ├── archive-index.md
+│   └── history/
+│       ├── requirement-analysis/
+│       ├── testcases/
+│       │   ├── testcases.v1.md
+│       │   ├── testcases.v2.md
+│       │   └── index.yml
+│       └── qa-report/
 ├── reviews/
 │   ├── requirement-analysis.review.yml
 │   ├── testcases.review.yml
@@ -154,6 +163,8 @@ prd/<需求ID>/
 │       ├── prompt.md
 │       ├── output.md
 │       ├── partial-output.md
+│       ├── artifact-preview.md
+│       ├── diff.md
 │       ├── error.json
 │       └── quality-check.json
 └── metadata.yml
@@ -162,10 +173,11 @@ prd/<需求ID>/
 | 目录 | 说明 |
 |---|---|
 | `input/` | 保存当前需求的原始输入和归一化输入 |
-| `artifacts/` | 保存 Runtime 生成或用户确认后的 QA 产物 |
+| `artifacts/` | 保存 Runtime 生成或用户确认后的当前正式 QA 产物 |
+| `artifacts/history/` | 保存正式产物的历史版本和版本索引 |
 | `reviews/` | 保存每个产物的确认状态、确认意见和结构化决策记录 |
-| `runs/` | 保存每次 Runtime 执行的状态、事件、召回上下文、Prompt、输出和质量检查结果 |
-| `metadata.yml` | 保存需求级元数据，例如需求名称、状态、创建时间、最后运行记录、关联产物和归档状态 |
+| `runs/` | 保存每次 Runtime 执行的状态、事件、召回上下文、Prompt、候选产物、差异和质量检查结果 |
+| `metadata.yml` | 保存需求级元数据，例如需求名称、状态、当前版本、最后运行记录、关联产物和归档状态 |
 
 ## 配置层
 
@@ -255,7 +267,7 @@ llm:
 
 ## 工作流定义示例
 
-Agentic-QA 的工作流用于描述一个 QA 任务如何被 Runtime 执行，包括入口意图、输入契约、节点列表、节点输入输出、路由条件、产物写入、失败策略和确认门禁。
+Agentic-QA 的工作流用于描述一个 QA 任务如何被 Runtime 执行，包括入口意图、输入契约、节点列表、节点输入输出、路由条件、产物写入、失败策略、版本策略和确认门禁。
 
 工作流可以使用 YAML 或 JSON 定义，并由 Runtime 加载、校验和执行。
 
@@ -287,11 +299,19 @@ execution_policy:
   default_max_attempts: 1
 
 artifact_policy:
-  write_mode: atomic
+  write_mode: versioned_atomic
   on_partial: persist_to_run
-  on_success: write_to_artifacts
-  on_failure: keep_previous_artifact
+  on_success: promote_preview_to_current
+  on_failure: keep_current_artifact
   versioning: true
+  history_dir: artifacts/history
+  preview_path: runs/<run-id>/artifact-preview.md
+  diff_path: runs/<run-id>/diff.md
+  on_promote:
+    archive_previous: true
+    mark_previous_as: superseded
+    update_history_index: true
+    update_metadata: true
 
 input_contract:
   required:
@@ -428,7 +448,7 @@ nodes:
     tool: workspace.write_artifacts
     input:
       prd_path: "{{ state.prd_path }}"
-      write_mode: atomic
+      write_mode: versioned_atomic
       artifacts:
         - path: artifacts/requirement-analysis.md
           content: "{{ state.requirement_analysis }}"
@@ -510,8 +530,6 @@ edges:
 
 ### 输入契约
 
-工作流输入必须包含：
-
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `prd_path` | string | 需求工作区路径 |
@@ -522,8 +540,6 @@ edges:
 | `run_id` | string | 当前运行 ID |
 
 ### 输出契约
-
-工作流输出必须包含：
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -536,8 +552,6 @@ edges:
 | `next_action` | string | 下一步建议动作或待触发工作流 |
 
 ### 路由条件
-
-Runtime 根据节点输出和状态字段进行路由。
 
 | 条件 | 目标 |
 |---|---|
@@ -613,6 +627,107 @@ artifacts/
 
 失败时必须保留上一个可用产物，不允许使用部分结果覆盖正式文件。
 
+### 产物版本与历史追溯
+
+修订工作流不得直接覆盖正式产物。Runtime 必须先生成候选版本，经过质量检查和确认门禁后，才允许将候选版本提升为当前正式版本。旧版本进入 `artifacts/history/`，并在版本索引中标记为 `superseded`。
+
+正式产物路径保持稳定：
+
+```text
+artifacts/testcases.md
+```
+
+它始终代表当前生效版本。历史版本单独保存：
+
+```text
+artifacts/history/testcases/
+├── testcases.v1.md
+├── testcases.v2.md
+├── testcases.v3.md
+└── index.yml
+```
+
+修订中间结果保存在运行目录：
+
+```text
+runs/<run-id>/
+├── artifact-preview.md
+├── diff.md
+├── quality-check.json
+└── output.md
+```
+
+发布流程：
+
+```text
+用户提出修订意见
+  ↓
+意图识别
+  ↓
+识别为 request_changes / revise_artifact
+  ↓
+读取当前正式产物 artifacts/testcases.md
+  ↓
+生成 runs/<run-id>/artifact-preview.md
+  ↓
+生成 runs/<run-id>/diff.md
+  ↓
+质量检查
+  ↓
+确认门禁
+  ↓
+确认通过后发布为新版本
+```
+
+确认通过前，`artifacts/testcases.md` 不变。确认通过后：
+
+```text
+artifacts/testcases.md -> 归档为 artifacts/history/testcases/testcases.vN.md
+runs/<run-id>/artifact-preview.md -> 提升为 artifacts/testcases.md
+artifacts/history/testcases/index.yml -> 追加版本记录
+reviews/testcases.review.yml -> 更新状态
+metadata.yml -> 更新 current_versions
+```
+
+版本索引示例：
+
+```yaml
+artifact: artifacts/testcases.md
+artifact_type: testcases
+current_version: v3
+versions:
+  - version: v1
+    path: artifacts/history/testcases/testcases.v1.md
+    run_id: 20260612-150000-demo
+    status: superseded
+    created_at: "2026-06-12T15:00:00+08:00"
+    source_message: "分析这个需求并生成测试用例"
+  - version: v2
+    path: artifacts/history/testcases/testcases.v2.md
+    run_id: 20260612-153000-demo
+    status: superseded
+    created_at: "2026-06-12T15:30:00+08:00"
+    source_message: "补充支付失败和库存不足场景"
+  - version: v3
+    path: artifacts/testcases.md
+    run_id: 20260612-160000-demo
+    status: current
+    created_at: "2026-06-12T16:00:00+08:00"
+    source_message: "测试用例确认通过，可以作为正式版本"
+```
+
+`metadata.yml` 应记录当前生效版本：
+
+```yaml
+artifacts:
+  testcases:
+    current_path: artifacts/testcases.md
+    current_version: v3
+    history_index: artifacts/history/testcases/index.yml
+    latest_run_id: 20260612-160000-demo
+    status: confirmed
+```
+
 ### 幂等性
 
 Runtime 使用 `idempotency_key` 识别重复请求。
@@ -620,8 +735,6 @@ Runtime 使用 `idempotency_key` 识别重复请求。
 ```text
 idempotency_key = hash(prd_path + workflow_id + user_message + input_files_hash + profile)
 ```
-
-幂等规则：
 
 | 场景 | 处理 |
 |---|---|
@@ -994,6 +1107,8 @@ ruff check .
 ├── 需求工作区
 ├── 运行记录
 ├── 产物写入
+├── 产物版本管理
+├── 历史追溯
 ├── 失败处理
 ├── 幂等与恢复
 └── 确认状态管理
