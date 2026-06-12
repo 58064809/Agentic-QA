@@ -247,7 +247,7 @@ CLI 参数 / Bot 请求参数
 | 类型 | 归属 |
 |---|---|
 | Runtime、RAG、LLM、日志、工作区、Bot/API 参数 | `config/` |
-| 产物格式、路径、审核、质量强约束 | `rules/` |
+| 产物格式、路径、确认门禁和质量强约束 | `rules/` |
 | 测试方法论和专业能力 | `skills/` |
 | 可检索领域知识、模板和历史经验 | `knowledge/` |
 | 模型提示词模板 | `prompts/` |
@@ -293,9 +293,9 @@ FREEMODEL_MODEL=your-model-name
 | `runtime/tools/` | 文件读写、产物写入、测试执行和报告工具 |
 | `runtime/schemas/` | 结构化输入输出 Schema |
 | `integrations/` | 飞书、微信、钉钉、API 等外部入口适配 |
-| `workflows/` | 声明式 QA 工作流定义 |
+| `workflows/` | QA 工作流定义、流程配置和执行策略 |
 | `prompts/` | Prompt 模板 |
-| `rules/` | 路径、输出、审核和质量强约束 |
+| `rules/` | 路径、输出、确认门禁和质量强约束 |
 | `skills/` | 可复用 QA 技能和测试方法 |
 | `knowledge/` | RAG 知识库 |
 | `prd/` | 需求工作区和生成产物 |
