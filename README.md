@@ -6,6 +6,7 @@
 
 ## 核心能力
 
+- **自然语言任务入口**：支持通过 AI 编辑器 Chat、飞书 Bot、微信 Bot、钉钉 Bot、CLI 或 API 发起 QA 任务。
 - **需求文档归一化**：将 Word、PDF、TXT、HTML 等需求来源转换为统一的 Markdown 输入。
 - **意图识别**：识别用户输入的 QA 任务目标，例如需求分析、测试用例生成、接口测试生成、失败分析或报告生成。
 - **工作流选择**：根据任务意图匹配对应的 QA 工作流。
@@ -16,12 +17,11 @@
 - **人工审核门禁**：AI 生成产物默认进入待审核状态，由测试工程师确认后再进入下一步。
 - **需求工作区管理**：每个需求拥有独立工作区，统一管理输入、产物、审核状态、运行记录和归档资产。
 - **运行记录追踪**：记录每次 Runtime 执行的输入、节点轨迹、召回上下文、输出路径、错误和告警。
-- **工程化扩展能力**：支持逐步扩展到接口自动化、UI 自动化、测试执行、失败归因、缺陷草稿和 QA 报告。
 
 ## 工作流
 
 ```text
-用户输入 / CLI / Bot
+用户输入 / AI Chat / Bot / CLI / API
   ↓
 意图识别
   ↓
@@ -52,8 +52,17 @@ QA Agent 执行
 
 ```text
 入口层
+├── AI 编辑器 Chat
+│   ├── Cursor
+│   ├── Codex
+│   ├── ChatGPT
+│   ├── Claude Code
+│   └── PyCharm AI Chat
+├── 协作 Bot
+│   ├── 飞书 Bot
+│   ├── 微信 Bot
+│   └── 钉钉 Bot
 ├── CLI
-├── Bot
 └── API
 
 Runtime
@@ -193,6 +202,7 @@ approved_at: null
 | `runtime/llm/` | LLM 调用抽象和模型适配 |
 | `runtime/tools/` | 文件读写、产物写入、测试执行和报告工具 |
 | `runtime/schemas/` | 结构化输入输出 Schema |
+| `integrations/` | 飞书、微信、钉钉、API 等外部入口适配 |
 | `workflows/` | 声明式 QA 工作流定义 |
 | `prompts/` | Prompt 模板 |
 | `rules/` | 路径、输出、审核和质量强约束 |
@@ -302,19 +312,51 @@ python scripts/validate_docs_consistency.py
 python scripts/validate_prd_workspace.py prd/demo-requirement
 ```
 
-生成需求分析：
+### 通过 AI Chat 发起任务
+
+在 Cursor、Codex、ChatGPT、Claude Code、PyCharm AI Chat 等工具中，可以用自然语言发起 QA 任务：
+
+```text
+分析 prd/demo-requirement 这个需求，生成需求分析。
+```
+
+```text
+基于 prd/demo-requirement 的需求分析生成测试用例。
+```
+
+```text
+分析 prd/demo-requirement，并生成需求分析和测试用例，产物写入需求工作区。
+```
+
+### 通过协作 Bot 发起任务
+
+飞书 Bot、微信 Bot、钉钉 Bot 可以作为团队协作入口，将用户消息、需求链接或附件转发给 Runtime。
+
+示例：
+
+```text
+分析这个需求文档，生成需求分析和测试用例。
+```
+
+```text
+读取这个飞书文档，生成测试用例草稿。
+```
+
+```text
+根据这个需求链接生成 QA 报告草稿。
+```
+
+### 使用 CLI 调试 Runtime
+
+CLI 主要用于本地调试、脚本化执行和 Runtime 能力验证：
 
 ```bash
 python -m runtime.cli analyze "分析这个需求" --prd prd/demo-requirement
 ```
 
-生成测试用例：
-
 ```bash
 python -m runtime.cli generate-testcases "生成测试用例" --prd prd/demo-requirement
 ```
-
-运行完整 QA 生成链路：
 
 ```bash
 python -m runtime.cli run "分析需求并生成测试用例" --prd prd/demo-requirement
@@ -360,7 +402,10 @@ UI 测试生成
 Bug 草稿生成
 QA 报告生成
 归档与知识复用
-Bot / API / Web 接入
+飞书 Bot 接入
+微信 Bot 接入
+钉钉 Bot 接入
+API / Web 接入
 ```
 
 ## 项目愿景
