@@ -19,6 +19,7 @@ from pathlib import Path
 
 import yaml
 
+from runtime.config import load_app_config
 from runtime.graph.app import (
     default_repo_root,
     run_mvp_analysis_and_testcases_workflow,
@@ -26,7 +27,7 @@ from runtime.graph.app import (
     run_requirement_analysis_workflow,
 )
 from runtime.llm.config import OpenAICompatibleConfig
-from runtime.llm.intent_router import route_intent
+from runtime.llm.intent_router import route_intent, route_intent_fallback
 from runtime.schemas.runtime_result import RuntimeResult
 from runtime.session import Session, SessionManager
 
@@ -34,6 +35,9 @@ from runtime.session import Session, SessionManager
 
 HELP_TEXT = """用法:
     agentic-qa "你的自然语言命令"
+    agentic-qa rag status
+    agentic-qa rag build
+    agentic-qa rag search "边界值 活动玩法"
 
 示例:
     agentic-qa "帮我分析登录需求 D:\\需求\\登录.md"
@@ -50,6 +54,40 @@ HELP_TEXT = """用法:
     .runtime/sessions/default/   - 会话持久化
     .runtime/runs/<run_id>/      - 运行记录
 """
+
+
+def _run_rag_command(args: list[str], repo_root: Path) -> int:
+    from rag.config import RagConfig
+    from rag.manager import RagManager
+
+    if not args or args[0] in {"help", "--help", "-h"}:
+        print("用法: agentic-qa rag status | build | search \"query\"")
+        return 0
+
+    app_config = load_app_config(repo_root)
+    config = RagConfig.from_app_config(app_config.rag)
+    manager = RagManager(repo_root, config)
+    command = args[0]
+
+    if command == "status":
+        stats = manager.stats
+        print(yaml.safe_dump(stats, allow_unicode=True, sort_keys=False))
+        return 0
+    if command == "build":
+        result = manager.build_index(force_rebuild=True)
+        print(yaml.safe_dump(result, allow_unicode=True, sort_keys=False))
+        return 0
+    if command == "search":
+        query = " ".join(args[1:]).strip()
+        if not query:
+            print("缺少 search query")
+            return 1
+        result = manager.retrieve(query)
+        print(yaml.safe_dump(result.to_trace(), allow_unicode=True, sort_keys=False))
+        return 0 if result.has_results and not result.has_error else 1
+
+    print(f"未知 RAG 命令: {command}")
+    return 1
 
 
 # ── Intent → 工作流映射 ───────────────────────────────────────
@@ -82,6 +120,18 @@ def _run_workflow(
 ) -> RuntimeResult:
     """根据意图执行对应工作流。"""
     approve_write = True  # 用户确认过 A = 自动写入
+    app_config = load_app_config(repo_root)
+    llm_enabled = app_config.llm.enabled
+
+    requirement_analysis_use_llm = llm_enabled and app_config.workflow.use_llm_for(
+        "requirement_analysis"
+    )
+    testcase_generation_use_llm = llm_enabled and app_config.workflow.use_llm_for(
+        "testcase_generation"
+    )
+    mvp_use_llm = llm_enabled and app_config.workflow.use_llm_for(
+        "mvp_analysis_testcases"
+    )
 
     if intent == "requirement_analysis":
         result = run_requirement_analysis_workflow(
@@ -90,7 +140,7 @@ def _run_workflow(
             repo_root=repo_root,
             approve_write=approve_write,
             record_run=True,
-            use_llm=True,
+            use_llm=requirement_analysis_use_llm,
         )
     elif intent == "testcase_generation":
         result = run_mvp_testcase_generation_workflow(
@@ -99,7 +149,7 @@ def _run_workflow(
             repo_root=repo_root,
             approve_write=approve_write,
             record_run=True,
-            use_llm=True,
+            use_llm=testcase_generation_use_llm,
         )
     else:
         # 兜底：MVP（需求分析 + 测试用例）
@@ -109,10 +159,22 @@ def _run_workflow(
             repo_root=repo_root,
             approve_write=approve_write,
             record_run=True,
-            use_llm=True,
+            use_llm=mvp_use_llm,
         )
 
     return result
+
+
+def _route_user_intent(user_input: str, repo_root: Path):
+    """根据配置选择 LLM 语义路由或确定性路由。"""
+    app_config = load_app_config(repo_root)
+    if not app_config.llm.enabled or not app_config.llm.semantic_router_enabled:
+        return route_intent_fallback(
+            user_input,
+            reason="配置已禁用 LLM 语义路由，已使用确定性路由",
+        )
+    config = OpenAICompatibleConfig.from_env()
+    return route_intent(user_input, config)
 
 
 # ── PRD 工作区管理 ────────────────────────────────────────────
@@ -390,8 +452,7 @@ def _dialogue_loop(
             continue
 
         # 路由意图
-        config = OpenAICompatibleConfig.from_env()
-        route = route_intent(line, config)
+        route = _route_user_intent(line, repo_root)
 
         if not route.is_valid:
             console.print(f"[red]❌ 路由失败: {'; '.join(route.errors)}[/red]")
@@ -458,19 +519,22 @@ def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
+    repo_root = default_repo_root()
+
+    if len(sys.argv) >= 2 and sys.argv[1] == "rag":
+        return _run_rag_command(sys.argv[2:], repo_root)
+
     # 帮助
     if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h", "help"):
         print(HELP_TEXT)
         return 0
 
     user_input = " ".join(sys.argv[1:]).strip()
-    repo_root = default_repo_root()
     session_manager = SessionManager(repo_root)
     session = session_manager.get_or_create("default")
 
     # 路由意图。默认尝试 LLM，LLM 不可用时由 route_intent 降级为确定性路由。
-    config = OpenAICompatibleConfig.from_env()
-    route = route_intent(user_input, config)
+    route = _route_user_intent(user_input, repo_root)
 
     if not route.is_valid:
         print(f"❌ 路由失败: {'; '.join(route.errors)}")

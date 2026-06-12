@@ -6,19 +6,49 @@ input:
   support_feishu_doc: true
   support_markdown: true
 
+llm:
+  # 全局 LLM 开关。false 时语义路由和生成节点都优先走确定性降级。
+  enabled: true
+  # 是否使用 LLM 做自然语言意图识别；false 时使用确定性路由。
+  semantic_router_enabled: true
+
 workflow:
   enable_human_checkpoint: true
   default_checkpoint_node: requirement_analysis
+  # 生成类节点是否使用 LLM。llm.enabled=false 时这里即使为 true 也不会调用 LLM。
+  use_llm:
+    requirement_analysis: true
+    testcase_generation: true
+    mvp_analysis_testcases: true
+  default_workflow_files:
+    - workflows/10-runtime-testcase-generation-workflow.md
+    - workflows/02-testcase-generation-workflow.md
+  intent_workflow_files:
+    requirement_analysis:
+      - workflows/01-requirement-analysis-workflow.md
+    testcase_generation:
+      - workflows/10-runtime-testcase-generation-workflow.md
+      - workflows/02-testcase-generation-workflow.md
+  mvp_analysis_workflow_files:
+    - workflows/01-requirement-analysis-workflow.md
+  mvp_testcase_workflow_files:
+    - workflows/10-runtime-testcase-generation-workflow.md
+    - workflows/02-testcase-generation-workflow.md
 
 rag:
   enabled: true
   top_k: 5
+  embedding_provider: auto
+  use_llm_api_key: true
+  api_key_env: RAG_API_KEY
+  base_url: null
   vector_store: faiss
   chunk_size: 500
   chunk_overlap: 50
   embedding_model: text-embedding-3-small
   embedding_dim: 1536
   index_dir: .rag_index
+  query_max_chars: 8000
   knowledge_paths:
     - knowledge/qa-methodology
     - knowledge/project-rules

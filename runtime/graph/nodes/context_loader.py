@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from runtime.config import load_app_config
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.artifact_writer import ensure_within_directory
 from runtime.tools.file_reader import read_existing_files, read_utf8
@@ -155,9 +156,14 @@ def context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowSt
     if state.errors:
         return state
 
-    # 根据 intent 选择上下文文件列表
-    context_files = DEFAULT_CONTEXT_FILES
-    if state.intent and state.intent in INTENT_CONTEXT_FILES:
+    workflow_config = load_app_config(repo_root).workflow
+    configured_context = workflow_config.intent_context_files
+
+    # 根据 intent 选择上下文文件列表，配置优先于内置默认值
+    context_files = workflow_config.default_context_files or DEFAULT_CONTEXT_FILES
+    if state.intent and state.intent in configured_context:
+        context_files = configured_context[state.intent]
+    elif state.intent and state.intent in INTENT_CONTEXT_FILES:
         context_files = INTENT_CONTEXT_FILES[state.intent]
 
     loaded, errors = read_existing_files(repo_root, context_files)

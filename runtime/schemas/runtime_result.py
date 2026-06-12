@@ -41,6 +41,7 @@ class RuntimeResult:
     run_record_dir: str | None
     run_summary_json: str | None
     run_summary_md: str | None
+    rag_retrievals: list[dict[str, Any]]
 
     @classmethod
     def from_state(cls, state: QAWorkflowState) -> RuntimeResult:
@@ -78,4 +79,5 @@ class RuntimeResult:
             run_record_dir=state.run_record_dir,
             run_summary_json=state.run_summary_json,
             run_summary_md=state.run_summary_md,
+            rag_retrievals=[dict(item) for item in state.rag_retrievals],
         )

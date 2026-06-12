@@ -16,6 +16,7 @@ CHECKPOINTER_FILE = "checkpointer.pkl"
 GRAPH_STATE_FILE = "graph-state.json"
 RUN_STATE_FILE = "run-state.json"
 REVIEW_EVENTS_FILE = "review-events.jsonl"
+RAG_TRACE_FILE = "rag.json"
 
 
 def now_iso() -> str:
@@ -215,6 +216,7 @@ def result_to_summary(
         "errors": result.errors,
         "warnings": result.warnings,
         "quality_errors": result.quality_errors,
+        "rag_retrievals": result.rag_retrievals,
         "draft_artifact_preview": (result.draft_artifact or "")[:DRAFT_PREVIEW_CHARS],
         "draft_artifact_previews": draft_artifact_previews,
     }
@@ -325,6 +327,18 @@ def render_markdown_summary(summary: dict[str, object]) -> str:
 """
 
 
+def write_rag_trace(result: RuntimeResult, run_record_dir: Path) -> None:
+    payload = {
+        "run_id": result.run_id,
+        "thread_id": result.thread_id,
+        "retrievals": result.rag_retrievals,
+    }
+    (run_record_dir / RAG_TRACE_FILE).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def record_runtime_result(
     result: RuntimeResult,
     repo_root: Path,
@@ -365,6 +379,7 @@ def record_runtime_result(
             encoding="utf-8",
         )
         summary_md.write_text(render_markdown_summary(summary), encoding="utf-8")
+        write_rag_trace(result_with_paths, run_record_dir)
         write_runtime_state(
             result=result_with_paths,
             repo_root=repo_root,

@@ -8,6 +8,8 @@ from pathlib import Path
 
 from rag.config import RagConfig
 from rag.manager import RagManager
+from rag.retriever import assemble_rag_context
+from runtime.config import load_app_config
 from runtime.graph.nodes.mvp_context_loader import (
     TASK_ANALYSIS,
     TASK_MVP,
@@ -44,23 +46,70 @@ def _prd_prefix(state: QAWorkflowState) -> str:
 
 
 def _build_rag_context(state: QAWorkflowState) -> str:
-    config = RagConfig.from_env()
+    repo_root = Path.cwd()
+    app_config = load_app_config(repo_root)
+    config = RagConfig.from_app_config(app_config.rag)
     if not config.enabled:
         return ""
     try:
-        repo_root = Path.cwd()
-        query = "\n".join(
-            value
-            for key, value in state.loaded_files.items()
-            if key.endswith(("input/requirement.md", "input/api.md", "requirement-analysis.md"))
+        query = _build_rag_query(state)
+        manager = RagManager(repo_root, config)
+        retrieval = manager.retrieve(query or state.user_input)
+        state.rag_retrievals.append(
+            {
+                "node": state.executed_nodes[-1] if state.executed_nodes else "",
+                **retrieval.to_trace(),
+            }
         )
-        context = RagManager(repo_root, config).build_rag_context(query or state.user_input)
+        context = assemble_rag_context(retrieval, max_chars=4000)
     except Exception as exc:
         state.warnings.append(f"RAG 召回失败，已降级为无 RAG 上下文: {exc}")
         return ""
     if context:
         state.warnings.append("已通过 RAG 召回测试规范、Prompt 模板和项目文档上下文。")
     return context
+
+
+RAG_QUERY_KEYWORDS = (
+    "规则",
+    "边界",
+    "状态",
+    "流程",
+    "异常",
+    "风险",
+    "字段",
+    "接口",
+    "权限",
+    "奖励",
+    "邀请",
+    "分享",
+    "测试",
+    "用例",
+)
+
+
+def _build_rag_query(state: QAWorkflowState, *, max_chars: int = 6000) -> str:
+    """构造面向知识库检索的查询摘要，而不是直接嵌入整篇 PRD。"""
+    sections: list[str] = [state.user_input]
+    for key, value in state.loaded_files.items():
+        if not key.endswith(("input/requirement.md", "input/api.md", "requirement-analysis.md")):
+            continue
+        selected: list[str] = []
+        for line in value.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("#"):
+                selected.append(stripped)
+                continue
+            if any(keyword in stripped for keyword in RAG_QUERY_KEYWORDS):
+                selected.append(stripped)
+            if len("\n".join(selected)) >= max_chars // 2:
+                break
+        if selected:
+            sections.append(f"## {key}\n" + "\n".join(selected))
+    query = "\n\n".join(sections)
+    return query[:max_chars]
 
 
 def _path_content(state: QAWorkflowState, suffix: str) -> str:

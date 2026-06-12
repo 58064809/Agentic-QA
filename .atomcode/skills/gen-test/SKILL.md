@@ -117,9 +117,9 @@ from pathlib import Path
 def sample_prd_path(tmp_path) -> Path:
     """创建一个 PRD 产物的最小目录结构."""
     prd_dir = tmp_path / "prd" / "T001"
-    (prd_dir / "10-analysis").mkdir(parents=True)
-    (prd_dir / "20-testcases").mkdir()
-    (prd_dir / "metadata.yml").write_text(
+    (prd_dir / "analysis").mkdir(parents=True)
+    (prd_dir / "cases").mkdir()
+    (prd_dir / "workspace.yml").write_text(
         "id: T001\ntitle: 示例需求\nstatus: draft\n"
     )
     return prd_dir

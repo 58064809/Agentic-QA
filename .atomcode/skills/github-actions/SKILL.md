@@ -140,7 +140,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: qa-report-${{ inputs.prd_id }}
-          path: prd/${{ inputs.prd_id }}/80-reports/
+          path: prd/${{ inputs.prd_id }}/report/
 ```
 
 ### 3. 文档一致性检查

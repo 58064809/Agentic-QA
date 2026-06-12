@@ -71,6 +71,7 @@ class GraphQAWorkflowState(TypedDict, total=False):
     run_summary_md: str | None
     debug_dir: str | None
     debug_artifacts: dict[str, str]
+    rag_retrievals: list[dict[str, Any]]
 
 
 @dataclass
@@ -112,6 +113,7 @@ class QAWorkflowState:
     run_summary_md: str | None = None
     debug_dir: str | None = None
     debug_artifacts: dict[str, str] = field(default_factory=dict)
+    rag_retrievals: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def success(self) -> bool:
@@ -158,6 +160,7 @@ def to_graph_state(state: QAWorkflowState) -> GraphQAWorkflowState:
         "run_summary_md": state.run_summary_md,
         "debug_dir": state.debug_dir,
         "debug_artifacts": dict(state.debug_artifacts),
+        "rag_retrievals": [dict(item) for item in state.rag_retrievals],
     }
 
 
@@ -177,7 +180,10 @@ def _get_any_dict(graph_state: GraphQAWorkflowState, key: str) -> dict[str, Any]
 
 
 def _get_artifacts(graph_state: GraphQAWorkflowState) -> list[dict[str, Any]]:
-    value = graph_state.get("artifacts", [])
+    return _dict_list(graph_state.get("artifacts", []))
+
+
+def _dict_list(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [dict(item) for item in value if isinstance(item, dict)]
@@ -226,4 +232,5 @@ def from_graph_state(graph_state: GraphQAWorkflowState) -> QAWorkflowState:
         run_summary_md=graph_state.get("run_summary_md"),
         debug_dir=graph_state.get("debug_dir"),
         debug_artifacts=_get_str_dict(graph_state, "debug_artifacts"),
+        rag_retrievals=_dict_list(graph_state.get("rag_retrievals", [])),
     )

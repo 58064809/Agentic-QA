@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
-
-from rag.splitter import Chunk
 
 
 @dataclass
@@ -17,6 +14,15 @@ class RetrievedDocument:
     score: float
     chunk_index: int
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "source": self.source,
+            "heading": self.heading,
+            "score": self.score,
+            "chunk_index": self.chunk_index,
+            "text_preview": self.text[:300],
+        }
+
 
 @dataclass
 class RetrievalResult:
@@ -25,6 +31,9 @@ class RetrievalResult:
     documents: list[RetrievedDocument] = field(default_factory=list)
     total_chunks: int = 0
     used_knowledge_paths: list[str] = field(default_factory=list)
+    error: str = ""
+    query_text: str = ""
+    index_metadata: dict[str, object] = field(default_factory=dict)
 
     @property
     def context_text(self) -> str:
@@ -42,6 +51,21 @@ class RetrievalResult:
     @property
     def has_results(self) -> bool:
         return len(self.documents) > 0
+
+    @property
+    def has_error(self) -> bool:
+        return bool(self.error)
+
+    def to_trace(self) -> dict[str, object]:
+        return {
+            "query": self.query,
+            "query_text": self.query_text,
+            "total_chunks": self.total_chunks,
+            "used_knowledge_paths": self.used_knowledge_paths,
+            "error": self.error,
+            "index_metadata": self.index_metadata,
+            "documents": [doc.to_dict() for doc in self.documents],
+        }
 
 
 def assemble_rag_context(

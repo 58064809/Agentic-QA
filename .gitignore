@@ -21,6 +21,7 @@ env/
 Thumbs.db
 
 # Local configs and generated data
+/configs/config.yaml
 /configs/local.yaml
 /configs/private.yaml
 /outputs/

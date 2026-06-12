@@ -33,20 +33,20 @@ Agentic-QA/
 
 ```
 prd/<id>/
-├── requirement.md                # 需求文档
-├── api-doc.md                    # 接口说明（可选）
-├── metadata.yml                  # 元数据（id, title, status, owner, created_at）
-├── 10-analysis/
+├── input/requirement.md                # 需求文档
+├── input/api.md                    # 接口说明（可选）
+├── workspace.yml                  # 元数据（id, title, status, owner, created_at）
+├── analysis/
 │   └── requirement-analysis.md   # 需求分析
-├── 20-testcases/
-│   └── testcases.md              # 测试用例（功能 + 边界 + 异常）
-├── 30-api-tests/
+├── cases/
+│   └── test-cases.md              # 测试用例（功能 + 边界 + 异常）
+├── automation/api/
 │   └── generated/                # API 自动化脚本（pytest + requests）
-├── 50-execution-results/         # 执行结果（JSON / 日志）
-├── 60-failure-analysis/          # 失败分析
-├── 80-reports/
-│   └── qa-report-draft.md        # QA 报告草稿
-├── 90-archive/                   # 归档（只读快照）
+├── execution/runs/         # 执行结果（JSON / 日志）
+├── defects/          # 失败分析
+├── report/
+│   └── qa-review.md        # QA 报告草稿
+├── archive/                   # 归档（只读快照）
 └── exports/                      # 对外评审导出（可中文命名）
 ```
 
@@ -95,11 +95,11 @@ AI 生成 → 人工审核 → AI 执行 → 人工确认 → AI 归档
 
 | 实体 | 规则 | 示例 |
 |------|------|------|
-| 需求分析 | `<阶段编号>-<英文描述>.md` | `10-analysis/requirement-analysis.md` |
-| 测试用例 | `testcases.md` | — |
+| 需求分析 | `<阶段编号>-<英文描述>.md` | `analysis/requirement-analysis.md` |
+| 测试用例 | `test-cases.md` | — |
 | API 测试 | `test_<target>.py` | `test_user_api.py` |
 | 测试数据 | `test_<target>.json` | `test_user_api.json` |
-| 报告草稿 | `qa-report-draft.md` | — |
+| 报告草稿 | `qa-review.md` | — |
 | 导出文件 | 中文名（面向业务方） | `用户管理模块测试报告.md` |
 
 ## 7. 测试约定

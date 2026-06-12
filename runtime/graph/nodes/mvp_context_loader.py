@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from runtime.config import load_app_config
 from runtime.graph.nodes.context_loader import resolve_prd_path
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.artifact_writer import ensure_within_directory
@@ -96,12 +97,16 @@ def mvp_workflow_selector_node(state: QAWorkflowState, repo_root: Path) -> QAWor
     if state.errors:
         return state
 
+    workflow_config = load_app_config(repo_root).workflow
+    analysis_files = workflow_config.mvp_analysis_workflow_files or ANALYSIS_WORKFLOW_FILES
+    testcase_files = workflow_config.mvp_testcase_workflow_files or TESTCASE_WORKFLOW_FILES
+
     if state.task_type == TASK_ANALYSIS:
-        state.workflow_files = list(ANALYSIS_WORKFLOW_FILES)
+        state.workflow_files = list(analysis_files)
     elif state.task_type == TASK_TESTCASE_GENERATION:
-        state.workflow_files = list(TESTCASE_WORKFLOW_FILES)
+        state.workflow_files = list(testcase_files)
     else:
-        state.workflow_files = [*ANALYSIS_WORKFLOW_FILES, *TESTCASE_WORKFLOW_FILES]
+        state.workflow_files = [*analysis_files, *testcase_files]
 
     for relative_path in state.workflow_files:
         if not (repo_root / relative_path).is_file():

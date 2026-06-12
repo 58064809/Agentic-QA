@@ -25,6 +25,13 @@ def create_minimal_docs_repo(root: Path) -> Path:
         "prompts",
         "rules",
         "skills",
+        "skills/registry",
+        "skills/core",
+        "skills/analysis",
+        "skills/test-design",
+        "skills/automation",
+        "skills/reporting",
+        "skills/knowledge",
         "knowledge",
         "knowledge/templates",
         "prd",
@@ -41,6 +48,7 @@ def create_minimal_docs_repo(root: Path) -> Path:
     write_file(root / "AGENTS.md")
     write_file(root / "COMMANDS.md")
     write_file(root / ".github/workflows/ci.yml")
+    write_file(root / "skills/registry/skills.yaml")
     write_file(root / "docs/production-agent-runtime-roadmap.md")
     write_file(root / "docs/roadmap.md")
     write_file(root / "workflows/10-runtime-testcase-generation-workflow.md")

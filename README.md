@@ -62,6 +62,48 @@ Agentic-QA 采用分层架构：
 - LLM 调用使用 OpenAI-compatible `chat.completions.create` 接口。
 - 未设置密钥、LLM 路由失败或 LLM 生成失败时，Runtime 会降级到确定性路由和评审级 Skeleton 草稿，不直接失败。
 
+## 统一配置层
+
+Runtime 通过 `runtime.config.load_app_config()` 读取统一配置，默认加载顺序为：
+
+```text
+configs/config.yaml -> configs/local.yaml -> configs/private.yaml
+```
+
+后加载的文件覆盖先加载的文件；环境变量仍作为最高优先级。仓库只提交 `*.example.yaml`，真实本地配置不提交。
+
+当前配置层覆盖：
+
+- `llm.*`：全局 LLM 开关和语义路由 LLM 开关。
+- `workflow.use_llm.*`：需求分析、测试用例生成、MVP 联合流程是否使用 LLM。
+- `workflow.*`：工作流文件选择、默认 workflow、MVP analysis/testcase workflow。
+- `rag.*`：RAG 开关、TopK、chunk、Embedding provider、vector store、知识库路径和索引目录。
+- `rag.use_llm_api_key`：是否允许 RAG 复用 `DEEPSEEK_API_KEY`。
+
+生成类 LLM 开关示例：
+
+```yaml
+llm:
+  enabled: true
+  semantic_router_enabled: true
+workflow:
+  use_llm:
+    requirement_analysis: true
+    testcase_generation: true
+    mvp_analysis_testcases: true
+```
+
+RAG 密钥解析规则：
+
+```text
+RAG_API_KEY 优先
+RAG_USE_LLM_API_KEY=true 时可复用 DEEPSEEK_API_KEY
+RAG_EMBEDDING_PROVIDER=auto 且无可用 key 时降级到本地 Embedding
+RAG_EMBEDDING_PROVIDER=openai 且无可用 key 时失败
+```
+
+详见 `configs/README.md` 和 `rag/README.md`。
+
 ## 需求文档归一化
 
 - Runtime 已接入 Microsoft MarkItDown，所有命令会先检查目标 PRD 工作区内的需求源文件。
