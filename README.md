@@ -1,205 +1,273 @@
 # Agentic-QA
 
-Agentic-QA 是一个面向测试工程师的 **Runtime-first Agentic QA System**。
+**Agentic-QA** 是一个面向测试工程师的 **Agentic QA Engineering** 项目，用于构建 AI 辅助的软件测试工程工作流。
 
-它的目标不是只提供一组给 Codex/ChatGPT 阅读的文档规范，而是建设一套可以在本地运行、可编排、可追踪、可扩展的 Agentic QA Runtime：输入需求文档，经过文档归一化、RAG 检索、Agent 编排、测试方法论推理、人工审核门禁，最终生成需求分析、测试用例、自动化脚本草稿、执行结果、失败分析、Bug 草稿、QA 报告和归档资产。
+项目通过 Runtime 编排、RAG 上下文检索、专业 QA Agent、测试方法论、规则约束和人工审核机制，帮助测试工程师将需求文档转化为结构化的需求分析、测试用例、自动化脚本草稿、执行记录、失败分析、Bug 草稿、QA 报告和可复用知识资产。
 
-核心模式：
+## 核心能力
 
-```text
-需求输入 -> 文档归一化 -> RAG 检索 -> Agent 工作流 -> 产物生成 -> 人工审核 -> 修订/执行/归档
-```
+- **需求文档归一化**：将 Word、PDF、TXT、HTML 等需求来源转换为统一的 Markdown 输入。
+- **意图识别**：识别用户输入的 QA 任务目标，例如需求分析、测试用例生成、接口测试生成、失败分析或报告生成。
+- **工作流选择**：根据任务意图匹配对应的 QA 工作流。
+- **Runtime 编排**：负责任务执行、节点流转、状态管理、质量检查、人工审核和产物写入。
+- **RAG 上下文检索**：从需求、接口文档、规则、Skills、Prompts、Knowledge 和历史资产中检索相关上下文。
+- **专业 QA Agent**：覆盖需求分析、测试设计、接口测试生成、UI 测试生成、测试执行、失败分析、Bug 草稿和 QA 报告等任务。
+- **测试方法论沉淀**：内置等价类、边界值、场景法、状态迁移、风险测试、接口契约分析等测试设计能力。
+- **人工审核门禁**：AI 生成产物默认进入待审核状态，由测试工程师确认后再进入下一步。
+- **需求工作区管理**：每个需求拥有独立工作区，统一管理输入、产物、审核状态、运行记录和归档资产。
+- **运行记录追踪**：记录每次 Runtime 执行的输入、节点轨迹、召回上下文、输出路径、错误和告警。
+- **工程化扩展能力**：支持逐步扩展到接口自动化、UI 自动化、测试执行、失败归因、缺陷草稿和 QA 报告。
 
-## 当前定位
-
-Agentic-QA 从现在开始按 **Runtime-first** 方向改造。
-
-这意味着：
-
-- Runtime 是项目主入口，不再只是辅助能力。
-- 仓库中的 `runtime/`、`knowledge/`、`prompts/`、`rules/`、`skills/`、`workflows/`、`prd/` 将共同组成可执行系统。
-- ChatGPT 项目「来源」数据可以删除，项目上下文必须沉淀回仓库本身。
-- Codex / Cursor / ChatGPT / Claude Code 仍可用于开发和辅助，但不再作为唯一执行大脑。
-- 最终目标是让用户通过 CLI 或后续 Bot/API 触发 Runtime 自动完成 QA 工作流。
-
-## 核心目标
-
-Agentic-QA 要解决的问题是：
-
-1. 测试工程师拿到 PRD 后，如何快速完成高质量需求分析。
-2. 如何基于测试方法论和历史知识生成结构化测试用例。
-3. 如何把知识库、规则、Prompt、Skills 和需求上下文稳定注入生成链路。
-4. 如何让每次生成都有可追踪输入、召回依据、输出路径和人工审核状态。
-5. 如何逐步从需求分析/用例生成扩展到接口脚本、UI 脚本、执行、失败分析、Bug 草稿和 QA 报告。
-
-## Runtime 总体架构
+## 工作流
 
 ```text
-User Command / CLI / Bot
+用户输入 / CLI / Bot
   ↓
-Command Router
+意图识别
   ↓
-Workflow Orchestrator
+工作流选择
   ↓
-Requirement Loader / Document Normalizer
+工作流编排
   ↓
-RAG Retriever
+需求加载
   ↓
-Context Builder
+文档归一化
   ↓
-Agent Nodes
-  ├── Requirement Analysis Agent
-  ├── Testcase Design Agent
-  ├── API Test Generation Agent
-  ├── UI Test Generation Agent
-  ├── Test Execution Agent
-  ├── Failure Analysis Agent
-  ├── Bug Draft Agent
-  └── QA Report Agent
+RAG 检索
   ↓
-Quality Gate
+上下文构建
   ↓
-Human Review Gate
+QA Agent 执行
   ↓
-Artifact Writer
+质量检查
   ↓
-Run Recorder / Metadata Updater
+人工审核
+  ↓
+产物写入
+  ↓
+运行记录 / 元数据更新
 ```
 
-## 第一阶段 MVP
-
-第一阶段不追求全链路自动化，先打通最核心闭环：
+## 架构概览
 
 ```text
-需求文档 -> RAG -> 需求分析 -> 测试用例 -> 人工审核
+入口层
+├── CLI
+├── Bot
+└── API
+
+Runtime
+├── 意图识别
+├── 工作流选择
+├── 工作流编排
+├── 状态管理
+├── 质量检查
+├── 人工审核门禁
+├── 产物写入
+└── 运行记录
+
+RAG
+├── 文档加载
+├── 文档切分
+├── 索引构建
+├── 上下文检索
+├── 结果筛选 / 重排
+└── 上下文构建
+
+QA Agent
+├── 需求分析 Agent
+├── 测试用例设计 Agent
+├── 接口测试生成 Agent
+├── UI 测试生成 Agent
+├── 测试执行 Agent
+├── 失败分析 Agent
+├── Bug 草稿 Agent
+└── QA 报告 Agent
+
+知识资产
+├── rules/
+├── skills/
+├── prompts/
+├── workflows/
+├── knowledge/
+└── prd/
 ```
 
-第一阶段必须具备：
+## 需求工作区
 
-- PRD 工作区创建与校验。
-- `requirement.md` / `api-doc.md` 读取。
-- Word / PDF / TXT / HTML 到 Markdown 的需求归一化。
-- Markdown 知识库切分。
-- 基于规则或 embedding 的 RAG 检索。
-- Prompt 构建与上下文预算控制。
-- 需求分析 Agent。
-- 测试用例 Agent。
-- 输出 Markdown 产物。
-- 产物状态标记为 `needs_human_review`。
-- 运行记录落到 `.runtime/runs/<run_id>/`。
-
-第一阶段不做：
-
-- Web 平台。
-- 复杂权限系统。
-- 在线多用户协作。
-- 真实生产环境测试执行。
-- 无人工审核的全自动发布结论。
-
-## RAG 设计原则
-
-Agentic-QA 的 RAG 不只是把文件拼进 Prompt。
-
-真正的 RAG 链路必须包含：
+每个需求使用独立工作区管理输入、产物、审核状态和运行记录。
 
 ```text
-Document Load -> Chunk -> Index -> Retrieve -> Rerank/Select -> Context Build -> Generate
+prd/<需求ID>/
+├── input/
+│   ├── requirement.md
+│   ├── api.md
+│   └── attachments/
+├── artifacts/
+│   ├── requirement-analysis.md
+│   ├── testcases.md
+│   ├── api-test-draft.md
+│   ├── ui-test-draft.md
+│   ├── execution-report.md
+│   ├── failure-analysis.md
+│   ├── bug-draft.md
+│   ├── qa-report.md
+│   └── archive-index.md
+├── reviews/
+│   ├── requirement-analysis.review.yml
+│   ├── testcases.review.yml
+│   ├── api-test-draft.review.yml
+│   ├── ui-test-draft.review.yml
+│   ├── failure-analysis.review.yml
+│   ├── bug-draft.review.yml
+│   └── qa-report.review.yml
+├── runs/
+│   └── <run-id>/
+│       ├── state.json
+│       ├── events.jsonl
+│       ├── retrieved-context.json
+│       ├── prompt.md
+│       ├── output.md
+│       └── quality-check.json
+└── metadata.yml
 ```
 
-知识来源包括：
+### input/
 
-| 来源 | 用途 |
+`input/` 保存当前需求的原始输入和归一化输入。
+
+| 文件 | 说明 |
 |---|---|
-| `prd/<id>/requirement.md` | 当前需求正文 |
-| `prd/<id>/api-doc.md` | 当前需求接口文档 |
-| `knowledge/` | 测试方法、领域经验、历史案例 |
-| `rules/` | 强约束规则 |
-| `skills/` | 可复用测试能力说明 |
-| `prompts/` | 任务提示词模板 |
-| `workflows/` | 工作流定义 |
+| `requirement.md` | 需求正文 |
+| `api.md` | 接口文档 |
+| `attachments/` | 原型图、补充文档、截图等附件 |
 
-RAG 输出必须可追踪，生成产物中应能看到关键召回来源或运行记录中保留检索结果。
+### artifacts/
 
-## Human-in-the-loop 原则
+`artifacts/` 保存 Runtime 生成或人工确认后的 QA 产物。
 
-AI 可以生成草稿、执行脚本、整理分析，但不能替代测试工程师做最终判断。
-
-以下节点必须支持人工审核：
-
-- 需求分析审核。
-- 测试用例审核。
-- 自动化脚本审核。
-- 测试执行范围确认。
-- 失败原因确认。
-- Bug 是否成立确认。
-- QA 报告确认。
-
-产物状态统一使用：
-
-```text
-draft
-needs_human_review
-approved
-needs_changes
-rejected
-needs_human_confirmation
-confirmed
-archived
-```
-
-## PRD 工作区结构
-
-每个需求必须有独立工作区：
-
-```text
-prd/<requirement-id>/
-├── requirement.md
-├── api-doc.md
-├── metadata.yml
-├── 10-analysis/
-│   └── requirement-analysis.md
-├── 20-testcases/
-│   └── testcases.md
-├── 30-api-tests/
-│   ├── api-test-plan.md
-│   └── generated/
-├── 40-ui-tests/
-│   ├── ui-test-plan.md
-│   └── generated/
-├── 50-execution-results/
-│   ├── pytest-result.json
-│   └── execution-report.md
-├── 60-failure-analysis/
-│   └── failure-analysis.md
-├── 70-bugs/
-│   └── bug-draft.md
-├── 80-reports/
-│   └── qa-report.md
-└── 90-archive/
-    └── archive-index.md
-```
-
-## 目录说明
-
-| 路径 | 职责 |
+| 文件 | 说明 |
 |---|---|
-| `runtime/` | Agentic QA Runtime 主体代码 |
-| `runtime/graph/` | 工作流编排、状态流转、节点定义 |
-| `runtime/rag/` | 文档切分、索引、检索、上下文选择 |
-| `runtime/llm/` | LLM Provider 抽象和模型调用适配 |
-| `runtime/tools/` | 文件读取、产物写入、测试执行、报告生成等确定性工具 |
-| `runtime/schemas/` | Pydantic Schema 和结构化输入输出定义 |
-| `workflows/` | 声明式工作流定义 |
-| `agents/` | Agent 角色、职责、输入输出和约束 |
-| `tasks/` | 任务 SOP |
+| `requirement-analysis.md` | 需求分析 |
+| `testcases.md` | 测试用例 |
+| `api-test-draft.md` | 接口测试脚本草稿或生成计划 |
+| `ui-test-draft.md` | UI 测试脚本草稿或生成计划 |
+| `execution-report.md` | 测试执行报告 |
+| `failure-analysis.md` | 失败分析 |
+| `bug-draft.md` | Bug 草稿 |
+| `qa-report.md` | QA 报告 |
+| `archive-index.md` | 归档索引 |
+
+### reviews/
+
+`reviews/` 保存每个产物的审核状态、审核意见和确认记录。
+
+示例：
+
+```yaml
+artifact: artifacts/testcases.md
+status: needs_human_review
+reviewer: ""
+comments: []
+approved_at: null
+```
+
+### runs/
+
+`runs/` 保存 Runtime 每次执行的运行记录，包括状态、事件、召回上下文、Prompt、输出和质量检查结果。
+
+### metadata.yml
+
+`metadata.yml` 保存需求级元数据，例如需求名称、状态、创建时间、最后运行记录、关联产物和归档状态。
+
+## 项目结构
+
+| 路径 | 说明 |
+|---|---|
+| `runtime/` | Runtime 主体代码，负责工作流编排和执行 |
+| `runtime/intent/` | 意图识别、任务解析和结构化任务结果 |
+| `runtime/workflow/` | 工作流选择、注册和执行入口 |
+| `runtime/graph/` | 工作流图、节点、状态和路由 |
+| `runtime/rag/` | 文档切分、索引、检索和上下文选择 |
+| `runtime/agents/` | 可执行 QA Agent 节点或 Agent 适配 |
+| `runtime/llm/` | LLM 调用抽象和模型适配 |
+| `runtime/tools/` | 文件读写、产物写入、测试执行和报告工具 |
+| `runtime/schemas/` | 结构化输入输出 Schema |
+| `workflows/` | 声明式 QA 工作流定义 |
 | `prompts/` | Prompt 模板 |
-| `rules/` | 强约束规则 |
-| `skills/` | 测试专业能力说明 |
+| `rules/` | 路径、输出、审核和质量强约束 |
+| `skills/` | 可复用 QA 技能和测试方法 |
 | `knowledge/` | RAG 知识库 |
 | `prd/` | 需求工作区和生成产物 |
-| `scripts/` | 工程辅助脚本 |
+| `scripts/` | 校验、执行、报告和归档辅助脚本 |
 | `tests/` | 单元测试和 Runtime 测试 |
-| `docs/` | 架构设计、路线图、使用说明 |
+| `docs/` | 架构设计、路线图和使用说明 |
+
+## RAG 说明
+
+Agentic-QA 的 RAG 链路用于从项目知识资产和需求上下文中检索与当前任务相关的材料。
+
+核心流程：
+
+```text
+Document Load
+  ↓
+Chunk
+  ↓
+Index
+  ↓
+Retrieve
+  ↓
+Select / Rerank
+  ↓
+Context Build
+  ↓
+Generate
+```
+
+RAG 结果应保留可追踪信息，包括：
+
+- 召回来源
+- chunk 标识
+- 命中依据或分数
+- 参与生成的上下文
+- 信息不足或未召回告警
+
+## 产物规范
+
+AI 生成产物默认包含审核元数据：
+
+```yaml
+status: needs_human_review
+human_review_required: true
+```
+
+测试用例表格固定使用以下列：
+
+| 标题 | 优先级 | 前置条件 | 测试步骤 | 预期结果 |
+|---|---|---|---|---|
+
+优先级统一使用：
+
+```text
+P0 / P1 / P2 / P3
+```
+
+## 人工审核
+
+Agentic-QA 采用人机协同流程。
+
+以下产物进入下一步前必须经过人工审核：
+
+- 需求分析
+- 测试用例
+- 接口自动化脚本草稿
+- UI 自动化脚本草稿
+- 测试执行范围
+- 失败分析
+- Bug 草稿
+- QA 报告
+- 归档记录
 
 ## 快速开始
 
@@ -215,28 +283,50 @@ pip install -e .
 python scripts/create_prd_workspace.py demo-requirement
 ```
 
-校验仓库文档和需求工作区：
+将需求文档放入：
+
+```text
+prd/demo-requirement/input/requirement.md
+```
+
+可选接口文档放入：
+
+```text
+prd/demo-requirement/input/api.md
+```
+
+校验仓库和需求工作区：
 
 ```bash
 python scripts/validate_docs_consistency.py
 python scripts/validate_prd_workspace.py prd/demo-requirement
 ```
 
-运行 Runtime MVP：
+生成需求分析：
 
 ```bash
-python -m runtime.cli analyze "帮我分析这个需求" --prd prd/demo-requirement
-python -m runtime.cli generate-testcases "帮我生成测试用例" --prd prd/demo-requirement
-python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/demo-requirement
+python -m runtime.cli analyze "分析这个需求" --prd prd/demo-requirement
+```
+
+生成测试用例：
+
+```bash
+python -m runtime.cli generate-testcases "生成测试用例" --prd prd/demo-requirement
+```
+
+运行完整 QA 生成链路：
+
+```bash
+python -m runtime.cli run "分析需求并生成测试用例" --prd prd/demo-requirement
 ```
 
 确认写入产物：
 
 ```bash
-python -m runtime.cli mvp "帮我分析需求并生成测试用例" --prd prd/demo-requirement --confirm
+python -m runtime.cli run "分析需求并生成测试用例" --prd prd/demo-requirement --confirm
 ```
 
-运行基础质量检查：
+运行基础检查：
 
 ```bash
 pytest
@@ -245,9 +335,9 @@ ruff check .
 
 ## LLM 配置
 
-Runtime 不在仓库中保存任何密钥。
+Runtime 从本地环境变量读取模型配置。
 
-默认通过本地环境变量读取 OpenAI-compatible 配置：
+示例：
 
 ```bash
 FREEMODEL_API_KEY=your-local-key
@@ -255,72 +345,24 @@ FREEMODEL_BASE_URL=https://api.example.com/v1
 FREEMODEL_MODEL=your-model-name
 ```
 
-是否启用 LLM 必须由命令显式控制。未配置密钥时，Runtime 不应把密钥写入运行记录、日志或产物。
+密钥不得写入仓库，也不得写入运行记录、日志或生成产物。
 
-## 产物要求
-
-需求分析输出：
+## 路线图
 
 ```text
-prd/<id>/10-analysis/requirement-analysis.md
+RAG 检索与上下文构建
+需求分析生成
+测试用例生成
+接口测试生成
+UI 测试生成
+测试执行
+失败分析
+Bug 草稿生成
+QA 报告生成
+归档与知识复用
+Bot / API / Web 接入
 ```
 
-测试用例输出：
+## 项目愿景
 
-```text
-prd/<id>/20-testcases/testcases.md
-```
-
-测试用例表格固定使用：
-
-| 标题 | 优先级 | 前置条件 | 测试步骤 | 预期结果 |
-|---|---|---|---|---|
-
-优先级统一使用：
-
-```text
-P0 / P1 / P2 / P3
-```
-
-所有 AI 生成产物默认必须标记为：
-
-```yaml
-status: needs_human_review
-human_review_required: true
-```
-
-## 项目边界
-
-Agentic-QA 当前要做：
-
-- Runtime 编排。
-- RAG 检索。
-- QA Agent 工作流。
-- 需求分析生成。
-- 测试用例生成。
-- 产物状态管理。
-- 人工审核门禁。
-- 运行记录。
-- 可扩展到自动化脚本、执行、失败分析和报告。
-
-Agentic-QA 当前不做：
-
-- 完整测试管理平台。
-- Web 多用户系统。
-- 替代人工 QA 决策。
-- 直接连接生产环境执行测试。
-- 在仓库中保存真实业务密钥或敏感数据。
-
-## 后续路线
-
-```text
-阶段 1：Runtime MVP + RAG + 需求分析 + 测试用例
-阶段 2：接口测试脚本生成 + pytest 执行 + 失败分析
-阶段 3：UI 测试脚本生成 + Playwright 执行
-阶段 4：QA 报告 + 归档 + 历史知识沉淀
-阶段 5：Bot/API/Web UI 接入
-```
-
-## 一句话总结
-
-Agentic-QA 要从“让 AI 读仓库规则生成 QA 草稿”的工作台，升级为“由 Runtime 编排、RAG 增强、Agent 协作、人类审核”的可执行 Agentic QA 系统。
+Agentic-QA 的目标是让 AI 参与完整 QA 工程生命周期，从需求理解、测试设计、自动化生成，到执行分析、报告归档和知识复用，逐步沉淀为可运行、可追踪、可扩展的智能测试工程体系。
