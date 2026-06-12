@@ -303,6 +303,332 @@ FREEMODEL_MODEL=your-model-name
 | `tests/` | 单元测试和 Runtime 测试 |
 | `docs/` | 架构设计、路线图和使用说明 |
 
+## 工作流定义示例
+
+Agentic-QA 的工作流用于描述一个 QA 任务如何被 Runtime 执行，包括入口意图、输入契约、节点列表、节点输入输出、路由条件、产物写入和确认门禁。
+
+工作流可以使用 YAML 或 JSON 定义，并由 Runtime 加载、校验和执行。
+
+### 示例：需求分析与测试用例生成工作流
+
+```yaml
+id: requirement_to_testcases
+name: 需求分析与测试用例生成
+version: 1.0.0
+description: 根据需求文档生成需求分析和测试用例，并进入确认门禁。
+
+trigger:
+  intents:
+    - analyze_requirement
+    - generate_testcases
+    - analyze_and_generate_testcases
+  entrypoints:
+    - ai_chat
+    - feishu_bot
+    - wechat_bot
+    - dingtalk_bot
+    - cli
+    - api
+
+input_contract:
+  required:
+    prd_path:
+      type: string
+      description: 需求工作区路径，例如 prd/demo-requirement
+    user_message:
+      type: string
+      description: 用户原始输入
+  optional:
+    profile:
+      type: string
+      default: local
+    confirm:
+      type: boolean
+      default: false
+
+output_contract:
+  artifacts:
+    - path: artifacts/requirement-analysis.md
+      type: requirement_analysis
+      review_required: true
+    - path: artifacts/testcases.md
+      type: testcases
+      review_required: true
+  run_record:
+    path: runs/<run-id>/state.json
+  review_records:
+    - reviews/requirement-analysis.review.yml
+    - reviews/testcases.review.yml
+
+state_schema:
+  prd_path: string
+  user_message: string
+  intent: string
+  normalized_requirement: object
+  retrieved_context: array
+  requirement_analysis: object
+  testcases: object
+  quality_result: object
+  review_status: string
+  artifacts: array
+  errors: array
+
+nodes:
+  - id: load_requirement
+    type: tool
+    name: 加载需求
+    tool: workspace.load_requirement
+    input:
+      prd_path: "{{ state.prd_path }}"
+      requirement_path: input/requirement.md
+      api_path: input/api.md
+    output:
+      normalized_requirement: "{{ result.normalized_requirement }}"
+
+  - id: retrieve_context
+    type: rag
+    name: 检索上下文
+    input:
+      query: "{{ state.user_message }}"
+      prd_path: "{{ state.prd_path }}"
+      sources:
+        - rules
+        - skills
+        - prompts
+        - workflows
+        - knowledge
+        - "{{ state.prd_path }}/input"
+      top_k: 8
+    output:
+      retrieved_context: "{{ result.chunks }}"
+
+  - id: generate_requirement_analysis
+    type: agent
+    name: 生成需求分析
+    agent: requirement_analysis_agent
+    input:
+      requirement: "{{ state.normalized_requirement }}"
+      context: "{{ state.retrieved_context }}"
+    output:
+      requirement_analysis: "{{ result.analysis }}"
+
+  - id: generate_testcases
+    type: agent
+    name: 生成测试用例
+    agent: testcase_design_agent
+    input:
+      requirement: "{{ state.normalized_requirement }}"
+      analysis: "{{ state.requirement_analysis }}"
+      context: "{{ state.retrieved_context }}"
+    output:
+      testcases: "{{ result.testcases }}"
+
+  - id: quality_check
+    type: validator
+    name: 质量检查
+    validator: artifact_quality_validator
+    input:
+      artifacts:
+        - "{{ state.requirement_analysis }}"
+        - "{{ state.testcases }}"
+      rules:
+        - rules/artifact-standards.md
+        - rules/testcase-standards.md
+    output:
+      quality_result: "{{ result }}"
+
+  - id: write_artifacts
+    type: tool
+    name: 写入产物
+    tool: workspace.write_artifacts
+    input:
+      prd_path: "{{ state.prd_path }}"
+      artifacts:
+        - path: artifacts/requirement-analysis.md
+          content: "{{ state.requirement_analysis }}"
+        - path: artifacts/testcases.md
+          content: "{{ state.testcases }}"
+    output:
+      artifacts: "{{ result.artifacts }}"
+
+  - id: create_review_records
+    type: tool
+    name: 创建确认记录
+    tool: workspace.create_review_records
+    input:
+      prd_path: "{{ state.prd_path }}"
+      artifacts:
+        - artifacts/requirement-analysis.md
+        - artifacts/testcases.md
+      status: needs_human_review
+    output:
+      review_status: needs_human_review
+
+  - id: wait_for_confirmation
+    type: review_gate
+    name: 确认门禁
+    input:
+      prd_path: "{{ state.prd_path }}"
+      artifacts:
+        - artifacts/requirement-analysis.md
+        - artifacts/testcases.md
+    output:
+      review_status: "{{ result.status }}"
+      next_action: "{{ result.next_action }}"
+
+edges:
+  - from: start
+    to: load_requirement
+
+  - from: load_requirement
+    to: retrieve_context
+
+  - from: retrieve_context
+    to: generate_requirement_analysis
+
+  - from: generate_requirement_analysis
+    to: generate_testcases
+
+  - from: generate_testcases
+    to: quality_check
+
+  - from: quality_check
+    to: write_artifacts
+    condition: "{{ state.quality_result.passed == true }}"
+
+  - from: quality_check
+    to: failed
+    condition: "{{ state.quality_result.passed == false }}"
+
+  - from: write_artifacts
+    to: create_review_records
+
+  - from: create_review_records
+    to: wait_for_confirmation
+
+  - from: wait_for_confirmation
+    to: end
+    condition: "{{ state.review_status in ['needs_human_review', 'approved', 'confirmed'] }}"
+
+  - from: wait_for_confirmation
+    to: generate_testcases
+    condition: "{{ state.review_status == 'needs_changes' }}"
+
+  - from: wait_for_confirmation
+    to: failed
+    condition: "{{ state.review_status == 'rejected' }}"
+```
+
+### 节点类型
+
+| 节点类型 | 说明 |
+|---|---|
+| `tool` | 确定性工具节点，例如读取文件、写入产物、创建确认记录、执行测试 |
+| `rag` | RAG 检索节点，负责文档加载、检索、筛选和上下文构建 |
+| `agent` | LLM Agent 节点，负责需求分析、用例生成、失败分析、报告生成等任务 |
+| `validator` | 质量检查节点，负责校验产物格式、字段、状态、覆盖度和规则约束 |
+| `review_gate` | 确认门禁节点，负责读取用户确认结果并决定后续流转 |
+| `router` | 路由节点，根据状态、意图或校验结果选择下一节点 |
+| `executor` | 执行节点，例如运行 pytest、Playwright 或其他测试命令 |
+| `writer` | 产物写入节点，可作为 `tool` 的特化实现 |
+| `terminator` | 结束节点，用于标记成功、失败、中断或等待确认 |
+
+### 输入契约
+
+工作流输入必须包含：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `prd_path` | string | 需求工作区路径 |
+| `user_message` | string | 用户原始自然语言输入 |
+| `intent` | string | 意图识别结果 |
+| `profile` | string | 配置 Profile |
+| `entrypoint` | string | 来源入口，例如 `ai_chat`、`feishu_bot`、`cli` |
+| `run_id` | string | 当前运行 ID |
+
+示例：
+
+```json
+{
+  "prd_path": "prd/demo-requirement",
+  "user_message": "分析这个需求并生成测试用例",
+  "intent": "analyze_and_generate_testcases",
+  "profile": "local",
+  "entrypoint": "ai_chat",
+  "run_id": "20260612-160000-demo"
+}
+```
+
+### 输出契约
+
+工作流输出必须包含：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `status` | string | 工作流状态，例如 `success`、`failed`、`waiting_review` |
+| `artifacts` | array | 本次生成或更新的产物列表 |
+| `review_records` | array | 本次生成或更新的确认记录 |
+| `run_record` | string | 运行记录路径 |
+| `errors` | array | 错误和告警信息 |
+| `next_action` | string | 下一步建议动作或待触发工作流 |
+
+示例：
+
+```json
+{
+  "status": "waiting_review",
+  "artifacts": [
+    "artifacts/requirement-analysis.md",
+    "artifacts/testcases.md"
+  ],
+  "review_records": [
+    "reviews/requirement-analysis.review.yml",
+    "reviews/testcases.review.yml"
+  ],
+  "run_record": "runs/20260612-160000-demo/state.json",
+  "errors": [],
+  "next_action": "wait_for_user_confirmation"
+}
+```
+
+### 路由条件
+
+Runtime 根据节点输出和状态字段进行路由。
+
+| 条件 | 目标 |
+|---|---|
+| `quality_result.passed == true` | 写入产物 |
+| `quality_result.passed == false` | 进入失败或修订流程 |
+| `review_status == needs_human_review` | 暂停，等待用户确认 |
+| `review_status == approved` | 允许进入下一步工作流 |
+| `review_status == needs_changes` | 进入修订工作流 |
+| `review_status == rejected` | 停止复用当前产物 |
+| `next_action == generate_api_tests` | 触发接口测试生成工作流 |
+| `next_action == revise_testcases` | 触发测试用例修订工作流 |
+
+### 工作流运行记录
+
+每次工作流执行都必须写入 `runs/<run-id>/`：
+
+```text
+runs/<run-id>/
+├── state.json
+├── events.jsonl
+├── retrieved-context.json
+├── prompt.md
+├── output.md
+└── quality-check.json
+```
+
+| 文件 | 说明 |
+|---|---|
+| `state.json` | 当前工作流状态快照 |
+| `events.jsonl` | 节点执行事件、路由事件、错误和确认动作 |
+| `retrieved-context.json` | RAG 召回来源、chunk、分数和上下文 |
+| `prompt.md` | 本次实际参与生成的 Prompt |
+| `output.md` | Agent 原始输出或中间输出 |
+| `quality-check.json` | 质量检查结果 |
+
 ## RAG 说明
 
 Agentic-QA 的 RAG 链路用于从项目知识资产和需求上下文中检索与当前任务相关的材料。
