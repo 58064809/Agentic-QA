@@ -11,22 +11,27 @@ CORE_FILES = [
     "rules/agent-output-rules.md",
     "knowledge/templates/agent-completion-summary-template.md",
     ".github/workflows/ci.yml",
-    "docs/production-agent-runtime-roadmap.md",
+    "docs/workflow-dsl.md",
+    "docs/runtime-reliability.md",
+    "docs/artifact-versioning.md",
+    "docs/review-gate.md",
+    "docs/artifact-standards.md",
+    "docs/testcase-standards.md",
+    "docs/rag-design.md",
     "docs/roadmap.md",
     "workflows/10-runtime-testcase-generation-workflow.md",
     "runtime/README.md",
     "skills/registry/skills.yaml",
 ]
+
 CORE_DIRS = [
     ".github",
     ".github/workflows",
     "docs",
-    "docs/architecture",
     "workflows",
     "agents",
     "prompts",
     "rules",
-    "skills",
     "skills",
     "skills/registry",
     "skills/core",
@@ -45,58 +50,13 @@ CORE_DIRS = [
     "rag",
     "configs",
 ]
-AGENT_OUTPUT_REQUIRED_TERMS = [
-    "标准完成回执模板",
-    "变更摘要",
-    "修改文件",
-    "验收结果",
-    "待人工确认",
-    "下一步建议",
-]
-COMPLETION_TEMPLATE_REQUIRED_TERMS = [
-    "变更摘要",
-    "修改文件",
-    "验收结果",
-    "待人工确认",
-    "下一步建议",
-    "未执行命令必须说明原因",
-]
-PATH_PREFIXES = (
-    "workflows/",
-    "agents/",
-    "prompts/",
-    "rules/",
-    "skills/",
-    "skills/",
-    "knowledge/",
-    "docs/",
-    "runtime/",
-    "prd/",
-    "scripts/",
-    "tests/",
-)
-EXCLUDED_DIRS = {
-    ".git",
-    ".idea",
-    ".atomcode",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".deepeval",
-    "agentic_qa.egg-info",
-    "__pycache__",
-}
+
+AGENT_OUTPUT_REQUIRED_TERMS = ["标准完成回执模板", "变更摘要", "修改文件", "验收结果", "待人工确认", "下一步建议"]
+COMPLETION_TEMPLATE_REQUIRED_TERMS = ["变更摘要", "修改文件", "验收结果", "待人工确认", "下一步建议", "未执行命令必须说明原因"]
+PATH_PREFIXES = ("workflows/", "agents/", "prompts/", "rules/", "skills/", "knowledge/", "docs/", "runtime/", "prd/", "scripts/", "tests/")
+EXCLUDED_DIRS = {".git", ".idea", ".atomcode", ".pytest_cache", ".ruff_cache", ".deepeval", "agentic_qa.egg-info", "__pycache__"}
 INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
-PLANNED_REFERENCE_MARKERS = (
-    "待生成",
-    "待后续生成",
-    "示例",
-    "待生成",
-    "如生成",
-    "可后续生成",
-    "后续生成",
-    "可选新增",
-    "后续任务中创建",
-)
+PLANNED_REFERENCE_MARKERS = ("待生成", "待后续生成", "示例", "如生成", "可后续生成", "后续生成", "可选新增", "后续任务中创建")
 
 
 def read_text(path: Path) -> str:
@@ -112,7 +72,6 @@ def require_path(path: Path, label: str, errors: list[str], *, directory: bool =
 def require_terms(path: Path, terms: list[str], label: str, errors: list[str]) -> None:
     if not path.is_file():
         return
-
     content = read_text(path)
     for term in terms:
         if term not in content:
@@ -160,18 +119,13 @@ def find_broken_markdown_path_refs(repo_root: Path) -> list[str]:
             if line.strip().startswith("```"):
                 in_fenced_block = not in_fenced_block
                 continue
-            if in_fenced_block:
+            if in_fenced_block or any(marker in line for marker in PLANNED_REFERENCE_MARKERS):
                 continue
-            if any(marker in line for marker in PLANNED_REFERENCE_MARKERS):
-                continue
-
             for match in INLINE_CODE_RE.finditer(line):
                 token = normalize_path_token(match.group(1))
                 if should_skip_path_token(token):
                     continue
-
-                target = repo_root / token
-                if not target.exists():
+                if not (repo_root / token).exists():
                     errors.append(f"{source}:{line_number} 引用了不存在的路径: {token}")
     return errors
 
@@ -179,48 +133,25 @@ def find_broken_markdown_path_refs(repo_root: Path) -> list[str]:
 def validate_docs_consistency(repo_root: Path) -> list[str]:
     repo_root = repo_root.resolve()
     errors: list[str] = []
-
     for relative_path in CORE_FILES:
         require_path(repo_root / relative_path, "核心文件", errors)
-
     for relative_path in CORE_DIRS:
-        if relative_path == "skills" and not (repo_root / relative_path).is_dir():
-            if (repo_root / "skills").is_dir():
-                continue
         require_path(repo_root / relative_path, "核心目录", errors, directory=True)
-
-    require_terms(
-        repo_root / "rules/agent-output-rules.md",
-        AGENT_OUTPUT_REQUIRED_TERMS,
-        "Agent 输出规则",
-        errors,
-    )
-    require_terms(
-        repo_root / "knowledge/templates/agent-completion-summary-template.md",
-        COMPLETION_TEMPLATE_REQUIRED_TERMS,
-        "Agent 完成回执模板",
-        errors,
-    )
+    require_terms(repo_root / "rules/agent-output-rules.md", AGENT_OUTPUT_REQUIRED_TERMS, "Agent 输出规则", errors)
+    require_terms(repo_root / "knowledge/templates/agent-completion-summary-template.md", COMPLETION_TEMPLATE_REQUIRED_TERMS, "Agent 完成回执模板", errors)
     errors.extend(find_broken_markdown_path_refs(repo_root))
     return errors
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="校验仓库文档结构和关键引用一致性")
-    parser.add_argument(
-        "--repo-root",
-        default=Path(__file__).resolve().parents[1],
-        type=Path,
-        help="仓库根目录，默认按脚本所在位置推断",
-    )
+    parser.add_argument("--repo-root", default=Path(__file__).resolve().parents[1], type=Path)
     args = parser.parse_args()
-
     errors = validate_docs_consistency(args.repo_root)
     if not errors:
         print("文档一致性检查通过。")
         return 0
-
-    print("文档一致性检查失败:")
+    print("文档一致性检查未通过:")
     for error in errors:
         print(f"- {error}")
     return 1
