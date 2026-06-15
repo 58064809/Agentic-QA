@@ -8,7 +8,7 @@ Agentic-QA 的最终目标是让用户通过 **Chat、Bot 或 CLI** 以自然语
 
 ## 核心能力
 
-- **自然语言任务入口**：支持通过 AI 编辑器 Chat、飞书 Bot、微信 Bot、钉钉 Bot、CLI 或 API 发起 QA 任务。
+- **统一自然语言入口**：AI Chat、Bot、CLI 和 API 都只是入口形态，Runtime 统一负责意图识别、工作流选择和任务执行。
 - **配置层管理**：统一管理 Runtime、RAG、LLM、工作区、协作入口、日志和运行 Profile。
 - **意图识别与工作流选择**：识别用户输入的 QA 任务目标，并匹配对应 QA 工作流。
 - **Runtime 编排**：负责任务执行、节点流转、状态管理、质量检查、确认门禁和产物写入。
@@ -180,7 +180,27 @@ prd/demo-requirement/input/requirement.md
 python scripts/validate_prd_workspace.py prd/demo-requirement
 ```
 
-通过 CLI 触发最小 Runtime：
+### 通过自然语言发起任务
+
+Agentic-QA 的主要使用方式是通过 AI Chat、Bot、CLI 或 API 输入自然语言任务，由 Runtime 统一完成意图识别、工作流选择、上下文构建、Agent 执行、质量检查、确认门禁和产物写入。
+
+示例：
+
+```text
+分析 prd/demo-requirement 这个需求，并生成测试用例。
+```
+
+```text
+读取这个飞书文档，生成需求分析和测试用例草稿。
+```
+
+```text
+测试用例不通过，补充支付失败、库存不足和优惠券异常场景。
+```
+
+### 使用 CLI 调试 Runtime
+
+CLI 是自然语言入口之一，主要用于本地调试、脚本化执行和最小 Runtime 验证。
 
 ```bash
 python -m runtime.cli "分析 prd/demo-requirement 并生成测试用例"
