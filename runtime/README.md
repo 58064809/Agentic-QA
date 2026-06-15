@@ -34,7 +34,7 @@ agentic-qa 继续上一轮分析，补充边界条件
 
 - **纯自然语言**：用户意图文本不接受 `--flags`、`--options`、子命令或结构化参数。所有指令信息（目标 PRD、操作类型、约束条件）均从自然语言中由 LLM 语义解析提取。
 - **无子命令无参数**：废除 `analyze`、`generate-testcases`、`mvp`、`run`、`confirm` 等子命令体系。废除 `--prd`、`--confirm`、`--use-llm`、`--no-record-run` 等参数。所有配置（PRD 路径、写入确认、LLM 开关等）均由 LLM 从对话上下文和历史记录中推断，或在首次使用时由对话引导用户明确。
-- **单一 Runtime 入口**：终端通过 `agentic-qa` 启动器进入；Codex/IDE Chat 直接把自然语言传给 Runtime。两者后续都走同一套路由、RAG、LangGraph 和记录逻辑。
+- **单一 Runtime 入口**：终端通过 `agentic-qa` 启动器进入；AI 编程助手或 IDE Chat 直接把自然语言传给 Runtime。两者后续都走同一套路由、RAG、LangGraph 和记录逻辑。
 
 ### 入口工作流
 

@@ -2,8 +2,8 @@ requirement_id: example-requirement
 title: 示例需求
 status: draft
 owner: 待指定
-created_by: Codex
-last_updated_by: Codex
+created_by: Agentic-QA
+last_updated_by: Agentic-QA
 artifacts:
   requirement: prd/example-requirement/input/requirement.md
   api_doc: prd/example-requirement/input/api.md

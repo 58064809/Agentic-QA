@@ -21,7 +21,7 @@ Test Execution Agent、Failure Analysis Agent、Bug Draft Agent 提供输入说�
 
 - `prompts/report-generation-prompt.md`
 - `rules/status-rules.md`
-- `rules/codex-output-rules.md`
+- `rules/agent-output-rules.md`
 - `skills/reporting/qa-report-writing-skill.md`
 - `knowledge/templates/qa-report-template.md`
 - `scripts/generate_markdown_report.py`

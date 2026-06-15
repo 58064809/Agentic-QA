@@ -105,10 +105,10 @@ def test_validate_workspace_accepts_needs_revision_and_blocks_archive(tmp_path):
         archive_requirement(workspace)
 
 
-def test_codex_completion_summary_template_is_documented():
+def test_agent_completion_summary_template_is_documented():
     repo_root = Path(__file__).resolve().parents[2]
-    rules = (repo_root / "rules" / "codex-output-rules.md").read_text(encoding="utf-8")
-    template_path = repo_root / "knowledge" / "templates" / "codex-completion-summary-template.md"
+    rules = (repo_root / "rules" / "agent-output-rules.md").read_text(encoding="utf-8")
+    template_path = repo_root / "knowledge" / "templates" / "agent-completion-summary-template.md"
     template = template_path.read_text(encoding="utf-8")
 
     assert "标准完成回执模板" in rules

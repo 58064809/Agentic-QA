@@ -14,12 +14,12 @@
 
 - `needs_human_review` 表示 AI 已生成或修改，等待人工评审，AI 不得继续下游关键动作。
 - `reviewed` 表示人工已阅读并完成评审；如果仍有待处理意见，必须写入 review notes。
-- `needs_revision` 表示评审后要求修改，Codex 应按评审意见增量修订。
+- `needs_revision` 表示评审后要求修改，自动化代理应按评审意见增量修订。
 - `approved` 表示人工确认通过，可进入下一阶段或作为后续输入。
 - `rejected` 表示人工否决，需要重新生成、重做或废弃。
 - `archived` 表示已归档，不允许普通任务覆盖。
 
-旧状态 `needs_human_confirmation` 按 `needs_human_review` 处理，旧状态 `confirmed` 按 `approved` 处理，旧状态 `needs_changes` 按 `needs_revision` 处理。Codex 不得借兼容规则自动放行审核门。
+旧状态 `needs_human_confirmation` 按 `needs_human_review` 处理，旧状态 `confirmed` 按 `approved` 处理，旧状态 `needs_changes` 按 `needs_revision` 处理。自动化代理不得借兼容规则自动放行审核门。
 
 ## 什么算通过审核门
 

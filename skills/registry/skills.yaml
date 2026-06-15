@@ -1,7 +1,7 @@
 version: 1
 registry_type: runtime_skills
 required_first_version: true
-updated_by: Codex
+updated_by: Agentic-QA
 layers:
   core: 通用输入、上下文、检索和输出格式化能力
   analysis: 需求分析、范围拆解和风险识别能力

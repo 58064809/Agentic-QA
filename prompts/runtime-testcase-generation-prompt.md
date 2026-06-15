@@ -174,7 +174,7 @@ run_id: <current_run_id>
 
 | 维度 | 标准测试用例设计 Prompt | Runtime 测试用例生成 Prompt |
 |------|------------------------|---------------------------|
-| 执行环境 | 手动或 Codex 执行 | LangGraph Graph 节点执行 |
+| 执行环境 | 手动或 AI 编程助手执行 | LangGraph Graph 节点执行 |
 | 输入来源 | 文件直接读取 | `context_loader_node` 加载 |
 | 输出后处理 | 无 | 经过 `testcase_quality_check_node` |
 | Run ID 记录 | 无 | 需要在 Front Matter 中记录 `run_id` |

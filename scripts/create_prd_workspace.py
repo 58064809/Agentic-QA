@@ -193,7 +193,7 @@ def create_workspace(
     prd_root: Path | str = "prd",
     title: str | None = None,
     owner: str = "待指定",
-    created_by: str = "Codex",
+    created_by: str = "Agentic-QA",
 ) -> Path:
     """Create a standard PRD workspace without overwriting existing files."""
 

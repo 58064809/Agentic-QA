@@ -8,8 +8,8 @@ CORE_FILES = [
     "README.md",
     "AGENTS.md",
     "COMMANDS.md",
-    "rules/codex-output-rules.md",
-    "knowledge/templates/codex-completion-summary-template.md",
+    "rules/agent-output-rules.md",
+    "knowledge/templates/agent-completion-summary-template.md",
     ".github/workflows/ci.yml",
     "docs/production-agent-runtime-roadmap.md",
     "docs/roadmap.md",
@@ -45,7 +45,7 @@ CORE_DIRS = [
     "rag",
     "configs",
 ]
-CODEX_OUTPUT_REQUIRED_TERMS = [
+AGENT_OUTPUT_REQUIRED_TERMS = [
     "标准完成回执模板",
     "变更摘要",
     "修改文件",
@@ -190,15 +190,15 @@ def validate_docs_consistency(repo_root: Path) -> list[str]:
         require_path(repo_root / relative_path, "核心目录", errors, directory=True)
 
     require_terms(
-        repo_root / "rules/codex-output-rules.md",
-        CODEX_OUTPUT_REQUIRED_TERMS,
-        "Codex 输出规则",
+        repo_root / "rules/agent-output-rules.md",
+        AGENT_OUTPUT_REQUIRED_TERMS,
+        "Agent 输出规则",
         errors,
     )
     require_terms(
-        repo_root / "knowledge/templates/codex-completion-summary-template.md",
+        repo_root / "knowledge/templates/agent-completion-summary-template.md",
         COMPLETION_TEMPLATE_REQUIRED_TERMS,
-        "Codex 完成回执模板",
+        "Agent 完成回执模板",
         errors,
     )
     errors.extend(find_broken_markdown_path_refs(repo_root))

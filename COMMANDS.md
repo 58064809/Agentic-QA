@@ -2,12 +2,12 @@
 
 Runtime 通过 LLM 语义路由自动识别用户意图，无需子命令或参数。用户只需输入纯自然语言命令，Runtime 自动路由到对应 Workflow 和 Agent。
 
-所有任务完成后的 Chat 回复必须遵守 `rules/codex-output-rules.md`：不粘贴完整大文件或完整 diff，只输出摘要、关键路径、验收结果和待人工确认项。
+所有任务完成后的 Chat 回复必须遵守 `rules/agent-output-rules.md`：不粘贴完整大文件或完整 diff，只输出摘要、关键路径、验收结果和待人工确认项。
 完成回执必须包含：变更摘要、修改文件、验收结果、待人工确认、下一步建议。
 
 ## LLM 语义路由
 
-Agentic-QA 的入口为纯自然语言命令 `agentic-qa "你的需求"`，无需子命令或参数。Codex 通过 LLM 语义理解将自然语言路由到对应的 Workflow。
+Agentic-QA 的入口为纯自然语言命令 `agentic-qa "你的需求"`，无需子命令或参数。Runtime 通过 LLM 语义理解将自然语言路由到对应的 Workflow。
 
 ### 设计原则
 

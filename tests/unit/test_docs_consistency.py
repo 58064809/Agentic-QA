@@ -54,11 +54,11 @@ def create_minimal_docs_repo(root: Path) -> Path:
     write_file(root / "workflows/10-runtime-testcase-generation-workflow.md")
     write_file(root / "runtime/README.md")
     write_file(
-        root / "rules/codex-output-rules.md",
+        root / "rules/agent-output-rules.md",
         "标准完成回执模板\n变更摘要\n修改文件\n验收结果\n待人工确认\n下一步建议\n",
     )
     write_file(
-        root / "knowledge/templates/codex-completion-summary-template.md",
+        root / "knowledge/templates/agent-completion-summary-template.md",
         "变更摘要\n修改文件\n验收结果\n待人工确认\n下一步建议\n未执行命令必须说明原因\n",
     )
     return root
@@ -111,16 +111,16 @@ def test_validate_docs_consistency_reports_missing_runtime_readme(tmp_path):
     assert any(error.endswith("runtime/README.md") for error in errors)
 
 
-def test_validate_docs_consistency_reports_missing_codex_output_heading(tmp_path):
+def test_validate_docs_consistency_reports_missing_agent_output_heading(tmp_path):
     repo_root = create_minimal_docs_repo(tmp_path)
     write_file(
-        repo_root / "rules/codex-output-rules.md",
+        repo_root / "rules/agent-output-rules.md",
         "变更摘要\n修改文件\n验收结果\n待人工确认\n下一步建议\n",
     )
 
     errors = validate_docs_consistency(repo_root)
 
-    assert any("Codex 输出规则缺少关键内容: 标准完成回执模板" in error for error in errors)
+    assert any("Agent 输出规则缺少关键内容: 标准完成回执模板" in error for error in errors)
 
 
 def test_validate_docs_consistency_does_not_skip_path_refs_with_or(tmp_path):

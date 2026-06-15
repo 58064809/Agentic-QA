@@ -298,17 +298,16 @@ FREEMODEL_MODEL=your-model-name
 
 | 路径 | 说明 |
 |---|---|
-| `config/` | 项目运行配置、Profile 配置和示例配置 |
+| `configs/` | Runtime、RAG、LLM 和 Workflow 配置 |
 | `runtime/` | Runtime 主体代码，负责工作流编排和执行 |
-| `runtime/config/` | 配置加载、合并、校验和环境变量解析 |
-| `runtime/intent/` | 意图识别、任务解析和结构化任务结果 |
-| `runtime/workflow/` | 工作流选择、注册和执行入口 |
+| `runtime/config.py` | 配置加载、合并和统一配置对象 |
 | `runtime/graph/` | 工作流图、节点、状态和路由 |
-| `runtime/rag/` | 文档切分、索引、检索和上下文选择 |
-| `runtime/agents/` | 可执行 QA Agent 节点或 Agent 适配 |
 | `runtime/llm/` | LLM 调用抽象和模型适配 |
+| `runtime/records/` | Runtime 运行记录、摘要、状态和 RAG trace 写入 |
+| `runtime/session/` | 会话持久化和恢复 |
 | `runtime/tools/` | 文件读写、产物写入、测试执行和报告工具 |
 | `runtime/schemas/` | 结构化输入输出 Schema |
+| `rag/` | 文档加载、切分、索引、检索、Embedding 和向量库 |
 | `integrations/` | 飞书、微信、钉钉、API 等外部入口适配 |
 | `workflows/` | QA 工作流定义、流程配置和执行策略 |
 | `prompts/` | Prompt 模板 |
