@@ -1,49 +1,68 @@
-# Agentic-QA 路线图
+# Agentic-QA 建设路线图
 
-## 001：保留并完善现有声明式工作台
+本文档替代历史 Runtime 路线草稿，围绕当前 Agentic QA Engineering 目标重新组织。
 
-继续维护 `AGENTS.md`、`COMMANDS.md`、`workflows/`、`agents/`、`prompts/`、`rules/`、`skills/`、`knowledge/`、`prd/`、`scripts/` 和 `tests/`。当前默认模式为 Runtime 驱动的自然语言执行引擎。
+## 工程底座
 
-## 002：新增 Runtime 最小骨架
+- 配置层
+- 需求工作区
+- 运行记录
+- 产物写入
+- 产物版本管理
+- 历史追溯
+- 失败处理
+- 幂等与恢复
+- 确认状态管理
 
-在后续任务中新增轻量 `runtime/` 骨架。该骨架只做最小可运行闭环，不引入复杂平台、不接生产环境、不替代声明式资产。
+## Runtime
 
-## 003：做第一个 LangGraph 流程：测试用例生成
+- 意图识别
+- 工作流选择
+- 工作流编排
+- 状态流转
+- 质量检查
+- Review Gate Workflow
 
-第一条 Runtime 闭环聚焦 `workflows/02-testcase-generation-workflow.md`，读取现有 Prompt、Rules、Skills、Knowledge，生成 `prd/<需求名>/cases/test-cases.md` 草稿。
+## RAG
 
-## 004：加入 Human-in-the-loop
+- 文档加载
+- Markdown 切分
+- 索引构建
+- 上下文检索
+- 召回结果追踪
+- 上下文预算控制
 
-对写入、执行、失败定性、报告结论和归档动作加入人工审核门。Runtime 必须暂停等待确认，不得直接替代人工判断。
+## QA 生成能力
 
-## 005：加入持久化和运行记录
+- 需求分析生成
+- 测试用例生成
+- 接口测试生成
+- UI 测试生成
+- 失败分析生成
+- Bug 草稿生成
+- QA 报告生成
 
-加入 Checkpoint、运行记录、状态恢复和可观测性。优先保持轻量，不在早期引入复杂数据库或平台服务。
+## 测试执行能力
 
-## 006：接入真实 QA 工具
+- pytest 执行
+- Playwright 执行
+- 执行结果收集
+- 失败归因
+- 报告汇总
 
-逐步接入 pytest、Playwright、Allure、日志分析和报告生成工具。真实业务环境执行必须由人工授权，且不得默认连接生产环境。
+## 协作入口
 
-## 007：纯自然语言 CLI 入口
+- AI 编辑器 Chat
+- 飞书 Bot
+- 微信 Bot
+- 钉钉 Bot
+- API
+- Web
 
-新增 Phase 1.5 自然语言交互入口，定位为自动化代理协作主线的 CLI 对等体。用户无需记忆子命令、参数或工作流名称，直接以纯自然语言描述任务意图即可驱动完整 QA 流程。
+## 知识沉淀
 
-### 能力边界
-
-- **纯自然语言入口**：全局命令 `agentic-qa`，只接受自然语言文本，无 `--flag`、无子命令、无位置参数。示例：`agentic-qa 帮我分析 prd/支付模块的需求`。
-- **LLM 语义路由**：入口不硬编码意图分类逻辑，由 LLM 将用户输入路由到对应 Workflow（需求分析 / 测试用例生成 / 增量修订 / 导出评审文件 / 状态标记等），同时携带目标 PRD 上下文。
-- **Session 持久化**：每次交互关联一个 session ID，自动写入 `.runtime/sessions/`，记录对话轮次、路由决策、已写入产物路径和人工确认状态。同一 session 内连续对话自动延续上下文，不打断工作流。
-- **自动写入（不打断）**：LLM 确认意图后直接按 Workflow 规则写入产物草稿，不再额外等待用户二次确认是否写入；人工审核门保留在写入之后（评审环节），不前置为执行阻断。
-- **无子命令无参数**：入口不提供 `--help`、`--dry-run`、`--confirm`、`--use-llm` 等参数开关。dry-run / confirm 等策略由 Runtime 内部根据 session 状态和 Workflow 规则自动决定。
-
-### 与现有 Runtime 的关系
-
-- 纯自然语言入口与声明式工作台共存，各自面向不同使用场景。
-- 复用现有 Runtime 的 Writer、Checkpointer、Metadata 更新等基础设施。
-- 不影响现有 AI Chat 协作主线：用户仍可在 PyCharm Chat 或其他 AI 编程助手中直接协作，两种入口并行。
-
-### 后续演进方向
-
-- 支持多轮对话纠错：用户可在同一 session 内补充信息或修正需求，LLM 增量更新已有产物。
-- Session 恢复：中断后可通过 session ID 恢复上次对话上下文。
-- 可选静默模式：仅输出关键摘要，不输出完整工作流日志。
+- 需求资产归档
+- 历史用例复用
+- 缺陷经验沉淀
+- 项目规则沉淀
+- RAG 知识库持续更新
