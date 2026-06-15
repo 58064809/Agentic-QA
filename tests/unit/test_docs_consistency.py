@@ -17,14 +17,11 @@ def write_file(path: Path, content: str = "placeholder") -> None:
 def create_minimal_docs_repo(root: Path) -> Path:
     for directory in [
         "workflows",
-        ".github",
         ".github/workflows",
         "docs",
-        "docs/architecture",
         "agents",
         "prompts",
         "rules",
-        "skills",
         "skills/registry",
         "skills/core",
         "skills/analysis",
@@ -32,7 +29,6 @@ def create_minimal_docs_repo(root: Path) -> Path:
         "skills/automation",
         "skills/reporting",
         "skills/knowledge",
-        "knowledge",
         "knowledge/templates",
         "prd",
         "scripts",
@@ -44,15 +40,25 @@ def create_minimal_docs_repo(root: Path) -> Path:
     ]:
         (root / directory).mkdir(parents=True, exist_ok=True)
 
-    write_file(root / "README.md")
-    write_file(root / "AGENTS.md")
-    write_file(root / "COMMANDS.md")
-    write_file(root / ".github/workflows/ci.yml")
-    write_file(root / "skills/registry/skills.yaml")
-    write_file(root / "docs/production-agent-runtime-roadmap.md")
-    write_file(root / "docs/roadmap.md")
-    write_file(root / "workflows/10-runtime-testcase-generation-workflow.md")
-    write_file(root / "runtime/README.md")
+    for file_path in [
+        "README.md",
+        "AGENTS.md",
+        "COMMANDS.md",
+        ".github/workflows/ci.yml",
+        "skills/registry/skills.yaml",
+        "docs/workflow-dsl.md",
+        "docs/runtime-reliability.md",
+        "docs/artifact-versioning.md",
+        "docs/review-gate.md",
+        "docs/artifact-standards.md",
+        "docs/testcase-standards.md",
+        "docs/rag-design.md",
+        "docs/roadmap.md",
+        "workflows/10-runtime-testcase-generation-workflow.md",
+        "runtime/README.md",
+    ]:
+        write_file(root / file_path)
+
     write_file(
         root / "rules/agent-output-rules.md",
         "标准完成回执模板\n变更摘要\n修改文件\n验收结果\n待人工确认\n下一步建议\n",
@@ -90,16 +96,13 @@ def test_validate_docs_consistency_reports_missing_ci_workflow(tmp_path):
     assert any(error.endswith(".github/workflows/ci.yml") for error in errors)
 
 
-def test_validate_docs_consistency_reports_missing_runtime_roadmap(tmp_path):
+def test_validate_docs_consistency_reports_missing_workflow_dsl(tmp_path):
     repo_root = create_minimal_docs_repo(tmp_path)
-    (repo_root / "docs/production-agent-runtime-roadmap.md").unlink()
+    (repo_root / "docs/workflow-dsl.md").unlink()
 
     errors = validate_docs_consistency(repo_root)
 
-    assert any(
-        error.endswith("docs/production-agent-runtime-roadmap.md")
-        for error in errors
-    )
+    assert any(error.endswith("docs/workflow-dsl.md") for error in errors)
 
 
 def test_validate_docs_consistency_reports_missing_runtime_readme(tmp_path):
