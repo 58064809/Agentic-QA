@@ -145,3 +145,25 @@ def test_validate_docs_consistency_ignores_local_runtime_output_path(tmp_path):
     errors = validate_docs_consistency(repo_root)
 
     assert not errors
+
+
+def test_validate_docs_consistency_allows_readme_target_state_paths(tmp_path):
+    repo_root = create_minimal_docs_repo(tmp_path)
+    write_file(
+        repo_root / "README.md",
+        "目标结构包含 `runtime/config/`、`runtime/intent/`、`runtime/workflow/`、`runtime/rag/`、`runtime/agents/`。\n",
+    )
+
+    errors = validate_docs_consistency(repo_root)
+
+    assert not errors
+
+
+def test_validate_docs_consistency_ignores_backup_and_prd_markdown(tmp_path):
+    repo_root = create_minimal_docs_repo(tmp_path)
+    write_file(repo_root / "README_备份.md", "旧备份引用 `docs/not-exist.md`。\n")
+    write_file(repo_root / "prd/demo/runs/run-1/output.md", "运行产物引用 `docs/not-exist.md`。\n")
+
+    errors = validate_docs_consistency(repo_root)
+
+    assert not errors

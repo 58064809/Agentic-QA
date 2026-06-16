@@ -16,7 +16,7 @@ from runtime.graph.nodes.mvp_context_loader import (
     TASK_TESTCASE_GENERATION,
 )
 from runtime.graph.state import QAWorkflowState
-from runtime.llm.config import API_KEY_ENV, OpenAICompatibleConfig
+from runtime.llm.config import OpenAICompatibleConfig
 from runtime.llm.openai_compatible import OpenAICompatibleAdapter
 from runtime.llm.prompt_builder import (
     build_requirement_analysis_prompt,
@@ -662,9 +662,10 @@ def _generate_with_optional_llm(
     prompt: str,
     fallback: str,
 ) -> str:
-    config = OpenAICompatibleConfig.from_env()
+    config = OpenAICompatibleConfig.from_metadata(state.llm)
     state.llm["enabled"] = state.use_llm
     state.llm["provider"] = "openai_compatible"
+    state.llm["credential_env"] = config.api_key_env
     state.llm["base_url"] = config.base_url
     state.llm["model"] = config.model
     state.llm["max_input_chars"] = config.max_input_chars
@@ -674,7 +675,7 @@ def _generate_with_optional_llm(
 
     if not config.has_api_key:
         message = (
-            f"已请求 LLM，但未设置 {API_KEY_ENV} 环境变量，已降级为 Skeleton 生成。"
+            f"已请求 LLM，但未设置 {config.api_key_env} 环境变量，已降级为 Skeleton 生成。"
         )
         state.warnings.append(message)
         _append_llm_error(state, message)
@@ -1240,7 +1241,7 @@ def requirement_analysis_generation_node(state: QAWorkflowState) -> QAWorkflowSt
         state.loaded_files,
         prd_prefix=_prd_prefix(state),
         rag_context=_build_rag_context(state),
-        max_input_chars=int(state.llm.get("max_input_chars") or OpenAICompatibleConfig.from_env().max_input_chars),
+        max_input_chars=int(state.llm.get("max_input_chars") or 32000),
     )
     state.warnings.extend(prompt.warnings)
     artifact = _generate_with_optional_llm(
@@ -1274,7 +1275,7 @@ def testcase_generation_mvp_node(state: QAWorkflowState) -> QAWorkflowState:
         prd_prefix=_prd_prefix(state),
         generated_analysis=state.draft_artifacts.get("requirement_analysis"),
         rag_context=_build_rag_context(state),
-        max_input_chars=int(state.llm.get("max_input_chars") or OpenAICompatibleConfig.from_env().max_input_chars),
+        max_input_chars=int(state.llm.get("max_input_chars") or 32000),
     )
     state.warnings.extend(prompt.warnings)
     artifact = _generate_with_optional_llm(

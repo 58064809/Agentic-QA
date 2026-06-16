@@ -173,7 +173,7 @@ def _route_user_intent(user_input: str, repo_root: Path):
             user_input,
             reason="配置已禁用 LLM 语义路由，已使用确定性路由",
         )
-    config = OpenAICompatibleConfig.from_env()
+    config = OpenAICompatibleConfig.from_app_config(app_config.llm)
     return route_intent(user_input, config)
 
 

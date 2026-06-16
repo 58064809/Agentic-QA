@@ -48,6 +48,7 @@ def test_openai_compatible_config_reads_env_without_serializing_key(monkeypatch)
         "enabled": True,
         "used": False,
         "provider": "deepseek",
+        "credential_env": "DEEPSEEK_API_KEY",
         "base_url": "https://api.deepseek.com",
         "model": "deepseek-v4-flash",
         "chat_fallback_enabled": False,

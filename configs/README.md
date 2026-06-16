@@ -22,6 +22,22 @@ copy configs\config.example.yaml configs\config.yaml
 
 本地私有覆盖写入 `configs/local.yaml` 或 `configs/private.yaml`。这些文件应通过 `.gitignore` 隔离。
 
+## 配置分区
+
+| 分区 | 作用 |
+|---|---|
+| `app` | 项目名、运行环境和当前 profile |
+| `input` | 输入来源能力和单文件读取上限 |
+| `llm` | LLM 总开关、语义路由开关、模型、base url 和环境变量名 |
+| `runtime` | 运行记录、幂等和 required 节点失败策略 |
+| `workspace` | PRD 根目录、运行记录目录、产物目录、评审目录和元数据文件名 |
+| `entries` | CLI、API、Chat、Bot 等协作入口开关 |
+| `logging` | 日志目录、日志级别和密钥脱敏策略 |
+| `workflow` | 工作流文件选择、人工 checkpoint 和生成节点 LLM 开关 |
+| `rag` | RAG 索引、Embedding、检索数量和知识库路径 |
+| `output` | 输出格式、候选产物写入和 Review Gate 要求 |
+| `profiles` | 为后续多环境或多运行模式预留的 profile 覆盖 |
+
 ## 工作流配置
 
 ### 生成类 LLM 开关
@@ -36,6 +52,23 @@ llm:
 
 - `enabled: false`：语义路由和生成节点都走确定性降级，不调用 `DEEPSEEK_API_KEY`。
 - `semantic_router_enabled: false`：只关闭 LLM 语义路由，改用确定性路由。
+
+LLM 连接参数可以写在 YAML 中，但密钥本身不能写入 YAML：
+
+```yaml
+llm:
+  provider: deepseek
+  api_key_env: DEEPSEEK_API_KEY
+  base_url_env: DEEPSEEK_BASE_URL
+  model_env: DEEPSEEK_MODEL
+  base_url: https://api.deepseek.com
+  model: deepseek-v4-flash
+  enable_chat_fallback: true
+  max_input_chars: 32000
+```
+
+优先级为：环境变量 > YAML。比如设置了 `DEEPSEEK_MODEL` 时，会覆盖
+`llm.model`；设置了 `DEEPSEEK_BASE_URL` 时，会覆盖 `llm.base_url`。
 
 需求分析、用例生成和 MVP 联合流程可单独控制：
 
@@ -52,6 +85,46 @@ workflow:
 - `mvp_analysis_testcases: false`：需求分析 + 测试用例联合流程不用 LLM。
 
 `llm.enabled=false` 优先级更高；即使 `workflow.use_llm.*=true`，也不会调用 LLM。
+
+## Runtime 和工作区配置
+
+```yaml
+runtime:
+  record_runs: true
+  idempotency_enabled: true
+  fail_fast_required_nodes: true
+
+workspace:
+  prd_root: prd
+  runtime_root: .runtime
+  runs_dir_name: runs
+  artifacts_dir_name: artifacts
+  reviews_dir_name: reviews
+  metadata_file: metadata.yml
+```
+
+- `record_runs`：是否写入运行记录。
+- `idempotency_enabled`：是否启用幂等策略预留开关。
+- `fail_fast_required_nodes`：required 节点失败时是否阻断流程。
+- `workspace.*`：统一约束 PRD 工作区和运行记录的目录命名。
+
+## 协作入口和输出策略
+
+```yaml
+entries:
+  cli_enabled: true
+  api_enabled: false
+  chat_enabled: true
+  bot_enabled: false
+
+output:
+  write_artifact_preview: true
+  require_review_gate: true
+```
+
+- `entries` 当前主要作为目标态入口能力声明，后续 API/Bot/Web 入口会读取这里。
+- `write_artifact_preview`：生成结果先进入候选产物。
+- `require_review_gate`：候选产物进入正式产物前必须经过 Review Gate。
 
 ### Workflow 文件选择
 

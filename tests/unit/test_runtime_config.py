@@ -8,6 +8,7 @@ import runtime.cli as cli
 from runtime.config import load_app_config
 from runtime.graph.nodes.workflow_selector import workflow_selector_node
 from runtime.graph.state import QAWorkflowState
+from runtime.llm.config import OpenAICompatibleConfig
 
 
 def write_file(path: Path, content: str = "placeholder") -> None:
@@ -201,3 +202,88 @@ llm:
 
     assert route.intent == "requirement_analysis"
     assert "配置已禁用 LLM 语义路由" in route.summary
+
+
+def test_load_app_config_reads_structured_config_sections(tmp_path: Path) -> None:
+    write_file(
+        tmp_path / "configs/config.yaml",
+        """
+app:
+  name: demo
+  env: test
+  profile: local
+input:
+  support_feishu_doc: "false"
+  max_file_chars: 12345
+runtime:
+  default_entry: api
+  record_runs: false
+workspace:
+  prd_root: requirements
+  artifacts_dir_name: outputs
+entries:
+  cli_enabled: false
+  api_enabled: true
+logging:
+  level: debug
+output:
+  write_artifact_preview: true
+  require_review_gate: false
+profiles:
+  local:
+    rag:
+      enabled: false
+""",
+    )
+
+    config = load_app_config(tmp_path)
+
+    assert config.project.name == "demo"
+    assert config.project.env == "test"
+    assert config.project.profile == "local"
+    assert config.input.support_feishu_doc is False
+    assert config.input.max_file_chars == 12345
+    assert config.runtime.default_entry == "api"
+    assert config.runtime.record_runs is False
+    assert config.workspace.prd_root == "requirements"
+    assert config.workspace.artifacts_dir_name == "outputs"
+    assert config.entries.cli_enabled is False
+    assert config.entries.api_enabled is True
+    assert config.logging.level == "DEBUG"
+    assert config.output.require_review_gate is False
+    assert config.profiles["local"]["rag"]["enabled"] is False
+
+
+def test_llm_config_merges_yaml_and_env_without_serializing_key(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    write_file(
+        tmp_path / "configs/config.yaml",
+        """
+llm:
+  provider: custom
+  api_key_env: CUSTOM_API_KEY
+  base_url_env: CUSTOM_BASE_URL
+  model_env: CUSTOM_MODEL
+  base_url: https://yaml.example/v1
+  model: yaml-model
+  enable_chat_fallback: false
+  max_input_chars: 9000
+""",
+    )
+    monkeypatch.setenv("CUSTOM_API_KEY", "secret-token")
+    monkeypatch.setenv("CUSTOM_MODEL", "env-model")
+    monkeypatch.delenv("CUSTOM_BASE_URL", raising=False)
+    monkeypatch.delenv("DEEPSEEK_MAX_INPUT_CHARS", raising=False)
+
+    app_config = load_app_config(tmp_path)
+    llm_config = OpenAICompatibleConfig.from_app_config(app_config.llm)
+    metadata = llm_config.to_metadata(enabled=True)
+
+    assert llm_config.api_key == "secret-token"
+    assert llm_config.base_url == "https://yaml.example/v1"
+    assert llm_config.model == "env-model"
+    assert llm_config.enable_chat_fallback is False
+    assert llm_config.max_input_chars == 9000
+    assert "api_key" not in metadata

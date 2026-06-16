@@ -8,6 +8,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
+from runtime.config import load_app_config
 from runtime.graph.app import default_repo_root
 from runtime.graph.nodes.human_review import human_review_node
 from runtime.graph.nodes.metadata_update import metadata_update_node
@@ -229,7 +230,8 @@ def run_mvp_generation_workflow(
 ) -> RuntimeResult:
     root = (repo_root or default_repo_root()).resolve()
     run_id, thread_id = create_run_identity()
-    config = OpenAICompatibleConfig.from_env()
+    app_config = load_app_config(root)
+    config = OpenAICompatibleConfig.from_app_config(app_config.llm)
     max_llm_calls = 2 if task_type == TASK_MVP else 1
     initial_state = QAWorkflowState(
         user_input=user_input,

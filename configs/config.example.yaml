@@ -1,16 +1,52 @@
 app:
   name: agentic-qa
   env: dev
+  profile: default
 
 input:
   support_feishu_doc: true
   support_markdown: true
+  max_file_chars: 200000
 
 llm:
   # 全局 LLM 开关。false 时语义路由和生成节点都优先走确定性降级。
   enabled: true
   # 是否使用 LLM 做自然语言意图识别；false 时使用确定性路由。
   semantic_router_enabled: true
+  # LLM 连接参数只保存非密钥配置；api key 始终从环境变量读取。
+  provider: deepseek
+  api_key_env: DEEPSEEK_API_KEY
+  base_url_env: DEEPSEEK_BASE_URL
+  model_env: DEEPSEEK_MODEL
+  base_url: https://api.deepseek.com
+  model: deepseek-v4-flash
+  enable_chat_fallback: true
+  max_input_chars: 32000
+
+runtime:
+  default_entry: cli
+  record_runs: true
+  idempotency_enabled: true
+  fail_fast_required_nodes: true
+
+workspace:
+  prd_root: prd
+  runtime_root: .runtime
+  runs_dir_name: runs
+  artifacts_dir_name: artifacts
+  reviews_dir_name: reviews
+  metadata_file: metadata.yml
+
+entries:
+  cli_enabled: true
+  api_enabled: false
+  chat_enabled: true
+  bot_enabled: false
+
+logging:
+  level: INFO
+  dir: logs
+  redact_secrets: true
 
 workflow:
   enable_human_checkpoint: true
@@ -58,3 +94,8 @@ output:
   markdown: true
   yaml: true
   json: true
+  write_artifact_preview: true
+  require_review_gate: true
+
+profiles:
+  default: {}
