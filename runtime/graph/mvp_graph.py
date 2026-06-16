@@ -10,9 +10,10 @@ from langgraph.types import Command
 
 from runtime.config import load_app_config
 from runtime.graph.app import default_repo_root
+from runtime.graph.nodes.artifact_preview_writer import artifact_preview_writer_node
+from runtime.graph.nodes.artifact_promoter import promote_artifacts
 from runtime.graph.nodes.human_review import human_review_node
 from runtime.graph.nodes.metadata_update import metadata_update_node
-from runtime.graph.nodes.mvp_artifact_writer import mvp_artifact_writer_node
 from runtime.graph.nodes.mvp_context_loader import (
     TASK_ANALYSIS,
     TASK_MVP,
@@ -160,8 +161,8 @@ def build_mvp_generation_graph(repo_root: Path, checkpointer: MemorySaver | None
     )
     graph.add_node("human_review_node", _wrap_node(human_review_node))
     graph.add_node(
-        "mvp_artifact_writer_node",
-        _wrap_node(lambda state: mvp_artifact_writer_node(state, root)),
+        "artifact_preview_writer_node",
+        _wrap_node(lambda state: artifact_preview_writer_node(state, root)),
     )
     graph.add_node(
         "metadata_update_node",
@@ -215,9 +216,9 @@ def build_mvp_generation_graph(repo_root: Path, checkpointer: MemorySaver | None
     graph.add_conditional_edges(
         "human_review_node",
         _route_after_human_review,
-        {"write": "mvp_artifact_writer_node", "end": END, "error": END},
+        {"write": "artifact_preview_writer_node", "end": END, "error": END},
     )
-    graph.add_edge("mvp_artifact_writer_node", "metadata_update_node")
+    graph.add_edge("artifact_preview_writer_node", "metadata_update_node")
     graph.add_edge("metadata_update_node", END)
     return graph.compile(checkpointer=checkpointer or MemorySaver())
 
@@ -328,6 +329,23 @@ def resume_mvp_generation_workflow(
         graph_state=graph_state,
         checkpointer=checkpointer,
     )
+
+
+def promote_mvp_artifacts(
+    prd_path: Path | str,
+    run_id: str,
+    *,
+    repo_root: Path | None = None,
+    task_type: str = TASK_MVP,
+) -> RuntimeResult:
+    root = (repo_root or default_repo_root()).resolve()
+    state = promote_artifacts(
+        prd_path,
+        run_id,
+        repo_root=root,
+        task_type=task_type,
+    )
+    return RuntimeResult.from_state(state)
 
 
 def run_requirement_analysis_workflow(

@@ -155,3 +155,21 @@ def resume_recorded_workflow(
         review_notes=review_notes,
         repo_root=root,
     )
+
+
+def promote_artifacts(
+    prd_path: Path | str,
+    run_id: str,
+    *,
+    repo_root: Path | None = None,
+    task_type: str = "mvp_analysis_testcases",
+) -> RuntimeResult:
+    root = (repo_root or default_repo_root()).resolve()
+    from runtime.graph.mvp_graph import promote_mvp_artifacts
+
+    return promote_mvp_artifacts(
+        prd_path,
+        run_id,
+        repo_root=root,
+        task_type=task_type,
+    )

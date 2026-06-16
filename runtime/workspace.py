@@ -179,9 +179,13 @@ def combined_artifact_preview(draft_artifacts: dict[str, str]) -> str:
         "qa_report": "QA 报告候选",
     }
     for key, content in draft_artifacts.items():
+        sections.append(f"<!-- artifact:start {key} -->")
+        sections.append("")
         sections.append(f"## {titles.get(key, key)}")
         sections.append("")
         sections.append(content.strip())
+        sections.append("")
+        sections.append(f"<!-- artifact:end {key} -->")
         sections.append("")
     return "\n".join(sections).rstrip() + "\n"
 

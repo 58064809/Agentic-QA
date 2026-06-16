@@ -5,11 +5,13 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from runtime.graph.mvp_graph import (  # noqa: E402
+    promote_mvp_artifacts,
     run_mvp_analysis_and_testcases_workflow,
     run_mvp_testcase_generation_workflow,
     run_requirement_analysis_workflow,
@@ -350,11 +352,88 @@ def test_mvp_dry_run_generates_two_drafts_without_writing(tmp_path):
     assert result.task_type == "mvp_analysis_testcases"
     assert result.run_status == "waiting_review"
     assert result.review_status == "needs_human_review"
+    assert "artifact_preview_writer_node" in result.executed_nodes
     assert set(result.draft_artifacts) == {"requirement_analysis", "testcases"}
     assert "## 12. 需求到测试覆盖映射" in result.draft_artifacts["requirement_analysis"]
     assert count_testcase_rows(result.draft_artifacts["testcases"]) >= 15
     assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
+def test_promote_artifacts_requires_approved_reviews(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_analysis_and_testcases_workflow(
+        "请分析需求并生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=False,
+    )
+
+    promoted = promote_mvp_artifacts(
+        "prd/demo-requirement",
+        result.run_id or "runtime",
+        repo_root=repo_root,
+    )
+
+    assert not promoted.success
+    assert any("approved/confirmed" in error for error in promoted.errors)
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
+def test_promote_artifacts_publishes_confirmed_preview(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    current_testcases = repo_root / "prd/demo-requirement/artifacts/testcases.md"
+    write_file(current_testcases, "旧版测试用例")
+
+    result = run_mvp_analysis_and_testcases_workflow(
+        "请分析需求并生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=False,
+    )
+    assert result.run_id is None
+    run_id = "runtime"
+
+    for review_name in ("requirement-analysis.review.yml", "testcases.review.yml"):
+        review_path = repo_root / "prd/demo-requirement/reviews" / review_name
+        review = yaml.safe_load(review_path.read_text(encoding="utf-8")) or {}
+        review["status"] = "confirmed"
+        review["decision"] = "confirmed"
+        review["run_id"] = run_id
+        review_path.write_text(
+            yaml.safe_dump(review, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+
+    promoted = promote_mvp_artifacts(
+        "prd/demo-requirement",
+        run_id,
+        repo_root=repo_root,
+    )
+
+    analysis_path = repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md"
+    testcases_path = repo_root / "prd/demo-requirement/artifacts/testcases.md"
+    assert promoted.success
+    assert promoted.review_status == "confirmed"
+    assert promoted.run_status == "completed"
+    assert analysis_path.is_file()
+    assert testcases_path.is_file()
+    assert "## 12. 需求到测试覆盖映射" in analysis_path.read_text(encoding="utf-8")
+    assert "| 用例ID |" in testcases_path.read_text(encoding="utf-8")
+    history_dir = repo_root / "prd/demo-requirement/artifacts/history/testcases"
+    assert list(history_dir.glob("*.previous.md"))
+
+    metadata = yaml.safe_load(
+        (repo_root / "prd/demo-requirement/metadata.yml").read_text(encoding="utf-8")
+    )
+    assert metadata["artifacts"]["testcases"]["status"] == "confirmed"
+    assert metadata["artifacts"]["testcases"]["latest_run_id"] == run_id
+    review = yaml.safe_load(
+        (repo_root / "prd/demo-requirement/reviews/testcases.review.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert review["decision"] == "promoted"
 
 
 def test_mvp_approve_write_creates_analysis_and_testcases(tmp_path):
