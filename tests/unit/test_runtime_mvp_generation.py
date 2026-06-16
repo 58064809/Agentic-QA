@@ -10,6 +10,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+import runtime.cli as cli  # noqa: E402
 from runtime.graph.mvp_graph import (  # noqa: E402
     promote_mvp_artifacts,
     run_mvp_analysis_and_testcases_workflow,
@@ -434,6 +435,55 @@ def test_promote_artifacts_publishes_confirmed_preview(tmp_path):
         )
     )
     assert review["decision"] == "promoted"
+
+
+def test_cli_natural_language_promote_approves_and_publishes_testcases(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_analysis_and_testcases_workflow(
+        "请分析需求并生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+    )
+
+    prd_rel, promoted = cli._run_natural_promote_request(
+        "测试用例通过，发布正式产物 prd/demo-requirement",
+        repo_root,
+    )
+
+    assert prd_rel == "prd/demo-requirement"
+    assert promoted.success
+    assert promoted.output_paths == {
+        "testcases": "prd/demo-requirement/artifacts/testcases.md"
+    }
+    assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").is_file()
+    review = yaml.safe_load(
+        (repo_root / "prd/demo-requirement/reviews/testcases.review.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert review["status"] == "confirmed"
+    assert review["decision"] == "promoted"
+    assert review["promoted_run_id"] == result.run_id
+
+
+def test_cli_promote_command_publishes_selected_artifact(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_analysis_and_testcases_workflow(
+        "请分析需求并生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+    )
+
+    exit_code = cli._run_promote_command(
+        ["prd/demo-requirement", result.run_id or "", "testcases"],
+        repo_root,
+    )
+
+    assert exit_code == 0
+    assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").is_file()
+    assert not (
+        repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md"
+    ).exists()
 
 
 def test_mvp_approve_write_creates_analysis_and_testcases(tmp_path):

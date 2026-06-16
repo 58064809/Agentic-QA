@@ -7,7 +7,7 @@
     - 纯自然语言，无子命令、无参数
     - LLM 语义路由自动提取意图和文档来源
     - 自动进入对话循环，支持多轮会话
-    - 自动写入产物（不打断）
+    - 自动写入候选产物，不直接发布正式产物
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ import yaml
 from runtime.config import load_app_config
 from runtime.graph.app import (
     default_repo_root,
+    promote_artifacts,
     run_mvp_analysis_and_testcases_workflow,
     run_mvp_testcase_generation_workflow,
     run_requirement_analysis_workflow,
@@ -31,7 +32,7 @@ from runtime.llm.config import OpenAICompatibleConfig
 from runtime.llm.intent_router import route_intent, route_intent_fallback
 from runtime.schemas.runtime_result import RuntimeResult
 from runtime.session import Session, SessionManager
-from runtime.workspace import PRDWorkspace, default_metadata, write_yaml_mapping
+from runtime.workspace import PRDWorkspace, default_metadata, read_yaml_mapping, write_yaml_mapping
 
 PRD_WORKSPACE_PATH_RE = re.compile(
     r"""
@@ -44,6 +45,15 @@ PRD_WORKSPACE_PATH_RE = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
+RUN_ID_RE = re.compile(r"run-\d{8}-\d{6}-[a-z0-9]+|runtime", re.IGNORECASE)
+PROMOTE_KEYWORDS = ("发布正式产物", "发布产物", "正式发布", "通过并发布", "promote")
+APPROVE_KEYWORDS = ("通过", "确认", "approved", "confirmed", "approve")
+ARTIFACT_ALIASES = {
+    "requirement_analysis": ("requirement_analysis", "requirement-analysis", "需求分析"),
+    "testcases": ("testcases", "testcase", "test-cases", "测试用例", "用例"),
+    "qa_report": ("qa_report", "qa-report", "QA报告", "qa report"),
+}
+
 # ── 帮助提示 ──────────────────────────────────────────────────
 
 HELP_TEXT = """用法:
@@ -51,10 +61,12 @@ HELP_TEXT = """用法:
     agentic-qa rag status
     agentic-qa rag build
     agentic-qa rag search "边界值 活动玩法"
+    agentic-qa promote prd/sample-login-requirement [run_id] [testcases|requirement_analysis]
 
 示例:
     agentic-qa "帮我分析登录需求 D:\\需求\\登录.md"
     agentic-qa "分析 prd/sample-login-requirement 并生成测试用例"
+    agentic-qa "测试用例通过，发布正式产物 prd/sample-login-requirement"
     agentic-qa "处理这个飞书链接 https://xxx.feishu.cn/docx/123"
 
 对话模式:
@@ -101,6 +113,153 @@ def _run_rag_command(args: list[str], repo_root: Path) -> int:
 
     print(f"未知 RAG 命令: {command}")
     return 1
+
+
+def _read_latest_run_id(workspace: PRDWorkspace) -> str | None:
+    latest_path = workspace.runs_dir / "latest.yml"
+    if not latest_path.is_file():
+        return None
+    latest = read_yaml_mapping(latest_path)
+    run_id = latest.get("run_id")
+    return str(run_id) if run_id else None
+
+
+def _extract_run_id(value: str) -> str | None:
+    match = RUN_ID_RE.search(value)
+    return match.group(0) if match else None
+
+
+def _artifact_keys_from_text(value: str) -> list[str]:
+    keys = [
+        key
+        for key, aliases in ARTIFACT_ALIASES.items()
+        if any(alias.lower() in value.lower() for alias in aliases)
+    ]
+    return keys or ["requirement_analysis", "testcases"]
+
+
+def _task_type_from_artifact_keys(keys: list[str]) -> str:
+    normalized = set(keys)
+    if normalized == {"requirement_analysis"}:
+        return "analysis"
+    if normalized == {"testcases"}:
+        return "testcase_generation"
+    return "mvp_analysis_testcases"
+
+
+def _is_promote_request(user_input: str) -> bool:
+    return any(keyword in user_input for keyword in PROMOTE_KEYWORDS) and any(
+        keyword in user_input for keyword in APPROVE_KEYWORDS
+    )
+
+
+def _approve_reviews_for_promotion(
+    repo_root: Path,
+    prd_rel: str,
+    run_id: str,
+    artifact_keys: list[str],
+    *,
+    reviewed_by: str = "user",
+    source_message: str = "",
+) -> None:
+    workspace = PRDWorkspace(repo_root / prd_rel)
+    timestamp = datetime.now().astimezone().replace(microsecond=0).isoformat()
+    for key in artifact_keys:
+        review_path = workspace.review_path(key)
+        review = read_yaml_mapping(review_path) if review_path.is_file() else {}
+        review["status"] = "approved"
+        review["decision"] = "approved"
+        review["reviewer"] = reviewed_by
+        review["reviewed_at"] = timestamp
+        review["run_id"] = run_id
+        review["source_message"] = source_message
+        write_yaml_mapping(review_path, review)
+
+
+def _print_promote_result(result: RuntimeResult) -> None:
+    if result.errors:
+        print("❌ 发布失败:")
+        for error in result.errors:
+            print(f"   - {error}")
+        return
+    print("✅ 已发布正式产物")
+    for key, path in result.output_paths.items():
+        print(f"   - {key}: {path}")
+
+
+def _run_promote(
+    repo_root: Path,
+    prd_rel: str,
+    run_id: str | None,
+    artifact_keys: list[str],
+    *,
+    source_message: str,
+) -> RuntimeResult:
+    workspace = PRDWorkspace(repo_root / prd_rel)
+    selected_run_id = run_id or _read_latest_run_id(workspace)
+    if not selected_run_id:
+        raise ValueError(f"未找到 latest run_id: {workspace.runs_dir / 'latest.yml'}")
+    _approve_reviews_for_promotion(
+        repo_root,
+        prd_rel,
+        selected_run_id,
+        artifact_keys,
+        source_message=source_message,
+    )
+    return promote_artifacts(
+        prd_rel,
+        selected_run_id,
+        repo_root=repo_root,
+        task_type=_task_type_from_artifact_keys(artifact_keys),
+    )
+
+
+def _run_promote_command(args: list[str], repo_root: Path) -> int:
+    if not args or args[0] in {"help", "--help", "-h"}:
+        print(
+            "用法: agentic-qa promote prd/<requirement> "
+            "[run_id] [testcases|requirement_analysis]"
+        )
+        return 0
+    prd_rel = _ensure_prd_workspace(repo_root, args[0])
+    rest = " ".join(args[1:])
+    run_id = _extract_run_id(rest)
+    artifact_keys = _artifact_keys_from_text(rest)
+    try:
+        result = _run_promote(
+            repo_root,
+            prd_rel,
+            run_id,
+            artifact_keys,
+            source_message="agentic-qa promote " + " ".join(args),
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"❌ {exc}")
+        return 1
+    _print_promote_result(result)
+    return 0 if result.success else 1
+
+
+def _run_natural_promote_request(
+    user_input: str,
+    repo_root: Path,
+    *,
+    fallback_prd: str | None = None,
+) -> tuple[str, RuntimeResult]:
+    prd_path = _extract_prd_workspace_path(user_input) or fallback_prd
+    if not prd_path:
+        raise ValueError("未指定 PRD 工作区，且没有可复用的上次工作区。")
+    prd_rel = _ensure_prd_workspace(repo_root, prd_path)
+    run_id = _extract_run_id(user_input)
+    artifact_keys = _artifact_keys_from_text(user_input)
+    result = _run_promote(
+        repo_root,
+        prd_rel,
+        run_id,
+        artifact_keys,
+        source_message=user_input,
+    )
+    return prd_rel, result
 
 
 # ── Intent → 工作流映射 ───────────────────────────────────────
@@ -457,6 +616,24 @@ def _dialogue_loop(
             console.print("🔄 会话已重置")
             continue
 
+        if _is_promote_request(line):
+            try:
+                prd_rel, result = _run_natural_promote_request(
+                    line,
+                    repo_root,
+                    fallback_prd=last_prd,
+                )
+            except (FileNotFoundError, ValueError) as e:
+                console.print(f"[red]❌ {e}[/red]")
+                continue
+            session.update_meta(last_prd_path=prd_rel, last_intent="promote")
+            session.append_history("user", line)
+            _print_promote_result(result)
+            session.append_history("assistant", str(result))
+            last_prd = prd_rel
+            last_intent = "promote"
+            continue
+
         # 路由意图
         route = _route_user_intent(line, repo_root)
 
@@ -529,6 +706,8 @@ def main() -> int:
 
     if len(sys.argv) >= 2 and sys.argv[1] == "rag":
         return _run_rag_command(sys.argv[2:], repo_root)
+    if len(sys.argv) >= 2 and sys.argv[1] == "promote":
+        return _run_promote_command(sys.argv[2:], repo_root)
 
     # 帮助
     if len(sys.argv) < 2 or sys.argv[1] in ("--help", "-h", "help"):
@@ -538,6 +717,22 @@ def main() -> int:
     user_input = " ".join(sys.argv[1:]).strip()
     session_manager = SessionManager(repo_root)
     session = session_manager.get_or_create("default")
+
+    if _is_promote_request(user_input):
+        try:
+            prd_rel, result = _run_natural_promote_request(
+                user_input,
+                repo_root,
+                fallback_prd=session.meta.last_prd_path,
+            )
+        except (FileNotFoundError, ValueError) as e:
+            print(f"❌ {e}")
+            return 1
+        session.update_meta(last_prd_path=prd_rel, last_intent="promote")
+        session.append_history("user", user_input)
+        _print_promote_result(result)
+        session.append_history("assistant", str(result))
+        return 0 if result.success else 1
 
     # 路由意图。默认尝试 LLM，LLM 不可用时由 route_intent 降级为确定性路由。
     route = _route_user_intent(user_input, repo_root)
