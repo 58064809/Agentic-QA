@@ -16,7 +16,7 @@ def test_import_markdown_requirement_creates_prd_workspace(tmp_path):
 
     workspace = tmp_path / prd_rel
     assert (workspace / "input/requirement.md").read_text(encoding="utf-8") == markdown + "\n"
-    metadata = yaml.safe_load((workspace / "workspace.yml").read_text(encoding="utf-8"))
+    metadata = yaml.safe_load((workspace / "metadata.yml").read_text(encoding="utf-8"))
     assert metadata["source_type"] == "manual_markdown"
 
 
@@ -32,7 +32,7 @@ def test_import_feishu_url_normalizes_to_requirement_markdown(tmp_path, monkeypa
 
     workspace = tmp_path / prd_rel
     assert "Sync docs" in (workspace / "input/requirement.md").read_text(encoding="utf-8")
-    metadata = yaml.safe_load((workspace / "workspace.yml").read_text(encoding="utf-8"))
+    metadata = yaml.safe_load((workspace / "metadata.yml").read_text(encoding="utf-8"))
     assert metadata["source_type"] == "feishu"
     assert metadata["source_url"] == "https://example.feishu.cn/docx/abc123"
 

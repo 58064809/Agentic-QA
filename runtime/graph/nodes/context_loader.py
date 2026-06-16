@@ -6,6 +6,7 @@ from runtime.config import load_app_config
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.artifact_writer import ensure_within_directory
 from runtime.tools.file_reader import read_existing_files, read_utf8
+from runtime.workspace import PRDWorkspace
 
 # ── 每种意图的上下文文件列表 ────────────────────────────────
 INTENT_CONTEXT_FILES: dict[str, list[str]] = {
@@ -120,7 +121,7 @@ REQUIREMENT_LOADING_INTENTS = {
     "report_generation",
 }
 
-REQUIRED_PRD_FILES = ["workspace.yml", "input/requirement.md"]
+REQUIRED_PRD_FILES = ["metadata.yml", "input/requirement.md"]
 
 
 def resolve_prd_path(repo_root: Path, prd_path: str) -> Path:
@@ -128,27 +129,16 @@ def resolve_prd_path(repo_root: Path, prd_path: str) -> Path:
     return path if path.is_absolute() else repo_root / path
 
 
-def _output_path_for_intent(prd_path: Path, repo_root: Path, intent: str | None) -> str | None:
+def _output_path_for_intent(
+    prd_path: Path,
+    repo_root: Path,
+    intent: str | None,
+    run_id: str | None,
+) -> str | None:
     """根据意图确定产物输出路径。intent=None 时默认走 testcase 路径。"""
-    output_mapping = {
-        "requirement_analysis": prd_path / "analysis" / "requirement-analysis.md",
-        "testcase_generation": prd_path / "cases" / "test-cases.md",
-        "api_test_generation": prd_path / "automation" / "api" / "test-plan.md",
-        "ui_test_generation": prd_path / "automation" / "ui" / "test-plan.md",
-        "test_execution": prd_path / "execution" / "runs" / "latest" / "summary.md",
-        "failure_analysis": prd_path / "defects" / "failure-analysis.md",
-        "bug_draft": prd_path / "defects" / "bug-drafts" / "bug-draft.md",
-        "report_generation": prd_path / "report" / "qa-review.md",
-        "archive": None,  # 归档不需要写入产物
-    }
-    # intent=None 时默认走 testcase_generation 路径（后向兼容）
-    effective_intent = intent if intent and intent in output_mapping else None
-    if effective_intent is None:
-        effective_intent = "testcase_generation"
-    out = output_mapping.get(effective_intent)
-    if out is None:
+    if intent == "archive":
         return None
-    return out.relative_to(repo_root).as_posix()
+    return PRDWorkspace(prd_path).artifact_preview_path(run_id).relative_to(repo_root).as_posix()
 
 
 def context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
@@ -197,7 +187,7 @@ def context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowSt
     if needs_prd:
         prd_path = resolve_prd_path(repo_root, state.prd_path)
         state.output_path = _output_path_for_intent(
-            prd_path, repo_root, state.intent
+            prd_path, repo_root, state.intent, state.run_id
         )
     else:
         state.output_path = None

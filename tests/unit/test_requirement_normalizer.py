@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import sys
 from pathlib import Path
@@ -23,7 +23,7 @@ def create_repo(root: Path, *, with_requirement_md: bool = False) -> Path:
     for relative_path, content in {
         "AGENTS.md": "Agent 协作规范",
         "COMMANDS.md": "命令路由",
-        "docs/architecture/production-agent-runtime-roadmap.md": "Runtime 路线图",
+        "docs/roadmap.md": "Runtime 路线图",
         "workflows/01-requirement-analysis-workflow.md": "需求分析工作流",
         "workflows/10-runtime-testcase-generation-workflow.md": "Runtime 测试用例工作流",
         "workflows/02-testcase-generation-workflow.md": "测试用例工作流",
@@ -77,7 +77,7 @@ skills:
         "skills/test-design/state-transition-modeling-skill.md": "状态迁移技能",
         "skills/test-design/risk-based-testing-skill.md": "风险测试技能",
         "knowledge/templates/testcase-template.md": "测试用例模板",
-        "prd/demo-requirement/workspace.yml": "id: demo-requirement\n",
+        "prd/demo-requirement/metadata.yml": "requirement_id: demo-requirement\n",
     }.items():
         write_file(root / relative_path, content)
     if with_requirement_md:

@@ -142,7 +142,7 @@ history:
     intent: "analyze"
     target_prd: "..."
     result: "success"
-    artifacts: ["prd/.../analysis/requirement-analysis.md"]
+    artifacts: ["prd/.../runs/<run_id>/artifact-preview.md"]
   - turn: 2
     user_input: "继续..."
     ...

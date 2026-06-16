@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import sys
@@ -21,7 +21,7 @@ def create_runtime_repo(root: Path) -> Path:
     required_files = [
         "AGENTS.md",
         "COMMANDS.md",
-        "docs/architecture/production-agent-runtime-roadmap.md",
+        "docs/roadmap.md",
         "workflows/10-runtime-testcase-generation-workflow.md",
         "workflows/02-testcase-generation-workflow.md",
         "prompts/testcase-design-prompt.md",
@@ -30,12 +30,12 @@ def create_runtime_repo(root: Path) -> Path:
         "rules/artifact-path-rules.md",
         "skills/test-design/test-design-skill.md",
         "knowledge/templates/testcase-template.md",
-        "prd/demo-requirement/workspace.yml",
+        "prd/demo-requirement/metadata.yml",
         "prd/demo-requirement/input/requirement.md",
     ]
     for relative_path in required_files:
         write_file(root / relative_path)
-    (root / "prd/demo-requirement/cases").mkdir(parents=True, exist_ok=True)
+    (root / "prd/demo-requirement/runs").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -72,7 +72,8 @@ def test_dry_run_generates_run_record_by_default(tmp_path):
     assert (repo_root / result.run_record_dir / "checkpointer.pkl").is_file()
     assert (repo_root / result.run_record_dir / "graph-state.json").is_file()
     assert (repo_root / result.run_record_dir / "run-state.json").is_file()
-    assert not (repo_root / "prd/demo-requirement/cases/test-cases.md").exists()
+    preview_path = repo_root / f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
+    assert not preview_path.exists()
 
 
 def test_record_run_false_does_not_generate_run_record(tmp_path):

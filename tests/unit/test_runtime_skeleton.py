@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import sys
 from pathlib import Path
@@ -24,7 +24,7 @@ def create_runtime_repo(root: Path) -> Path:
     required_files = [
         "AGENTS.md",
         "COMMANDS.md",
-        "docs/architecture/production-agent-runtime-roadmap.md",
+        "docs/roadmap.md",
         "workflows/10-runtime-testcase-generation-workflow.md",
         "workflows/02-testcase-generation-workflow.md",
         "prompts/testcase-design-prompt.md",
@@ -33,12 +33,12 @@ def create_runtime_repo(root: Path) -> Path:
         "rules/artifact-path-rules.md",
         "skills/test-design/test-design-skill.md",
         "knowledge/templates/testcase-template.md",
-        "prd/demo-requirement/workspace.yml",
+        "prd/demo-requirement/metadata.yml",
         "prd/demo-requirement/input/requirement.md",
     ]
     for relative_path in required_files:
         write_file(root / relative_path)
-    (root / "prd/demo-requirement/cases").mkdir(parents=True, exist_ok=True)
+    (root / "prd/demo-requirement/runs").mkdir(parents=True, exist_ok=True)
     return root
 
 
@@ -101,9 +101,9 @@ def test_context_loader_loads_sample_prd_required_files():
 
     context_loader_node(state, REPO_ROOT)
 
-    assert "prd/sample-login-requirement/workspace.yml" in state.loaded_files
+    assert "prd/sample-login-requirement/metadata.yml" in state.loaded_files
     assert "prd/sample-login-requirement/input/requirement.md" in state.loaded_files
-    assert state.output_path == "prd/sample-login-requirement/cases/test-cases.md"
+    assert state.output_path == "prd/sample-login-requirement/runs/runtime/artifact-preview.md"
 
 
 def test_dry_run_does_not_write_testcases(tmp_path):
@@ -118,7 +118,7 @@ def test_dry_run_does_not_write_testcases(tmp_path):
     assert result.success
     assert result.dry_run
     assert not result.wrote_file
-    assert not (repo_root / "prd/demo-requirement/cases/test-cases.md").exists()
+    assert not (repo_root / "prd/demo-requirement/runs/runtime/artifact-preview.md").exists()
 
 
 def test_approve_write_creates_testcase_draft_when_missing(tmp_path):
@@ -130,7 +130,7 @@ def test_approve_write_creates_testcase_draft_when_missing(tmp_path):
         repo_root=repo_root,
         approve_write=True,
     )
-    output_path = repo_root / "prd/demo-requirement/cases/test-cases.md"
+    output_path = repo_root / f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
     content = output_path.read_text(encoding="utf-8")
     assert result.success
     assert result.wrote_file
@@ -140,8 +140,8 @@ def test_approve_write_creates_testcase_draft_when_missing(tmp_path):
 
 def test_approve_write_does_not_overwrite_existing_testcases(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
-    output_path = repo_root / "prd/demo-requirement/cases/test-cases.md"
-    write_file(output_path, "人工已有内容")
+    formal_path = repo_root / "prd/demo-requirement/artifacts/testcases.md"
+    write_file(formal_path, "人工已有内容")
 
     result = run_testcase_generation_workflow(
         "请生成测试用例",
@@ -149,10 +149,9 @@ def test_approve_write_does_not_overwrite_existing_testcases(tmp_path):
         repo_root=repo_root,
         approve_write=True,
     )
-    assert not result.success
-    assert not result.wrote_file
-    assert output_path.read_text(encoding="utf-8") == "人工已有内容"
-    assert any("默认不覆盖" in error for error in result.errors)
+    assert result.success
+    assert result.wrote_file
+    assert formal_path.read_text(encoding="utf-8") == "人工已有内容"
 
 
 def test_quality_check_reports_missing_review_status_and_headers(tmp_path):
@@ -161,7 +160,7 @@ def test_quality_check_reports_missing_review_status_and_headers(tmp_path):
         user_input="请生成测试用例",
         prd_path="prd/demo-requirement",
         draft_artifact="缺少表格和审核状态",
-        output_path="prd/demo-requirement/cases/test-cases.md",
+        output_path="prd/demo-requirement/runs/runtime/artifact-preview.md",
     )
 
     quality_check_node(state, repo_root)

@@ -9,59 +9,37 @@ from __future__ import annotations
 import argparse
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-ALLOWED_STATUSES = {
-    "draft",
-    "partial",
-    "needs_human_review",
-    "approved",
-    "needs_changes",
-    "rejected",
-    "confirmed",
-    "archived",
-    "failed",
-    "superseded",
-}
+from runtime.workspace import (
+    ALLOWED_ARTIFACT_STATUSES,
+    ARTIFACT_SPECS,
+    BLOCKING_ARTIFACT_STATUSES,
+    REQUIRED_METADATA_KEYS,
+    REQUIRED_WORKSPACE_FILES,
+    PRDWorkspace,
+    default_metadata,
+    history_index,
+    now_iso,
+    read_yaml_mapping,
+    review_record,
+    write_yaml_mapping,
+)
+from runtime.workspace import (
+    WORKSPACE_DIRS as STANDARD_WORKSPACE_DIRS,
+)
 
-BLOCKING_STATUSES = {"needs_human_review", "needs_changes", "partial", "failed"}
+ALLOWED_STATUSES = ALLOWED_ARTIFACT_STATUSES
+BLOCKING_STATUSES = BLOCKING_ARTIFACT_STATUSES
 
 WORKSPACE_DIRS = [
-    "input",
-    "input/attachments",
-    "artifacts",
-    "artifacts/history",
-    "artifacts/history/requirement-analysis",
-    "artifacts/history/testcases",
-    "artifacts/history/qa-report",
-    "reviews",
-    "runs",
+    *STANDARD_WORKSPACE_DIRS,
 ]
 
-REQUIRED_FILES = [
-    "input/requirement.md",
-    "input/api.md",
-    "metadata.yml",
-    "reviews/requirement-analysis.review.yml",
-    "reviews/testcases.review.yml",
-    "reviews/qa-report.review.yml",
-    "artifacts/history/testcases/index.yml",
-]
-
-REQUIRED_METADATA_KEYS = [
-    "requirement_id",
-    "title",
-    "status",
-    "created_by",
-    "created_at",
-    "updated_at",
-    "artifacts",
-    "reviews",
-]
+REQUIRED_FILES = REQUIRED_WORKSPACE_FILES
 
 SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$")
 
@@ -76,26 +54,17 @@ class ValidationResult:
         return not self.errors
 
 
-def now_iso() -> str:
-    return datetime.now(tz=UTC).replace(microsecond=0).isoformat()
-
-
 def validate_slug(slug: str) -> None:
     if not SLUG_RE.match(slug):
         raise ValueError("需求目录名必须使用小写字母、数字和连字符，例如 demo-requirement")
 
 
 def read_yaml(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8") as stream:
-        data = yaml.safe_load(stream) or {}
-    if not isinstance(data, dict):
-        raise ValueError(f"{path} 必须是 YAML 对象")
-    return data
+    return read_yaml_mapping(path)
 
 
 def write_yaml(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    write_yaml_mapping(path, data)
 
 
 def requirement_placeholder(title: str) -> str:
@@ -149,73 +118,6 @@ def artifact_front_matter(artifact_type: str, status: str = "needs_human_review"
     }
 
 
-def review_record(artifact: str, artifact_type: str) -> dict[str, Any]:
-    return {
-        "artifact": artifact,
-        "artifact_type": artifact_type,
-        "status": "needs_human_review",
-        "reviewer": "",
-        "reviewed_at": None,
-        "decision": "",
-        "comments": [],
-        "required_changes": [],
-        "approved_sections": [],
-        "rejected_sections": [],
-        "next_action": "",
-        "source_message": "",
-        "run_id": "",
-    }
-
-
-def default_metadata(slug: str, title: str, created_by: str) -> dict[str, Any]:
-    timestamp = now_iso()
-    return {
-        "requirement_id": slug,
-        "title": title,
-        "status": "draft",
-        "created_by": created_by,
-        "created_at": timestamp,
-        "updated_at": timestamp,
-        "artifacts": {
-            "requirement_analysis": {
-                "current_path": "artifacts/requirement-analysis.md",
-                "current_version": "",
-                "history_index": "artifacts/history/requirement-analysis/index.yml",
-                "latest_run_id": "",
-                "status": "draft",
-            },
-            "testcases": {
-                "current_path": "artifacts/testcases.md",
-                "current_version": "",
-                "history_index": "artifacts/history/testcases/index.yml",
-                "latest_run_id": "",
-                "status": "draft",
-            },
-            "qa_report": {
-                "current_path": "artifacts/qa-report.md",
-                "current_version": "",
-                "history_index": "artifacts/history/qa-report/index.yml",
-                "latest_run_id": "",
-                "status": "draft",
-            },
-        },
-        "reviews": {
-            "requirement_analysis": "reviews/requirement-analysis.review.yml",
-            "testcases": "reviews/testcases.review.yml",
-            "qa_report": "reviews/qa-report.review.yml",
-        },
-    }
-
-
-def history_index(artifact: str, artifact_type: str) -> dict[str, Any]:
-    return {
-        "artifact": artifact,
-        "artifact_type": artifact_type,
-        "current_version": "",
-        "versions": [],
-    }
-
-
 def create_workspace(
     slug: str,
     prd_root: Path | str = "prd",
@@ -227,11 +129,12 @@ def create_workspace(
     validate_slug(slug)
     root = Path(prd_root)
     workspace = root / slug
+    model = PRDWorkspace(workspace)
     workspace.mkdir(parents=True, exist_ok=True)
 
+    model.ensure_directories()
     for directory in WORKSPACE_DIRS:
         directory_path = workspace / directory
-        directory_path.mkdir(parents=True, exist_ok=True)
         gitkeep = directory_path / ".gitkeep"
         if not gitkeep.exists():
             gitkeep.write_text("", encoding="utf-8")
@@ -241,7 +144,9 @@ def create_workspace(
         "input/requirement.md": requirement_placeholder(resolved_title),
         "input/api.md": api_doc_placeholder(resolved_title),
         "artifacts/history/testcases/index.yml": yaml.safe_dump(
-            history_index("artifacts/testcases.md", "testcases"), allow_unicode=True, sort_keys=False
+            history_index("artifacts/testcases.md", "testcases"),
+            allow_unicode=True,
+            sort_keys=False,
         ),
         "artifacts/history/requirement-analysis/index.yml": yaml.safe_dump(
             history_index("artifacts/requirement-analysis.md", "requirement_analysis"),
@@ -249,7 +154,9 @@ def create_workspace(
             sort_keys=False,
         ),
         "artifacts/history/qa-report/index.yml": yaml.safe_dump(
-            history_index("artifacts/qa-report.md", "qa_report"), allow_unicode=True, sort_keys=False
+            history_index("artifacts/qa-report.md", "qa_report"),
+            allow_unicode=True,
+            sort_keys=False,
         ),
     }
     for relative_path, content in files.items():
@@ -259,11 +166,8 @@ def create_workspace(
             target.write_text(content, encoding="utf-8")
 
     reviews = {
-        "reviews/requirement-analysis.review.yml": review_record(
-            "artifacts/requirement-analysis.md", "requirement_analysis"
-        ),
-        "reviews/testcases.review.yml": review_record("artifacts/testcases.md", "testcases"),
-        "reviews/qa-report.review.yml": review_record("artifacts/qa-report.md", "qa_report"),
+        spec["review_path"]: review_record(spec["current_path"], spec["artifact_type"])
+        for spec in ARTIFACT_SPECS.values()
     }
     for relative_path, data in reviews.items():
         target = workspace / relative_path
@@ -285,7 +189,12 @@ def update_registry(prd_root: Path, slug: str, title: str, workspace: Path) -> N
     requirements = registry.setdefault("requirements", [])
     if not isinstance(requirements, list):
         raise ValueError("prd/_registry.yml 中 requirements 必须是列表")
-    if not any(item.get("requirement_id") == slug for item in requirements if isinstance(item, dict)):
+    exists = any(
+        item.get("requirement_id") == slug
+        for item in requirements
+        if isinstance(item, dict)
+    )
+    if not exists:
         requirements.append(
             {
                 "requirement_id": slug,

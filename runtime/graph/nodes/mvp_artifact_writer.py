@@ -13,6 +13,7 @@ from runtime.graph.nodes.mvp_context_loader import (
 )
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.artifact_writer import write_new_text
+from runtime.workspace import combined_artifact_preview
 
 RUNS_DIR_NAME = "runs"
 LATEST_FILE = "latest.yml"
@@ -68,6 +69,45 @@ def _write_structured_companions(
     markdown_path = state.output_paths[key]
     path = repo_root / Path(markdown_path)
     payload = _structured_payload(state, key, markdown_path)
+    json_path = path.with_suffix(".json")
+    yaml_path = path.with_suffix(".yml")
+    if json_path.exists() or yaml_path.exists():
+        raise FileExistsError(
+            "目标结构化数据文件已存在，默认不覆盖: "
+            + ", ".join(p.as_posix() for p in (json_path, yaml_path) if p.exists())
+        )
+    json_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    yaml_path.write_text(
+        yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def _write_preview_companions(
+    repo_root: Path,
+    state: QAWorkflowState,
+    keys: list[str],
+    markdown_path: str,
+) -> None:
+    path = repo_root / Path(markdown_path)
+    payload = {
+        "schema_version": "agentic-qa.artifact-preview.v1",
+        "status": state.review_status,
+        "human_review_required": True,
+        "prd_path": state.prd_path,
+        "task_type": state.task_type,
+        "markdown_path": markdown_path,
+        "artifacts": [
+            _structured_payload(state, key, markdown_path)
+            for key in keys
+        ],
+        "source_files": sorted(state.loaded_files.keys()),
+        "quality_errors": list(state.quality_errors),
+        "warnings": list(state.warnings),
+    }
     json_path = path.with_suffix(".json")
     yaml_path = path.with_suffix(".yml")
     if json_path.exists() or yaml_path.exists():
@@ -221,12 +261,21 @@ def mvp_artifact_writer_node(
     _remap_existing_output_paths(repo_root, state, keys)
 
     try:
-        for key in keys:
-            write_new_text(
-                repo_root / Path(state.output_paths[key]),
-                state.draft_artifacts[key],
+        unique_paths = {state.output_paths[key] for key in keys}
+        if len(unique_paths) == 1:
+            markdown_path = next(iter(unique_paths))
+            preview = combined_artifact_preview(
+                {key: state.draft_artifacts[key] for key in keys}
             )
-            _write_structured_companions(repo_root, state, key)
+            write_new_text(repo_root / Path(markdown_path), preview)
+            _write_preview_companions(repo_root, state, keys, markdown_path)
+        else:
+            for key in keys:
+                write_new_text(
+                    repo_root / Path(state.output_paths[key]),
+                    state.draft_artifacts[key],
+                )
+                _write_structured_companions(repo_root, state, key)
         _write_run_pointers(repo_root, state, keys)
     except FileExistsError as exc:
         state.errors.append(str(exc))

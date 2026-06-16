@@ -26,7 +26,6 @@ REQUIRED_ANALYSIS_SECTIONS = [
     "待确认问题",
     "需求到测试覆盖映射",
 ]
-LEGACY_TESTCASE_COLUMNS = ["标题", "优先级", "前置条件", "测试步骤", "预期结果"]
 RICH_TESTCASE_COLUMNS = [
     "用例ID",
     "需求/规则来源",
@@ -209,15 +208,14 @@ def _check_output_path(
     if not ensure_within_directory(absolute_output, prd_path):
         state.quality_errors.append(f"{label}输出路径必须位于目标 PRD 工作区内。")
     output_parts = Path(output_path).as_posix().split("/")
-    uses_run_layout = (
+    uses_preview_layout = (
         len(output_parts) >= 4
-        and output_parts[-4] == "runs"
-        and output_parts[-2:] == expected_suffix[-2:]
+        and output_parts[-3] == "runs"
+        and output_parts[-1] == "artifact-preview.md"
     )
-    uses_legacy_layout = output_parts[-3:] == expected_suffix
-    if not (uses_run_layout or uses_legacy_layout):
+    if not uses_preview_layout:
         state.quality_errors.append(
-            f"{label}输出路径不符合约定: {'/'.join(expected_suffix)}"
+            f"{label}输出路径不符合约定: runs/<run_id>/artifact-preview.md"
         )
 
 
@@ -327,9 +325,8 @@ def testcase_mvp_quality_check_node(
         state.quality_errors.append("测试用例草稿缺少固定表头。")
     if "用例类型" in header:
         state.quality_errors.append("测试用例草稿表头不允许新增“用例类型”列。")
-    allowed_headers = {tuple(LEGACY_TESTCASE_COLUMNS), tuple(RICH_TESTCASE_COLUMNS)}
-    if header and tuple(header) not in allowed_headers:
-        state.quality_errors.append("测试用例草稿表格列必须严格等于固定 5 列或富用例 11 列。")
+    if header and header != RICH_TESTCASE_COLUMNS:
+        state.quality_errors.append("测试用例草稿表格列必须严格等于富用例 11 列。")
 
     expected_column_count = len(header) if header else 0
     invalid_column_rows = [

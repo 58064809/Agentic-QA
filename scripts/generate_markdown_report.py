@@ -8,7 +8,7 @@ from create_prd_workspace import generate_markdown_report
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="生成 Markdown QA 报告草稿到 report/qa-review.md"
+        description="生成 Markdown QA 报告草稿到 artifacts/qa-report.md"
     )
     parser.add_argument("workspace", help="PRD 工作区路径")
     args = parser.parse_args()

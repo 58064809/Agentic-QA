@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import sys
@@ -32,7 +32,7 @@ def create_mvp_repo(root: Path) -> Path:
     required_files = {
         "AGENTS.md": "Agent 协作规范",
         "COMMANDS.md": "命令路由",
-        "docs/architecture/production-agent-runtime-roadmap.md": "Runtime 路线图",
+        "docs/roadmap.md": "Runtime 路线图",
         "workflows/01-requirement-analysis-workflow.md": "需求分析工作流",
         "workflows/10-runtime-testcase-generation-workflow.md": "Runtime 测试用例工作流",
         "workflows/02-testcase-generation-workflow.md": "测试用例工作流",
@@ -77,7 +77,16 @@ def create_mvp_repo(root: Path) -> Path:
         "skills/test-design/state-transition-modeling-skill.md": "状态迁移技能",
         "skills/test-design/risk-based-testing-skill.md": "风险测试技能",
         "knowledge/templates/testcase-template.md": "测试用例模板",
-        "prd/demo-requirement/workspace.yml": "id: demo-requirement\n",
+        "prd/demo-requirement/metadata.yml": (
+            "requirement_id: demo-requirement\n"
+            "title: Demo Requirement\n"
+            "status: draft\n"
+            "created_by: test\n"
+            "created_at: '2026-01-01T00:00:00+00:00'\n"
+            "updated_at: '2026-01-01T00:00:00+00:00'\n"
+            "artifacts: {}\n"
+            "reviews: {}\n"
+        ),
         "prd/demo-requirement/input/requirement.md": (
             "# 登录需求\n\n"
             "## 背景\n\n用户使用手机号密码登录。\n\n"
@@ -211,13 +220,21 @@ def build_valid_testcases(row_count: int = 15, *, priority: str = "P1") -> str:
         "",
         "# 测试用例草稿",
         "",
-        "| 标题 | 优先级 | 前置条件 | 测试步骤 | 预期结果 |",
-        "|---|---|---|---|---|",
+        (
+            "| 用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | "
+            "测试步骤 | 预期结果 | 断言/证据 | 待确认项 |"
+        ),
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
-    lines.extend(
-        f"| {title} | {case_priority} | {precondition} | {steps} | {expected} |"
-        for title, case_priority, precondition, steps, expected in rows[:row_count]
-    )
+    for index, (title, case_priority, precondition, steps, expected) in enumerate(
+        rows[:row_count],
+        start=1,
+    ):
+        lines.append(
+            f"| TC-{index:03d} | REQ-{index:03d} | {title} | 功能 | {case_priority} | "
+            f"{precondition} | 测试数据-{index} | {steps} | {expected} | "
+            "检查接口响应、页面提示和数据状态 | 无 |"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -241,7 +258,7 @@ def test_analyze_dry_run_generates_analysis_without_writing(tmp_path):
     assert "## 1. 需求背景与目标" in analysis
     assert "## 12. 需求到测试覆盖映射" in analysis
     assert "Runtime MVP Skeleton" not in analysis
-    assert not (repo_root / "prd/demo-requirement/analysis/requirement-analysis.md").exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
 
 
 def test_analyze_approve_write_creates_analysis_draft(tmp_path):
@@ -257,14 +274,14 @@ def test_analyze_approve_write_creates_analysis_draft(tmp_path):
     assert result.success
     assert output_path.exists()
     assert output_path.as_posix().endswith(
-        f"/prd/demo-requirement/runs/{result.run_id}/analysis/requirement-analysis.md"
+        f"/prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
     )
     structured_json = output_path.with_suffix(".json")
     structured_yaml = output_path.with_suffix(".yml")
     assert structured_json.exists()
     assert structured_yaml.exists()
     structured = json.loads(structured_json.read_text(encoding="utf-8"))
-    assert structured["schema_version"] == "agentic-qa.artifact.v1"
+    assert structured["schema_version"] == "agentic-qa.artifact-preview.v1"
     assert structured["markdown_path"] == result.output_paths["requirement_analysis"]
     assert result.wrote_file
     assert result.review_status == "write_approved"
@@ -294,7 +311,7 @@ def test_generate_testcases_dry_run_generates_testcases_without_writing(tmp_path
     assert rich_header in testcases
     assert count_testcase_rows(testcases) >= 15
     assert "用例类型" not in testcases.splitlines()[10:20]
-    assert not (repo_root / "prd/demo-requirement/cases/test-cases.md").exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
 def test_generate_testcases_approve_write_creates_testcase_draft(tmp_path):
@@ -311,7 +328,7 @@ def test_generate_testcases_approve_write_creates_testcase_draft(tmp_path):
     assert result.wrote_file
     assert result.review_status == "write_approved"
     assert output_path.as_posix().endswith(
-        f"/prd/demo-requirement/runs/{result.run_id}/cases/test-cases.md"
+        f"/prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
     )
     assert "artifact_type: testcase_draft" in output_path.read_text(encoding="utf-8")
     assert result.run_id in (
@@ -336,8 +353,8 @@ def test_mvp_dry_run_generates_two_drafts_without_writing(tmp_path):
     assert set(result.draft_artifacts) == {"requirement_analysis", "testcases"}
     assert "## 12. 需求到测试覆盖映射" in result.draft_artifacts["requirement_analysis"]
     assert count_testcase_rows(result.draft_artifacts["testcases"]) >= 15
-    assert not (repo_root / "prd/demo-requirement/analysis/requirement-analysis.md").exists()
-    assert not (repo_root / "prd/demo-requirement/cases/test-cases.md").exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
 def test_mvp_approve_write_creates_analysis_and_testcases(tmp_path):
@@ -354,23 +371,20 @@ def test_mvp_approve_write_creates_analysis_and_testcases(tmp_path):
     assert result.review_status == "write_approved"
     analysis_path = repo_root / result.output_paths["requirement_analysis"]
     testcases_path = repo_root / result.output_paths["testcases"]
+    assert analysis_path == testcases_path
     assert analysis_path.is_file()
-    assert testcases_path.is_file()
     assert analysis_path.as_posix().endswith(
-        f"/prd/demo-requirement/runs/{result.run_id}/analysis/requirement-analysis.md"
-    )
-    assert testcases_path.as_posix().endswith(
-        f"/prd/demo-requirement/runs/{result.run_id}/cases/test-cases.md"
+        f"/prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
     )
     assert (repo_root / "prd/demo-requirement/runs/latest.yml").is_file()
     assert (repo_root / "prd/demo-requirement/runs/index.jsonl").is_file()
-    assert not (repo_root / "prd/demo-requirement/analysis/requirement-analysis.md").exists()
-    assert not (repo_root / "prd/demo-requirement/cases/test-cases.md").exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
 def test_mvp_approve_write_writes_run_candidates_when_defaults_exist(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
-    existing_analysis = repo_root / "prd/demo-requirement/analysis/requirement-analysis.md"
+    existing_analysis = repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md"
     write_file(existing_analysis, "人工已有分析")
 
     result = run_mvp_analysis_and_testcases_workflow(
@@ -388,11 +402,9 @@ def test_mvp_approve_write_writes_run_candidates_when_defaults_exist(tmp_path):
     assert candidate_analysis.with_suffix(".json").exists()
     assert candidate_analysis.with_suffix(".yml").exists()
     assert candidate_analysis.as_posix().endswith(
-        f"/prd/demo-requirement/runs/{result.run_id}/analysis/requirement-analysis.md"
+        f"/prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
     )
-    assert candidate_testcases.as_posix().endswith(
-        f"/prd/demo-requirement/runs/{result.run_id}/cases/test-cases.md"
-    )
+    assert candidate_testcases == candidate_analysis
     assert candidate_testcases.exists()
     latest = repo_root / "prd/demo-requirement/runs/latest.yml"
     index = repo_root / "prd/demo-requirement/runs/index.jsonl"
@@ -533,11 +545,13 @@ def test_review_grade_testcase_rejects_type_column(tmp_path, monkeypatch):
     repo_root = create_mvp_repo(tmp_path)
     valid = build_valid_testcases()
     invalid = valid.replace(
-        "| 标题 | 优先级 | 前置条件 | 测试步骤 | 预期结果 |",
-        "| 标题 | 用例类型 | 优先级 | 前置条件 | 测试步骤 | 预期结果 |",
+        "| 用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | "
+        "测试步骤 | 预期结果 | 断言/证据 | 待确认项 |",
+        "| 用例ID | 需求/规则来源 | 标题 | 用例类型 | 测试类型 | 优先级 | 前置条件 | "
+        "测试数据 | 测试步骤 | 预期结果 | 断言/证据 | 待确认项 |",
     ).replace(
-        "| 主流程成功处理 | P0 |",
-        "| 主流程成功处理 | 主流程 | P0 |",
+        "| TC-001 | REQ-001 | 主流程成功处理 | 功能 | P0 |",
+        "| TC-001 | REQ-001 | 主流程成功处理 | 主流程 | 功能 | P0 |",
     )
     monkeypatch.setattr(mvp_generation, "render_testcase_skeleton", lambda state: invalid)
 
@@ -550,14 +564,14 @@ def test_review_grade_testcase_rejects_type_column(tmp_path, monkeypatch):
 
     assert not result.success
     assert any("用例类型" in error for error in result.quality_errors)
-    assert any("严格等于固定 5 列" in error for error in result.quality_errors)
+    assert any("严格等于富用例 11 列" in error for error in result.quality_errors)
 
 
 def test_review_grade_testcase_rejects_invalid_priority(tmp_path, monkeypatch):
     repo_root = create_mvp_repo(tmp_path)
     invalid = build_valid_testcases().replace(
-        "| 异常输入被拒绝 | P1 |",
-        "| 异常输入被拒绝 | P4 |",
+        "| TC-002 | REQ-002 | 异常输入被拒绝 | 功能 | P1 |",
+        "| TC-002 | REQ-002 | 异常输入被拒绝 | 功能 | P4 |",
     )
     monkeypatch.setattr(mvp_generation, "render_testcase_skeleton", lambda state: invalid)
 
@@ -631,11 +645,15 @@ def test_llm_testcases_allow_repeated_table_header(tmp_path, monkeypatch):
     repo_root = create_mvp_repo(tmp_path)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "local-secret")
     valid = build_valid_testcases(row_count=15)
+    rich_header = (
+        "| 用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | "
+        "测试步骤 | 预期结果 | 断言/证据 | 待确认项 |"
+    )
     duplicated_header = valid.replace(
-        "| 权限不足不能操作 | P0 |",
-        "| 标题 | 优先级 | 前置条件 | 测试步骤 | 预期结果 |\n"
-        "|---|---|---|---|---|\n"
-        "| 权限不足不能操作 | P0 |",
+        "| TC-004 | REQ-004 | 权限不足不能操作 | 功能 | P0 |",
+        f"{rich_header}\n"
+        "|---|---|---|---|---|---|---|---|---|---|---|\n"
+        "| TC-004 | REQ-004 | 权限不足不能操作 | 功能 | P0 |",
         1,
     )
     monkeypatch.setattr(

@@ -30,6 +30,7 @@ from runtime.llm.config import OpenAICompatibleConfig
 from runtime.llm.intent_router import route_intent, route_intent_fallback
 from runtime.schemas.runtime_result import RuntimeResult
 from runtime.session import Session, SessionManager
+from runtime.workspace import PRDWorkspace, default_metadata, write_yaml_mapping
 
 # ── 帮助提示 ──────────────────────────────────────────────────
 
@@ -236,19 +237,11 @@ def _workspace_name(path: Path) -> str:
 
 
 def _init_workspace_metadata(workspace_dir: Path, name: str) -> None:
-    """创建初始 workspace.yml。"""
-    metadata = {
-        "requirement_id": name,
-        "title": name,
-        "status": "active",
-        "created_by": "agentic-qa",
-    }
-    metadata_path = workspace_dir / "workspace.yml"
+    """创建初始 metadata.yml。"""
+    metadata = default_metadata(name, name, "agentic-qa")
+    metadata_path = PRDWorkspace(workspace_dir).metadata_path
     if not metadata_path.is_file():
-        metadata_path.write_text(
-            yaml.dump(metadata, allow_unicode=True, encoding="utf-8").decode("utf-8"),
-            encoding="utf-8",
-        )
+        write_yaml_mapping(metadata_path, metadata)
 
 
 def _safe_workspace_name(value: str) -> str:
@@ -275,20 +268,14 @@ def _import_markdown_requirement(
         requirement_path.write_text(markdown.strip() + "\n", encoding="utf-8")
 
     metadata = {
-        "requirement_id": name,
-        "title": title,
-        "status": "active",
-        "created_by": "agentic-qa",
+        **default_metadata(name, title, "agentic-qa"),
         "source_type": "feishu" if source_url else "manual_markdown",
     }
     if source_url:
         metadata["source_url"] = source_url
-    metadata_path = workspace_dir / "workspace.yml"
+    metadata_path = PRDWorkspace(workspace_dir).metadata_path
     if not metadata_path.is_file():
-        metadata_path.write_text(
-            yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
-        )
+        write_yaml_mapping(metadata_path, metadata)
     return prd_rel
 
 

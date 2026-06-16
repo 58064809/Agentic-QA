@@ -26,7 +26,7 @@ def create_repo(root: Path, *, requirement: str | None = None) -> Path:
     files = {
         "AGENTS.md": "Agent 协作规范",
         "COMMANDS.md": "命令路由",
-        "docs/production-agent-runtime-roadmap.md": "Runtime 路线图",
+        "docs/roadmap.md": "Runtime 路线图",
         "workflows/01-requirement-analysis-workflow.md": "需求分析工作流",
         "workflows/10-runtime-testcase-generation-workflow.md": "Runtime 测试用例工作流",
         "workflows/02-testcase-generation-workflow.md": "测试用例工作流",
@@ -80,7 +80,7 @@ skills:
         "skills/test-design/state-transition-modeling-skill.md": "状态迁移技能",
         "skills/test-design/risk-based-testing-skill.md": "风险测试技能",
         "knowledge/templates/testcase-template.md": "测试用例模板",
-        "prd/demo-requirement/workspace.yml": "id: demo-requirement\n",
+        "prd/demo-requirement/metadata.yml": "requirement_id: demo-requirement\n",
         "prd/demo-requirement/input/requirement.md": requirement
         or (
             "# 登录需求\n\n"

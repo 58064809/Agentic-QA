@@ -38,7 +38,7 @@ def _section_budget(title_or_path: str, max_input_chars: int) -> int:
         return min(6000, capped)
     if title_or_path.endswith("/input/api.md"):
         return min(3000, capped)
-    if title_or_path.endswith("/analysis/requirement-analysis.md"):
+    if title_or_path.endswith("/artifacts/requirement-analysis.md"):
         return min(6000, capped)
     if "本次运行" in title_or_path or "需求分析草稿" in title_or_path:
         return min(7000, capped)
@@ -289,7 +289,7 @@ def build_testcase_prompt(
         "prompts/testcase-design-prompt.md",
     ]
     if not generated_analysis:
-        selected_paths.insert(2, f"{prd_prefix}/analysis/requirement-analysis.md")
+        selected_paths.insert(2, f"{prd_prefix}/artifacts/requirement-analysis.md")
     injected = {"图片检测": _image_detection_section(loaded_files, prd_prefix)}
     if generated_analysis:
         injected["本次运行生成的需求分析草稿"] = generated_analysis
@@ -387,7 +387,7 @@ def build_api_test_prompt(
     selected_paths = [
         f"{prd_prefix}/input/requirement.md",
         f"{prd_prefix}/input/api.md",
-        f"{prd_prefix}/cases/test-cases.md",
+        f"{prd_prefix}/artifacts/testcases.md",
         "rules/api-test-rules.md",
         "rules/automation-rules.md",
         "knowledge/project-rules/assertion-rules.md",
@@ -459,7 +459,7 @@ def build_ui_test_prompt(
     selected_paths = [
         f"{prd_prefix}/input/requirement.md",
         f"{prd_prefix}/input/api.md",
-        f"{prd_prefix}/cases/test-cases.md",
+        f"{prd_prefix}/artifacts/testcases.md",
         "rules/ui-test-rules.md",
         "rules/automation-rules.md",
         "skills/automation/playwright-ui-test-skill.md",
@@ -522,7 +522,7 @@ def build_test_execution_prompt(
     max_input_chars: int = MAX_INPUT_CHARS,
 ) -> PromptBuildResult:
     selected_paths = [
-        f"{prd_prefix}/workspace.yml",
+        f"{prd_prefix}/metadata.yml",
         f"{prd_prefix}/automation/api/",
         f"{prd_prefix}/automation/ui/",
         "rules/test-execution-rules.md",
@@ -588,7 +588,7 @@ def build_failure_analysis_prompt(
     selected_paths = [
         f"{prd_prefix}/input/requirement.md",
         f"{prd_prefix}/input/api.md",
-        f"{prd_prefix}/cases/test-cases.md",
+        f"{prd_prefix}/artifacts/testcases.md",
         f"{prd_prefix}/execution/runs/",
         "rules/failure-analysis-rules.md",
         "rules/test-execution-rules.md",
@@ -672,7 +672,7 @@ def build_bug_draft_prompt(
     selected_paths = [
         f"{prd_prefix}/input/requirement.md",
         f"{prd_prefix}/input/api.md",
-        f"{prd_prefix}/cases/test-cases.md",
+        f"{prd_prefix}/artifacts/testcases.md",
         f"{prd_prefix}/defects/failure-analysis.md",
         "rules/failure-analysis-rules.md",
         "skills/reporting/bug-report-writing-skill.md",
@@ -740,9 +740,9 @@ def build_report_prompt(
     max_input_chars: int = MAX_INPUT_CHARS,
 ) -> PromptBuildResult:
     selected_paths = [
-        f"{prd_prefix}/workspace.yml",
-        f"{prd_prefix}/analysis/requirement-analysis.md",
-        f"{prd_prefix}/cases/test-cases.md",
+        f"{prd_prefix}/metadata.yml",
+        f"{prd_prefix}/artifacts/requirement-analysis.md",
+        f"{prd_prefix}/artifacts/testcases.md",
         f"{prd_prefix}/execution/runs/",
         f"{prd_prefix}/defects/failure-analysis.md",
         f"{prd_prefix}/defects/bug-drafts/",
@@ -765,7 +765,7 @@ def build_report_prompt(
 
 ## 输出格式
 
-- 文件路径：`prd/<id>/report/qa-review.md`
+- 文件路径：`prd/<id>/artifacts/qa-report.md`
 - `qa-review.md` 是 AI 生成草稿；最终 `qa-report.md` 由人工确认后生成
 - 包含以下章节：
   1. **基本信息** — 需求名称、版本、测试时间、测试范围概述
@@ -813,8 +813,8 @@ def build_archive_prompt(
     max_input_chars: int = MAX_INPUT_CHARS,
 ) -> PromptBuildResult:
     selected_paths = [
-        f"{prd_prefix}/workspace.yml",
-        f"{prd_prefix}/report/qa-review.md",
+        f"{prd_prefix}/metadata.yml",
+        f"{prd_prefix}/artifacts/qa-report.md",
         "rules/archive-rules.md",
         "rules/status-rules.md",
         "scripts/archive_requirement.py",

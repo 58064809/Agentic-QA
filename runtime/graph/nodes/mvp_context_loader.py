@@ -8,6 +8,7 @@ from runtime.graph.nodes.context_loader import resolve_prd_path
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.artifact_writer import ensure_within_directory
 from runtime.tools.file_reader import read_existing_files, read_utf8
+from runtime.workspace import PRDWorkspace
 
 TASK_ANALYSIS = "analysis"
 TASK_TESTCASE_GENERATION = "testcase_generation"
@@ -21,7 +22,7 @@ TESTCASE_WORKFLOW_FILES = [
 ANALYSIS_CONTEXT_FILES = [
     "AGENTS.md",
     "COMMANDS.md",
-    "docs/production-agent-runtime-roadmap.md",
+    "docs/roadmap.md",
     "skills/registry/skills.yaml",
     "skills/core/requirement-understanding-skill.md",
     "skills/core/context-building-skill.md",
@@ -41,7 +42,7 @@ ANALYSIS_CONTEXT_FILES = [
 TESTCASE_CONTEXT_FILES = [
     "AGENTS.md",
     "COMMANDS.md",
-    "docs/production-agent-runtime-roadmap.md",
+    "docs/roadmap.md",
     "skills/registry/skills.yaml",
     "skills/core/requirement-understanding-skill.md",
     "skills/core/context-building-skill.md",
@@ -66,10 +67,9 @@ TESTCASE_CONTEXT_FILES = [
     "skills/test-design/risk-based-testing-skill.md",
     "knowledge/templates/testcase-template.md",
 ]
-REQUIRED_PRD_FILES = ["workspace.yml", "input/requirement.md"]
+REQUIRED_PRD_FILES = ["metadata.yml", "input/requirement.md"]
 ROADMAP_CANDIDATES = [
-    "docs/production-agent-runtime-roadmap.md",
-    "docs/architecture/production-agent-runtime-roadmap.md",
+    "docs/roadmap.md",
 ]
 IMAGE_REFERENCE_RE = re.compile(
     r"!\[[^\]]*]\([^)]+\)|\.(?:png|jpe?g)\b|(?:^|[^A-Za-z0-9_])(?:media|images)[\\/]",
@@ -135,23 +135,18 @@ def _resolve_context_files(repo_root: Path, task_type: str | None) -> list[str]:
 
 
 def _set_output_paths(state: QAWorkflowState, repo_root: Path, prd_path: Path) -> None:
-    run_segment = state.run_id or "runtime"
-    analysis_path = (
-        prd_path / "runs" / run_segment / "analysis" / "requirement-analysis.md"
-    ).relative_to(repo_root).as_posix()
-    testcase_path = (
-        prd_path / "runs" / run_segment / "cases" / "test-cases.md"
-    ).relative_to(repo_root).as_posix()
+    workspace = PRDWorkspace(prd_path)
+    preview_path = workspace.artifact_preview_path(state.run_id).relative_to(repo_root).as_posix()
 
     if state.task_type in {TASK_ANALYSIS, TASK_MVP}:
-        state.output_paths["requirement_analysis"] = analysis_path
+        state.output_paths["requirement_analysis"] = preview_path
     if state.task_type in {TASK_TESTCASE_GENERATION, TASK_MVP}:
-        state.output_paths["testcases"] = testcase_path
+        state.output_paths["testcases"] = preview_path
 
     if state.task_type == TASK_ANALYSIS:
-        state.output_path = analysis_path
+        state.output_path = preview_path
     elif state.task_type == TASK_TESTCASE_GENERATION:
-        state.output_path = testcase_path
+        state.output_path = preview_path
 
 
 def _detect_requirement_images(
@@ -210,7 +205,7 @@ def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkfl
     if api_doc.is_file():
         state.loaded_files[api_doc.relative_to(repo_root).as_posix()] = read_utf8(api_doc)
 
-    analysis_file = prd_path / "analysis" / "requirement-analysis.md"
+    analysis_file = prd_path / "artifacts" / "requirement-analysis.md"
     analysis_relative_path = analysis_file.relative_to(repo_root).as_posix()
     if analysis_file.is_file():
         state.loaded_files[analysis_relative_path] = read_utf8(analysis_file)

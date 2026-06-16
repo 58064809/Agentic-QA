@@ -7,6 +7,7 @@ from typing import Any
 import yaml
 
 from runtime.graph.state import QAWorkflowState
+from runtime.workspace import ARTIFACT_SPECS, PRDWorkspace
 
 
 def _now_iso() -> str:
@@ -35,7 +36,7 @@ def _runtime_run_summary(state: QAWorkflowState, updated_at: str) -> dict[str, A
     return {
         "run_id": state.run_id,
         "thread_id": state.thread_id,
-        "task_type": state.task_type or "legacy_testcase_generation",
+        "task_type": state.task_type or "testcase_generation",
         "review_status": state.review_status,
         "run_status": state.run_status,
         "wrote_file": state.wrote_file,
@@ -53,12 +54,13 @@ def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
         return state
 
     if not state.wrote_file:
-        state.warnings.append("workspace.yml 未更新：本次 Runtime 未写入产物。")
+        state.warnings.append("metadata.yml 未更新：本次 Runtime 未写入产物。")
         return state
 
-    metadata_path = repo_root / Path(state.prd_path) / "workspace.yml"
+    workspace = PRDWorkspace(repo_root / Path(state.prd_path))
+    metadata_path = workspace.metadata_path
     if not metadata_path.is_file():
-        state.warnings.append(f"workspace.yml 不存在，跳过 Runtime 写入记录: {metadata_path}")
+        state.warnings.append(f"metadata.yml 不存在，跳过 Runtime 写入记录: {metadata_path}")
         return state
 
     updated_at = _now_iso()
@@ -73,6 +75,26 @@ def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
     metadata["updated_at"] = updated_at
     if metadata.get("status") != "archived":
         metadata["status"] = "needs_human_review"
+
+    artifacts = metadata.get("artifacts")
+    if not isinstance(artifacts, dict):
+        artifacts = {}
+    for artifact in state.artifacts:
+        name = artifact.get("name")
+        if not isinstance(name, str) or name not in ARTIFACT_SPECS:
+            continue
+        entry = artifacts.get(name)
+        if not isinstance(entry, dict):
+            entry = {}
+        spec = ARTIFACT_SPECS[name]
+        entry.setdefault("current_path", spec["current_path"])
+        entry.setdefault("current_version", "")
+        entry.setdefault("history_index", spec["history_index"])
+        entry["latest_run_id"] = state.run_id or ""
+        entry["latest_preview_path"] = artifact.get("output_path") or state.output_path
+        entry["status"] = "needs_human_review"
+        artifacts[name] = entry
+    metadata["artifacts"] = artifacts
 
     target_gate_names = _target_review_gate_names(state)
     review_gates = metadata.get("review_gates")
@@ -89,5 +111,5 @@ def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
 
     with metadata_path.open("w", encoding="utf-8") as stream:
         yaml.safe_dump(metadata, stream, allow_unicode=True, sort_keys=False)
-    state.warnings.append("workspace.yml 已记录 Runtime 写入和审批状态。")
+    state.warnings.append("metadata.yml 已记录 Runtime 写入和审批状态。")
     return state

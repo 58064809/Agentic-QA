@@ -198,7 +198,7 @@ def _format_numbered(items: list[str], fallback: str) -> str:
 def _build_requirement_context(state: QAWorkflowState) -> RequirementContext:
     requirement = _path_content(state, "input/requirement.md")
     api_doc = _path_content(state, "input/api.md")
-    metadata = _path_content(state, "workspace.yml")
+    metadata = _path_content(state, "metadata.yml")
     title = (
         _metadata_value(metadata, "title")
         or _first_heading(requirement)
