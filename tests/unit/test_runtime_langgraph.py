@@ -61,7 +61,7 @@ def test_langgraph_dry_run_does_not_write_testcases(tmp_path):
 
     assert result.success
     assert result.orchestration == "LangGraph StateGraph"
-    assert result.run_status == "completed"
+    assert result.run_status == "waiting_review"
     assert result.review_status == "needs_human_review"
     assert not result.wrote_file
     assert "artifact_writer_node" not in result.executed_nodes

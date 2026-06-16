@@ -88,7 +88,11 @@ def _route_after_analysis_quality(graph_state: GraphQAWorkflowState) -> str:
 def _route_after_human_review(graph_state: GraphQAWorkflowState) -> str:
     if graph_state.get("errors") or graph_state.get("quality_errors"):
         return "error"
-    if graph_state.get("review_status") in {"approved", "write_approved"}:
+    if graph_state.get("review_status") in {
+        "needs_human_review",
+        "approved",
+        "write_approved",
+    }:
         return "write"
     return "end"
 

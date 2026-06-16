@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -31,6 +32,17 @@ from runtime.llm.intent_router import route_intent, route_intent_fallback
 from runtime.schemas.runtime_result import RuntimeResult
 from runtime.session import Session, SessionManager
 from runtime.workspace import PRDWorkspace, default_metadata, write_yaml_mapping
+
+PRD_WORKSPACE_PATH_RE = re.compile(
+    r"""
+    (?:
+        [a-zA-Z]:\\(?:[^\s\\"']+\\)*prd\\[^\s\\"']+
+        |
+        prd[/\\][^\s\\"']+
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
 
 # ── 帮助提示 ──────────────────────────────────────────────────
 
@@ -120,7 +132,7 @@ def _run_workflow(
     debug: bool = False,
 ) -> RuntimeResult:
     """根据意图执行对应工作流。"""
-    approve_write = True  # 用户确认过 A = 自动写入
+    approve_write = False
     app_config = load_app_config(repo_root)
     llm_enabled = app_config.llm.enabled
 
@@ -176,6 +188,13 @@ def _route_user_intent(user_input: str, repo_root: Path):
         )
     config = OpenAICompatibleConfig.from_app_config(app_config.llm)
     return route_intent(user_input, config)
+
+
+def _extract_prd_workspace_path(user_input: str) -> str | None:
+    match = PRD_WORKSPACE_PATH_RE.search(user_input)
+    if not match:
+        return None
+    return match.group(0).strip().rstrip("，。；,;.)>")
 
 
 # ── PRD 工作区管理 ────────────────────────────────────────────
@@ -452,7 +471,7 @@ def _dialogue_loop(
             continue
 
         # 更新 session 状态
-        prd_path = route.prd_path or last_prd
+        prd_path = route.prd_path or _extract_prd_workspace_path(line) or last_prd
         intent = route.intent or last_intent or "mvp"
 
         if not prd_path and route.url:
@@ -539,9 +558,12 @@ def main() -> int:
         except ValueError as e:
             print(f"❌ {e}")
             return 1
-    elif route.prd_path:
+    elif route.prd_path or _extract_prd_workspace_path(user_input):
         try:
-            prd_rel = _ensure_prd_workspace(repo_root, route.prd_path)
+            prd_rel = _ensure_prd_workspace(
+                repo_root,
+                route.prd_path or _extract_prd_workspace_path(user_input) or "",
+            )
         except FileNotFoundError as e:
             print(f"❌ {e}")
             return 1

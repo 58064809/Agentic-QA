@@ -239,13 +239,8 @@ def mvp_artifact_writer_node(
     state.record_node("mvp_artifact_writer_node")
     if state.errors or state.quality_errors:
         return state
-    if state.review_status not in {"approved", "write_approved"}:
-        state.errors.append("未获得 Runtime 写入授权，拒绝写入产物。")
-        return state
-    if state.dry_run:
-        return state
-    if not state.approve_write:
-        state.errors.append("未显式传入 approve_write，拒绝写入。")
+    if state.review_status not in {"needs_human_review", "approved", "write_approved"}:
+        state.errors.append("未进入 Review Gate，拒绝写入候选产物。")
         return state
 
     keys = _artifact_keys_for_task(state)

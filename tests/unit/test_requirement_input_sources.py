@@ -40,3 +40,10 @@ def test_import_feishu_url_normalizes_to_requirement_markdown(tmp_path, monkeypa
 def test_inline_markdown_detection():
     assert cli._looks_like_markdown_requirement("# Title\n\n## Scope\n\n- item")
     assert not cli._looks_like_markdown_requirement("analyze prd/demo")
+
+
+def test_extract_prd_workspace_path_from_natural_language():
+    assert (
+        cli._extract_prd_workspace_path("分析 prd/demo-requirement 并生成测试用例")
+        == "prd/demo-requirement"
+    )

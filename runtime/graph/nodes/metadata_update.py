@@ -32,6 +32,12 @@ def _read_metadata(metadata_path: Path) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _write_yaml(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as stream:
+        yaml.safe_dump(data, stream, allow_unicode=True, sort_keys=False)
+
+
 def _runtime_run_summary(state: QAWorkflowState, updated_at: str) -> dict[str, Any]:
     return {
         "run_id": state.run_id,
@@ -94,6 +100,17 @@ def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
         entry["latest_preview_path"] = artifact.get("output_path") or state.output_path
         entry["status"] = "needs_human_review"
         artifacts[name] = entry
+
+        review_path = workspace.review_path(name)
+        review_record = _read_metadata(review_path)
+        review_record.setdefault("artifact", spec["current_path"])
+        review_record.setdefault("artifact_type", spec["artifact_type"])
+        review_record["status"] = "needs_human_review"
+        review_record["decision"] = ""
+        review_record["reviewed_at"] = None
+        review_record["run_id"] = state.run_id or ""
+        review_record["source_message"] = state.user_input
+        _write_yaml(review_path, review_record)
     metadata["artifacts"] = artifacts
 
     target_gate_names = _target_review_gate_names(state)
@@ -109,7 +126,6 @@ def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
                 gate["runtime_reviewed_by"] = state.human_review.get("reviewed_by")
                 gate["updated_at"] = updated_at
 
-    with metadata_path.open("w", encoding="utf-8") as stream:
-        yaml.safe_dump(metadata, stream, allow_unicode=True, sort_keys=False)
+    _write_yaml(metadata_path, metadata)
     state.warnings.append("metadata.yml 已记录 Runtime 写入和审批状态。")
     return state

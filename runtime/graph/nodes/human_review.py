@@ -24,16 +24,15 @@ def human_review_node(state: QAWorkflowState) -> QAWorkflowState:
         return state
 
     state.review_status = "needs_human_review"
-    state.run_status = "dry_run"
+    state.run_status = "waiting_review"
     state.human_review = {
         "status": "needs_human_review",
         "decision": {
-            "action": "dry_run",
+            "action": "wait_for_review",
             "source": "default",
         },
         "reviewed_by": None,
-        "review_notes": "dry-run 未写入文件；需要写入请设置 approve_write。",
+        "review_notes": "候选产物已生成，等待人工确认后才能发布正式产物。",
         "interrupt": None,
     }
-    state.warnings.append("dry-run 模式不写入文件；需要写入请显式设置 approve_write。")
     return state

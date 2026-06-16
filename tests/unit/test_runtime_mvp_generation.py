@@ -250,7 +250,7 @@ def test_analyze_dry_run_generates_analysis_without_writing(tmp_path):
 
     assert result.success
     assert result.task_type == "analysis"
-    assert result.run_status == "completed"
+    assert result.run_status == "waiting_review"
     assert result.review_status == "needs_human_review"
     assert "requirement_analysis" in result.draft_artifacts
     analysis = result.draft_artifacts["requirement_analysis"]
@@ -300,7 +300,7 @@ def test_generate_testcases_dry_run_generates_testcases_without_writing(tmp_path
 
     assert result.success
     assert result.task_type == "testcase_generation"
-    assert result.run_status == "completed"
+    assert result.run_status == "waiting_review"
     assert result.review_status == "needs_human_review"
     assert "testcases" in result.draft_artifacts
     testcases = result.draft_artifacts["testcases"]
@@ -348,7 +348,7 @@ def test_mvp_dry_run_generates_two_drafts_without_writing(tmp_path):
 
     assert result.success
     assert result.task_type == "mvp_analysis_testcases"
-    assert result.run_status == "completed"
+    assert result.run_status == "waiting_review"
     assert result.review_status == "needs_human_review"
     assert set(result.draft_artifacts) == {"requirement_analysis", "testcases"}
     assert "## 12. 需求到测试覆盖映射" in result.draft_artifacts["requirement_analysis"]
