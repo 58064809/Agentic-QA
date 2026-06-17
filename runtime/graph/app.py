@@ -136,9 +136,9 @@ def resume_recorded_workflow(
     task_type = _read_recorded_task_type(root, run_id)
 
     if task_type in {"analysis", "testcase_generation", "mvp_analysis_testcases"}:
-        from runtime.graph.mvp_graph import resume_mvp_generation_workflow
+        from runtime.workflow.runner import resume_workflow_for_run
 
-        return resume_mvp_generation_workflow(
+        return resume_workflow_for_run(
             run_id,
             action=action,
             reviewed_by=reviewed_by,

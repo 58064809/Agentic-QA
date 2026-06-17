@@ -6,7 +6,6 @@ from typing import Any
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command
 
 from runtime.config import load_app_config
 from runtime.graph.app import default_repo_root
@@ -17,7 +16,6 @@ from runtime.graph.nodes.metadata_update import metadata_update_node
 from runtime.graph.nodes.mvp_context_loader import (
     TASK_ANALYSIS,
     TASK_MVP,
-    TASK_TESTCASE_GENERATION,
     mvp_command_router_node,
     mvp_context_loader_node,
     mvp_workflow_selector_node,
@@ -39,11 +37,8 @@ from runtime.graph.state import (
 )
 from runtime.llm.config import OpenAICompatibleConfig
 from runtime.records.run_recorder import (
-    append_review_event,
     create_run_identity,
-    load_checkpointer,
     record_runtime_result,
-    run_record_dir_for,
 )
 from runtime.schemas.runtime_result import RuntimeResult
 
@@ -275,59 +270,14 @@ def resume_mvp_generation_workflow(
     review_notes: str | None = None,
     repo_root: Path | None = None,
 ) -> RuntimeResult:
-    root = (repo_root or default_repo_root()).resolve()
-    run_record_dir = run_record_dir_for(root, run_id)
-    checkpointer = load_checkpointer(run_record_dir)
-    graph = build_mvp_generation_graph(root, checkpointer=checkpointer)
-    thread_id = run_id
-    graph_config = {"configurable": {"thread_id": thread_id}}
+    from runtime.workflow.runner import resume_workflow_for_run
 
-    if action is None:
-        snapshot = graph.get_state(graph_config)
-        state = from_graph_state(dict(snapshot.values))
-        state.run_id = run_id
-        state.thread_id = thread_id
-        if snapshot.next:
-            state.review_status = "needs_human_review"
-            state.run_status = "interrupted"
-            state.warnings.append("当前运行仍在人工审核暂停点，请使用 approve 或 reject。")
-        else:
-            state.run_status = "completed" if state.success else "failed"
-        result = RuntimeResult.from_state(state)
-        return record_runtime_result(
-            result,
-            root,
-            graph_state=to_graph_state(state),
-            checkpointer=checkpointer,
-        )
-
-    decision = {
-        "action": action,
-        "reviewed_by": reviewed_by,
-        "review_notes": review_notes,
-    }
-    previous_snapshot = graph.get_state(graph_config)
-    previous_state = from_graph_state(dict(previous_snapshot.values))
-    previous_status = (
-        "needs_human_review" if previous_snapshot.next else previous_state.review_status
-    )
-    previous_run_status = "interrupted" if previous_snapshot.next else previous_state.run_status
-    graph_state = graph.invoke(Command(resume=decision), config=graph_config)
-    result = RuntimeResult.from_state(_state_from_graph_output(graph_state))
-    append_review_event(
-        result,
-        root,
+    return resume_workflow_for_run(
+        run_id,
         action=action,
         reviewed_by=reviewed_by,
         review_notes=review_notes,
-        previous_status=previous_status,
-        previous_run_status=previous_run_status,
-    )
-    return record_runtime_result(
-        result,
-        root,
-        graph_state=graph_state,
-        checkpointer=checkpointer,
+        repo_root=repo_root,
     )
 
 
@@ -357,10 +307,12 @@ def run_requirement_analysis_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    return run_mvp_generation_workflow(
-        user_input,
-        prd_path,
-        task_type=TASK_ANALYSIS,
+    from runtime.workflow import run_workflow_by_id
+
+    return run_workflow_by_id(
+        workflow_id="requirement_analysis",
+        user_input=user_input,
+        prd_path=prd_path,
         repo_root=repo_root,
         approve_write=approve_write,
         record_run=record_run,
@@ -377,10 +329,12 @@ def run_mvp_testcase_generation_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    return run_mvp_generation_workflow(
-        user_input,
-        prd_path,
-        task_type=TASK_TESTCASE_GENERATION,
+    from runtime.workflow import run_workflow_by_id
+
+    return run_workflow_by_id(
+        workflow_id="testcase_generation",
+        user_input=user_input,
+        prd_path=prd_path,
         repo_root=repo_root,
         approve_write=approve_write,
         record_run=record_run,
@@ -397,10 +351,12 @@ def run_mvp_analysis_and_testcases_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    return run_mvp_generation_workflow(
-        user_input,
-        prd_path,
-        task_type=TASK_MVP,
+    from runtime.workflow import run_workflow_by_id
+
+    return run_workflow_by_id(
+        workflow_id="analysis_and_testcases",
+        user_input=user_input,
+        prd_path=prd_path,
         repo_root=repo_root,
         approve_write=approve_write,
         record_run=record_run,

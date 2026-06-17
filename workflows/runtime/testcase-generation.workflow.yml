@@ -1,0 +1,84 @@
+id: testcase_generation
+name: 测试用例生成
+version: 1
+
+input:
+  prd_path: required
+  user_input: required
+
+state:
+  task_type: testcase_generation
+
+nodes:
+  - id: command_router
+    type: python
+    handler: runtime.graph.nodes.mvp_context_loader.mvp_command_router_node
+
+  - id: workflow_selector
+    type: python
+    handler: runtime.graph.nodes.mvp_context_loader.mvp_workflow_selector_node
+
+  - id: requirement_normalizer
+    type: python
+    handler: runtime.graph.nodes.requirement_normalizer.normalize_requirement_document
+
+  - id: context_loader
+    type: python
+    handler: runtime.graph.nodes.mvp_context_loader.mvp_context_loader_node
+
+  - id: testcase_generator
+    type: python
+    handler: runtime.graph.nodes.mvp_generation.testcase_generation_mvp_node
+
+  - id: testcase_quality
+    type: python
+    handler: runtime.graph.nodes.mvp_quality.testcase_mvp_quality_check_node
+
+  - id: review_gate
+    type: python
+    handler: runtime.graph.nodes.human_review.human_review_node
+
+  - id: artifact_preview_writer
+    type: python
+    handler: runtime.graph.nodes.artifact_preview_writer.artifact_preview_writer_node
+
+  - id: metadata_update
+    type: python
+    handler: runtime.graph.nodes.metadata_update.metadata_update_node
+
+edges:
+  - from: start
+    to: command_router
+
+  - from: command_router
+    to: workflow_selector
+    condition: no_errors
+
+  - from: workflow_selector
+    to: requirement_normalizer
+    condition: no_errors
+
+  - from: requirement_normalizer
+    to: context_loader
+    condition: no_errors
+
+  - from: context_loader
+    to: testcase_generator
+    condition: task_is_testcase_generation
+
+  - from: testcase_generator
+    to: testcase_quality
+
+  - from: testcase_quality
+    to: review_gate
+    condition: no_quality_errors
+
+  - from: review_gate
+    to: artifact_preview_writer
+    condition: needs_human_review_or_approved
+
+  - from: artifact_preview_writer
+    to: metadata_update
+
+  - from: metadata_update
+    to: end

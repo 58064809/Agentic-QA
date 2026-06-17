@@ -27,6 +27,9 @@ def create_repo(root: Path, *, with_requirement_md: bool = False) -> Path:
         "workflows/01-requirement-analysis-workflow.md": "需求分析工作流",
         "workflows/10-runtime-testcase-generation-workflow.md": "Runtime 测试用例工作流",
         "workflows/02-testcase-generation-workflow.md": "测试用例工作流",
+        "workflows/runtime/requirement-analysis.workflow.yml": (
+            REPO_ROOT / "workflows/runtime/requirement-analysis.workflow.yml"
+        ).read_text(encoding="utf-8"),
         "prompts/requirement-analysis-prompt.md": "需求分析 Prompt",
         "prompts/testcase-design-prompt.md": "测试用例 Prompt",
         "rules/requirement-analysis-rules.md": "需求分析规则",
