@@ -199,11 +199,7 @@ def _build_requirement_context(state: QAWorkflowState) -> RequirementContext:
     requirement = _path_content(state, "input/requirement.md")
     api_doc = _path_content(state, "input/api.md")
     metadata = _path_content(state, "metadata.yml")
-    title = (
-        _metadata_value(metadata, "title")
-        or _first_heading(requirement)
-        or "未命名业务需求"
-    )
+    title = _metadata_value(metadata, "title") or _first_heading(requirement) or "未命名业务需求"
     pending_items = [
         *_bullets(_section(requirement, "待人工审核")),
         *_bullets(_section(requirement, "待确认项")),
@@ -251,9 +247,7 @@ def _render_business_rules(context: RequirementContext) -> str:
     rows = []
     for index, rule in enumerate(rules, start=1):
         source = "`input/requirement.md`"
-        rows.append(
-            f"| R{index:02d} | {rule} | {source} | needs_human_review |"
-        )
+        rows.append(f"| R{index:02d} | {rule} | {source} | needs_human_review |")
 
     if context.endpoints:
         for endpoint in context.endpoints:
@@ -279,9 +273,7 @@ def _render_mapping_rows(context: RequirementContext) -> str:
     rows = []
     for index, rule in enumerate(source_rules, start=1):
         priority = "P0" if index <= 3 else "P1"
-        rows.append(
-            f"| {rule} | 主流程、分支流程、异常/边界、权限/状态、数据一致性 | {priority} |"
-        )
+        rows.append(f"| {rule} | 主流程、分支流程、异常/边界、权限/状态、数据一致性 | {priority} |")
     rows.extend(
         [
             "| 权限、认证或角色差异 | 未授权、越权、角色可见性和可编辑性 | P0/P1 |",
@@ -644,9 +636,7 @@ def _upsert_artifact(
         "status": "needs_human_review",
         "wrote_file": wrote_file,
     }
-    state.artifacts = [
-        existing for existing in state.artifacts if existing.get("name") != name
-    ]
+    state.artifacts = [existing for existing in state.artifacts if existing.get("name") != name]
     state.artifacts.append(artifact)
 
 
@@ -674,9 +664,7 @@ def _generate_with_optional_llm(
         return fallback
 
     if not config.has_api_key:
-        message = (
-            f"已请求 LLM，但未设置 {config.api_key_env} 环境变量，已降级为 Skeleton 生成。"
-        )
+        message = f"已请求 LLM，但未设置 {config.api_key_env} 环境变量，已降级为 Skeleton 生成。"
         state.warnings.append(message)
         _append_llm_error(state, message)
         return fallback

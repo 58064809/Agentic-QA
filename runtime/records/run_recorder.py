@@ -184,8 +184,7 @@ def result_to_summary(
     review_events: list[dict[str, Any]] | None = None,
 ) -> dict[str, object]:
     draft_artifact_previews = {
-        name: content[:DRAFT_PREVIEW_CHARS]
-        for name, content in result.draft_artifacts.items()
+        name: content[:DRAFT_PREVIEW_CHARS] for name, content in result.draft_artifacts.items()
     }
     return {
         "run_id": result.run_id,

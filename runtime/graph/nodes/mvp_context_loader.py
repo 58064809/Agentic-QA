@@ -128,10 +128,7 @@ def _resolve_context_files(repo_root: Path, task_type: str | None) -> list[str]:
         (path for path in ROADMAP_CANDIDATES if (repo_root / path).is_file()),
         ROADMAP_CANDIDATES[0],
     )
-    return [
-        existing_roadmap if path in ROADMAP_CANDIDATES else path
-        for path in files
-    ]
+    return [existing_roadmap if path in ROADMAP_CANDIDATES else path for path in files]
 
 
 def _set_output_paths(state: QAWorkflowState, repo_root: Path, prd_path: Path) -> None:

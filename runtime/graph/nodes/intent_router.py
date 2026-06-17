@@ -9,52 +9,92 @@ from runtime.graph.state import QAWorkflowState
 INTENT_KEYWORDS: dict[str, tuple[str, ...]] = {
     "archive": (
         # 归档
-        "归档", "archive",
+        "归档",
+        "archive",
     ),
     "bug_draft": (
         # 缺陷草稿
-        "缺陷", "bug", "bug草稿", "缺陷报告", "提缺陷",
+        "缺陷",
+        "bug",
+        "bug草稿",
+        "缺陷报告",
+        "提缺陷",
         "真实缺陷",
     ),
     "failure_analysis": (
         # 失败分析
-        "失败", "失败日志", "失败原因", "日志分析",
-        "看日志", "分类失败",
+        "失败",
+        "失败日志",
+        "失败原因",
+        "日志分析",
+        "看日志",
+        "分类失败",
     ),
     "test_execution": (
         # 测试执行
-        "跑测试", "执行测试", "执行自动化", "运行测试",
-        "收集结果", "pytest",
+        "跑测试",
+        "执行测试",
+        "执行自动化",
+        "运行测试",
+        "收集结果",
+        "pytest",
     ),
     "report_generation": (
         # QA 报告
-        "报告", "qa报告", "测试报告", "风险结论",
-        "汇总测试结果", "报告草稿",
+        "报告",
+        "qa报告",
+        "测试报告",
+        "风险结论",
+        "汇总测试结果",
+        "报告草稿",
     ),
     "api_test_generation": (
         # API 测试
-        "接口", "api", "接口自动化", "接口测试",
-        "pytest草稿", "接口文档",
+        "接口",
+        "api",
+        "接口自动化",
+        "接口测试",
+        "pytest草稿",
+        "接口文档",
     ),
     "ui_test_generation": (
         # UI 测试
-        "ui", "playwright", "端到端", "e2e", "页面测试",
+        "ui",
+        "playwright",
+        "端到端",
+        "e2e",
+        "页面测试",
         "登录页面",
     ),
     "requirement_analysis": (
         # 需求分析
-        "分析需求", "需求分析", "拆解需求", "拆需求",
-        "看prd", "看 PRD", "读需求", "业务规则",
-        "提取规则", "prd分析",
+        "分析需求",
+        "需求分析",
+        "拆解需求",
+        "拆需求",
+        "看prd",
+        "看 PRD",
+        "读需求",
+        "业务规则",
+        "提取规则",
+        "prd分析",
         # 短关键词（长度小，匹配顺序靠后，但能兜底自然表达如"帮我分析登录需求"）
         # "分析" 在需求分析意图中作为终极 fallback
         "分析",
     ),
     "testcase_generation": (
         # 测试用例生成（优先级最高，放最后以覆盖交集）
-        "测试用例", "用例", "testcase", "test case",
-        "生成用例", "设计用例", "生成测试", "设计覆盖",
-        "补边界", "边界用例", "回归用例",
+        "测试用例",
+        "用例",
+        "testcase",
+        "test case",
+        "生成用例",
+        "设计用例",
+        "生成测试",
+        "设计覆盖",
+        "补边界",
+        "边界用例",
+        "回归用例",
     ),
 }
 
@@ -115,9 +155,7 @@ def intent_router_node(state: QAWorkflowState) -> QAWorkflowState:
         return state
 
     # 未匹配任何意图
-    supported = "、".join(
-        f"「{desc}」" for intent, desc in ALL_INTENT_DESCRIPTIONS.items()
-    )
+    supported = "、".join(f"「{desc}」" for intent, desc in ALL_INTENT_DESCRIPTIONS.items())
     state.errors.append(
         f"未能识别意图。当前支持：{supported}。\n"
         f"输入示例：\n"

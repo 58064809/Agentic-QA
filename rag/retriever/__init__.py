@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 @dataclass
 class RetrievedDocument:
     """召回结果。"""
+
     text: str
     source: str
     heading: str
@@ -27,6 +28,7 @@ class RetrievedDocument:
 @dataclass
 class RetrievalResult:
     """一次检索的完整结果。"""
+
     query: str
     documents: list[RetrievedDocument] = field(default_factory=list)
     total_chunks: int = 0
@@ -100,6 +102,5 @@ def assemble_rag_context(
 
     return (
         "## RAG 知识库上下文\n\n"
-        "以下是从 QA 知识库中检索到的相关参考内容，请结合需求文档使用：\n\n"
-        + "\n\n".join(sections)
+        "以下是从 QA 知识库中检索到的相关参考内容，请结合需求文档使用：\n\n" + "\n\n".join(sections)
     )

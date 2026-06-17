@@ -111,7 +111,10 @@ class OpenAICompatibleConfig:
         api_key = env.get(API_KEY_ENV) or None
         base_url = env.get(BASE_URL_ENV) or DEFAULT_BASE_URL
         model = env.get(MODEL_ENV) or DEFAULT_MODEL
-        enable_chat_fallback = _parse_bool(env.get(ENABLE_CHAT_FALLBACK_ENV), default=DEFAULT_ENABLE_CHAT_FALLBACK)
+        enable_chat_fallback = _parse_bool(
+            env.get(ENABLE_CHAT_FALLBACK_ENV),
+            default=DEFAULT_ENABLE_CHAT_FALLBACK,
+        )
         max_input_chars, warnings = _parse_max_input_chars(env.get(MAX_INPUT_CHARS_ENV))
         return cls(
             api_key=api_key,
@@ -140,9 +143,7 @@ class OpenAICompatibleConfig:
         model_env = str(_config_value(config, "model_env", MODEL_ENV))
 
         api_key = env.get(api_key_env) or None
-        base_url = env.get(base_url_env) or str(
-            _config_value(config, "base_url", DEFAULT_BASE_URL)
-        )
+        base_url = env.get(base_url_env) or str(_config_value(config, "base_url", DEFAULT_BASE_URL))
         model = env.get(model_env) or str(_config_value(config, "model", DEFAULT_MODEL))
         enable_chat_fallback = _parse_bool(
             env.get(ENABLE_CHAT_FALLBACK_ENV),
@@ -178,9 +179,7 @@ class OpenAICompatibleConfig:
     ) -> OpenAICompatibleConfig:
         env = environ or os.environ
         api_key_env = str(
-            metadata.get("credential_env")
-            or metadata.get("api_key_env")
-            or API_KEY_ENV
+            metadata.get("credential_env") or metadata.get("api_key_env") or API_KEY_ENV
         )
         max_input_chars, warnings = _parse_max_input_chars(
             str(metadata.get("max_input_chars") or DEFAULT_MAX_INPUT_CHARS)

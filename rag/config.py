@@ -101,8 +101,8 @@ class RagConfig:
         chunk_size = _parse_int(env.get(RAG_CHUNK_SIZE_ENV), DEFAULT_CHUNK_SIZE)
         chunk_overlap = _parse_int(env.get(RAG_CHUNK_OVERLAP_ENV), DEFAULT_CHUNK_OVERLAP)
         embedding_provider = (
-            env.get(RAG_EMBEDDING_PROVIDER_ENV) or DEFAULT_EMBEDDING_PROVIDER
-        ).strip().lower()
+            (env.get(RAG_EMBEDDING_PROVIDER_ENV) or DEFAULT_EMBEDDING_PROVIDER).strip().lower()
+        )
         use_llm_api_key = _parse_bool(env.get(RAG_USE_LLM_API_KEY_ENV), DEFAULT_USE_LLM_API_KEY)
         api_key_env = env.get("RAG_API_KEY_ENV") or RAG_API_KEY_ENV
         base_url = env.get(RAG_BASE_URL_ENV) or None
@@ -187,7 +187,7 @@ class RagConfig:
             for key, value in data.items():
                 env_key = f"RAG_{key.upper()}"
                 if env_key not in env and value is not None:
-                    if isinstance(value, (list, tuple)):
+                    if isinstance(value, list | tuple):
                         env[env_key] = ",".join(str(item) for item in value)
                     else:
                         env[env_key] = str(value)
@@ -208,7 +208,7 @@ class RagConfig:
             for key, value in data.items():
                 env_key = f"RAG_{key.upper()}"
                 if env_key not in env and value is not None:
-                    if isinstance(value, (list, tuple)):
+                    if isinstance(value, list | tuple):
                         env[env_key] = ",".join(str(item) for item in value)
                     else:
                         env[env_key] = str(value)

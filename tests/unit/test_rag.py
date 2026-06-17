@@ -137,7 +137,10 @@ class TestSplitter:
 
     def test_split_by_headings(self) -> None:
         chunks = split_markdown_by_headings(
-            self.SAMPLE_MD, "test.md", max_chars=500, min_chars=10,
+            self.SAMPLE_MD,
+            "test.md",
+            max_chars=500,
+            min_chars=10,
         )
         assert len(chunks) >= 2
         assert all(isinstance(c, Chunk) for c in chunks)
@@ -145,7 +148,10 @@ class TestSplitter:
 
     def test_split_with_heading_metadata(self) -> None:
         chunks = split_markdown_by_headings(
-            self.SAMPLE_MD, "test.md", max_chars=500, min_chars=10,
+            self.SAMPLE_MD,
+            "test.md",
+            max_chars=500,
+            min_chars=10,
         )
         assert chunks[0].heading == "测试文档"
         first_headings = {c.heading for c in chunks}

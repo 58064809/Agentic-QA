@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
 
 SESSION_ID_DEFAULT = "default"
 SESSIONS_DIR = ".runtime/sessions"
@@ -85,6 +84,7 @@ class SessionStore:
         sdir = self.session_dir(session_id)
         if sdir.is_dir():
             import shutil
+
             shutil.rmtree(sdir)
 
     def session_exists(self, session_id: str) -> bool:

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import sys
 from pathlib import Path
@@ -132,8 +132,7 @@ def test_missing_requirement_source_returns_clear_error(tmp_path):
     assert state.errors
     assert "未找到需求源文件" in state.errors[0]
     assert (
-        state.requirement_normalization["skipped_reason"]
-        == "no supported requirement source found"
+        state.requirement_normalization["skipped_reason"] == "no supported requirement source found"
     )
 
 

@@ -51,14 +51,58 @@ CORE_DIRS = [
     "configs",
 ]
 
-AGENT_OUTPUT_REQUIRED_TERMS = ["标准完成回执模板", "变更摘要", "修改文件", "验收结果", "待人工确认", "下一步建议"]
-COMPLETION_TEMPLATE_REQUIRED_TERMS = ["变更摘要", "修改文件", "验收结果", "待人工确认", "下一步建议", "未执行命令必须说明原因"]
-PATH_PREFIXES = ("workflows/", "agents/", "prompts/", "rules/", "skills/", "knowledge/", "docs/", "runtime/", "prd/", "scripts/", "tests/")
-EXCLUDED_DIRS = {".git", ".idea", ".atomcode", ".pytest_cache", ".ruff_cache", ".deepeval", "agentic_qa.egg-info", "__pycache__"}
+AGENT_OUTPUT_REQUIRED_TERMS = [
+    "标准完成回执模板",
+    "变更摘要",
+    "修改文件",
+    "验收结果",
+    "待人工确认",
+    "下一步建议",
+]
+COMPLETION_TEMPLATE_REQUIRED_TERMS = [
+    "变更摘要",
+    "修改文件",
+    "验收结果",
+    "待人工确认",
+    "下一步建议",
+    "未执行命令必须说明原因",
+]
+PATH_PREFIXES = (
+    "workflows/",
+    "agents/",
+    "prompts/",
+    "rules/",
+    "skills/",
+    "knowledge/",
+    "docs/",
+    "runtime/",
+    "prd/",
+    "scripts/",
+    "tests/",
+)
+EXCLUDED_DIRS = {
+    ".git",
+    ".idea",
+    ".atomcode",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".deepeval",
+    "agentic_qa.egg-info",
+    "__pycache__",
+}
 EXCLUDED_MARKDOWN_FILES = {"README_备份.md"}
 EXCLUDED_MARKDOWN_DIRS = {"prd"}
 INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
-PLANNED_REFERENCE_MARKERS = ("待生成", "待后续生成", "示例", "如生成", "可后续生成", "后续生成", "可选新增", "后续任务中创建")
+PLANNED_REFERENCE_MARKERS = (
+    "待生成",
+    "待后续生成",
+    "示例",
+    "如生成",
+    "可后续生成",
+    "后续生成",
+    "可选新增",
+    "后续任务中创建",
+)
 TARGET_STATE_PATH_TOKENS = {
     "config/",
     "runtime/config/",
@@ -154,8 +198,18 @@ def validate_docs_consistency(repo_root: Path) -> list[str]:
         require_path(repo_root / relative_path, "核心文件", errors)
     for relative_path in CORE_DIRS:
         require_path(repo_root / relative_path, "核心目录", errors, directory=True)
-    require_terms(repo_root / "rules/agent-output-rules.md", AGENT_OUTPUT_REQUIRED_TERMS, "Agent 输出规则", errors)
-    require_terms(repo_root / "knowledge/templates/agent-completion-summary-template.md", COMPLETION_TEMPLATE_REQUIRED_TERMS, "Agent 完成回执模板", errors)
+    require_terms(
+        repo_root / "rules/agent-output-rules.md",
+        AGENT_OUTPUT_REQUIRED_TERMS,
+        "Agent 输出规则",
+        errors,
+    )
+    require_terms(
+        repo_root / "knowledge/templates/agent-completion-summary-template.md",
+        COMPLETION_TEMPLATE_REQUIRED_TERMS,
+        "Agent 完成回执模板",
+        errors,
+    )
     errors.extend(find_broken_markdown_path_refs(repo_root))
     return errors
 

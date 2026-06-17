@@ -9,6 +9,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Chunk:
     """一个文本块。"""
+
     text: str
     source: str  # 源文件路径
     heading: str = ""  # 所属章节标题
@@ -56,19 +57,25 @@ def split_markdown_by_headings(
         # 如果主章节不长，直接作为一个 chunk
         if len(section_text) <= max_chars:
             if len(section_text.strip()) >= min_chars:
-                chunks.append(Chunk(
-                    text=section_text.strip(),
-                    source=source,
-                    heading=section_heading,
-                    chunk_index=len(chunks),
-                ))
+                chunks.append(
+                    Chunk(
+                        text=section_text.strip(),
+                        source=source,
+                        heading=section_heading,
+                        chunk_index=len(chunks),
+                    )
+                )
             continue
 
         # 超长 → 用子标题再分
         sub_chunks = _split_long_section(
-            section_text, source, section_heading,
+            section_text,
+            source,
+            section_heading,
             section_level=section_level,
-            max_chars=max_chars, min_chars=min_chars, overlap=overlap,
+            max_chars=max_chars,
+            min_chars=min_chars,
+            overlap=overlap,
         )
         chunks.extend(sub_chunks)
 
@@ -76,7 +83,8 @@ def split_markdown_by_headings(
 
 
 def _group_by_main_headings(
-    text: str, headings: list[re.Match],
+    text: str,
+    headings: list[re.Match],
 ) -> list[tuple[str, int, str]]:
     """按 H1/H2 标题分组。返回 [(标题, 级别, 章节文本)]。"""
     sections: list[tuple[str, int, str]] = []
@@ -93,11 +101,10 @@ def _group_by_main_headings(
         level = len(match.group(1))
         heading_text = match.group(2).strip()
         end = main_headings[index + 1].start() if index + 1 < len(main_headings) else len(text)
-        section_text = text[match.start():end]
+        section_text = text[match.start() : end]
         sections.append((heading_text, level, section_text))
 
     return [(h, lvl, t) for h, lvl, t in sections if t.strip()]
-
 
 
 def _split_long_section(
@@ -115,8 +122,14 @@ def _split_long_section(
     sub_headings = list(HEADING_RE.finditer(text))
     if len(sub_headings) <= 1:
         # 没有子标题 → 按段落切
-        return _split_paragraphs(text, source, max_chars=max_chars, min_chars=min_chars,
-                                 overlap=overlap, parent_heading=parent_heading)
+        return _split_paragraphs(
+            text,
+            source,
+            max_chars=max_chars,
+            min_chars=min_chars,
+            overlap=overlap,
+            parent_heading=parent_heading,
+        )
 
     chunks: list[Chunk] = []
     # 用所有 H2+ 级别的子标题切
@@ -131,12 +144,14 @@ def _split_long_section(
         if level > section_level and last_pos > 0:
             section_text = text[last_pos:pos]
             if len(section_text.strip()) >= min_chars:
-                chunks.append(Chunk(
-                    text=section_text.strip(),
-                    source=source,
-                    heading=f"{parent_heading} > {current_sub}",
-                    chunk_index=len(chunks),
-                ))
+                chunks.append(
+                    Chunk(
+                        text=section_text.strip(),
+                        source=source,
+                        heading=f"{parent_heading} > {current_sub}",
+                        chunk_index=len(chunks),
+                    )
+                )
 
         if level > section_level:
             current_sub = heading_text
@@ -146,16 +161,24 @@ def _split_long_section(
     if last_pos > 0:
         section_text = text[last_pos:]
         if len(section_text.strip()) >= min_chars:
-            chunks.append(Chunk(
-                text=section_text.strip(),
-                source=source,
-                heading=f"{parent_heading} > {current_sub}",
-                chunk_index=len(chunks),
-            ))
+            chunks.append(
+                Chunk(
+                    text=section_text.strip(),
+                    source=source,
+                    heading=f"{parent_heading} > {current_sub}",
+                    chunk_index=len(chunks),
+                )
+            )
 
     if not chunks:
-        return _split_paragraphs(text, source, max_chars=max_chars, min_chars=min_chars,
-                                 overlap=overlap, parent_heading=parent_heading)
+        return _split_paragraphs(
+            text,
+            source,
+            max_chars=max_chars,
+            min_chars=min_chars,
+            overlap=overlap,
+            parent_heading=parent_heading,
+        )
     return _renumber_chunks(chunks)
 
 
@@ -208,8 +231,14 @@ def _split_paragraphs(
 
     # 如果段落合并不理想，按固定窗口切
     if not combined:
-        return _split_fixed_window(text, source, max_chars=max_chars, min_chars=min_chars,
-                                   overlap=overlap, parent_heading=parent_heading)
+        return _split_fixed_window(
+            text,
+            source,
+            max_chars=max_chars,
+            min_chars=min_chars,
+            overlap=overlap,
+            parent_heading=parent_heading,
+        )
 
     return [
         Chunk(
@@ -289,8 +318,11 @@ def chunk_markdown_files(
     all_chunks: list[Chunk] = []
     for source, content in files.items():
         chunks = split_markdown_by_headings(
-            content, source,
-            min_chars=min_chars, max_chars=max_chars, overlap=overlap,
+            content,
+            source,
+            min_chars=min_chars,
+            max_chars=max_chars,
+            overlap=overlap,
         )
         all_chunks.extend(chunks)
     return all_chunks

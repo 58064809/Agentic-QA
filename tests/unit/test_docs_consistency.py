@@ -151,7 +151,8 @@ def test_validate_docs_consistency_allows_readme_target_state_paths(tmp_path):
     repo_root = create_minimal_docs_repo(tmp_path)
     write_file(
         repo_root / "README.md",
-        "目标结构包含 `runtime/config/`、`runtime/intent/`、`runtime/workflow/`、`runtime/rag/`、`runtime/agents/`。\n",
+        "目标结构包含 `runtime/config/`、`runtime/intent/`、"
+        "`runtime/workflow/`、`runtime/rag/`、`runtime/agents/`。\n",
     )
 
     errors = validate_docs_consistency(repo_root)

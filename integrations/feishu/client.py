@@ -39,19 +39,13 @@ def get_feishu_client() -> Client:
         )
 
     _client_instance = (
-        Client.builder()
-        .app_id(app_id)
-        .app_secret(app_secret)
-        .log_level(LogLevelEnum.ERROR)
-        .build()
+        Client.builder().app_id(app_id).app_secret(app_secret).log_level(LogLevelEnum.ERROR).build()
     )
     return _client_instance
 
 
 def has_api_credentials() -> bool:
     """检查是否配置了飞书 Open API 凭证。"""
-    return bool(
-        os.environ.get("FEISHU_APP_ID") or os.environ.get("LARK_APP_ID")
-    ) and bool(
+    return bool(os.environ.get("FEISHU_APP_ID") or os.environ.get("LARK_APP_ID")) and bool(
         os.environ.get("FEISHU_APP_SECRET") or os.environ.get("LARK_APP_SECRET")
     )

@@ -89,9 +89,7 @@ def _extract_heading_preview(preview: str, key: str) -> str | None:
 def _preview_content_for_key(preview: str, key: str, keys: list[str]) -> str:
     if len(keys) == 1:
         return preview.rstrip() + "\n"
-    extracted = _extract_marked_preview(preview, key) or _extract_heading_preview(
-        preview, key
-    )
+    extracted = _extract_marked_preview(preview, key) or _extract_heading_preview(preview, key)
     if extracted:
         return extracted
     raise ValueError(f"artifact-preview.md 中未找到 {key} 对应的候选内容")
@@ -260,9 +258,7 @@ def artifact_promoter_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflo
     state.review_status = "confirmed"
     state.run_status = "completed"
     state.wrote_file = True
-    state.warnings.append(
-        "已将候选产物晋升为正式产物: " + ", ".join(sorted(output_paths))
-    )
+    state.warnings.append("已将候选产物晋升为正式产物: " + ", ".join(sorted(output_paths)))
     return state
 
 

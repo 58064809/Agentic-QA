@@ -89,8 +89,7 @@ def _contains_placeholder(markdown: str) -> list[str]:
 
 def _section_body(markdown: str, section: str) -> str:
     pattern = re.compile(
-        rf"^##\s+(?:\d+\.\s*)?{re.escape(section)}\s*$"
-        r"(?P<body>.*?)(?=^##\s+(?:\d+\.\s*)?|\Z)",
+        rf"^##\s+(?:\d+\.\s*)?{re.escape(section)}\s*$" r"(?P<body>.*?)(?=^##\s+(?:\d+\.\s*)?|\Z)",
         re.MULTILINE | re.DOTALL,
     )
     match = pattern.search(markdown)
@@ -214,9 +213,7 @@ def _check_output_path(
         and output_parts[-1] == "artifact-preview.md"
     )
     if not uses_preview_layout:
-        state.quality_errors.append(
-            f"{label}输出路径不符合约定: runs/<run_id>/artifact-preview.md"
-        )
+        state.quality_errors.append(f"{label}输出路径不符合约定: runs/<run_id>/artifact-preview.md")
 
 
 def requirement_analysis_quality_check_node(
@@ -251,9 +248,8 @@ def requirement_analysis_quality_check_node(
 
     business_rules_body = _section_body(artifact, "业务规则清单")
     business_rule_line_count = _substantive_line_count(business_rules_body)
-    if (
-        business_rule_line_count < 3
-        or (business_rules_body.count("待补充") >= 1 and business_rule_line_count <= 3)
+    if business_rule_line_count < 3 or (
+        business_rules_body.count("待补充") >= 1 and business_rule_line_count <= 3
     ):
         state.quality_errors.append("需求分析草稿业务规则清单缺少实质规则。")
 
@@ -271,9 +267,7 @@ def requirement_analysis_quality_check_node(
 
     placeholders = _contains_placeholder(artifact)
     if placeholders:
-        state.quality_errors.append(
-            "需求分析草稿包含纯模板或占位内容: " + ", ".join(placeholders)
-        )
+        state.quality_errors.append("需求分析草稿包含纯模板或占位内容: " + ", ".join(placeholders))
     if artifact.count("待补充") >= 8:
         state.warnings.append("需求分析草稿包含较多待补充内容，请人工重点确认 PRD 信息完整性。")
 
@@ -303,9 +297,7 @@ def requirement_analysis_quality_check_node(
     return state
 
 
-def testcase_mvp_quality_check_node(
-    state: QAWorkflowState, repo_root: Path
-) -> QAWorkflowState:
+def testcase_mvp_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
     if state.task_type not in {TASK_TESTCASE_GENERATION, TASK_MVP}:
         return state
     state.record_node("testcase_quality_check_node")
@@ -341,8 +333,10 @@ def testcase_mvp_quality_check_node(
     priority_index = header.index("优先级") if "优先级" in header else -1
     if len(rows) < 15:
         state.quality_errors.append("测试用例草稿非表头用例少于 15 条。")
-    if rows and priority_index >= 0 and not any(
-        row[priority_index] == "P0" for row in rows if len(row) > priority_index
+    if (
+        rows
+        and priority_index >= 0
+        and not any(row[priority_index] == "P0" for row in rows if len(row) > priority_index)
     ):
         state.quality_errors.append("测试用例草稿缺少 P0 用例。")
     invalid_priorities = sorted(
@@ -355,9 +349,7 @@ def testcase_mvp_quality_check_node(
         }
     )
     if invalid_priorities:
-        state.quality_errors.append(
-            "测试用例草稿包含非法优先级: " + ", ".join(invalid_priorities)
-        )
+        state.quality_errors.append("测试用例草稿包含非法优先级: " + ", ".join(invalid_priorities))
 
     if header == RICH_TESTCASE_COLUMNS and rows:
         source_index = header.index("需求/规则来源")
@@ -389,9 +381,7 @@ def testcase_mvp_quality_check_node(
             }
         )
         if invalid_types:
-            state.warnings.append(
-                "测试用例草稿包含非法测试类型: " + ", ".join(invalid_types)
-            )
+            state.warnings.append("测试用例草稿包含非法测试类型: " + ", ".join(invalid_types))
         for label, index in {
             "需求/规则来源": source_index,
             "断言/证据": assertion_index,
@@ -416,22 +406,15 @@ def testcase_mvp_quality_check_node(
                 "测试用例草稿富表格测试数据列存在空泛内容，需人工补充: "
                 + ", ".join(str(row_number) for row_number in vague_data_rows[:5])
             )
-        if all(
-            len(row) > pending_index and row[pending_index].strip() == "无"
-            for row in rows
-        ):
+        if all(len(row) > pending_index and row[pending_index].strip() == "无" for row in rows):
             state.warnings.append("测试用例草稿富表格待确认项全部为“无”，需人工补充。")
 
     covered_groups = _covered_keyword_groups(artifact)
     if len(covered_groups) < 4:
-        state.quality_errors.append(
-            "测试用例草稿覆盖维度不足，至少需覆盖 4 类关键场景。"
-        )
+        state.quality_errors.append("测试用例草稿覆盖维度不足，至少需覆盖 4 类关键场景。")
     placeholders = _contains_placeholder(artifact)
     if placeholders:
-        state.quality_errors.append(
-            "测试用例草稿包含纯模板或占位内容: " + ", ".join(placeholders)
-        )
+        state.quality_errors.append("测试用例草稿包含纯模板或占位内容: " + ", ".join(placeholders))
 
     if (
         len(state.quality_errors) > quality_error_start

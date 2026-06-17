@@ -25,9 +25,7 @@ SUPPORTED_INTENTS: dict[str, str] = {
     "resume": "继续上次对话",
 }
 
-INTENT_DESCRIPTIONS = "\n".join(
-    f"   - {k}: {v}" for k, v in SUPPORTED_INTENTS.items()
-)
+INTENT_DESCRIPTIONS = "\n".join(f"   - {k}: {v}" for k, v in SUPPORTED_INTENTS.items())
 
 INTENT_ROUTER_SYSTEM_PROMPT = f"""你是一个 QA 工作流路由助手。
 从用户输入中提取以下信息，只返回 JSON 格式：
@@ -198,9 +196,7 @@ def route_intent(user_input: str, config: OpenAICompatibleConfig) -> IntentRoute
     try:
         adapter = OpenAICompatibleAdapter(config)
         prompt = f"用户输入: {user_input}"
-        response_text = adapter.generate_text(
-            f"{INTENT_ROUTER_SYSTEM_PROMPT}\n\n{prompt}"
-        )
+        response_text = adapter.generate_text(f"{INTENT_ROUTER_SYSTEM_PROMPT}\n\n{prompt}")
     except Exception as e:
         return route_intent_fallback(
             user_input,

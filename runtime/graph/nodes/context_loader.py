@@ -186,9 +186,7 @@ def context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowSt
     # 设置输出路径
     if needs_prd:
         prd_path = resolve_prd_path(repo_root, state.prd_path)
-        state.output_path = _output_path_for_intent(
-            prd_path, repo_root, state.intent, state.run_id
-        )
+        state.output_path = _output_path_for_intent(prd_path, repo_root, state.intent, state.run_id)
     else:
         state.output_path = None
 

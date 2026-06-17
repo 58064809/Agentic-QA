@@ -41,6 +41,7 @@ class Session:
             if hasattr(self.meta, k):
                 setattr(self.meta, k, v)
         from datetime import datetime, timezone
+
         self.meta.updated_at = datetime.now(timezone.utc).isoformat()
         self.store.save_metadata(self.meta)
 
@@ -57,7 +58,6 @@ class Session:
     def reset(self) -> None:
         """清空会话状态（保留 session_id）。"""
         self.store.delete_session(self.session_id)
-        from datetime import datetime, timezone
         self.meta = SessionMetadata.new(self.session_id)
         self._history = None
 

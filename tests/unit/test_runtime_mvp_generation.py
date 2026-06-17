@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import sys
@@ -103,7 +103,7 @@ def create_mvp_repo(root: Path) -> Path:
         "prd/demo-requirement/input/api.md": (
             "# 登录 API\n\n"
             "## POST /api/v1/auth/login\n\n"
-            "```json\n{\"phone\":\"13800138000\",\"password\":\"pwd\"}\n```\n"
+            '```json\n{"phone":"13800138000","password":"pwd"}\n```\n'
         ),
     }
     for relative_path, content in required_files.items():
@@ -334,9 +334,9 @@ def test_generate_testcases_approve_write_creates_testcase_draft(tmp_path):
         f"/prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
     )
     assert "artifact_type: testcase_draft" in output_path.read_text(encoding="utf-8")
-    assert result.run_id in (
-        repo_root / "prd/demo-requirement/runs/latest.yml"
-    ).read_text(encoding="utf-8")
+    assert result.run_id in (repo_root / "prd/demo-requirement/runs/latest.yml").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_mvp_dry_run_generates_two_drafts_without_writing(tmp_path):
@@ -452,9 +452,7 @@ def test_cli_natural_language_promote_approves_and_publishes_testcases(tmp_path)
 
     assert prd_rel == "prd/demo-requirement"
     assert promoted.success
-    assert promoted.output_paths == {
-        "testcases": "prd/demo-requirement/artifacts/testcases.md"
-    }
+    assert promoted.output_paths == {"testcases": "prd/demo-requirement/artifacts/testcases.md"}
     assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").is_file()
     review = yaml.safe_load(
         (repo_root / "prd/demo-requirement/reviews/testcases.review.yml").read_text(
@@ -481,9 +479,7 @@ def test_cli_promote_command_publishes_selected_artifact(tmp_path):
 
     assert exit_code == 0
     assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").is_file()
-    assert not (
-        repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md"
-    ).exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
 
 
 def test_mvp_approve_write_creates_analysis_and_testcases(tmp_path):

@@ -100,10 +100,7 @@ def _write_preview_companions(
         "prd_path": state.prd_path,
         "task_type": state.task_type,
         "markdown_path": markdown_path,
-        "artifacts": [
-            _structured_payload(state, key, markdown_path)
-            for key in keys
-        ],
+        "artifacts": [_structured_payload(state, key, markdown_path) for key in keys],
         "source_files": sorted(state.loaded_files.keys()),
         "quality_errors": list(state.quality_errors),
         "warnings": list(state.warnings),
@@ -233,9 +230,7 @@ def _remap_existing_output_paths(
     )
 
 
-def artifact_preview_writer_node(
-    state: QAWorkflowState, repo_root: Path
-) -> QAWorkflowState:
+def artifact_preview_writer_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
     state.record_node("artifact_preview_writer_node")
     if state.errors or state.quality_errors:
         return state
@@ -245,9 +240,7 @@ def artifact_preview_writer_node(
 
     keys = _artifact_keys_for_task(state)
     missing = [
-        key
-        for key in keys
-        if not state.output_paths.get(key) or not state.draft_artifacts.get(key)
+        key for key in keys if not state.output_paths.get(key) or not state.draft_artifacts.get(key)
     ]
     if missing:
         state.errors.append(f"缺少产物内容或输出路径，拒绝写入: {', '.join(missing)}")
@@ -259,9 +252,7 @@ def artifact_preview_writer_node(
         unique_paths = {state.output_paths[key] for key in keys}
         if len(unique_paths) == 1:
             markdown_path = next(iter(unique_paths))
-            preview = combined_artifact_preview(
-                {key: state.draft_artifacts[key] for key in keys}
-            )
+            preview = combined_artifact_preview({key: state.draft_artifacts[key] for key in keys})
             write_new_text(repo_root / Path(markdown_path), preview)
             _write_preview_companions(repo_root, state, keys, markdown_path)
         else:

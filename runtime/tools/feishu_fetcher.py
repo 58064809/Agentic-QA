@@ -9,9 +9,7 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-from typing import Tuple
 
 import requests
 from bs4 import BeautifulSoup
@@ -20,16 +18,14 @@ from integrations.feishu import (
     fetch_doc_content,
     fetch_docx_content,
     fetch_wiki_node,
+)
+from integrations.feishu import (
     has_api_credentials as _integration_has_api_credentials,
 )
 
 # ── URL 模式 ──────────────────────────────────────────────────────────
-FEISHU_DOCX_PATTERN = re.compile(
-    r"https?://[-a-zA-Z0-9@:%._+~#=]+\.feishu\.cn/docx/([a-zA-Z0-9]+)"
-)
-FEISHU_WIKI_PATTERN = re.compile(
-    r"https?://[-a-zA-Z0-9@:%._+~#=]+\.feishu\.cn/wiki/([a-zA-Z0-9]+)"
-)
+FEISHU_DOCX_PATTERN = re.compile(r"https?://[-a-zA-Z0-9@:%._+~#=]+\.feishu\.cn/docx/([a-zA-Z0-9]+)")
+FEISHU_WIKI_PATTERN = re.compile(r"https?://[-a-zA-Z0-9@:%._+~#=]+\.feishu\.cn/wiki/([a-zA-Z0-9]+)")
 
 # ── 登录页面检测 ─────────────────────────────────────────────────────
 LOGIN_INDICATORS = [
@@ -71,7 +67,7 @@ def _get_wiki_node_info(token: str, wiki_token: str) -> dict:
     return fetch_wiki_node(wiki_token)
 
 
-def _get_docx_content(token: str, doc_id: str) -> Tuple[str, str]:
+def _get_docx_content(token: str, doc_id: str) -> tuple[str, str]:
     """获取新版文档内容（兼容旧签名，委托 SDK）。返回 (title, markdown)。"""
     title, content = fetch_docx_content(doc_id)
     return title, content
@@ -82,15 +78,16 @@ def _get_docx_content_from_blocks(token: str, doc_id: str) -> str:
     # lark-oapi raw_content 接口已经返回完整的 Markdown，
     # 如果 future 版本需要 blocks 粒度的处理，可在此扩展。
     from integrations.feishu.doc_fetcher import fetch_docx_raw_content
+
     return fetch_docx_raw_content(doc_id)
 
 
-def _get_doc_content(token: str, doc_token: str) -> Tuple[str, str]:
+def _get_doc_content(token: str, doc_token: str) -> tuple[str, str]:
     """获取旧版文档内容（兼容旧签名，委托 SDK）。返回 (title, content)。"""
     return fetch_doc_content(doc_token)
 
 
-def _fetch_via_api(url: str) -> Tuple[str, str]:
+def _fetch_via_api(url: str) -> tuple[str, str]:
     """通过飞书 Open API（lark-oapi SDK）获取文档内容。
 
     Returns:
@@ -202,9 +199,7 @@ def _extract_content_from_json(soup: BeautifulSoup, html: str) -> str:
     for script in soup.find_all("script"):
         text = script.string or ""
 
-        m = re.search(
-            r"window\.__INITIAL_STATE__\s*=\s*({.*?});\s*$", text, re.DOTALL
-        )
+        m = re.search(r"window\.__INITIAL_STATE__\s*=\s*({.*?});\s*$", text, re.DOTALL)
         if m:
             try:
                 data = json.loads(m.group(1))
@@ -238,23 +233,23 @@ def _deep_search_text(obj, max_depth: int = 5, _depth: int = 0) -> str | None:
     if _depth > max_depth:
         return None
     if isinstance(obj, dict):
-        for key, value in obj.items():
+        for _key, value in obj.items():
             if isinstance(value, str) and len(value) > 200:
                 return value
-            if isinstance(value, (dict, list)):
+            if isinstance(value, dict | list):
                 result = _deep_search_text(value, max_depth, _depth + 1)
                 if result:
                     return result
     elif isinstance(obj, list):
         for item in obj:
-            if isinstance(item, (dict, list)):
+            if isinstance(item, dict | list):
                 result = _deep_search_text(item, max_depth, _depth + 1)
                 if result:
                     return result
     return None
 
 
-def _fetch_via_web(url: str, *, timeout: int = 30) -> Tuple[str, str]:
+def _fetch_via_web(url: str, *, timeout: int = 30) -> tuple[str, str]:
     """通过网页抓取获取公开飞书文档。"""
     doc_id = _extract_doc_id(url)
     headers = {
@@ -273,7 +268,7 @@ def _fetch_via_web(url: str, *, timeout: int = 30) -> Tuple[str, str]:
     try:
         resp = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
     except requests.RequestException as e:
-        raise ValueError(f"飞书文档访问失败: {e}")
+        raise ValueError(f"飞书文档访问失败: {e}") from e
 
     resp.encoding = "utf-8"
     html = resp.text
@@ -302,7 +297,7 @@ def has_api_credentials() -> bool:
     return _integration_has_api_credentials()
 
 
-def fetch_feishu_doc(url: str, *, timeout: int = 30) -> Tuple[str, str]:
+def fetch_feishu_doc(url: str, *, timeout: int = 30) -> tuple[str, str]:
     """从飞书文档链接提取文档内容。
 
     自动选择获取方式：
@@ -346,7 +341,7 @@ def fetch_feishu_doc(url: str, *, timeout: int = 30) -> Tuple[str, str]:
                     "  1. 应用中是否开启了「文档」相关权限\n"
                     "  2. 是否已将应用添加到该知识库的「管理员」中\n"
                     "  3. 应用是否已发布并生效"
-                )
+                ) from e
             else:
                 raise ValueError(
                     "该飞书文档需要登录才能查看。有两种方式解决：\n\n"
@@ -359,5 +354,5 @@ def fetch_feishu_doc(url: str, *, timeout: int = 30) -> Tuple[str, str]:
                     "方式 B：将文档设为公开分享\n"
                     "  文档右上角「分享」→「 anyone with link 」\n\n"
                     "方式 C：下载为 PDF，使用 agentic-qa 自然语言入口传入路径"
-                )
+                ) from e
         raise

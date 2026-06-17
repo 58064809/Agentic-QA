@@ -149,10 +149,7 @@ def default_metadata(slug: str, title: str, created_by: str) -> dict[str, Any]:
             }
             for key, spec in ARTIFACT_SPECS.items()
         },
-        "reviews": {
-            key: spec["review_path"]
-            for key, spec in ARTIFACT_SPECS.items()
-        },
+        "reviews": {key: spec["review_path"] for key, spec in ARTIFACT_SPECS.items()},
     }
 
 

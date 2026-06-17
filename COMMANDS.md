@@ -1,104 +1,298 @@
-# 自然语言命令路由
+# Agentic-QA 命令入口
 
-Runtime 通过 LLM 语义路由自动识别用户意图，无需子命令或参数。用户只需输入纯自然语言命令，Runtime 自动路由到对应 Workflow 和 Agent。
+`COMMANDS.md` 描述用户、Bot、CLI 和 Runtime 如何表达任务意图。它不是旧式子命令清单，也不是 Workflow 细节表；Workflow、Rules、Prompts 和 Skills 的执行契约分别放在对应目录中维护。
 
-所有任务完成后的 Chat 回复必须遵守 `rules/agent-output-rules.md`：不粘贴完整大文件或完整 diff，只输出摘要、关键路径、验收结果和待人工确认项。
-完成回执必须包含：变更摘要、修改文件、验收结果、待人工确认、下一步建议。
+Agentic-QA 的主入口是自然语言。CLI 只是本地调试和脚本化入口之一，和 Chat、Bot、API 使用同一套语义：识别意图、定位 PRD 工作区、生成候选产物、等待 Review Gate、确认后发布正式产物。
 
-## LLM 语义路由
+## 总原则
 
-Agentic-QA 的入口为纯自然语言命令 `agentic-qa "你的需求"`，无需子命令或参数。Runtime 通过 LLM 语义理解将自然语言路由到对应的 Workflow。
+- 用户用自然语言描述目标，不需要记住内部节点名。
+- Runtime 负责识别意图、选择工作流、加载上下文和写入目标 PRD 工作区。
+- 生成类任务默认只写候选产物：`prd/<id>/runs/<run_id>/artifact-preview.md`。
+- 候选产物进入 `reviews/*.review.yml`，状态为 `needs_human_review`。
+- 只有用户明确确认通过后，Runtime 才能 promote 到正式 `artifacts/`。
+- CLI 的 `rag`、`promote` 等子命令用于本地调试和最小闭环验证，不改变自然语言优先的设计。
 
-### 设计原则
+## 常用入口
 
-- **纯自然语言入口**：用户只需输入 `agentic-qa "描述你的需求"`，系统自动理解意图。
-- **LLM 语义路由**：不依赖关键词匹配，由 LLM 理解用户意图并路由到正确的工作流。
-- **Session 持久化**：同一需求的多次交互保持上下文连续，支持增量修订和状态追踪。
-- **自动写入**：产物自动写入目标 PRD 工作区，不打断用户等待确认。
-- **无子命令无参数**：无 `--flag`、`-o` 等参数记忆负担，一句话完成所有操作。
+自然语言执行任务：
 
-### 路由流程
-
-```text
-用户输入 agentic-qa "自然语言命令"
-  → LLM 理解意图，匹配最合适 Workflow
-  → Session 管理器创建/恢复对话上下文
-  → LangGraph 工作流按意图执行
-  → 自动写入产物到 prd/<id>/ 对应目录
-  → 进入 REPL 等待下一轮命令
+```bash
+python -m runtime.cli "分析 prd/demo-requirement 并生成测试用例"
 ```
 
-### 与传统路由的差异
+确认并发布正式产物：
 
-| 维度 | 传统关键词路由 | LLM 语义路由 |
-|------|---------------|-------------|
-| 入口 | `agentic-qa "分析登录需求"` | `agentic-qa "分析登录需求"` |
-| 参数 | 子命令 + 可选参数 | 纯自然语言，无参数 |
-| 匹配方式 | 关键词 + 规则匹配 | LLM 语义理解 |
-| 持久化 | 手动或脚本触发 | 自动 Session 持久化 |
-| 写入方式 | 需 `--confirm` 确认 | 自动写入，不打断 |
+```bash
+python -m runtime.cli "测试用例通过，发布正式产物 prd/demo-requirement"
+```
 
-## 路由表
+显式发布指定 run 的候选产物：
 
-| 用户意图关键词 | Workflow | Agent | Prompt | Rules | Skills/Knowledge | 输入 | 输出 | 状态 |
-|---|---|---|---|---|---|---|---|---|
-| 分析需求、拆解需求 | `workflows/01-requirement-analysis-workflow.md` | Requirement Analysis Agent | `prompts/requirement-analysis-prompt.md` | `rules/requirement-analysis-rules.md` | `skills/analysis/requirement-decomposition-skill.md`、`skills/analysis/business-rule-extraction-skill.md` | `input/requirement.md`、`input/api.md`、`workspace.yml` | `runs/<run_id>/analysis/requirement-analysis.md` | `needs_human_review` |
-| 生成测试用例、设计用例 | `workflows/02-testcase-generation-workflow.md` | Testcase Design Agent | `prompts/testcase-design-prompt.md` | `rules/testcase-rules.md` | `skills/test-design/test-design-skill.md`、`knowledge/templates/testcase-template.md` | 已审核或待审需求分析 | `runs/<run_id>/cases/test-cases.md` | `needs_human_review` |
-| Runtime 生成测试用例、自动生成测试 | `workflows/10-runtime-testcase-generation-workflow.md` | Runtime Testcase Generation Node | `prompts/runtime-testcase-generation-prompt.md` | `rules/testcase-rules.md`、`rules/review-gate-rules.md` | `skills/test-design/test-design-skill.md`、`skills/test-design/equivalence-partitioning-skill.md`、`skills/test-design/boundary-value-analysis-skill.md`、`skills/test-design/state-transition-modeling-skill.md` | Runtime 上下文、声明式资产（Workflow/Prompt/Rules/Skills/Knowledge） | `prd/<id>/runs/<run_id>/cases/test-cases.md` | `needs_human_review` |
-| 生成 API 测试、接口自动化 | `workflows/03-api-test-generation-workflow.md` | API Test Generation Agent | `prompts/api-test-generation-prompt.md` | `rules/api-test-rules.md` | `skills/automation/api-contract-analysis-skill.md`、`skills/automation/pytest-api-test-skill.md` | 接口文档、测试用例 | `automation/api/test-plan.md`、`automation/api/generated/` | `needs_human_review` |
-| 生成 UI 测试、端到端测试 | `workflows/04-ui-test-generation-workflow.md` | UI Test Generation Agent | `prompts/ui-test-generation-prompt.md` | `rules/ui-test-rules.md` | `skills/automation/playwright-ui-test-skill.md` | 需求、用例、页面入口 | `automation/ui/generated/` | `needs_human_review` |
-| 执行测试、跑测试 | `workflows/05-test-execution-workflow.md` | Test Execution Agent | `prompts/test-execution-prompt.md` | `rules/test-execution-rules.md` | `scripts/run_pytest.py`、`scripts/collect_test_results.py` | 已审核脚本、执行环境 | `execution/runs/` | `needs_human_review` |
-| 分析失败、看日志 | `workflows/06-failure-analysis-workflow.md` | Failure Analysis Agent | `prompts/failure-analysis-prompt.md` | `rules/failure-analysis-rules.md` | `skills/reporting/failure-log-analysis-skill.md` | 执行结果、日志、用例 | `defects/failure-analysis.md` | `needs_human_review` |
-| 生成 bug、提缺陷 | `workflows/07-bug-draft-workflow.md` | Bug Draft Agent | `prompts/bug-draft-prompt.md` | `rules/failure-analysis-rules.md` | `skills/reporting/bug-report-writing-skill.md` | 失败分析、证据 | `defects/bug-drafts/` | `needs_human_review` |
-| 生成报告、QA 报告 | `workflows/08-report-generation-workflow.md` | Report Generation Agent | `prompts/report-generation-prompt.md` | `rules/status-rules.md` | `skills/reporting/qa-report-writing-skill.md`、`knowledge/templates/qa-report-template.md` | 全部 QA 产物 | `report/qa-review.md` | `needs_human_review` |
-| 归档需求、完成归档 | `workflows/09-archive-workflow.md` | Archive Agent | `prompts/archive-prompt.md` | `rules/archive-rules.md` | `scripts/archive_requirement.py` | metadata、正式报告、全部产物 | `archive/index.md` | `archived` |
+```bash
+python -m runtime.cli promote prd/demo-requirement run-20260616-060850-0ec07a testcases
+```
 
-## 常见中文触发表达
+调试 RAG：
 
-- 需求分析："分析这个需求""拆一下登录需求""帮我看 PRD""提取业务规则"。
-- 用例生成："生成测试用例""设计覆盖场景""补边界用例""列回归用例"。
-- Runtime 测试生成："运行时生成测试用例""自动生成测试""Runtime 自动用例生成"。
-- API 测试："生成接口自动化""写 pytest 草稿""根据接口文档出测试脚本"。
-- UI 测试："生成 Playwright 脚本""做端到端测试草稿""覆盖登录页面流程"。
-- 测试执行："跑测试""执行自动化""收集 pytest 结果"。
-- 失败分析："看失败日志""判断失败原因""分类这些失败"。
-- 缺陷草稿："生成 bug 草稿""整理缺陷报告""把真实缺陷写成 issue"。
-- QA 报告："生成 QA 报告草稿""汇总测试结果""输出风险结论草稿"。
-- 归档："归档这个需求""生成归档索引""确认完成后归档"。
-- 评审修订："根据评审意见修订需求分析和用例""按会议结论增量修改""不要重写，保留评审意见"。
-- 中文导出："导出中文评审文件""把需求分析和测试用例导出给产品看""生成 QA 评审摘要"。
-- 状态标记："标记需求分析已评审""这版通过""确认可以作为后续输入""打回重改"。
+```bash
+python -m runtime.cli rag status
+python -m runtime.cli rag build
+python -m runtime.cli rag search "边界值 活动规则"
+```
 
-## 命令解析规则
+创建和校验 PRD 工作区：
 
-- 需求名模糊时，先按 `prd/_registry.yml` 的 `requirement_id`、`title`、`path` 做包含匹配。
-- 如果匹配到多个 PRD 候选，不得猜测；必须列出候选路径并等待用户确认。
-- 如果没有匹配到 PRD，询问用户是否创建新工作区，或要求提供明确路径。
-- 如果缺少前置产物，先生成缺失的上游草稿，或明确说明阻塞项。
-- 若目标产物依赖未审核上游产物，必须停止并提示人工审核。
-- 若目标产物已存在，先检查状态，再决定覆盖、增量修订或版本化。
-- `needs_human_review` 状态允许覆盖草稿，但应说明覆盖原因。
-- `needs_revision` 状态允许增量修订，不建议整份重写。
-- `reviewed` 状态默认只做增量修订，必须保留评审意见。
-- `approved` 状态禁止直接覆盖，只能追加补充或新建 `*-v2.md` 对比版。
-- 用户只说"生成出来了"不算人工确认；明确说"这版通过""已评审""确认可以作为后续输入"，或在 metadata/front matter 写入 reviewer 信息，才算已评审或已确认。
-- 若命令包含"直接执行""跑测试"，仍需检查执行环境、测试数据和风险。
-- 若命令包含"归档"，必须先运行 `scripts/archive_requirement.py` 的审核状态检查。
-- AI 生成的 QA 报告只能写入 `prd/<id>/report/qa-review.md`；人工确认后的正式报告可命名为 `qa-report.md`。
-- 内部主产物保持英文固定路径；对外评审导出文件可放在 `prd/<id>/exports/` 并使用中文命名。
-- 大段产物内容必须写入仓库文件，Chat 中只提供文件路径和摘要。
-- 每个任务完成后必须输出标准回执，验收命令必须明确区分"通过 / 失败 / 未执行"。
+```bash
+python scripts/create_prd_workspace.py demo-requirement
+python scripts/validate_prd_workspace.py prd/demo-requirement
+```
 
-## 推荐命令格式
+## 自然语言任务
+
+### 需求分析
+
+示例：
 
 ```text
-请对 prd/sample-login-requirement 执行需求分析，并写入 runs/<run_id>/analysis/requirement-analysis.md，等待我审核。
+分析 prd/demo-requirement 的需求，识别业务规则、风险和待确认项。
+```
+
+Runtime 语义：
+
+- 目标工作区：`prd/demo-requirement`
+- 目标产物：需求分析候选内容
+- 默认输出：`runs/<run_id>/artifact-preview.md`
+- Review 状态：`reviews/requirement-analysis.review.yml = needs_human_review`
+- 不直接覆盖：`artifacts/requirement-analysis.md`
+
+### 测试用例生成
+
+示例：
+
+```text
+基于 prd/demo-requirement 生成测试用例，覆盖主流程、异常、边界值和状态流转。
+```
+
+Runtime 语义：
+
+- 目标工作区：`prd/demo-requirement`
+- 目标产物：测试用例候选内容
+- 默认输出：`runs/<run_id>/artifact-preview.md`
+- Review 状态：`reviews/testcases.review.yml = needs_human_review`
+- 不直接覆盖：`artifacts/testcases.md`
+
+### 需求分析 + 测试用例
+
+示例：
+
+```text
+分析 prd/demo-requirement 并生成测试用例。
+```
+
+Runtime 语义：
+
+- 目标工作区：`prd/demo-requirement`
+- 目标产物：需求分析候选内容、测试用例候选内容
+- 默认输出：同一个 `runs/<run_id>/artifact-preview.md`
+- Review 状态：需求分析和测试用例均进入 `needs_human_review`
+- 不直接覆盖正式 `artifacts/`
+
+### 确认通过并发布
+
+示例：
+
+```text
+测试用例通过，发布正式产物 prd/demo-requirement。
 ```
 
 ```text
-基于已审核用例，为 prd/sample-login-requirement 生成 pytest API 测试草稿。
+需求分析和测试用例都通过，发布正式产物 prd/demo-requirement。
 ```
 
+Runtime 语义：
+
+- 找到目标工作区。
+- 从输入中识别 artifact；未明确时默认发布需求分析和测试用例。
+- 从输入中识别 `run_id`；未明确时读取 `runs/latest.yml`。
+- 将对应 `reviews/*.review.yml` 更新为 `approved`。
+- 调用 `promote_artifacts()`。
+- 写入正式产物到 `artifacts/`。
+- 归档旧版本到 `artifacts/history/`。
+- 更新 `metadata.yml`、`reviews/*.review.yml` 和 history index。
+
+### 要求修改
+
+示例：
+
 ```text
-执行 prd/sample-login-requirement 的测试，收集结果并生成 QA 报告草稿。
+测试用例不通过，补充支付失败、库存不足和优惠券失效场景。
 ```
+
+Runtime 语义：
+
+- 不发布正式产物。
+- 将 Review Gate 保持在待修订状态。
+- 后续生成仍写入新的 `runs/<run_id>/artifact-preview.md`。
+- 正式 `artifacts/` 只能在确认通过后更新。
+
+## 本地调试子命令
+
+### `promote`
+
+显式发布候选产物：
+
+```bash
+python -m runtime.cli promote prd/<requirement> [run_id] [artifact]
+```
+
+参数：
+
+- `prd/<requirement>`：必填，目标 PRD 工作区。
+- `run_id`：可选。缺省时读取 `prd/<requirement>/runs/latest.yml`。
+- `artifact`：可选。支持 `testcases`、`requirement_analysis`。缺省时按需求分析 + 测试用例处理。
+
+示例：
+
+```bash
+python -m runtime.cli promote prd/demo-requirement testcases
+python -m runtime.cli promote prd/demo-requirement run-20260616-060850-0ec07a testcases
+python -m runtime.cli promote prd/demo-requirement run-20260616-060850-0ec07a requirement_analysis
+```
+
+行为：
+
+- 更新目标 review 为 `approved`。
+- 调用正式发布逻辑。
+- 成功后输出正式 artifact 路径。
+- 如果找不到 preview 或 review 未满足条件，命令失败并说明原因。
+
+### `rag`
+
+RAG 调试入口：
+
+```bash
+python -m runtime.cli rag status
+python -m runtime.cli rag build
+python -m runtime.cli rag search "查询内容"
+```
+
+行为：
+
+- `status`：查看索引状态和配置。
+- `build`：强制重建索引。
+- `search`：按当前配置检索上下文并输出 trace。
+
+这些命令只用于调试 RAG，不生成 QA 产物。
+
+## 工作区产物流转
+
+当前标准流转：
+
+```text
+自然语言任务
+  -> Runtime 识别意图
+  -> 加载 PRD 工作区和上下文
+  -> RAG 检索
+  -> QA Agent 生成内容
+  -> 质量检查
+  -> artifact_preview_writer_node
+  -> runs/<run_id>/artifact-preview.md
+  -> metadata_update_node
+  -> reviews/*.review.yml = needs_human_review
+  -> waiting_review
+  -> 用户自然语言确认通过
+  -> artifact_promoter_node
+  -> artifacts/<artifact>.md
+  -> artifacts/history/<artifact>/index.yml
+```
+
+约束：
+
+- `runs/<run_id>/artifact-preview.md` 是候选产物。
+- `artifacts/<artifact>.md` 是正式产物。
+- `reviews/*.review.yml` 是 Review Gate 的结构化记录。
+- `metadata.yml` 记录当前版本、最新 run、preview 路径和 artifact 状态。
+- 未确认的候选产物不得进入正式 `artifacts/`。
+
+## 意图识别优先级
+
+Runtime 处理用户输入时按以下顺序解释：
+
+1. 显式本地调试子命令，例如 `rag`、`promote`。
+2. 自然语言确认发布，例如“通过，发布正式产物”。
+3. 自然语言生成任务，例如“分析需求”“生成测试用例”。
+4. 会话上下文复用，例如继续使用上一次 PRD 工作区。
+5. 无法识别时提示用户补充 PRD 路径或需求来源。
+
+## 推荐表达
+
+生成候选产物：
+
+```text
+分析 prd/demo-requirement 并生成测试用例。
+```
+
+只生成测试用例：
+
+```text
+为 prd/demo-requirement 生成测试用例，重点覆盖边界值和异常流程。
+```
+
+确认发布测试用例：
+
+```text
+测试用例通过，发布正式产物 prd/demo-requirement。
+```
+
+指定 run 发布：
+
+```text
+run-20260616-060850-0ec07a 的测试用例通过，发布正式产物 prd/demo-requirement。
+```
+
+要求修订：
+
+```text
+测试用例不通过，补充优惠券过期、库存不足和重复提交场景。
+```
+
+查看 RAG：
+
+```text
+先用 rag search 看一下活动规则相关上下文。
+```
+
+## 不推荐表达
+
+不要要求 Runtime 直接覆盖正式产物：
+
+```text
+直接重写 artifacts/testcases.md
+```
+
+不要把生成完成当成审核通过：
+
+```text
+生成出来就算通过
+```
+
+不要跳过 Review Gate：
+
+```text
+不用确认，直接发布
+```
+
+如果用户确实需要发布，必须表达“通过”“确认”“发布正式产物”等明确确认语义。
+
+## Chat 回执要求
+
+任务完成后的 Chat 回复遵守 `rules/agent-output-rules.md`：
+
+- 变更摘要
+- 修改文件
+- 验收结果
+- 待人工确认
+- 下一步建议
+
+Chat 中不粘贴完整大文件，不用完整 diff 代替文件路径和验收结果。

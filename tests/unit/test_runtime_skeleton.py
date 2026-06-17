@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import sys
 from pathlib import Path
@@ -74,12 +74,10 @@ def test_intent_router_recognizes_all_supported_intents():
     for user_input, expected_intent in test_cases:
         state = QAWorkflowState(user_input=user_input, prd_path="prd/demo-requirement")
         intent_router_node(state)
-        assert state.intent == expected_intent, (
-            f"输入「{user_input}」应匹配意图 {expected_intent}，实际得到 {state.intent}"
-        )
-        assert not state.errors, (
-            f"输入「{user_input}」不应报错，实际得到 {state.errors}"
-        )
+        assert (
+            state.intent == expected_intent
+        ), f"输入「{user_input}」应匹配意图 {expected_intent}，实际得到 {state.intent}"
+        assert not state.errors, f"输入「{user_input}」不应报错，实际得到 {state.errors}"
 
 
 def test_intent_router_unknown_input_reports_supported_list():
@@ -167,6 +165,3 @@ def test_quality_check_reports_missing_review_status_and_headers(tmp_path):
 
     assert "测试用例草稿缺少 needs_human_review 状态。" in state.quality_errors
     assert any("测试用例草稿缺少表头" in error for error in state.quality_errors)
-
-
-

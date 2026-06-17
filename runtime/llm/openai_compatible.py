@@ -9,9 +9,7 @@ try:
 except ImportError:  # pragma: no cover - exercised only when dependency is absent.
     OpenAI = None  # type: ignore[assignment]
 
-SYSTEM_PROMPT = (
-    "你是 Agentic-QA 的 QA 草稿生成助手，只输出可人工审核的 Markdown 草稿。"
-)
+SYSTEM_PROMPT = "你是 Agentic-QA 的 QA 草稿生成助手，只输出可人工审核的 Markdown 草稿。"
 LLM_TIMEOUT_SECONDS = 180.0
 
 

@@ -42,4 +42,3 @@ def test_route_intent_llm_failure_falls_back(monkeypatch):
     assert route.intent == "mvp"
     assert route.prd_path == "prd/demo-requirement"
     assert "LLM 路由调用失败" in route.summary
-

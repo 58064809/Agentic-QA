@@ -6,21 +6,21 @@ _get_tenant_token / _api_get / _get_wiki_node_info / _get_docx_content 等函数
 
 from __future__ import annotations
 
-from typing import Any, Dict, Tuple
+from typing import Any
 
+from lark_oapi.api.docs.v1.model import GetDocumentContentRequest
 from lark_oapi.api.docx.v1.model import (
     GetDocumentRequest,
     RawContentDocumentRequest,
 )
 from lark_oapi.api.wiki.v2.model import GetNodeSpaceRequest
-from lark_oapi.api.docs.v1.model import GetDocumentContentRequest
 
 from integrations.feishu.client import get_feishu_client
 
 # ── 新版文档（docx） ─────────────────────────────────────────────────────
 
 
-def fetch_docx_meta(doc_id: str) -> Dict[str, Any]:
+def fetch_docx_meta(doc_id: str) -> dict[str, Any]:
     """获取新版文档元信息（标题等）。
 
     Returns:
@@ -49,7 +49,7 @@ def fetch_docx_raw_content(doc_id: str) -> str:
     return resp.data.raw_content or ""
 
 
-def fetch_docx_content(doc_id: str) -> Tuple[str, str]:
+def fetch_docx_content(doc_id: str) -> tuple[str, str]:
     """获取新版文档内容，返回 (title, markdown)。
 
     先获取 raw_content，如果为空再尝试 blocks 兜底（调用方负责兜底逻辑）。
@@ -63,7 +63,7 @@ def fetch_docx_content(doc_id: str) -> Tuple[str, str]:
 # ── Wiki 节点 ────────────────────────────────────────────────────────────
 
 
-def fetch_wiki_node(wiki_token: str) -> Dict[str, Any]:
+def fetch_wiki_node(wiki_token: str) -> dict[str, Any]:
     """查询 Wiki 节点信息。
 
     Returns:
@@ -88,7 +88,7 @@ def fetch_wiki_node(wiki_token: str) -> Dict[str, Any]:
 # ── 旧版文档（doc） ──────────────────────────────────────────────────────
 
 
-def fetch_doc_content(doc_token: str) -> Tuple[str, str]:
+def fetch_doc_content(doc_token: str) -> tuple[str, str]:
     """获取旧版文档内容（doc 格式）。返回 (title, content)。"""
     client = get_feishu_client()
     req = GetDocumentContentRequest.builder().doc_token(doc_token).build()
@@ -112,7 +112,4 @@ def _raise_sdk_error(context: str, code: int, msg: str) -> None:
         403: "访问被拒绝，请检查应用权限范围。",
     }
     hint = hints.get(code, "")
-    raise ValueError(
-        f"{context} (code={code}): {msg}"
-        + (f"\n💡 {hint}" if hint else "")
-    )
+    raise ValueError(f"{context} (code={code}): {msg}" + (f"\n💡 {hint}" if hint else ""))

@@ -107,9 +107,7 @@ def normalize_requirement_document(
             repo_root=repo_root,
         )
         supported = ", ".join(SUPPORTED_REQUIREMENT_SOURCES)
-        state.errors.append(
-            f"未找到需求源文件，请在目标 PRD 工作区提供以下文件之一: {supported}"
-        )
+        state.errors.append(f"未找到需求源文件，请在目标 PRD 工作区提供以下文件之一: {supported}")
         return state
 
     selected_source = existing_sources[0]

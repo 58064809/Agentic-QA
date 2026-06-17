@@ -23,10 +23,7 @@ DEFAULT_CONFIG_FILES = (
 def _deep_merge(base: dict[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
     merged = dict(base)
     for key, value in override.items():
-        if (
-            isinstance(value, Mapping)
-            and isinstance(merged.get(key), dict)
-        ):
+        if isinstance(value, Mapping) and isinstance(merged.get(key), dict):
             merged[key] = _deep_merge(merged[key], value)
         else:
             merged[key] = value
@@ -49,7 +46,7 @@ def _string_list(value: Any) -> list[str]:
         return []
     if isinstance(value, str):
         return [value]
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [str(item) for item in value if str(item).strip()]
     return []
 
@@ -199,12 +196,8 @@ class WorkflowConfig:
             default_workflow_files=_string_list(data.get("default_workflow_files")),
             intent_context_files=intent_context_files,
             default_context_files=_string_list(data.get("default_context_files")),
-            mvp_analysis_workflow_files=_string_list(
-                data.get("mvp_analysis_workflow_files")
-            ),
-            mvp_testcase_workflow_files=_string_list(
-                data.get("mvp_testcase_workflow_files")
-            ),
+            mvp_analysis_workflow_files=_string_list(data.get("mvp_analysis_workflow_files")),
+            mvp_testcase_workflow_files=_string_list(data.get("mvp_testcase_workflow_files")),
             use_llm=use_llm,
         )
 
@@ -364,8 +357,7 @@ class AppConfig:
             entries=EntryConfig.from_dict(raw.get("entries")),
             logging=LoggingConfig.from_dict(raw.get("logging")),
             profiles={
-                str(key): _mapping(value)
-                for key, value in _mapping(raw.get("profiles")).items()
+                str(key): _mapping(value) for key, value in _mapping(raw.get("profiles")).items()
             },
         )
 

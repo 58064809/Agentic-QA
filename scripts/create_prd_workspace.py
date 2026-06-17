@@ -190,9 +190,7 @@ def update_registry(prd_root: Path, slug: str, title: str, workspace: Path) -> N
     if not isinstance(requirements, list):
         raise ValueError("prd/_registry.yml 中 requirements 必须是列表")
     exists = any(
-        item.get("requirement_id") == slug
-        for item in requirements
-        if isinstance(item, dict)
+        item.get("requirement_id") == slug for item in requirements if isinstance(item, dict)
     )
     if not exists:
         requirements.append(

@@ -115,12 +115,14 @@ def test_no_image_does_not_warn_about_prototype_notes(tmp_path):
         "prd/demo-requirement",
         repo_root=repo_root,
         record_run=False,
+        use_llm=False,
     )
     mvp_result = run_mvp_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
         record_run=False,
+        use_llm=False,
     )
 
     assert analysis_result.success
@@ -143,6 +145,7 @@ def test_requirement_image_reference_produces_strong_warning(tmp_path):
         "prd/demo-requirement",
         repo_root=repo_root,
         record_run=False,
+        use_llm=False,
     )
 
     assert result.prototype_notes["requirement_has_images"] is True
@@ -165,6 +168,7 @@ def test_existing_prototype_notes_are_ignored(tmp_path):
         "prd/demo-requirement",
         repo_root=repo_root,
         record_run=False,
+        use_llm=False,
     )
 
     assert result.success
@@ -209,6 +213,7 @@ def test_run_record_contains_image_detection_warning(tmp_path):
         "prd/demo-requirement",
         repo_root=repo_root,
         record_run=True,
+        use_llm=False,
     )
     summary_path = repo_root / result.run_summary_json
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -230,6 +235,7 @@ def test_testcase_generation_does_not_invent_from_images_or_prototype_notes(tmp_
         "prd/demo-requirement",
         repo_root=repo_root,
         record_run=False,
+        use_llm=False,
     )
 
     assert result.success

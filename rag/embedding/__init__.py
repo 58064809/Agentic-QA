@@ -173,11 +173,7 @@ class OpenAIEmbeddingAdapter:
                 original_index = valid_indices[start + data_item.index]
                 result_map[original_index] = data_item.embedding
 
-        return [
-            result_map.get(i, [0.0] * self._dimensions)
-            for i in range(len(texts))
-        ]
-
+        return [result_map.get(i, [0.0] * self._dimensions) for i in range(len(texts))]
 
     def compute_similarity(self, embedding_a: list[float], embedding_b: list[float]) -> float:
         return compute_similarity(embedding_a, embedding_b)

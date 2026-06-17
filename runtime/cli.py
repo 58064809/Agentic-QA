@@ -86,7 +86,7 @@ def _run_rag_command(args: list[str], repo_root: Path) -> int:
     from rag.manager import RagManager
 
     if not args or args[0] in {"help", "--help", "-h"}:
-        print("用法: agentic-qa rag status | build | search \"query\"")
+        print('用法: agentic-qa rag status | build | search "query"')
         return 0
 
     app_config = load_app_config(repo_root)
@@ -264,6 +264,7 @@ def _run_natural_promote_request(
 
 # ── Intent → 工作流映射 ───────────────────────────────────────
 
+
 def _task_type_from_intent(intent: str) -> str | None:
     """将 LLM 路由意图映射到 Graph 的 task_type。"""
     mapping = {
@@ -301,9 +302,7 @@ def _run_workflow(
     testcase_generation_use_llm = llm_enabled and app_config.workflow.use_llm_for(
         "testcase_generation"
     )
-    mvp_use_llm = llm_enabled and app_config.workflow.use_llm_for(
-        "mvp_analysis_testcases"
-    )
+    mvp_use_llm = llm_enabled and app_config.workflow.use_llm_for("mvp_analysis_testcases")
 
     if intent == "requirement_analysis":
         result = run_requirement_analysis_workflow(
@@ -358,6 +357,7 @@ def _extract_prd_workspace_path(user_input: str) -> str | None:
 
 # ── PRD 工作区管理 ────────────────────────────────────────────
 
+
 def _ensure_prd_workspace(
     repo_root: Path,
     prd_path_str: str,
@@ -407,7 +407,7 @@ def _workspace_name(path: Path) -> str:
     # 去掉中文"需求"前缀以保持简洁
     for prefix in ("需求", "requirement", "prd_"):
         if stem.startswith(prefix):
-            stem = stem[len(prefix):]
+            stem = stem[len(prefix) :]
             break
     # 移除特殊字符
     stem = "".join(c for c in stem if c.isalnum() or c in "-_")
@@ -537,6 +537,7 @@ def _import_external_directory(repo_root: Path, external_dir: Path) -> str:
 
 # ── 结果输出 ──────────────────────────────────────────────────
 
+
 def _print_result(result: RuntimeResult, intent: str) -> None:
     """打印运行结果摘要。"""
     from rich.console import Console
@@ -546,11 +547,13 @@ def _print_result(result: RuntimeResult, intent: str) -> None:
     console = Console()
 
     if result.errors:
-        console.print(Panel(
-            "\n".join(result.errors),
-            title="❌ 错误",
-            border_style="red",
-        ))
+        console.print(
+            Panel(
+                "\n".join(result.errors),
+                title="❌ 错误",
+                border_style="red",
+            )
+        )
         return
 
     # 任务摘要
@@ -697,6 +700,7 @@ def _dialogue_loop(
 
 # ── 主入口 ────────────────────────────────────────────────────
 
+
 def main() -> int:
     # Windows GBK 终端兼容
     if hasattr(sys.stdout, "reconfigure"):
@@ -770,7 +774,7 @@ def main() -> int:
     else:
         print(
             "❌ 未识别到需求文档路径。请在输入中包含 .md/.pdf 等文件路径。\n"
-            "   示例: agentic-qa \"帮我分析登录需求 D:\\需求\\登录.md\""
+            '   示例: agentic-qa "帮我分析登录需求 D:\\需求\\登录.md"'
         )
         return 1
 
@@ -800,7 +804,7 @@ def main() -> int:
     session.append_history("assistant", str(result))
 
     # 进入对话循环
-    print("💬 继续对话（输入 \"退出\" 或 Ctrl+C 结束）")
+    print('💬 继续对话（输入 "退出" 或 Ctrl+C 结束）')
     _dialogue_loop(session, repo_root)
 
     return 0 if result.success else 1
