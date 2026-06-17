@@ -50,3 +50,10 @@ prd/*-review/requirement.pdf
 
 # AtomCode local-scope configs (machine-specific)
 .atomcode/local/
+
+# Runtime and IDE local state
+.runtime/
+.idea/pyProjectModel.xml
+
+# Local generated PRD workspace
+prd/5月活动玩法/
