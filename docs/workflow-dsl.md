@@ -2,6 +2,63 @@
 
 本文档定义 Agentic-QA Runtime 使用的最小 Workflow DSL。工作流用于描述一个 QA 任务如何被 Runtime 执行，包括入口意图、输入契约、节点列表、节点输入输出、路由条件、产物写入、失败策略、版本策略和确认门禁。
 
+## 当前可执行 DSL
+
+Runtime 当前实际读取 `workflows/runtime/*.workflow.yml`，并支持以下最小字段：
+
+```yaml
+id: analysis_and_testcases
+name: 需求分析与测试用例生成
+version: 1
+
+input:
+  prd_path: required
+  user_input: required
+
+state:
+  task_type: mvp_analysis_testcases
+
+nodes:
+  - id: command_router
+    type: python
+    handler: runtime.graph.nodes.mvp_context_loader.mvp_command_router_node
+
+edges:
+  - from: start
+    to: command_router
+
+  - from: command_router
+    to: end
+    condition: default
+```
+
+当前 Runtime 约束：
+
+- `id`、`name`、`version`、`nodes`、`edges` 为必填字段。
+- `version` 必须为大于等于 1 的整数。
+- `nodes[].type` 当前只支持 `python`。
+- `nodes[].handler` 必须是可动态 import 的 Python callable。
+- `edges[].from` 可以是 `start` 或已声明 node id。
+- `edges[].to` 可以是 `end` 或已声明 node id。
+- 同一 workflow 不允许重复 `node id` 或重复 `edge`。
+- 同一 `from` 不允许混合无条件固定边和条件边。
+- 同一 `from` 最多只能有一条 `condition: default` 边。
+- 条件边先按 YAML 顺序评估普通 condition，全部不命中时才走 `default`。没有显式 `default` 时，为兼容旧 MVP DSL，Runtime 会隐式路由到 `end`。
+
+当前内置 condition：
+
+| condition | 含义 |
+|---|---|
+| `no_errors` | `errors` 为空 |
+| `has_errors` | `errors` 非空 |
+| `no_quality_errors` | `errors` 和 `quality_errors` 均为空 |
+| `task_is_analysis` | 当前任务为需求分析 |
+| `task_is_testcase_generation` | 当前任务为测试用例生成 |
+| `task_is_analysis_or_mvp` | 当前任务为需求分析或需求分析加用例生成 |
+| `task_is_mvp` | 当前任务为需求分析加用例生成，且无质量错误 |
+| `needs_human_review_or_approved` | 确认状态允许写入候选产物 |
+| `default` | 条件边兜底分支 |
+
 ## 最小工作流示例
 
 ```yaml

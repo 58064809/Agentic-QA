@@ -54,17 +54,33 @@ edges:
     to: workflow_selector
     condition: no_errors
 
+  - from: command_router
+    to: end
+    condition: default
+
   - from: workflow_selector
     to: requirement_normalizer
     condition: no_errors
+
+  - from: workflow_selector
+    to: end
+    condition: default
 
   - from: requirement_normalizer
     to: context_loader
     condition: no_errors
 
+  - from: requirement_normalizer
+    to: end
+    condition: default
+
   - from: context_loader
     to: requirement_analysis_generator
     condition: task_is_analysis
+
+  - from: context_loader
+    to: end
+    condition: default
 
   - from: requirement_analysis_generator
     to: requirement_analysis_quality
@@ -73,9 +89,17 @@ edges:
     to: review_gate
     condition: no_quality_errors
 
+  - from: requirement_analysis_quality
+    to: end
+    condition: default
+
   - from: review_gate
     to: artifact_preview_writer
     condition: needs_human_review_or_approved
+
+  - from: review_gate
+    to: end
+    condition: default
 
   - from: artifact_preview_writer
     to: metadata_update

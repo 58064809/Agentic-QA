@@ -13,7 +13,7 @@ from runtime.graph.state import (
     from_graph_state,
     to_graph_state,
 )
-from runtime.workflow.conditions import get_condition
+from runtime.workflow.conditions import DEFAULT_CONDITION, get_condition
 from runtime.workflow.registry import call_handler, import_handler
 from runtime.workflow.schema import EdgeSpec, WorkflowSpec
 
@@ -62,13 +62,28 @@ def _validate_workflow(spec: WorkflowSpec) -> None:
 
 
 def _conditional_router(edges: list[EdgeSpec]) -> Callable[[GraphQAWorkflowState], str]:
+    default_edges = [edge for edge in edges if edge.condition == DEFAULT_CONDITION]
+    conditional_edges = [edge for edge in edges if edge.condition != DEFAULT_CONDITION]
+
     def route(graph_state: GraphQAWorkflowState) -> str:
-        for edge in edges:
+        for edge in conditional_edges:
             if edge.condition and get_condition(edge.condition)(graph_state):
                 return edge.target
+        if default_edges:
+            return default_edges[0].target
         return "end"
 
     return route
+
+
+def _validate_source_edges(spec: WorkflowSpec, source: str, edges: list[EdgeSpec]) -> None:
+    conditional = [edge for edge in edges if edge.condition]
+    fixed = [edge for edge in edges if not edge.condition]
+    if conditional and fixed:
+        raise ValueError(f"Workflow {spec.id} 不支持同一 source 混合固定边和条件边: {source}")
+    default_edges = [edge for edge in conditional if edge.condition == DEFAULT_CONDITION]
+    if len(default_edges) > 1:
+        raise ValueError(f"Workflow {spec.id} 同一 source 只能有一个 default edge: {source}")
 
 
 def build_graph_from_spec(
@@ -88,10 +103,9 @@ def build_graph_from_spec(
         edges_by_source[edge.source].append(edge)
 
     for source, edges in edges_by_source.items():
+        _validate_source_edges(spec, source, edges)
         conditional = [edge for edge in edges if edge.condition]
         fixed = [edge for edge in edges if not edge.condition]
-        if conditional and fixed:
-            raise ValueError(f"Workflow {spec.id} 不支持同一 source 混合固定边和条件边: {source}")
         if conditional:
             path_map = {edge.target: _graph_node_name(edge.target) for edge in conditional}
             path_map["end"] = END

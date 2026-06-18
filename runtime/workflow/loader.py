@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-from runtime.workflow.schema import EdgeSpec, NodeSpec, WorkflowSpec
+from runtime.workflow.schema import WorkflowSpec
 
 WORKFLOW_GLOB = "*.workflow.yml"
 
@@ -35,42 +35,33 @@ def workflow_path_for_id(repo_root: Path, workflow_id: str) -> Path:
     raise FileNotFoundError(f"找不到 Workflow DSL: {workflow_id}")
 
 
+def _load_edge(item: Any) -> dict[str, Any]:
+    edge = _require_mapping(item, "edge")
+    return {
+        "source": edge.get("from"),
+        "target": edge.get("to"),
+        "condition": edge.get("condition"),
+    }
+
+
 def load_workflow_spec(path: Path | str) -> WorkflowSpec:
     workflow_path = Path(path)
     raw = yaml.safe_load(workflow_path.read_text(encoding="utf-8")) or {}
     data = _require_mapping(raw, workflow_path.as_posix())
+    nodes = [_require_mapping(item, "node") for item in _require_list(data.get("nodes"), "nodes")]
+    edges = [_load_edge(item) for item in _require_list(data.get("edges"), "edges")]
 
-    nodes = []
-    for item in _require_list(data.get("nodes"), "nodes"):
-        node = _require_mapping(item, "node")
-        nodes.append(
-            NodeSpec(
-                id=str(node.get("id") or ""),
-                type=str(node.get("type") or ""),
-                handler=str(node.get("handler") or ""),
-            )
-        )
-
-    edges = []
-    for item in _require_list(data.get("edges"), "edges"):
-        edge = _require_mapping(item, "edge")
-        edges.append(
-            EdgeSpec(
-                source=str(edge.get("from") or ""),
-                target=str(edge.get("to") or ""),
-                condition=str(edge["condition"]) if edge.get("condition") else None,
-            )
-        )
-
-    return WorkflowSpec(
-        id=str(data.get("id") or ""),
-        name=str(data.get("name") or ""),
-        version=int(data.get("version") or 0),
-        input=dict(data.get("input") or {}),
-        state=dict(data.get("state") or {}),
-        nodes=nodes,
-        edges=edges,
-        source_path=workflow_path.as_posix(),
+    return WorkflowSpec.model_validate(
+        {
+            "id": data.get("id"),
+            "name": data.get("name"),
+            "version": data.get("version"),
+            "input": data.get("input") or {},
+            "state": data.get("state") or {},
+            "nodes": nodes,
+            "edges": edges,
+            "source_path": workflow_path.as_posix(),
+        }
     )
 
 

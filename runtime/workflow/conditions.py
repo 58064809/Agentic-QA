@@ -10,10 +10,19 @@ from runtime.graph.nodes.mvp_context_loader import (
 from runtime.graph.state import GraphQAWorkflowState
 
 Condition = Callable[[GraphQAWorkflowState], bool]
+DEFAULT_CONDITION = "default"
 
 
 def no_errors(state: GraphQAWorkflowState) -> bool:
     return not state.get("errors")
+
+
+def has_errors(state: GraphQAWorkflowState) -> bool:
+    return bool(state.get("errors"))
+
+
+def default(_state: GraphQAWorkflowState) -> bool:
+    return True
 
 
 def no_quality_errors(state: GraphQAWorkflowState) -> bool:
@@ -47,6 +56,8 @@ def needs_human_review_or_approved(state: GraphQAWorkflowState) -> bool:
 
 
 CONDITIONS: dict[str, Condition] = {
+    DEFAULT_CONDITION: default,
+    "has_errors": has_errors,
     "needs_human_review_or_approved": needs_human_review_or_approved,
     "no_errors": no_errors,
     "no_quality_errors": no_quality_errors,
