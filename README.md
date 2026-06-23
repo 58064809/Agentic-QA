@@ -138,14 +138,14 @@ prd/<需求ID>/
 
 | 路径 | 说明 |
 |---|---|
-| `config/` | 项目运行配置、Profile 配置和示例配置 |
+| `configs/` | 项目运行配置、Profile 配置和示例配置 |
 | `runtime/` | Runtime 主体代码，负责工作流编排和执行 |
-| `runtime/config/` | 配置加载、合并、校验和环境变量解析 |
-| `runtime/intent/` | 意图识别、任务解析和结构化任务结果 |
+| `runtime/config.py` | 配置加载、合并、校验和环境变量解析 |
+| `runtime/llm/intent_router.py`、`runtime/graph/nodes/intent_router.py` | 意图识别、任务解析和结构化任务结果 |
 | `runtime/workflow/` | 工作流选择、注册和执行入口 |
 | `runtime/graph/` | 工作流图、节点、状态和路由 |
-| `runtime/rag/` | 文档切分、索引、检索和上下文选择 |
-| `runtime/agents/` | 可执行 QA Agent 节点或 Agent 适配 |
+| `rag/` | 文档切分、索引、检索和上下文选择 |
+| `runtime/graph/nodes/` | 可执行 QA Agent 节点、工具节点和 Runtime 编排节点 |
 | `runtime/llm/` | LLM 调用抽象和模型适配 |
 | `runtime/tools/` | 文件读写、产物写入、测试执行和报告工具 |
 | `runtime/schemas/` | 结构化输入输出 Schema |

@@ -1,14 +1,17 @@
 # 测试用例标准
 
-测试用例产物写入：
+测试用例产物分为候选产物和正式产物：
 
 ```text
-prd/<需求ID>/artifacts/testcases.md
+候选产物：prd/<需求ID>/runs/<run-id>/artifact-preview.md
+正式产物：prd/<需求ID>/artifacts/testcases.md
 ```
 
-测试用例用于需求评审、回归执行、自动化生成和历史知识沉淀，必须满足 **可读、可评审、可执行、可追踪、可转换** 五个要求。
+生成类任务默认先写入候选产物，状态为 `needs_human_review`。只有经过 Review Gate 确认并发布后，才允许写入正式产物，正式产物状态应为 `confirmed`。测试用例用于需求评审、回归执行、自动化生成和历史知识沉淀，必须满足 **可读、可评审、可执行、可追踪、可转换** 五个要求。
 
 ## 用例组织结构
+
+候选产物 Front Matter 示例：
 
 ```markdown
 ---
@@ -22,7 +25,27 @@ run_id: ""
 created_at: ""
 updated_at: ""
 ---
+```
 
+正式产物 Front Matter 示例：
+
+```markdown
+---
+artifact_type: testcases
+status: confirmed
+human_review_required: false
+source_requirement: input/requirement.md
+source_api: input/api.md
+generated_by: agentic-qa-runtime
+run_id: ""
+created_at: ""
+updated_at: ""
+---
+```
+
+测试用例正文结构：
+
+```markdown
 # 测试用例
 
 ## 1. 用例范围

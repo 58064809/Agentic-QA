@@ -5,20 +5,72 @@ owner: 待指定
 created_by: Agentic-QA
 last_updated_by: Agentic-QA
 artifacts:
-  requirement: prd/example-requirement/input/requirement.md
-  api_doc: prd/example-requirement/input/api.md
-  analysis: prd/example-requirement/analysis/requirement-analysis.md
-  testcases: prd/example-requirement/cases/test-cases.md
-  api_test_plan: prd/example-requirement/automation/api/test-plan.md
-  api_tests: prd/example-requirement/automation/api/generated/
-  ui_tests: prd/example-requirement/automation/ui/generated/
-  execution_results: prd/example-requirement/execution/runs/
-  execution_report: prd/example-requirement/execution/runs/latest/summary.md
-  failure_analysis: prd/example-requirement/defects/failure-analysis.md
-  bugs: prd/example-requirement/defects/bug-drafts/
-  report_draft: prd/example-requirement/report/qa-review.md
-  report: prd/example-requirement/report/qa-report.md
-  archive: prd/example-requirement/archive/
+  requirement:
+    current_path: prd/example-requirement/input/requirement.md
+    status: draft
+  api_doc:
+    current_path: prd/example-requirement/input/api.md
+    status: draft
+  requirement_analysis:
+    current_path: prd/example-requirement/artifacts/requirement-analysis.md
+    current_version: ""
+    history_index: prd/example-requirement/artifacts/history/requirement-analysis/index.yml
+    latest_run_id: ""
+    status: draft
+  testcases:
+    current_path: prd/example-requirement/artifacts/testcases.md
+    current_version: ""
+    history_index: prd/example-requirement/artifacts/history/testcases/index.yml
+    latest_run_id: ""
+    status: draft
+  api_test_draft:
+    current_path: prd/example-requirement/artifacts/api-test-draft.md
+    current_version: ""
+    history_index: prd/example-requirement/artifacts/history/api-test-draft/index.yml
+    latest_run_id: ""
+    status: draft
+  ui_test_draft:
+    current_path: prd/example-requirement/artifacts/ui-test-draft.md
+    current_version: ""
+    history_index: prd/example-requirement/artifacts/history/ui-test-draft/index.yml
+    latest_run_id: ""
+    status: draft
+  execution_report:
+    current_path: prd/example-requirement/artifacts/execution-report.md
+    current_version: ""
+    history_index: prd/example-requirement/artifacts/history/execution-report/index.yml
+    latest_run_id: ""
+    status: draft
+  failure_analysis:
+    current_path: prd/example-requirement/artifacts/failure-analysis.md
+    current_version: ""
+    history_index: prd/example-requirement/artifacts/history/failure-analysis/index.yml
+    latest_run_id: ""
+    status: draft
+  bug_draft:
+    current_path: prd/example-requirement/artifacts/bug-draft.md
+    current_version: ""
+    history_index: prd/example-requirement/artifacts/history/bug-draft/index.yml
+    latest_run_id: ""
+    status: draft
+  qa_report:
+    current_path: prd/example-requirement/artifacts/qa-report.md
+    current_version: ""
+    history_index: prd/example-requirement/artifacts/history/qa-report/index.yml
+    latest_run_id: ""
+    status: draft
+  archive_index:
+    current_path: prd/example-requirement/artifacts/archive-index.md
+    current_version: ""
+    history_index: prd/example-requirement/artifacts/history/archive-index/index.yml
+    latest_run_id: ""
+    status: draft
+workspace:
+  input_dir: prd/example-requirement/input/
+  artifacts_dir: prd/example-requirement/artifacts/
+  history_dir: prd/example-requirement/artifacts/history/
+  reviews_dir: prd/example-requirement/reviews/
+  runs_dir: prd/example-requirement/runs/
 review_gates:
   - name: 需求分析审核
     status: needs_human_review

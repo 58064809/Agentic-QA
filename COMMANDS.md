@@ -151,6 +151,7 @@ python -m runtime.cli promote prd/<requirement> [run_id] [artifact]
 - `prd/<requirement>`：必填，目标 PRD 工作区。
 - `run_id`：可选。缺省时读取 `prd/<requirement>/runs/latest.yml`。
 - `artifact`：可选。支持 `testcases`、`requirement_analysis`。缺省时按需求分析 + 测试用例处理。
+- 除 PRD 路径外，Runtime 会从剩余参数文本中识别 `run_id` 和 `artifact`。参数顺序不强制，但推荐按 `[run_id] [artifact]` 编写，便于人工阅读和排查。
 
 示例：
 
@@ -159,6 +160,12 @@ python -m runtime.cli promote prd/demo-requirement testcases
 python -m runtime.cli promote prd/demo-requirement run-20260616-060850-0ec07a testcases
 python -m runtime.cli promote prd/demo-requirement run-20260616-060850-0ec07a requirement_analysis
 ```
+
+说明：
+
+- 第一条未显式指定 `run_id`，Runtime 会读取 `prd/demo-requirement/runs/latest.yml`，并只发布测试用例。
+- 第二条显式指定 `run_id`，并只发布测试用例。
+- 第三条显式指定 `run_id`，并只发布需求分析。
 
 行为：
 
