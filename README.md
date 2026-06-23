@@ -18,6 +18,12 @@ Agentic-QA 的最终目标是让用户通过 **Chat、Bot 或 CLI** 以自然语
 - **专业 QA Agent**：覆盖需求分析、测试设计、接口测试生成、UI 测试生成、测试执行、失败分析、Bug 草稿和 QA 报告等任务。
 - **自然语言确认机制**：用户可通过 Chat、Bot 或 CLI 表达通过、修改、驳回、继续执行等确认意图。
 
+## Review Gate 原则
+
+Review Gate 遵循“LLM 负责理解，程序负责裁决”的边界：LLM 或语义解析器只能把用户自然语言转换为结构化 `ReviewDecision`，不能直接写入 `artifacts/`、不能直接把状态改成 `confirmed`、不能执行 promote。
+
+正式流转由确定性状态机控制：候选产物进入 `needs_human_review` 后，用户确认只会把目标 review 更新为 `approved`；正式发布仍必须由确定性 `promote` 命令或函数执行，成功后才会写入正式产物并标记 `confirmed`。
+
 ## 工作流主链路
 
 ```text

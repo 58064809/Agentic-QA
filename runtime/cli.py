@@ -30,6 +30,7 @@ from runtime.graph.app import (
 )
 from runtime.llm.config import OpenAICompatibleConfig
 from runtime.llm.intent_router import route_intent, route_intent_fallback
+from runtime.review import ReviewDecision, ReviewIntent, process_review_gate
 from runtime.schemas.runtime_result import RuntimeResult
 from runtime.session import Session, SessionManager
 from runtime.workspace import PRDWorkspace, default_metadata, read_yaml_mapping, write_yaml_mapping
@@ -46,7 +47,7 @@ PRD_WORKSPACE_PATH_RE = re.compile(
 )
 
 RUN_ID_RE = re.compile(r"run-\d{8}-\d{6}-[a-z0-9]+|runtime", re.IGNORECASE)
-PROMOTE_KEYWORDS = ("发布正式产物", "发布产物", "正式发布", "通过并发布", "promote")
+PROMOTE_KEYWORDS = ("发布正式产物", "发布产物", "正式发布", "通过并发布", "发布吧", "promote")
 APPROVE_KEYWORDS = ("通过", "确认", "approved", "confirmed", "approve")
 ARTIFACT_ALIASES = {
     "requirement_analysis": ("requirement_analysis", "requirement-analysis", "需求分析"),
@@ -153,27 +154,48 @@ def _is_promote_request(user_input: str) -> bool:
     )
 
 
-def _approve_reviews_for_promotion(
+def _approve_reviews_via_gate_for_promotion(
     repo_root: Path,
     prd_rel: str,
     run_id: str,
     artifact_keys: list[str],
     *,
-    reviewed_by: str = "user",
-    source_message: str = "",
-) -> None:
-    workspace = PRDWorkspace(repo_root / prd_rel)
-    timestamp = datetime.now().astimezone().replace(microsecond=0).isoformat()
+    source_message: str,
+    natural_language: bool,
+) -> list[str]:
+    if natural_language:
+        gate_result = process_review_gate(
+            repo_root=repo_root,
+            prd_path=prd_rel,
+            run_id=run_id,
+            user_input=source_message,
+            artifact_keys=artifact_keys,
+        )
+        if not gate_result.approved_for_promote:
+            details = "; ".join(gate_result.errors) or gate_result.decision.reason
+            raise ValueError(f"Review Gate 未批准发布: {details}")
+        return gate_result.target_artifacts
+
+    approved_keys: list[str] = []
     for key in artifact_keys:
-        review_path = workspace.review_path(key)
-        review = read_yaml_mapping(review_path) if review_path.is_file() else {}
-        review["status"] = "approved"
-        review["decision"] = "approved"
-        review["reviewer"] = reviewed_by
-        review["reviewed_at"] = timestamp
-        review["run_id"] = run_id
-        review["source_message"] = source_message
-        write_yaml_mapping(review_path, review)
+        gate_result = process_review_gate(
+            repo_root=repo_root,
+            prd_path=prd_rel,
+            run_id=run_id,
+            user_input=source_message,
+            artifact_keys=[key],
+            decision=ReviewDecision(
+                intent=ReviewIntent.APPROVE,
+                target_artifact=key,
+                confidence=1.0,
+                reason="显式 promote 命令触发确定性审核通过",
+            ),
+        )
+        if not gate_result.approved_for_promote:
+            details = "; ".join(gate_result.errors) or gate_result.decision.reason
+            raise ValueError(f"Review Gate 未批准发布 {key}: {details}")
+        approved_keys.extend(gate_result.target_artifacts)
+    return approved_keys
 
 
 def _print_promote_result(result: RuntimeResult) -> None:
@@ -194,23 +216,25 @@ def _run_promote(
     artifact_keys: list[str],
     *,
     source_message: str,
+    natural_language: bool = False,
 ) -> RuntimeResult:
     workspace = PRDWorkspace(repo_root / prd_rel)
     selected_run_id = run_id or _read_latest_run_id(workspace)
     if not selected_run_id:
         raise ValueError(f"未找到 latest run_id: {workspace.runs_dir / 'latest.yml'}")
-    _approve_reviews_for_promotion(
+    approved_keys = _approve_reviews_via_gate_for_promotion(
         repo_root,
         prd_rel,
         selected_run_id,
         artifact_keys,
         source_message=source_message,
+        natural_language=natural_language,
     )
     return promote_artifacts(
         prd_rel,
         selected_run_id,
         repo_root=repo_root,
-        task_type=_task_type_from_artifact_keys(artifact_keys),
+        task_type=_task_type_from_artifact_keys(approved_keys),
     )
 
 
@@ -232,6 +256,7 @@ def _run_promote_command(args: list[str], repo_root: Path) -> int:
             run_id,
             artifact_keys,
             source_message="agentic-qa promote " + " ".join(args),
+            natural_language=False,
         )
     except (FileNotFoundError, ValueError) as exc:
         print(f"❌ {exc}")
@@ -258,6 +283,7 @@ def _run_natural_promote_request(
         run_id,
         artifact_keys,
         source_message=user_input,
+        natural_language=True,
     )
     return prd_rel, result
 

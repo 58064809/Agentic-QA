@@ -386,7 +386,7 @@ def test_promote_artifacts_requires_approved_reviews(tmp_path):
     )
 
     assert not promoted.success
-    assert any("approved/confirmed" in error for error in promoted.errors)
+    assert any("approved" in error for error in promoted.errors)
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
@@ -407,8 +407,8 @@ def test_promote_artifacts_publishes_confirmed_preview(tmp_path):
     for review_name in ("requirement-analysis.review.yml", "testcases.review.yml"):
         review_path = repo_root / "prd/demo-requirement/reviews" / review_name
         review = yaml.safe_load(review_path.read_text(encoding="utf-8")) or {}
-        review["status"] = "confirmed"
-        review["decision"] = "confirmed"
+        review["status"] = "approved"
+        review["decision"] = "approve"
         review["run_id"] = run_id
         review_path.write_text(
             yaml.safe_dump(review, allow_unicode=True, sort_keys=False),

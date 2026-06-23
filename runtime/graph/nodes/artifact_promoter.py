@@ -14,7 +14,7 @@ from runtime.workspace import (
     write_yaml_mapping,
 )
 
-APPROVED_REVIEW_STATUSES = {"approved", "confirmed"}
+APPROVED_REVIEW_STATUSES = {"approved"}
 
 
 def _artifact_keys_for_task(state: QAWorkflowState) -> list[str]:
@@ -212,7 +212,7 @@ def artifact_promoter_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflo
     approved_keys = _approved_artifact_keys(workspace, state.run_id)
     target_keys = [key for key in _artifact_keys_for_task(state) if key in approved_keys]
     if not target_keys:
-        state.errors.append("没有已 approved/confirmed 的 review 记录，拒绝晋升正式产物。")
+        state.errors.append("没有已 approved 的 review 记录，拒绝晋升正式产物。")
         return state
 
     preview = preview_path.read_text(encoding="utf-8")
