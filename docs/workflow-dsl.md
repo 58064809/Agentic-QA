@@ -45,7 +45,7 @@ edges:
 - 同一 `from` 最多只能有一条 `condition: default` 边。
 - 条件边先按 YAML 顺序评估普通 condition，全部不命中时才走 `default`。没有显式 `default` 时，为兼容旧 MVP DSL，Runtime 会隐式路由到 `end`。
 
-当前内置 condition：
+### 当前内置 condition
 
 | condition | 含义 |
 |---|---|
@@ -58,6 +58,14 @@ edges:
 | `task_is_mvp` | 当前任务为需求分析加用例生成，且无质量错误 |
 | `needs_human_review_or_approved` | 确认状态允许写入候选产物 |
 | `default` | 条件边兜底分支 |
+
+### 当前 Runtime workflow 文件
+
+| workflow_id | 文件 | task_type |
+|---|---|---|
+| `analysis_and_testcases` | `workflows/runtime/analysis-and-testcases.workflow.yml` | `mvp_analysis_testcases` |
+| `requirement_analysis` | `workflows/runtime/requirement-analysis.workflow.yml` | `analysis` |
+| `testcase_generation` | `workflows/runtime/testcase-generation.workflow.yml` | `testcase_generation` |
 
 ## 最小工作流示例
 

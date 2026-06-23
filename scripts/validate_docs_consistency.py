@@ -4,6 +4,11 @@ import argparse
 import re
 from pathlib import Path
 
+import yaml
+
+from runtime.workflow.conditions import CONDITIONS
+from runtime.workflow.loader import load_workflow_spec
+
 CORE_FILES = [
     "README.md",
     "AGENTS.md",
@@ -112,6 +117,7 @@ TARGET_STATE_PATH_TOKENS = {
     "runtime/agents/",
     "integrations/",
 }
+RUNTIME_WORKFLOW_GLOB = "*.workflow.yml"
 
 
 def read_text(path: Path) -> str:
@@ -191,6 +197,38 @@ def find_broken_markdown_path_refs(repo_root: Path) -> list[str]:
     return errors
 
 
+def validate_runtime_workflow_docs(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    docs_path = repo_root / "docs/workflow-dsl.md"
+    workflow_dir = repo_root / "workflows/runtime"
+    if not docs_path.is_file() or not workflow_dir.is_dir():
+        return errors
+
+    docs_content = read_text(docs_path)
+    for workflow_path in sorted(workflow_dir.glob(RUNTIME_WORKFLOW_GLOB)):
+        relative_path = workflow_path.relative_to(repo_root).as_posix()
+        try:
+            spec = load_workflow_spec(workflow_path)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{relative_path} 不是有效 Runtime Workflow DSL: {exc}")
+            continue
+
+        task_type = str(spec.state.get("task_type") or "")
+        for token in (spec.id, relative_path, task_type):
+            if token and f"`{token}`" not in docs_content:
+                errors.append(f"docs/workflow-dsl.md 未列出 Runtime workflow 信息: {token}")
+
+        raw = yaml.safe_load(workflow_path.read_text(encoding="utf-8")) or {}
+        for edge in raw.get("edges") or []:
+            condition = edge.get("condition") if isinstance(edge, dict) else None
+            if condition and condition not in CONDITIONS:
+                errors.append(f"{relative_path} 使用了未注册 condition: {condition}")
+            if condition and f"`{condition}`" not in docs_content:
+                errors.append(f"docs/workflow-dsl.md 未列出 condition: {condition}")
+
+    return errors
+
+
 def validate_docs_consistency(repo_root: Path) -> list[str]:
     repo_root = repo_root.resolve()
     errors: list[str] = []
@@ -211,6 +249,7 @@ def validate_docs_consistency(repo_root: Path) -> list[str]:
         errors,
     )
     errors.extend(find_broken_markdown_path_refs(repo_root))
+    errors.extend(validate_runtime_workflow_docs(repo_root))
     return errors
 
 
