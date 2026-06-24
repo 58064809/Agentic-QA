@@ -4,8 +4,9 @@
     agentic-qa "你的自然语言命令"
 
 特点:
-    - 纯自然语言，无子命令、无参数
-    - LLM 语义路由自动提取意图和文档来源
+    - 自然语言模式是主入口
+    - rag / promote 等工程命令用于本地调试和闭环验证
+    - Intent Layer 自动提取意图和文档来源
     - 自动进入对话循环，支持多轮会话
     - 自动写入候选产物，不直接发布正式产物
 """
@@ -28,8 +29,7 @@ from runtime.graph.app import (
     run_mvp_testcase_generation_workflow,
     run_requirement_analysis_workflow,
 )
-from runtime.llm.config import OpenAICompatibleConfig
-from runtime.llm.intent_router import route_intent, route_intent_fallback
+from runtime.intent import route_user_intent
 from runtime.review import ReviewDecision, ReviewIntent, process_review_gate
 from runtime.schemas.runtime_result import RuntimeResult
 from runtime.session import Session, SessionManager
@@ -364,14 +364,7 @@ def _run_workflow(
 
 def _route_user_intent(user_input: str, repo_root: Path):
     """根据配置选择 LLM 语义路由或确定性路由。"""
-    app_config = load_app_config(repo_root)
-    if not app_config.llm.enabled or not app_config.llm.semantic_router_enabled:
-        return route_intent_fallback(
-            user_input,
-            reason="配置已禁用 LLM 语义路由，已使用确定性路由",
-        )
-    config = OpenAICompatibleConfig.from_app_config(app_config.llm)
-    return route_intent(user_input, config)
+    return route_user_intent(user_input, repo_root)
 
 
 def _extract_prd_workspace_path(user_input: str) -> str | None:
@@ -764,7 +757,7 @@ def main() -> int:
         session.append_history("assistant", str(result))
         return 0 if result.success else 1
 
-    # 路由意图。默认尝试 LLM，LLM 不可用时由 route_intent 降级为确定性路由。
+    # 路由意图。Intent Layer 会按配置选择 LLM 语义路由或确定性路由。
     route = _route_user_intent(user_input, repo_root)
 
     if not route.is_valid:

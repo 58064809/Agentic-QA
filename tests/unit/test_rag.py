@@ -206,11 +206,26 @@ class TestRetriever:
                 heading="测试场景",
                 score=0.92,
                 chunk_index=0,
+                chunk_id="knowledge/qa-methodology/scenario-testing.md#chunk-0",
+                rank=1,
             )
         )
         assert result.has_results is True
         assert "测试登录流程" in result.context_text
         assert "测试场景" in result.context_text
+        trace = result.to_trace()
+        assert trace["pipeline"] == [
+            "document",
+            "chunk",
+            "index",
+            "retrieve",
+            "rerank",
+            "context_build",
+            "generate",
+        ]
+        assert trace["retrieval_count"] == 1
+        assert trace["documents"][0]["chunk_id"]
+        assert trace["documents"][0]["rank"] == 1
 
     def test_assemble_rag_context_format(self) -> None:
         result = RetrievalResult(query="边界值分析")

@@ -139,6 +139,18 @@ def test_build_rag_context_records_retrieval_trace(
     trace = state.rag_retrievals[0]
     assert trace["node"] == "requirement_analysis"
     assert trace["documents"]
+    assert trace["pipeline"] == [
+        "document",
+        "chunk",
+        "index",
+        "retrieve",
+        "rerank",
+        "context_build",
+        "generate",
+    ]
+    assert trace["retrieval_count"] == len(trace["documents"])
+    assert trace["documents"][0]["chunk_id"]
+    assert trace["documents"][0]["rank"] == 1
     assert trace["index_metadata"]["embedding_dim"] == 32
 
 

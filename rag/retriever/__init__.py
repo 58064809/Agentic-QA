@@ -14,12 +14,16 @@ class RetrievedDocument:
     heading: str
     score: float
     chunk_index: int
+    chunk_id: str = ""
+    rank: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "chunk_id": self.chunk_id,
             "source": self.source,
             "heading": self.heading,
             "score": self.score,
+            "rank": self.rank,
             "chunk_index": self.chunk_index,
             "text_preview": self.text[:300],
         }
@@ -60,9 +64,19 @@ class RetrievalResult:
 
     def to_trace(self) -> dict[str, object]:
         return {
+            "pipeline": [
+                "document",
+                "chunk",
+                "index",
+                "retrieve",
+                "rerank",
+                "context_build",
+                "generate",
+            ],
             "query": self.query,
             "query_text": self.query_text,
             "total_chunks": self.total_chunks,
+            "retrieval_count": len(self.documents),
             "used_knowledge_paths": self.used_knowledge_paths,
             "error": self.error,
             "index_metadata": self.index_metadata,

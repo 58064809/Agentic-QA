@@ -26,13 +26,8 @@ from runtime.records.run_recorder import (
 )
 from runtime.schemas.runtime_result import RuntimeResult
 from runtime.workflow.builder import apply_workflow_state_defaults, build_graph_from_spec
+from runtime.workflow.catalog import DEFAULT_WORKFLOW_REGISTRY
 from runtime.workflow.loader import load_workflow_spec_by_id
-
-TASK_TYPE_WORKFLOW_IDS = {
-    "analysis": "requirement_analysis",
-    "mvp_analysis_testcases": "analysis_and_testcases",
-    "testcase_generation": "testcase_generation",
-}
 
 
 def task_type_for_recorded_run(repo_root: Path, run_id: str) -> str | None:
@@ -48,10 +43,7 @@ def task_type_for_recorded_run(repo_root: Path, run_id: str) -> str | None:
 
 
 def workflow_id_for_task_type(task_type: str | None) -> str:
-    try:
-        return TASK_TYPE_WORKFLOW_IDS[str(task_type)]
-    except KeyError as exc:
-        raise ValueError(f"无法根据 task_type 选择 Workflow DSL: {task_type}") from exc
+    return DEFAULT_WORKFLOW_REGISTRY.workflow_id_for_task_type(task_type)
 
 
 def _interrupts_from_graph_state(graph_state: GraphQAWorkflowState) -> list[Any]:

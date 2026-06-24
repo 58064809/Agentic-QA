@@ -60,6 +60,8 @@ QA Agent 执行
 
 ## 架构概览
 
+![Agentic-QA 架构图](docs/assets/agentic-qa-architecture.png)
+
 ```text
 入口层
 ├── AI 编辑器 Chat
@@ -223,6 +225,7 @@ ruff check .
 
 | 文档 | 说明 |
 |---|---|
+| [`docs/architecture.md`](docs/architecture.md) | 系统架构图、分层职责和主链路说明 |
 | [`docs/workflow-dsl.md`](docs/workflow-dsl.md) | Workflow DSL、节点类型、输入输出契约和路由条件 |
 | [`docs/runtime-reliability.md`](docs/runtime-reliability.md) | 节点失败策略、部分成功、原子写入、幂等和运行尝试 |
 | [`docs/artifact-versioning.md`](docs/artifact-versioning.md) | 产物版本管理、候选版本、历史索引和发布策略 |

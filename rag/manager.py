@@ -19,6 +19,10 @@ from runtime.llm.config import API_KEY_ENV as LLM_API_KEY_ENV
 from runtime.llm.config import OpenAICompatibleConfig
 
 
+def _chunk_id(source: str, chunk_index: int) -> str:
+    return f"{source}#chunk-{chunk_index}"
+
+
 def _content_hash(files: dict[str, str]) -> str:
     """对加载的文件内容计算哈希，用于判断索引是否需要重建。"""
     sorted_items = sorted(files.items())
@@ -235,6 +239,7 @@ class RagManager:
         metadata: list[dict[str, Any]] = [
             {
                 "source": c.source,
+                "chunk_id": _chunk_id(c.source, c.chunk_index),
                 "heading": c.heading,
                 "chunk_index": c.chunk_index,
                 "text": c.text,
@@ -323,12 +328,15 @@ class RagManager:
         raw_results = vector_store.search(query_vector, top_k=k)
         result.total_chunks = vector_store.size
 
-        for metadata, score in raw_results:
+        for rank, (metadata, score) in enumerate(raw_results, start=1):
             doc = RetrievedDocument(
                 text=metadata.get("text", ""),
                 source=metadata.get("source", ""),
                 heading=metadata.get("heading", ""),
                 score=score,
+                rank=rank,
+                chunk_id=metadata.get("chunk_id", "")
+                or _chunk_id(metadata.get("source", ""), metadata.get("chunk_index", 0)),
                 chunk_index=metadata.get("chunk_index", 0),
             )
             result.documents.append(doc)

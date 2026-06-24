@@ -8,65 +8,13 @@ from runtime.graph.nodes.context_loader import resolve_prd_path
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.artifact_writer import ensure_within_directory
 from runtime.tools.file_reader import read_existing_files, read_utf8
+from runtime.workflow.catalog import DEFAULT_WORKFLOW_REGISTRY
 from runtime.workspace import PRDWorkspace
 
 TASK_ANALYSIS = "analysis"
 TASK_TESTCASE_GENERATION = "testcase_generation"
 TASK_MVP = "mvp_analysis_testcases"
 
-ANALYSIS_WORKFLOW_FILES = ["workflows/01-requirement-analysis-workflow.md"]
-TESTCASE_WORKFLOW_FILES = [
-    "workflows/10-runtime-testcase-generation-workflow.md",
-    "workflows/02-testcase-generation-workflow.md",
-]
-ANALYSIS_CONTEXT_FILES = [
-    "AGENTS.md",
-    "COMMANDS.md",
-    "docs/roadmap.md",
-    "skills/registry/skills.yaml",
-    "skills/core/requirement-understanding-skill.md",
-    "skills/core/context-building-skill.md",
-    "skills/core/rag-retrieval-skill.md",
-    "skills/analysis/test-scope-decomposition-skill.md",
-    "skills/analysis/risk-identification-skill.md",
-    "skills/core/output-formatting-skill.md",
-    "workflows/01-requirement-analysis-workflow.md",
-    "prompts/requirement-analysis-prompt.md",
-    "rules/requirement-analysis-rules.md",
-    "rules/review-gate-rules.md",
-    "rules/artifact-path-rules.md",
-    "skills/analysis/requirement-decomposition-skill.md",
-    "skills/analysis/business-rule-extraction-skill.md",
-    "knowledge/templates/requirement-analysis-template.md",
-]
-TESTCASE_CONTEXT_FILES = [
-    "AGENTS.md",
-    "COMMANDS.md",
-    "docs/roadmap.md",
-    "skills/registry/skills.yaml",
-    "skills/core/requirement-understanding-skill.md",
-    "skills/core/context-building-skill.md",
-    "skills/core/rag-retrieval-skill.md",
-    "skills/analysis/test-scope-decomposition-skill.md",
-    "skills/analysis/risk-identification-skill.md",
-    "skills/test-design/test-method-selection-skill.md",
-    "skills/test-design/testcase-generation-skill.md",
-    "skills/test-design/testcase-review-skill.md",
-    "skills/core/output-formatting-skill.md",
-    "workflows/10-runtime-testcase-generation-workflow.md",
-    "workflows/02-testcase-generation-workflow.md",
-    "prompts/testcase-design-prompt.md",
-    "rules/testcase-rules.md",
-    "rules/review-gate-rules.md",
-    "rules/artifact-path-rules.md",
-    "skills/test-design/test-design-skill.md",
-    "skills/test-design/equivalence-partitioning-skill.md",
-    "skills/test-design/boundary-value-analysis-skill.md",
-    "skills/test-design/scenario-modeling-skill.md",
-    "skills/test-design/state-transition-modeling-skill.md",
-    "skills/test-design/risk-based-testing-skill.md",
-    "knowledge/templates/testcase-template.md",
-]
 REQUIRED_PRD_FILES = ["metadata.yml", "input/requirement.md"]
 ROADMAP_CANDIDATES = [
     "docs/roadmap.md",
@@ -97,16 +45,13 @@ def mvp_workflow_selector_node(state: QAWorkflowState, repo_root: Path) -> QAWor
     if state.errors:
         return state
 
+    definition = DEFAULT_WORKFLOW_REGISTRY.definition_for_task_type(state.task_type)
     workflow_config = load_app_config(repo_root).workflow
-    analysis_files = workflow_config.mvp_analysis_workflow_files or ANALYSIS_WORKFLOW_FILES
-    testcase_files = workflow_config.mvp_testcase_workflow_files or TESTCASE_WORKFLOW_FILES
-
-    if state.task_type == TASK_ANALYSIS:
-        state.workflow_files = list(analysis_files)
-    elif state.task_type == TASK_TESTCASE_GENERATION:
-        state.workflow_files = list(testcase_files)
-    else:
-        state.workflow_files = [*analysis_files, *testcase_files]
+    configured_files = {
+        TASK_ANALYSIS: workflow_config.mvp_analysis_workflow_files,
+        TASK_TESTCASE_GENERATION: workflow_config.mvp_testcase_workflow_files,
+    }.get(str(state.task_type))
+    state.workflow_files = list(configured_files or definition.context_files)
 
     for relative_path in state.workflow_files:
         if not (repo_root / relative_path).is_file():
@@ -115,11 +60,7 @@ def mvp_workflow_selector_node(state: QAWorkflowState, repo_root: Path) -> QAWor
 
 
 def _context_files_for_task(task_type: str | None) -> list[str]:
-    if task_type == TASK_ANALYSIS:
-        return list(ANALYSIS_CONTEXT_FILES)
-    if task_type == TASK_TESTCASE_GENERATION:
-        return list(TESTCASE_CONTEXT_FILES)
-    return sorted({*ANALYSIS_CONTEXT_FILES, *TESTCASE_CONTEXT_FILES})
+    return list(DEFAULT_WORKFLOW_REGISTRY.definition_for_task_type(task_type).context_files)
 
 
 def _resolve_context_files(repo_root: Path, task_type: str | None) -> list[str]:
