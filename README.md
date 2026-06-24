@@ -14,7 +14,7 @@ Agentic-QA 的最终目标是让用户通过 **Chat、Bot 或 CLI** 以自然语
 - **Runtime 编排**：负责任务执行、节点流转、状态管理、质量检查、确认门禁和产物写入。
 - **运行可靠性策略**：支持节点失败处理、重试、降级、部分产物保留、原子写入、幂等执行和恢复。
 - **产物版本管理**：正式产物保持稳定路径，修订结果先生成候选版本，确认后再提升为当前版本，历史版本可追溯。
-- **RAG 上下文检索**：从需求、接口文档、规则、Skills、Prompts、Knowledge 和历史资产中检索相关上下文。
+- **RAG 上下文检索**：当前采用“确定性上下文加载 + 知识库向量检索”的混合模式，后续可扩展为统一索引式 RAG。
 - **专业 QA Agent**：覆盖需求分析、测试设计、接口测试生成、UI 测试生成、测试执行、失败分析、Bug 草稿和 QA 报告等任务。
 - **自然语言确认机制**：用户可通过 Chat、Bot 或 CLI 表达通过、修改、驳回、继续执行等确认意图。
 
@@ -127,19 +127,26 @@ prd/<需求ID>/
 │   ├── testcases.review.yml
 │   └── qa-report.review.yml
 ├── runs/
+│   ├── latest.yml
+│   ├── index.jsonl
 │   └── <run-id>/
-│       ├── state.json
-│       ├── attempts.json
-│       ├── events.jsonl
-│       ├── retrieved-context.json
-│       ├── prompt.md
-│       ├── output.md
-│       ├── partial-output.md
 │       ├── artifact-preview.md
-│       ├── diff.md
-│       ├── error.json
-│       └── quality-check.json
+│       ├── artifact-preview.json
+│       └── artifact-preview.yml
 └── metadata.yml
+```
+
+Runtime 内部执行记录当前保存到 `.runtime/runs/<run-id>/`：
+
+```text
+.runtime/runs/<run-id>/
+├── run-summary.json
+├── run-summary.md
+├── run-state.json
+├── graph-state.json
+├── review-events.jsonl
+├── rag.json
+└── checkpointer.pkl
 ```
 
 ## 项目结构
@@ -170,6 +177,20 @@ prd/<需求ID>/
 
 ## 快速开始
 
+推荐先创建本地虚拟环境并安装项目：
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -e .
+```
+
+PowerShell 也可以使用：
+
+```bash
+.venv\Scripts\Activate.ps1
+```
+
 创建需求工作区：
 
 ```bash
@@ -186,6 +207,13 @@ prd/demo-requirement/input/requirement.md
 
 ```bash
 python scripts/validate_prd_workspace.py prd/demo-requirement
+```
+
+安装后可以使用两种本地入口：
+
+```bash
+agentic-qa "分析 prd/demo-requirement 并生成测试用例"
+python -m runtime.cli "分析 prd/demo-requirement 并生成测试用例"
 ```
 
 ### 通过自然语言发起任务

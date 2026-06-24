@@ -96,7 +96,8 @@ prd/<需求ID>/
 关键约束：
 
 - `input/` 保存需求原文、接口文档和附件。
-- `runs/<run-id>/` 保存运行过程、中间输出、候选产物、差异、错误和质量检查结果。
+- `prd/<需求ID>/runs/` 保存候选产物、latest 指针和需求级运行索引。
+- `.runtime/runs/` 保存 Runtime 内部执行记录、graph state、RAG trace、review events 和恢复数据。
 - `artifacts/` 只保存当前正式产物。
 - `artifacts/history/` 保存历史版本和版本索引。
 - `reviews/` 保存结构化确认记录。
@@ -154,7 +155,7 @@ promote_artifacts
 | Agent | 职责 | 默认候选输出 |
 |---|---|---|
 | Intent Router | 识别自然语言意图、需求来源和目标产物 | 路由结果、结构化任务 |
-| Workflow Orchestrator | 选择并执行工作流、维护状态和路由 | `runs/<run-id>/state.json` |
+| Workflow Orchestrator | 选择并执行工作流、维护状态和路由 | `.runtime/runs/<run-id>/run-state.json` |
 | Requirement Analysis Agent | 拆解需求、识别业务规则、风险和测试范围 | `runs/<run-id>/artifact-preview.md` 中的需求分析部分 |
 | Testcase Design Agent | 生成结构化测试用例、覆盖主链路、异常、边界和风险 | `runs/<run-id>/artifact-preview.md` 中的测试用例部分 |
 | API Test Generation Agent | 生成接口测试计划、断言点和脚本草稿 | `artifacts/api-test-draft.md` 候选内容 |
@@ -174,7 +175,7 @@ promote_artifacts
 - 节点失败必须按照 `failure_policy` 处理，不得静默吞掉关键节点失败。
 - `required: true` 节点失败后不得跳过。
 - `required: false` 节点可以降级、跳过或兜底，但必须记录事件。
-- 部分成功必须写入 `runs/<run-id>/partial-output.md`，不得写入正式产物。
+- 部分成功必须保留在运行记录或候选产物路径中，不得写入正式产物。
 - 相同输入、相同工作流、相同 `idempotency_key` 已成功时，应复用已有运行结果或明确记录重复执行原因。
 
 ## 人工确认规则
@@ -221,7 +222,7 @@ run_id: ""
 测试用例默认输出为 Markdown 大表，字段固定：
 
 ```text
-用例ID | 模块 | 场景 | 标题 | 优先级 | 类型 | 前置条件 | 测试数据 | 测试步骤 | 预期结果 | 覆盖点 | 备注
+用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | 测试步骤 | 预期结果 | 断言/证据 | 待确认项
 ```
 
 质量要求：

@@ -20,15 +20,27 @@ Context Build
 Generate
 ```
 
-## 召回来源
+## 当前实现
 
-- 当前需求工作区的 `input/`
-- 项目规则 `rules/`
-- 测试方法 `skills/`
-- Prompt 模板 `prompts/`
-- 工作流定义 `workflows/`
-- 通用知识库 `knowledge/`
+当前 Runtime 使用“确定性上下文加载 + 知识库向量检索”的混合模式。
+
+- 向量索引默认来自 `RagConfig.knowledge_paths`。
+- `AGENTS.md`、`COMMANDS.md`、`rules/`、`skills/`、`prompts/`、`workflows/` 等工程上下文，当前主要由 Runtime context loader 按 workflow registry 确定性加载。
+- 当前 PRD 的 `input/requirement.md`、`input/api.md` 主要用于构造 RAG 查询摘要和生成上下文，不等同于全部进入统一向量索引。
+- 当前实现已具备 lightweight RAG trace，会记录 pipeline、chunk id、source、score/rank 和 retrieval count；这不代表所有上下文来源都已经进入统一索引。
+
+## 目标态
+
+后续可以将以下来源纳入统一索引式 RAG：
+
+- `rules/`
+- `skills/`
+- `prompts/`
+- `workflows/`
 - 已确认历史产物 `prd/**/artifacts/`
+- 项目知识库 `knowledge/`
+
+目标态 RAG 必须保留 chunk id、source、score/rank、retrieval count 和参与生成的上下文 trace。
 
 ## 召回追踪
 
