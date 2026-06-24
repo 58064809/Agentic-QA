@@ -129,6 +129,7 @@ def resume_workflow_for_run(
     run_id: str,
     *,
     action: str | None = None,
+    user_input: str | None = None,
     reviewed_by: str = "user",
     review_notes: str | None = None,
     target_artifact: str | None = None,
@@ -140,6 +141,7 @@ def resume_workflow_for_run(
         workflow_id_for_task_type(task_type),
         run_id,
         action=action,
+        user_input=user_input,
         reviewed_by=reviewed_by,
         review_notes=review_notes,
         target_artifact=target_artifact,
@@ -152,6 +154,7 @@ def resume_workflow_by_id(
     run_id: str,
     *,
     action: str | None = None,
+    user_input: str | None = None,
     reviewed_by: str = "user",
     review_notes: str | None = None,
     target_artifact: str | None = None,
@@ -186,6 +189,7 @@ def resume_workflow_by_id(
 
     decision = {
         "action": action,
+        "user_input": user_input,
         "reviewed_by": reviewed_by,
         "review_notes": review_notes,
         "target_artifact": target_artifact,

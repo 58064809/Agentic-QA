@@ -17,6 +17,7 @@ from runtime.graph.mvp_graph import (  # noqa: E402
     run_mvp_analysis_and_testcases_workflow,
     run_mvp_testcase_generation_workflow,
 )
+from runtime.graph.nodes import human_review as human_review_module  # noqa: E402
 from runtime.workflow.runner import resume_workflow_for_run  # noqa: E402
 
 
@@ -91,6 +92,138 @@ def test_single_artifact_approve_can_omit_target_artifact(tmp_path):
     assert resumed.human_review["decision"]["target_artifact"] == "testcases"
     assert read_review(repo_root, "testcases.review.yml")["status"] == "approved"
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
+def test_interrupt_resume_calls_process_review_gate_with_original_user_input(tmp_path, monkeypatch):
+    repo_root = create_mvp_repo(tmp_path)
+    captured: dict[str, object] = {}
+    original = human_review_module.process_review_gate
+
+    def spy_process_review_gate(**kwargs):
+        captured.update(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(human_review_module, "process_review_gate", spy_process_review_gate)
+    result = run_mvp_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=True,
+    )
+
+    resumed = resume_workflow_for_run(
+        result.run_id or "",
+        action="approve",
+        user_input="测试用例通过，发布正式产物",
+        reviewed_by="qa",
+        repo_root=repo_root,
+    )
+
+    assert resumed.success
+    assert resumed.review_status == "approved"
+    assert captured["user_input"] == "测试用例通过，发布正式产物"
+    assert captured["artifact_keys"] == ["testcases"]
+    assert captured["reviewed_by"] == "qa"
+
+
+def test_interrupt_resume_natural_language_reject_uses_review_gate(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_analysis_and_testcases_workflow(
+        "请分析需求并生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=True,
+    )
+
+    resumed = resume_workflow_for_run(
+        result.run_id or "",
+        action="reject",
+        user_input="不通过",
+        reviewed_by="qa",
+        target_artifact="all",
+        repo_root=repo_root,
+    )
+
+    assert resumed.success
+    assert resumed.review_status == "rejected"
+    assert resumed.next_action == "stop"
+    assert resumed.human_review["decision"]["intent"] == "reject"
+
+
+def test_interrupt_resume_natural_language_revise_uses_review_gate(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_analysis_and_testcases_workflow(
+        "请分析需求并生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=True,
+    )
+
+    resumed = resume_workflow_for_run(
+        result.run_id or "",
+        action="revise",
+        user_input="测试用例需要补充支付失败场景",
+        reviewed_by="qa",
+        target_artifact="testcases",
+        repo_root=repo_root,
+    )
+
+    assert resumed.success
+    assert resumed.review_status == "needs_changes"
+    assert resumed.next_action == "revise"
+    assert resumed.human_review["decision"]["intent"] == "revise"
+    assert resumed.human_review["decision"]["revision_request"] == ("测试用例需要补充支付失败场景")
+
+
+def test_interrupt_resume_negative_language_does_not_approve(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=True,
+    )
+
+    resumed = resume_workflow_for_run(
+        result.run_id or "",
+        action="approve",
+        user_input="先不要发布",
+        reviewed_by="qa",
+        target_artifact="testcases",
+        repo_root=repo_root,
+    )
+
+    assert resumed.success
+    assert resumed.review_status == "needs_human_review"
+    assert resumed.next_action == "wait_for_review"
+    assert resumed.human_review["decision"]["intent"] == "hold"
+    review_path = repo_root / "prd/demo-requirement/reviews/testcases.review.yml"
+    if review_path.exists():
+        assert read_review(repo_root, "testcases.review.yml")["status"] != "approved"
+
+
+def test_interrupt_resume_show_diff_does_not_change_review_status(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=True,
+    )
+
+    resumed = resume_workflow_for_run(
+        result.run_id or "",
+        action="show_diff",
+        user_input="看看差异",
+        reviewed_by="qa",
+        repo_root=repo_root,
+    )
+
+    assert resumed.success
+    assert resumed.review_status == "needs_human_review"
+    assert resumed.next_action == "wait_for_review"
+    assert resumed.human_review["decision"]["intent"] == "show_diff"
+    assert not resumed.wrote_file
 
 
 def test_multi_artifact_approve_requires_target_artifact(tmp_path):

@@ -11,6 +11,7 @@ ArtifactTarget = Literal[
     "api_test_draft",
     "ui_test_draft",
     "qa_report",
+    "all",
 ]
 
 

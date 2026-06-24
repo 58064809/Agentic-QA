@@ -1,4 +1,4 @@
-﻿# Workflow DSL
+# Workflow DSL
 
 本文档定义 Agentic-QA Runtime 使用的最小 Workflow DSL。工作流用于描述一个 QA 任务如何被 Runtime 执行，包括入口意图、输入契约、节点列表、节点输入输出、路由条件、产物写入、失败策略、版本策略和确认门禁。
 

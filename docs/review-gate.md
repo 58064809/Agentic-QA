@@ -15,11 +15,13 @@ human_review_node 调用 LangGraph interrupt
   ↓
 Chat / Bot / CLI 收集用户确认意见
   ↓
-外部入口构造 ReviewDecision
+外部入口构造包含原始自然语言的 resume decision
   ↓
 Command(resume=decision)
   ↓
-human_review_node 根据 action 更新 review_status 和 next_action
+human_review_node 调用 process_review_gate()
+  ↓
+ReviewDecision / 状态机校验 / reviews/*.review.yml 更新
   ↓
 approved 时写入候选 preview 与 reviews/*.review.yml
   ↓
@@ -46,6 +48,7 @@ resume decision 结构：
 
 ```yaml
 action: approve
+user_input: "测试用例通过，发布正式产物"
 reviewed_by: ""
 review_notes: ""
 target_artifact: ""
@@ -58,6 +61,7 @@ target_artifact: ""
 - 多产物 `revise` 必须明确 `target_artifact` 或 `all`。
 - 多产物 `reject` 可省略 `target_artifact`，Runtime 会按 `all` 记录。
 - 非法 `target_artifact` 不允许进入 `approved` 或 `promote`。
+- `action` 只能作为外部入口的结构化提示；最终审核语义必须由 `process_review_gate()` 解析和校验。
 
 ## 确认意图类型
 
@@ -100,5 +104,6 @@ run_id: ""
 - `confirmed` 只能由 `promote_artifacts` 成功后设置；确认语义、LLM 或普通节点不能直接写 `confirmed`。
 - `promote_artifacts` 是独立确定性函数，只能处理 `approved` review 记录，不能被 LLM 直接调用。
 - 多产物场景必须明确目标产物，除非按规则显式使用或默认记录为 `all`。
+- CLI 自然语言确认和 LangGraph interrupt resume 必须复用同一套 `process_review_gate()` 语义。
 - 所有确认动作必须记录原始用户输入、识别意图、确认决策、确认人、确认时间、意见和下一步动作。
 - Chat / Bot / CLI 中的确认语义必须落到结构化确认记录，不能只停留在对话文本里。

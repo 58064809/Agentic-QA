@@ -49,6 +49,8 @@ def _read_review(workspace: PRDWorkspace, artifact_key: str) -> dict[str, Any]:
 
 
 def _target_artifacts(decision: ReviewDecision, artifact_keys: list[str]) -> list[str]:
+    if decision.target_artifact == "all":
+        return list(artifact_keys)
     if decision.target_artifact:
         return [decision.target_artifact]
     if len(artifact_keys) == 1:
@@ -156,9 +158,14 @@ def process_review_gate(
     for artifact_key in target_artifacts:
         review = _read_review(workspace, artifact_key)
         current_status = str(review.get("status") or "needs_human_review")
+        transition_decision = (
+            parsed.model_copy(update={"target_artifact": artifact_key})
+            if parsed.target_artifact == "all"
+            else parsed
+        )
         transition = validate_review_transition(
             current_status,
-            parsed,
+            transition_decision,
             available_artifacts=available_artifacts,
         )
         if not transition.allowed:
@@ -173,7 +180,7 @@ def process_review_gate(
                 workspace,
                 artifact_key,
                 review,
-                parsed,
+                transition_decision,
                 next_status=next_status,
                 run_id=run_id,
                 reviewed_by=reviewed_by,

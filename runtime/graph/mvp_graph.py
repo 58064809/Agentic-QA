@@ -154,7 +154,7 @@ def build_mvp_generation_graph(repo_root: Path, checkpointer: MemorySaver | None
         "testcase_quality_check_node",
         _wrap_node(lambda state: testcase_mvp_quality_check_node(state, root)),
     )
-    graph.add_node("human_review_node", _wrap_node(human_review_node))
+    graph.add_node("human_review_node", _wrap_node(lambda state: human_review_node(state, root)))
     graph.add_node(
         "artifact_preview_writer_node",
         _wrap_node(lambda state: artifact_preview_writer_node(state, root)),
@@ -266,6 +266,7 @@ def resume_mvp_generation_workflow(
     run_id: str,
     *,
     action: str | None = None,
+    user_input: str | None = None,
     reviewed_by: str = "user",
     review_notes: str | None = None,
     target_artifact: str | None = None,
@@ -276,6 +277,7 @@ def resume_mvp_generation_workflow(
     return resume_workflow_for_run(
         run_id,
         action=action,
+        user_input=user_input,
         reviewed_by=reviewed_by,
         review_notes=review_notes,
         target_artifact=target_artifact,

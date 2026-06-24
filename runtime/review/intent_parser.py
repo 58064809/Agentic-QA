@@ -10,7 +10,16 @@ from runtime.llm.openai_compatible import OpenAICompatibleAdapter
 from runtime.review.decision_schema import ReviewDecision, ReviewIntent
 
 APPROVE_KEYWORDS = ("可以了", "确认", "通过", "发布吧", "发布正式产物", "approve", "approved")
-REJECT_KEYWORDS = ("不行", "驳回", "拒绝", "不要发布", "不发布", "reject", "rejected")
+REJECT_KEYWORDS = (
+    "不通过",
+    "不行",
+    "驳回",
+    "拒绝",
+    "不要发布",
+    "不发布",
+    "reject",
+    "rejected",
+)
 REVISE_KEYWORDS = ("补充", "修改", "调整", "修订", "完善", "增加", "revise")
 HOLD_KEYWORDS = ("先放着", "待确认", "暂停", "先不要", "hold")
 SHOW_DIFF_KEYWORDS = ("看看差异", "查看差异", "给我看看差异", "show diff", "diff")
