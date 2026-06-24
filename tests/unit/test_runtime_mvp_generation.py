@@ -393,7 +393,14 @@ def test_interrupt_review_gate_approve_resume_writes_candidate_preview(tmp_path)
     assert interrupt_payload["artifact_keys"] == ["requirement_analysis", "testcases"]
     assert interrupt_payload["review_status"] == "needs_human_review"
     assert interrupt_payload["preview_path"].endswith("/artifact-preview.md")
-    assert interrupt_payload["allowed_actions"] == ["approve", "reject", "revise"]
+    assert interrupt_payload["allowed_actions"] == [
+        "approve",
+        "reject",
+        "revise",
+        "show_diff",
+        "hold",
+        "clarify",
+    ]
 
     resumed = resume_workflow_for_run(
         result.run_id or "",

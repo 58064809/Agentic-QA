@@ -161,3 +161,14 @@ def test_explicit_review_decision_schema_is_pydantic():
     )
 
     assert decision.model_dump(mode="json")["intent"] == "approve"
+
+
+def test_review_decision_schema_accepts_all_target():
+    decision = ReviewDecision(
+        intent=ReviewIntent.APPROVE,
+        target_artifact="all",
+        confidence=1,
+        reason="approve all candidates",
+    )
+
+    assert decision.target_artifact == "all"

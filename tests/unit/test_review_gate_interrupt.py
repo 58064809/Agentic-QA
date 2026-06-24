@@ -64,7 +64,14 @@ def test_unreviewed_workflow_interrupts_with_review_payload(tmp_path):
     assert payload["artifact_keys"] == ["requirement_analysis", "testcases"]
     assert payload["review_status"] == "needs_human_review"
     assert payload["preview_path"].endswith("/artifact-preview.md")
-    assert payload["allowed_actions"] == ["approve", "reject", "revise"]
+    assert payload["allowed_actions"] == [
+        "approve",
+        "reject",
+        "revise",
+        "show_diff",
+        "hold",
+        "clarify",
+    ]
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 

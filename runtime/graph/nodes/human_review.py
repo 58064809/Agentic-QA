@@ -45,7 +45,7 @@ def _interrupt_payload(state: QAWorkflowState) -> dict[str, Any]:
         "artifact_keys": _artifact_keys(state),
         "review_status": "needs_human_review",
         "preview_path": _preview_path(state),
-        "allowed_actions": ["approve", "reject", "revise"],
+        "allowed_actions": ["approve", "reject", "revise", "show_diff", "hold", "clarify"],
     }
 
 
