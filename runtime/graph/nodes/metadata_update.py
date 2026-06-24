@@ -55,6 +55,15 @@ def _runtime_run_summary(state: QAWorkflowState, updated_at: str) -> dict[str, A
     }
 
 
+def _review_target_artifacts(state: QAWorkflowState) -> set[str] | None:
+    if state.review_status != "approved":
+        return None
+    target = state.human_review.get("decision", {}).get("target_artifact")
+    if target == "all" or not target:
+        return None
+    return {str(target)}
+
+
 def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
     state.record_node("metadata_update_node")
     if state.errors or state.quality_errors:
@@ -88,10 +97,12 @@ def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
     artifacts = metadata.get("artifacts")
     if not isinstance(artifacts, dict):
         artifacts = {}
+    target_artifacts = _review_target_artifacts(state)
     for artifact in state.artifacts:
         name = artifact.get("name")
         if not isinstance(name, str) or name not in ARTIFACT_SPECS:
             continue
+        review_this_artifact = target_artifacts is None or name in target_artifacts
         entry = artifacts.get(name)
         if not isinstance(entry, dict):
             entry = {}
@@ -101,14 +112,18 @@ def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
         entry.setdefault("history_index", spec["history_index"])
         entry["latest_run_id"] = state.run_id or ""
         entry["latest_preview_path"] = artifact.get("output_path") or state.output_path
-        entry["status"] = "approved" if state.review_status == "approved" else "needs_human_review"
+        entry["status"] = (
+            "approved"
+            if state.review_status == "approved" and review_this_artifact
+            else "needs_human_review"
+        )
         artifacts[name] = entry
 
         review_path = workspace.review_path(name)
         review_record = _read_metadata(review_path)
         review_record.setdefault("artifact", spec["current_path"])
         review_record.setdefault("artifact_type", spec["artifact_type"])
-        if state.review_status == "approved":
+        if state.review_status == "approved" and review_this_artifact:
             review_record["status"] = "approved"
             review_record["decision"] = "approve"
             review_record["reviewed_at"] = updated_at

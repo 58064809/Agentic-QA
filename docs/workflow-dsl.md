@@ -1,4 +1,4 @@
-# Workflow DSL
+﻿# Workflow DSL
 
 本文档定义 Agentic-QA Runtime 使用的最小 Workflow DSL。工作流用于描述一个 QA 任务如何被 Runtime 执行，包括入口意图、输入契约、节点列表、节点输入输出、路由条件、产物写入、失败策略、版本策略和确认门禁。
 
@@ -56,7 +56,7 @@ edges:
 | `task_is_testcase_generation` | 当前任务为测试用例生成 |
 | `task_is_analysis_or_mvp` | 当前任务为需求分析或需求分析加用例生成 |
 | `task_is_mvp` | 当前任务为需求分析加用例生成，且无质量错误 |
-| `needs_human_review_or_approved` | `approved/write_approved` 且 `next_action=promote` 时允许写入候选产物 |
+| `ready_to_write_preview` | `approved/write_approved` 且 `next_action=promote` 时允许写入候选产物 |
 | `default` | 条件边兜底分支 |
 
 ### 当前 Runtime workflow 文件
@@ -334,7 +334,7 @@ edges:
 
 ## 路由原则
 
-`needs_human_review` 必须由 `review_gate` 调用 LangGraph interrupt 暂停，不能进入 `end`。`approved` 只允许写入候选 preview 并准备独立 promote；`confirmed` 只能由 `promote_artifacts` 成功后设置。
+`needs_human_review` 必须由 `review_gate` 调用 LangGraph interrupt 暂停，不能进入 `end`。`approved` 只允许写入候选 preview 并准备独立 promote；`confirmed` 只能由 `promote_artifacts` 成功后设置。多产物 `approve/revise` 必须明确 `target_artifact` 或 `all`，避免默认把多个候选产物全部通过。
 
 正式产物发布必须经过以下顺序：
 

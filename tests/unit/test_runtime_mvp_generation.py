@@ -400,6 +400,7 @@ def test_interrupt_review_gate_approve_resume_writes_candidate_preview(tmp_path)
         action="approve",
         reviewed_by="qa",
         review_notes="通过",
+        target_artifact="all",
         repo_root=repo_root,
     )
 

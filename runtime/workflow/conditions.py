@@ -45,7 +45,7 @@ def task_is_mvp(state: GraphQAWorkflowState) -> bool:
     return no_quality_errors(state) and state.get("task_type") == TASK_MVP
 
 
-def needs_human_review_or_approved(state: GraphQAWorkflowState) -> bool:
+def ready_to_write_preview(state: GraphQAWorkflowState) -> bool:
     if not no_quality_errors(state):
         return False
     return (
@@ -57,9 +57,9 @@ def needs_human_review_or_approved(state: GraphQAWorkflowState) -> bool:
 CONDITIONS: dict[str, Condition] = {
     DEFAULT_CONDITION: default,
     "has_errors": has_errors,
-    "needs_human_review_or_approved": needs_human_review_or_approved,
     "no_errors": no_errors,
     "no_quality_errors": no_quality_errors,
+    "ready_to_write_preview": ready_to_write_preview,
     "task_is_analysis": task_is_analysis,
     "task_is_analysis_or_mvp": task_is_analysis_or_mvp,
     "task_is_mvp": task_is_mvp,

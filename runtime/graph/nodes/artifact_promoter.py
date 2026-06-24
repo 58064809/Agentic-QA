@@ -209,8 +209,9 @@ def artifact_promoter_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflo
         state.errors.append(f"未找到候选产物预览: {preview_path.as_posix()}")
         return state
 
+    task_keys = _artifact_keys_for_task(state)
     approved_keys = _approved_artifact_keys(workspace, state.run_id)
-    target_keys = [key for key in _artifact_keys_for_task(state) if key in approved_keys]
+    target_keys = [key for key in task_keys if key in approved_keys]
     if not target_keys:
         state.errors.append("没有已 approved 的 review 记录，拒绝晋升正式产物。")
         return state
@@ -222,7 +223,7 @@ def artifact_promoter_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflo
 
     try:
         for key in target_keys:
-            content = _preview_content_for_key(preview, key, target_keys)
+            content = _preview_content_for_key(preview, key, task_keys)
             current_path = workspace.current_artifact_path(key)
             current_path.parent.mkdir(parents=True, exist_ok=True)
             archived_previous = _archive_existing_current(

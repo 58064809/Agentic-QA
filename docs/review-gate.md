@@ -51,6 +51,14 @@ review_notes: ""
 target_artifact: ""
 ```
 
+多产物确认规则：
+
+- 单产物场景可以省略 `target_artifact`，Runtime 自动使用唯一候选产物。
+- 多产物 `approve` 必须明确 `target_artifact` 或 `all`。
+- 多产物 `revise` 必须明确 `target_artifact` 或 `all`。
+- 多产物 `reject` 可省略 `target_artifact`，Runtime 会按 `all` 记录。
+- 非法 `target_artifact` 不允许进入 `approved` 或 `promote`。
+
 ## 确认意图类型
 
 | 用户表达 | 识别意图 | 目标状态 | 后续动作 |
@@ -91,5 +99,6 @@ run_id: ""
 - `approved` 状态下，只表示候选产物通过 Review Gate，可以准备 promote；不能直接视为正式产物。
 - `confirmed` 只能由 `promote_artifacts` 成功后设置；确认语义、LLM 或普通节点不能直接写 `confirmed`。
 - `promote_artifacts` 是独立确定性函数，只能处理 `approved` review 记录，不能被 LLM 直接调用。
+- 多产物场景必须明确目标产物，除非按规则显式使用或默认记录为 `all`。
 - 所有确认动作必须记录原始用户输入、识别意图、确认决策、确认人、确认时间、意见和下一步动作。
 - Chat / Bot / CLI 中的确认语义必须落到结构化确认记录，不能只停留在对话文本里。

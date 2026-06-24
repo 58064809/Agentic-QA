@@ -1,4 +1,4 @@
-id: testcase_generation
+﻿id: testcase_generation
 name: 测试用例生成
 version: 1
 
@@ -95,7 +95,7 @@ edges:
 
   - from: review_gate
     to: artifact_preview_writer
-    condition: needs_human_review_or_approved
+    condition: ready_to_write_preview
 
   - from: review_gate
     to: end
