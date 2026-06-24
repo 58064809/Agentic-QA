@@ -7,14 +7,14 @@
 正式产物：prd/<需求ID>/artifacts/testcases.md
 ```
 
-生成类任务默认先写入候选产物，状态为 `needs_human_review`。Review Gate 会把用户自然语言确认转换为结构化 `ReviewDecision`，并由确定性状态机把 review 记录更新为 `approved`、`rejected` 或 `needs_changes`。只有 `approved` 的候选产物才允许通过确定性 promote 写入正式产物，正式产物状态应为 `confirmed`。测试用例用于需求评审、回归执行、自动化生成和历史知识沉淀，必须满足 **可读、可评审、可执行、可追踪、可转换** 五个要求。
+生成类任务默认先生成候选内容并停在 Review Gate interrupt checkpoint，状态为 `needs_human_review`。Review Gate 会把用户自然语言确认转换为结构化 `ReviewDecision`，并由确定性状态机把 review 记录更新为 `approved`、`rejected` 或 `needs_changes`。只有 `approved` 的候选产物才允许通过确定性 promote 写入正式产物，正式产物状态应为 `confirmed`。测试用例用于需求评审、回归执行、自动化生成和历史知识沉淀，必须满足 **可读、可评审、可执行、可追踪、可转换** 五个要求。
 
 Review Gate 与 promote 的边界：
 
 - LLM 只能辅助解析自然语言，不能直接写入 `artifacts/testcases.md`。
 - LLM 不能直接把测试用例状态改成 `confirmed`。
-- `needs_human_review` 表示候选产物等待人工确认。
-- `approved` 表示候选产物已通过 Review Gate，但仍未写入正式产物。
+- `needs_human_review` 表示候选内容已生成，工作流暂停等待人工确认。
+- `approved` 表示候选产物已通过 Review Gate，但仍未发布为正式产物。
 - `confirmed` 只能由确定性 promote 成功后产生。
 - 需要修改时进入 `needs_changes`，后续修订必须重新生成候选产物并再次审核。
 

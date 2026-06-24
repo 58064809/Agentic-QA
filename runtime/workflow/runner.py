@@ -63,6 +63,7 @@ def _state_from_graph_output(graph_state: GraphQAWorkflowState) -> QAWorkflowSta
             for item in interrupts
         ]
         state.review_status = "needs_human_review"
+        state.next_action = "wait_for_review"
         state.run_status = "interrupted"
         state.human_review = {
             "status": "needs_human_review",
@@ -130,6 +131,7 @@ def resume_workflow_for_run(
     action: str | None = None,
     reviewed_by: str = "user",
     review_notes: str | None = None,
+    target_artifact: str | None = None,
     repo_root: Path | None = None,
 ) -> RuntimeResult:
     root = (repo_root or default_repo_root()).resolve()
@@ -140,6 +142,7 @@ def resume_workflow_for_run(
         action=action,
         reviewed_by=reviewed_by,
         review_notes=review_notes,
+        target_artifact=target_artifact,
         repo_root=root,
     )
 
@@ -151,6 +154,7 @@ def resume_workflow_by_id(
     action: str | None = None,
     reviewed_by: str = "user",
     review_notes: str | None = None,
+    target_artifact: str | None = None,
     repo_root: Path | None = None,
 ) -> RuntimeResult:
     root = (repo_root or default_repo_root()).resolve()
@@ -167,6 +171,7 @@ def resume_workflow_by_id(
         state.thread_id = run_id
         if snapshot.next:
             state.review_status = "needs_human_review"
+            state.next_action = "wait_for_review"
             state.run_status = "interrupted"
             state.warnings.append("当前运行仍在人工审核暂停点，请使用 approve 或 reject。")
         else:
@@ -183,6 +188,7 @@ def resume_workflow_by_id(
         "action": action,
         "reviewed_by": reviewed_by,
         "review_notes": review_notes,
+        "target_artifact": target_artifact,
     }
     previous_snapshot = graph.get_state(graph_config)
     previous_state = from_graph_state(dict(previous_snapshot.values))

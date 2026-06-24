@@ -61,8 +61,10 @@ def test_langgraph_dry_run_does_not_write_testcases(tmp_path):
 
     assert result.success
     assert result.orchestration == "LangGraph StateGraph"
-    assert result.run_status == "waiting_review"
+    assert result.run_status == "interrupted"
     assert result.review_status == "needs_human_review"
+    assert result.next_action == "wait_for_review"
+    assert result.human_review["interrupt"]
     assert not result.wrote_file
     assert "artifact_writer_node" not in result.executed_nodes
     preview_path = repo_root / f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"

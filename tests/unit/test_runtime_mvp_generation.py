@@ -19,6 +19,7 @@ from runtime.graph.mvp_graph import (  # noqa: E402
 )
 from runtime.graph.nodes import mvp_generation  # noqa: E402
 from runtime.llm.openai_compatible import OpenAICompatibleAdapter  # noqa: E402
+from runtime.workflow.runner import resume_workflow_for_run  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -262,8 +263,10 @@ def test_analyze_dry_run_generates_analysis_without_writing(tmp_path):
 
     assert result.success
     assert result.task_type == "analysis"
-    assert result.run_status == "waiting_review"
+    assert result.run_status == "interrupted"
     assert result.review_status == "needs_human_review"
+    assert result.next_action == "wait_for_review"
+    assert result.human_review["interrupt"]
     assert "requirement_analysis" in result.draft_artifacts
     analysis = result.draft_artifacts["requirement_analysis"]
     assert "needs_human_review" in analysis
@@ -312,8 +315,10 @@ def test_generate_testcases_dry_run_generates_testcases_without_writing(tmp_path
 
     assert result.success
     assert result.task_type == "testcase_generation"
-    assert result.run_status == "waiting_review"
+    assert result.run_status == "interrupted"
     assert result.review_status == "needs_human_review"
+    assert result.next_action == "wait_for_review"
+    assert result.human_review["interrupt"]
     assert "testcases" in result.draft_artifacts
     testcases = result.draft_artifacts["testcases"]
     rich_header = (
@@ -360,14 +365,112 @@ def test_mvp_dry_run_generates_two_drafts_without_writing(tmp_path):
 
     assert result.success
     assert result.task_type == "mvp_analysis_testcases"
-    assert result.run_status == "waiting_review"
+    assert result.run_status == "interrupted"
     assert result.review_status == "needs_human_review"
-    assert "artifact_preview_writer_node" in result.executed_nodes
+    assert result.next_action == "wait_for_review"
+    assert "artifact_preview_writer_node" not in result.executed_nodes
     assert set(result.draft_artifacts) == {"requirement_analysis", "testcases"}
     assert "## 12. 需求到测试覆盖映射" in result.draft_artifacts["requirement_analysis"]
     assert count_testcase_rows(result.draft_artifacts["testcases"]) >= 15
     assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
+def test_interrupt_review_gate_approve_resume_writes_candidate_preview(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_analysis_and_testcases_workflow(
+        "请分析需求并生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=True,
+    )
+
+    assert result.run_status == "interrupted"
+    assert result.review_status == "needs_human_review"
+    interrupt_payload = result.human_review["interrupt"][0]["value"]
+    assert interrupt_payload["run_id"] == result.run_id
+    assert interrupt_payload["prd_path"] == "prd/demo-requirement"
+    assert interrupt_payload["artifact_keys"] == ["requirement_analysis", "testcases"]
+    assert interrupt_payload["review_status"] == "needs_human_review"
+    assert interrupt_payload["preview_path"].endswith("/artifact-preview.md")
+    assert interrupt_payload["allowed_actions"] == ["approve", "reject", "revise"]
+
+    resumed = resume_workflow_for_run(
+        result.run_id or "",
+        action="approve",
+        reviewed_by="qa",
+        review_notes="通过",
+        repo_root=repo_root,
+    )
+
+    assert resumed.success
+    assert resumed.run_status == "completed"
+    assert resumed.review_status == "approved"
+    assert resumed.next_action == "promote"
+    assert resumed.wrote_file
+    assert "artifact_preview_writer_node" in resumed.executed_nodes
+    preview_path = repo_root / resumed.output_paths["testcases"]
+    assert preview_path.is_file()
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+    review = yaml.safe_load(
+        (repo_root / "prd/demo-requirement/reviews/testcases.review.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert review["status"] == "approved"
+    assert review["decision"] == "approve"
+
+
+def test_interrupt_review_gate_reject_resume_stops_without_formal_artifact(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_analysis_and_testcases_workflow(
+        "请分析需求并生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=True,
+    )
+
+    resumed = resume_workflow_for_run(
+        result.run_id or "",
+        action="reject",
+        reviewed_by="qa",
+        review_notes="不通过",
+        repo_root=repo_root,
+    )
+
+    assert resumed.success
+    assert resumed.review_status == "rejected"
+    assert resumed.next_action == "stop"
+    assert resumed.run_status == "rejected"
+    assert not resumed.wrote_file
+    assert "artifact_preview_writer_node" not in resumed.executed_nodes
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
+def test_interrupt_review_gate_revise_resume_enters_needs_changes(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_analysis_and_testcases_workflow(
+        "请分析需求并生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=True,
+    )
+
+    resumed = resume_workflow_for_run(
+        result.run_id or "",
+        action="revise",
+        reviewed_by="qa",
+        review_notes="补充异常场景",
+        target_artifact="testcases",
+        repo_root=repo_root,
+    )
+
+    assert resumed.success
+    assert resumed.review_status == "needs_changes"
+    assert resumed.next_action == "revise"
+    assert resumed.run_status == "needs_changes"
+    assert resumed.human_review["decision"]["target_artifact"] == "testcases"
+    assert not resumed.wrote_file
 
 
 def test_promote_artifacts_requires_approved_reviews(tmp_path):
@@ -376,6 +479,7 @@ def test_promote_artifacts_requires_approved_reviews(tmp_path):
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
+        approve_write=True,
         record_run=False,
     )
 
@@ -399,6 +503,7 @@ def test_promote_artifacts_publishes_confirmed_preview(tmp_path):
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
+        approve_write=True,
         record_run=False,
     )
     assert result.run_id is None
@@ -452,6 +557,7 @@ def test_cli_natural_language_promote_approves_and_publishes_testcases(tmp_path)
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
+        approve_write=True,
     )
 
     prd_rel, promoted = cli._run_natural_promote_request(
@@ -479,6 +585,7 @@ def test_cli_promote_command_publishes_selected_artifact(tmp_path):
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
+        approve_write=True,
     )
 
     exit_code = cli._run_promote_command(

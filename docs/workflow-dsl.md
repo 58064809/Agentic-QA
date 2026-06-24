@@ -56,7 +56,7 @@ edges:
 | `task_is_testcase_generation` | 当前任务为测试用例生成 |
 | `task_is_analysis_or_mvp` | 当前任务为需求分析或需求分析加用例生成 |
 | `task_is_mvp` | 当前任务为需求分析加用例生成，且无质量错误 |
-| `needs_human_review_or_approved` | 确认状态允许写入候选产物 |
+| `needs_human_review_or_approved` | `approved/write_approved` 且 `next_action=promote` 时允许写入候选产物 |
 | `default` | 条件边兜底分支 |
 
 ### 当前 Runtime workflow 文件
@@ -300,28 +300,21 @@ edges:
   - from: generate_testcases
     to: quality_check
   - from: quality_check
-    to: write_artifact_preview
+    to: review_gate
     condition: "{{ state.quality_result.passed == true }}"
   - from: quality_check
     to: failed
     condition: "{{ state.quality_result.passed == false }}"
-  - from: write_artifact_preview
-    to: create_review_records
-  - from: create_review_records
-    to: wait_for_confirmation
-  - from: wait_for_confirmation
-    to: waiting_review
-    condition: "{{ state.review_status == 'needs_human_review' }}"
-  - from: wait_for_confirmation
-    to: promote_artifacts
-    condition: "{{ state.review_status in ['approved', 'confirmed'] }}"
-  - from: wait_for_confirmation
+  - from: review_gate
+    to: write_artifact_preview
+    condition: "{{ state.review_status == 'approved' and state.next_action == 'promote' }}"
+  - from: review_gate
     to: generate_testcases
-    condition: "{{ state.review_status == 'needs_changes' }}"
-  - from: wait_for_confirmation
+    condition: "{{ state.next_action == 'revise' }}"
+  - from: review_gate
     to: failed
-    condition: "{{ state.review_status == 'rejected' }}"
-  - from: promote_artifacts
+    condition: "{{ state.next_action == 'stop' }}"
+  - from: write_artifact_preview
     to: end
 ```
 
@@ -341,7 +334,7 @@ edges:
 
 ## 路由原则
 
-`needs_human_review` 只能进入 `waiting_review`，不能进入 `end`。只有 `approved` 或 `confirmed` 才能进入 `promote_artifacts`。
+`needs_human_review` 必须由 `review_gate` 调用 LangGraph interrupt 暂停，不能进入 `end`。`approved` 只允许写入候选 preview 并准备独立 promote；`confirmed` 只能由 `promote_artifacts` 成功后设置。
 
 正式产物发布必须经过以下顺序：
 
@@ -350,7 +343,7 @@ write_artifact_preview
   ↓
 create_review_records
   ↓
-wait_for_confirmation
-  ↓
 promote_artifacts
+  ↓
+confirmed
 ```

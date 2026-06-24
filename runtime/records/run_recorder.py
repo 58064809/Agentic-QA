@@ -164,6 +164,7 @@ def append_review_event(
         "previous_status": previous_status,
         "previous_run_status": previous_run_status,
         "next_status": result.review_status,
+        "next_action": result.next_action,
         "next_run_status": result.run_status,
         "wrote_file": result.wrote_file,
         "output_path": result.output_path,
@@ -206,6 +207,7 @@ def result_to_summary(
         "artifacts": result.artifacts,
         "wrote_file": result.wrote_file,
         "review_status": result.review_status,
+        "next_action": result.next_action,
         "human_review": result.human_review,
         "review_events": review_events or [],
         "llm": result.llm,
@@ -307,6 +309,7 @@ def render_markdown_summary(summary: dict[str, object]) -> str:
 ## 审核状态
 
 - review_status：{summary["review_status"]}
+- next_action：{summary["next_action"] or "未设置"}
 - human_review：{json.dumps(summary["human_review"], ensure_ascii=False)}
 - review_events：{len(list(summary["review_events"]))}
 

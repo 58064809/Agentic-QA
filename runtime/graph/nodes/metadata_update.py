@@ -44,6 +44,7 @@ def _runtime_run_summary(state: QAWorkflowState, updated_at: str) -> dict[str, A
         "thread_id": state.thread_id,
         "task_type": state.task_type or "testcase_generation",
         "review_status": state.review_status,
+        "next_action": state.next_action,
         "run_status": state.run_status,
         "wrote_file": state.wrote_file,
         "output_path": state.output_path,
@@ -80,7 +81,9 @@ def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
     metadata["last_updated_by"] = "runtime.metadata_update_node"
     metadata["updated_at"] = updated_at
     if metadata.get("status") != "archived":
-        metadata["status"] = "needs_human_review"
+        metadata["status"] = (
+            "approved" if state.review_status == "approved" else "needs_human_review"
+        )
 
     artifacts = metadata.get("artifacts")
     if not isinstance(artifacts, dict):
@@ -98,16 +101,25 @@ def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
         entry.setdefault("history_index", spec["history_index"])
         entry["latest_run_id"] = state.run_id or ""
         entry["latest_preview_path"] = artifact.get("output_path") or state.output_path
-        entry["status"] = "needs_human_review"
+        entry["status"] = "approved" if state.review_status == "approved" else "needs_human_review"
         artifacts[name] = entry
 
         review_path = workspace.review_path(name)
         review_record = _read_metadata(review_path)
         review_record.setdefault("artifact", spec["current_path"])
         review_record.setdefault("artifact_type", spec["artifact_type"])
-        review_record["status"] = "needs_human_review"
-        review_record["decision"] = ""
-        review_record["reviewed_at"] = None
+        if state.review_status == "approved":
+            review_record["status"] = "approved"
+            review_record["decision"] = "approve"
+            review_record["reviewed_at"] = updated_at
+            review_record["reviewer"] = state.human_review.get("reviewed_by") or ""
+            review_record["comments"] = [state.human_review.get("review_notes") or ""]
+            review_record["next_action"] = "promote"
+        else:
+            review_record["status"] = "needs_human_review"
+            review_record["decision"] = ""
+            review_record["reviewed_at"] = None
+            review_record["next_action"] = ""
         review_record["run_id"] = state.run_id or ""
         review_record["source_message"] = state.user_input
         _write_yaml(review_path, review_record)
@@ -120,9 +132,12 @@ def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowS
             if not isinstance(gate, dict):
                 continue
             if gate.get("name") in target_gate_names:
-                gate["status"] = "needs_human_review"
+                gate["status"] = (
+                    "approved" if state.review_status == "approved" else "needs_human_review"
+                )
                 gate["last_runtime_run"] = state.run_id
                 gate["runtime_review_status"] = state.review_status
+                gate["runtime_next_action"] = state.next_action
                 gate["runtime_reviewed_by"] = state.human_review.get("reviewed_by")
                 gate["updated_at"] = updated_at
 

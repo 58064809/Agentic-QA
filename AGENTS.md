@@ -131,7 +131,7 @@ promote_artifacts
 更新 history/index.yml 与 metadata.yml
 ```
 
-`needs_human_review` 只能进入 `waiting_review`，不能进入 `end`。只有 `approved` 或 `confirmed` 才能进入正式发布。
+`needs_human_review` 必须停在 LangGraph interrupt checkpoint，不能进入 `end` 或正式发布。只有 `approved` 的候选产物才允许进入独立确定性 `promote_artifacts`；`confirmed` 只能由 promote 成功后产生。
 
 ## 产物状态
 
@@ -211,7 +211,7 @@ run_id: ""
 确认规则：
 
 - 不要求用户手动编辑 `reviews/*.review.yml`。
-- `needs_human_review` 状态下，不允许自动进入下游正式工作流。
+- `needs_human_review` 状态下，必须通过 LangGraph interrupt 暂停，不允许自动进入下游正式工作流。
 - `needs_changes` 状态下，只允许进入修订工作流。
 - `rejected` 状态下，不允许复用当前产物。
 - `approved` 状态下，可以进入下一步生成流程。

@@ -59,6 +59,8 @@ def test_run_workflow_by_id_returns_runtime_result(tmp_path):
     assert result.orchestration == "YAML WorkflowSpec: testcase_generation"
     assert result.task_type == "testcase_generation"
     assert result.review_status == "needs_human_review"
+    assert result.next_action == "wait_for_review"
+    assert result.run_status == "interrupted"
     assert "testcase_generation_node" in result.executed_nodes
     assert "testcases" in result.draft_artifacts
 
@@ -79,6 +81,8 @@ def test_run_requirement_analysis_workflow_by_id_returns_runtime_result(tmp_path
     assert result.orchestration == "YAML WorkflowSpec: requirement_analysis"
     assert result.task_type == "analysis"
     assert result.review_status == "needs_human_review"
+    assert result.next_action == "wait_for_review"
+    assert result.run_status == "interrupted"
     assert "requirement_analysis_generation_node" in result.executed_nodes
     assert "requirement_analysis" in result.draft_artifacts
     assert "testcases" not in result.draft_artifacts
@@ -103,6 +107,9 @@ def test_resume_workflow_for_run_uses_recorded_task_type(tmp_path):
     assert resumed.success
     assert resumed.run_id == result.run_id
     assert resumed.task_type == "analysis"
+    assert resumed.review_status == "needs_human_review"
+    assert resumed.next_action == "wait_for_review"
+    assert resumed.run_status == "interrupted"
     assert resumed.orchestration == "YAML WorkflowSpec: requirement_analysis"
     assert "requirement_analysis_generation_node" in resumed.executed_nodes
 
@@ -126,5 +133,8 @@ def test_resume_recorded_workflow_routes_mvp_task_type_to_runtime_dsl(tmp_path):
     assert resumed.success
     assert resumed.run_id == result.run_id
     assert resumed.task_type == "testcase_generation"
+    assert resumed.review_status == "needs_human_review"
+    assert resumed.next_action == "wait_for_review"
+    assert resumed.run_status == "interrupted"
     assert resumed.orchestration == "YAML WorkflowSpec: testcase_generation"
     assert "testcase_generation_node" in resumed.executed_nodes

@@ -21,6 +21,7 @@ class RuntimeResult:
     artifacts: list[dict[str, Any]]
     quality_errors: list[str]
     review_status: str
+    next_action: str | None
     output_path: str | None
     dry_run: bool
     approve_write: bool
@@ -59,6 +60,7 @@ class RuntimeResult:
             artifacts=[dict(artifact) for artifact in state.artifacts],
             quality_errors=list(state.quality_errors),
             review_status=state.review_status,
+            next_action=state.next_action,
             output_path=state.output_path,
             dry_run=state.dry_run,
             approve_write=state.approve_write,

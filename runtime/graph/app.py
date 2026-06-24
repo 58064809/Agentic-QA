@@ -130,6 +130,7 @@ def resume_recorded_workflow(
     action: str | None = None,
     reviewed_by: str = "user",
     review_notes: str | None = None,
+    target_artifact: str | None = None,
     repo_root: Path | None = None,
 ) -> RuntimeResult:
     root = (repo_root or default_repo_root()).resolve()
@@ -143,6 +144,7 @@ def resume_recorded_workflow(
             action=action,
             reviewed_by=reviewed_by,
             review_notes=review_notes,
+            target_artifact=target_artifact,
             repo_root=root,
         )
 
@@ -153,6 +155,7 @@ def resume_recorded_workflow(
         action=action,
         reviewed_by=reviewed_by,
         review_notes=review_notes,
+        target_artifact=target_artifact,
         repo_root=root,
     )
 

@@ -48,6 +48,7 @@ class GraphQAWorkflowState(TypedDict, total=False):
     artifacts: list[dict[str, Any]]
     quality_errors: list[str]
     review_status: str
+    next_action: str | None
     output_path: str | None
     dry_run: bool
     approve_write: bool
@@ -88,6 +89,7 @@ class QAWorkflowState:
     artifacts: list[dict[str, Any]] = field(default_factory=list)
     quality_errors: list[str] = field(default_factory=list)
     review_status: str = "not_started"
+    next_action: str | None = None
     output_path: str | None = None
     dry_run: bool = True
     approve_write: bool = False
@@ -137,6 +139,7 @@ def to_graph_state(state: QAWorkflowState) -> GraphQAWorkflowState:
         "artifacts": [dict(artifact) for artifact in state.artifacts],
         "quality_errors": list(state.quality_errors),
         "review_status": state.review_status,
+        "next_action": state.next_action,
         "output_path": state.output_path,
         "dry_run": state.dry_run,
         "approve_write": state.approve_write,
@@ -203,6 +206,7 @@ def from_graph_state(graph_state: GraphQAWorkflowState) -> QAWorkflowState:
         artifacts=_get_artifacts(graph_state),
         quality_errors=_get_list(graph_state, "quality_errors"),
         review_status=str(graph_state.get("review_status", "not_started")),
+        next_action=graph_state.get("next_action"),
         output_path=graph_state.get("output_path"),
         dry_run=bool(graph_state.get("dry_run", True)),
         approve_write=bool(graph_state.get("approve_write", False)),

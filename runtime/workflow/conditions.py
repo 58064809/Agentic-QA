@@ -48,11 +48,10 @@ def task_is_mvp(state: GraphQAWorkflowState) -> bool:
 def needs_human_review_or_approved(state: GraphQAWorkflowState) -> bool:
     if not no_quality_errors(state):
         return False
-    return state.get("review_status") in {
-        "needs_human_review",
-        "approved",
-        "write_approved",
-    }
+    return (
+        state.get("review_status") in {"approved", "write_approved"}
+        and state.get("next_action") == "promote"
+    )
 
 
 CONDITIONS: dict[str, Condition] = {

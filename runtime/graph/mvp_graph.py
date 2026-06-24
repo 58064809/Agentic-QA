@@ -84,11 +84,10 @@ def _route_after_analysis_quality(graph_state: GraphQAWorkflowState) -> str:
 def _route_after_human_review(graph_state: GraphQAWorkflowState) -> str:
     if graph_state.get("errors") or graph_state.get("quality_errors"):
         return "error"
-    if graph_state.get("review_status") in {
-        "needs_human_review",
-        "approved",
-        "write_approved",
-    }:
+    if (
+        graph_state.get("review_status") in {"approved", "write_approved"}
+        and graph_state.get("next_action") == "promote"
+    ):
         return "write"
     return "end"
 
@@ -110,6 +109,7 @@ def _state_from_graph_output(graph_state: GraphQAWorkflowState) -> QAWorkflowSta
             for item in interrupts
         ]
         state.review_status = "needs_human_review"
+        state.next_action = "wait_for_review"
         state.run_status = "interrupted"
         state.human_review = {
             "status": "needs_human_review",
@@ -268,6 +268,7 @@ def resume_mvp_generation_workflow(
     action: str | None = None,
     reviewed_by: str = "user",
     review_notes: str | None = None,
+    target_artifact: str | None = None,
     repo_root: Path | None = None,
 ) -> RuntimeResult:
     from runtime.workflow.runner import resume_workflow_for_run
@@ -277,6 +278,7 @@ def resume_mvp_generation_workflow(
         action=action,
         reviewed_by=reviewed_by,
         review_notes=review_notes,
+        target_artifact=target_artifact,
         repo_root=repo_root,
     )
 
