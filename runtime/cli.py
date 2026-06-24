@@ -5,7 +5,7 @@
 
 特点:
     - 自然语言模式是主入口
-    - rag / promote 等工程命令用于本地调试、索引检查和最小闭环验证
+    - rag / resume / promote 等工程命令用于本地调试、索引检查和最小闭环验证
     - Intent Layer 自动提取意图和文档来源
     - 自动进入对话循环，支持多轮会话
     - 自动写入候选产物，不直接发布正式产物
@@ -25,6 +25,7 @@ from runtime.config import load_app_config
 from runtime.graph.app import (
     default_repo_root,
     promote_artifacts,
+    resume_recorded_workflow,
     run_mvp_analysis_and_testcases_workflow,
     run_mvp_testcase_generation_workflow,
     run_requirement_analysis_workflow,
@@ -62,6 +63,7 @@ HELP_TEXT = """用法:
     agentic-qa rag status
     agentic-qa rag build
     agentic-qa rag search "边界值 活动玩法"
+    agentic-qa resume <run_id> "测试用例通过，发布正式产物"
     agentic-qa promote prd/sample-login-requirement [run_id] [testcases|requirement_analysis]
 
 示例:
@@ -207,6 +209,52 @@ def _print_promote_result(result: RuntimeResult) -> None:
     print("✅ 已发布正式产物")
     for key, path in result.output_paths.items():
         print(f"   - {key}: {path}")
+
+
+def _print_resume_result(result: RuntimeResult) -> None:
+    if result.errors:
+        print("❌ 恢复失败:")
+        for error in result.errors:
+            print(f"   - {error}")
+        if result.review_status == "needs_human_review":
+            print("   当前仍在等待人工确认，请明确审核动作或目标产物。")
+        return
+
+    print("✅ 已恢复 Review Gate")
+    print(f"   - run_id: {result.run_id}")
+    print(f"   - review_status: {result.review_status}")
+    print(f"   - next_action: {result.next_action or '未设置'}")
+    if result.review_status == "approved":
+        print("   - 下一步: 可执行 promote 发布正式产物")
+    elif result.review_status == "needs_human_review":
+        print("   - 下一步: 仍需明确人工确认")
+    elif result.review_status == "needs_changes":
+        print("   - 下一步: 进入修订流程")
+    elif result.review_status == "rejected":
+        print("   - 下一步: 当前候选产物已拒绝")
+
+
+def _run_resume_command(args: list[str], repo_root: Path) -> int:
+    if not args or args[0] in {"help", "--help", "-h"}:
+        print('用法: agentic-qa resume <run_id> "测试用例通过，发布正式产物"')
+        return 0
+    run_id = args[0]
+    message = " ".join(args[1:]).strip()
+    if not message:
+        print("❌ 缺少自然语言审核意见")
+        return 1
+    try:
+        result = resume_recorded_workflow(
+            run_id,
+            user_input=message,
+            reviewed_by="cli",
+            repo_root=repo_root,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"❌ {exc}")
+        return 1
+    _print_resume_result(result)
+    return 0 if result.success else 1
 
 
 def _run_promote(
@@ -729,6 +777,8 @@ def main() -> int:
 
     if len(sys.argv) >= 2 and sys.argv[1] == "rag":
         return _run_rag_command(sys.argv[2:], repo_root)
+    if len(sys.argv) >= 2 and sys.argv[1] == "resume":
+        return _run_resume_command(sys.argv[2:], repo_root)
     if len(sys.argv) >= 2 and sys.argv[1] == "promote":
         return _run_promote_command(sys.argv[2:], repo_root)
 

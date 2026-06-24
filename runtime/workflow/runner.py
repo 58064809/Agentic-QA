@@ -167,7 +167,7 @@ def resume_workflow_by_id(
     graph = build_graph_from_spec(spec, root, checkpointer=checkpointer)
     graph_config = {"configurable": {"thread_id": run_id}}
 
-    if action is None:
+    if action is None and user_input is None:
         snapshot = graph.get_state(graph_config)
         state = from_graph_state(dict(snapshot.values))
         state.run_id = run_id

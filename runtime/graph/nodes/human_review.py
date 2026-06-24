@@ -173,9 +173,11 @@ def human_review_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowStat
         return state
 
     artifact_keys = list(payload["artifact_keys"])
+    parsed_decision = parse_review_decision(user_input)
+    candidate_target = decision.get("target_artifact") or parsed_decision.target_artifact
     target_artifact, target_error = _normalize_target_artifact(
         action=action,
-        target_artifact=decision.get("target_artifact"),
+        target_artifact=candidate_target,
         artifact_keys=artifact_keys,
     )
     if target_error:
@@ -184,7 +186,7 @@ def human_review_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowStat
             "status": state.review_status,
             "decision": {
                 "action": action,
-                "target_artifact": decision.get("target_artifact"),
+                "target_artifact": candidate_target,
                 "source": "langgraph_interrupt_resume",
             },
             "reviewed_by": reviewed_by,
@@ -193,7 +195,6 @@ def human_review_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowStat
         }
         return state
 
-    parsed_decision = parse_review_decision(user_input)
     if target_artifact and parsed_decision.target_artifact is None:
         parsed_decision = parsed_decision.model_copy(update={"target_artifact": target_artifact})
     result = process_review_gate(

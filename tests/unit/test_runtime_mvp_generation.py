@@ -606,6 +606,69 @@ def test_cli_promote_command_publishes_selected_artifact(tmp_path):
     assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
 
 
+def test_cli_resume_command_approves_without_promoting(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+    )
+
+    exit_code = cli._run_resume_command(
+        [result.run_id or "", "测试用例通过，发布正式产物"],
+        repo_root,
+    )
+
+    assert exit_code == 0
+    review = yaml.safe_load(
+        (repo_root / "prd/demo-requirement/reviews/testcases.review.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert review["status"] == "approved"
+    assert review["decision"] == "approve"
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
+def test_cli_resume_command_hold_keeps_waiting_review(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+    )
+
+    exit_code = cli._run_resume_command(
+        [result.run_id or "", "先不要发布"],
+        repo_root,
+    )
+
+    assert exit_code == 0
+    review_path = repo_root / "prd/demo-requirement/reviews/testcases.review.yml"
+    if review_path.exists():
+        review = yaml.safe_load(review_path.read_text(encoding="utf-8")) or {}
+        assert review.get("status") != "approved"
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
+def test_cli_resume_command_multi_artifact_unclear_target_fails(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_analysis_and_testcases_workflow(
+        "请分析需求并生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+    )
+
+    exit_code = cli._run_resume_command(
+        [result.run_id or "", "通过"],
+        repo_root,
+    )
+
+    assert exit_code == 1
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
+
+
 def test_mvp_approve_write_creates_analysis_and_testcases(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
 
