@@ -17,6 +17,7 @@ ACTION_ALIASES = {
     "hold": "hold",
     "clarify": "clarify",
 }
+ALLOWED_REVIEW_ACTIONS = tuple(ACTION_ALIASES)
 ALL_ARTIFACTS_TARGET = "all"
 
 
@@ -45,7 +46,7 @@ def _interrupt_payload(state: QAWorkflowState) -> dict[str, Any]:
         "artifact_keys": _artifact_keys(state),
         "review_status": "needs_human_review",
         "preview_path": _preview_path(state),
-        "allowed_actions": ["approve", "reject", "revise", "show_diff", "hold", "clarify"],
+        "allowed_actions": list(ALLOWED_REVIEW_ACTIONS),
     }
 
 

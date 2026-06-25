@@ -54,19 +54,19 @@ def validate_review_transition(
             errors=[f"当前运行不包含目标产物: {decision.target_artifact}"],
         )
 
+    if decision.intent in {ReviewIntent.CLARIFY, ReviewIntent.HOLD, ReviewIntent.SHOW_DIFF}:
+        return ReviewStateTransition(
+            allowed=True,
+            next_status=current_status,
+            reason=f"{decision.intent.value} 不改变审核状态",
+        )
+
     if decision.requires_confirmation:
         return ReviewStateTransition(
             allowed=False,
             next_status=current_status,
             reason="ReviewDecision 需要二次确认",
             errors=["低置信度或安全规则要求二次确认，不能直接流转。"],
-        )
-
-    if decision.intent in {ReviewIntent.CLARIFY, ReviewIntent.HOLD, ReviewIntent.SHOW_DIFF}:
-        return ReviewStateTransition(
-            allowed=True,
-            next_status=current_status,
-            reason=f"{decision.intent.value} 不改变审核状态",
         )
 
     if decision.intent in ALLOWED_REVIEW_ACTIONS and current_status != REVIEWABLE_STATUS:

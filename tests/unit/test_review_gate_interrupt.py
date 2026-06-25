@@ -233,6 +233,32 @@ def test_interrupt_resume_show_diff_does_not_change_review_status(tmp_path):
     assert not resumed.wrote_file
 
 
+def test_interrupt_resume_clarify_keeps_waiting_review(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_testcase_generation_workflow(
+        "generate testcases",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=True,
+    )
+
+    resumed = resume_workflow_for_run(
+        result.run_id or "",
+        action="clarify",
+        user_input="please clarify first",
+        reviewed_by="qa",
+        repo_root=repo_root,
+    )
+
+    assert resumed.success
+    assert resumed.review_status == "needs_human_review"
+    assert resumed.next_action == "wait_for_review"
+    assert resumed.run_status == "interrupted"
+    assert resumed.human_review["decision"]["intent"] == "clarify"
+    assert not resumed.wrote_file
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
 def test_multi_artifact_approve_requires_target_artifact(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
     result = run_mvp_analysis_and_testcases_workflow(

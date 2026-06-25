@@ -42,6 +42,9 @@ allowed_actions:
   - approve
   - reject
   - revise
+  - show_diff
+  - hold
+  - clarify
 ```
 
 resume decision 结构：
