@@ -1,3 +1,8 @@
+"""LEGACY ONLY: old langgraph_app context loader.
+
+Merged for current runtime into mvp_context_loader and WorkflowSpec-driven nodes.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,3 +1,9 @@
+"""LEGACY ONLY: old langgraph_app artifact writer.
+
+Current runtime writes candidate previews through artifact_preview_writer and promotes
+formal artifacts through the deterministic artifact_promoter path.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from runtime.schemas.runtime_result import RuntimeResult
@@ -20,13 +21,13 @@ def run_testcase_generation_workflow(
     record_run: bool = True,
 ) -> RuntimeResult:
     try:
-        from runtime.graph.langgraph_app import run_langgraph_testcase_generation_workflow
+        from runtime.graph.mvp_graph import run_mvp_testcase_generation_workflow as run_mvp
     except ImportError as exc:
         raise RuntimeError(
             "LangGraph 未安装或不可用。请先执行 `pip install -e .` 安装运行时依赖。"
         ) from exc
 
-    return run_langgraph_testcase_generation_workflow(
+    return run_mvp(
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -160,7 +161,7 @@ def resume_recorded_workflow(
 
     from runtime.graph.langgraph_app import resume_langgraph_testcase_generation_workflow
 
-    return resume_langgraph_testcase_generation_workflow(
+    result = resume_langgraph_testcase_generation_workflow(
         run_id,
         action=action,
         user_input=user_input,
@@ -168,6 +169,14 @@ def resume_recorded_workflow(
         review_notes=review_notes,
         target_artifact=target_artifact,
         repo_root=root,
+    )
+    return replace(
+        result,
+        warnings=[
+            *result.warnings,
+            "DEPRECATED: resumed via legacy runtime.graph.langgraph_app fallback because "
+            f"recorded task_type is {task_type!r}. Migrate this run to WorkflowSpec YAML.",
+        ],
     )
 
 

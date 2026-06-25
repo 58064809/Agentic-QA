@@ -1,3 +1,8 @@
+"""LEGACY ONLY: old langgraph_app intent router.
+
+Can delete after legacy langgraph_app tests/runs are removed.
+"""
+
 from __future__ import annotations
 
 from runtime.graph.state import QAWorkflowState

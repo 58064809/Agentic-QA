@@ -3,8 +3,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from test_runtime_mvp_generation import create_mvp_repo  # noqa: E402
 
 from runtime.graph.app import run_testcase_generation_workflow  # noqa: E402
 from runtime.graph.nodes.context_loader import context_loader_node  # noqa: E402
@@ -13,6 +18,11 @@ from runtime.graph.nodes.quality_checker import (  # noqa: E402
     testcase_quality_check_node as quality_check_node,
 )
 from runtime.graph.state import QAWorkflowState  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def disable_real_llm_by_default(monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
 
 
 def write_file(path: Path, content: str = "placeholder") -> None:
@@ -42,7 +52,7 @@ def create_runtime_repo(root: Path) -> Path:
     return root
 
 
-def test_intent_router_recognizes_testcase_generation():
+def test_legacy_intent_router_recognizes_testcase_generation():
     state = QAWorkflowState(user_input="请生成测试用例", prd_path="prd/demo-requirement")
 
     intent_router_node(state)
@@ -51,7 +61,7 @@ def test_intent_router_recognizes_testcase_generation():
     assert not state.errors
 
 
-def test_intent_router_recognizes_all_supported_intents():
+def test_legacy_intent_router_recognizes_all_supported_intents():
     test_cases = [
         ("帮我分析登录需求", "requirement_analysis"),
         ("拆解需求并提取业务规则", "requirement_analysis"),
@@ -80,7 +90,7 @@ def test_intent_router_recognizes_all_supported_intents():
         assert not state.errors, f"输入「{user_input}」不应报错，实际得到 {state.errors}"
 
 
-def test_intent_router_unknown_input_reports_supported_list():
+def test_legacy_intent_router_unknown_input_reports_supported_list():
     state = QAWorkflowState(user_input="帮我浇花", prd_path="prd/demo-requirement")
 
     intent_router_node(state)
@@ -91,7 +101,7 @@ def test_intent_router_unknown_input_reports_supported_list():
     assert "需求分析" in state.errors[0]
 
 
-def test_context_loader_loads_sample_prd_required_files():
+def test_legacy_context_loader_loads_sample_prd_required_files():
     state = QAWorkflowState(
         user_input="请生成测试用例",
         prd_path="prd/sample-login-requirement",
@@ -105,7 +115,7 @@ def test_context_loader_loads_sample_prd_required_files():
 
 
 def test_dry_run_does_not_write_testcases(tmp_path):
-    repo_root = create_runtime_repo(tmp_path)
+    repo_root = create_mvp_repo(tmp_path)
 
     result = run_testcase_generation_workflow(
         "请生成测试用例",
@@ -116,11 +126,13 @@ def test_dry_run_does_not_write_testcases(tmp_path):
     assert result.success
     assert result.dry_run
     assert not result.wrote_file
-    assert not (repo_root / "prd/demo-requirement/runs/runtime/artifact-preview.md").exists()
+    assert not (
+        repo_root / f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
+    ).exists()
 
 
 def test_approve_write_creates_testcase_draft_when_missing(tmp_path):
-    repo_root = create_runtime_repo(tmp_path)
+    repo_root = create_mvp_repo(tmp_path)
 
     result = run_testcase_generation_workflow(
         "请生成测试用例",
@@ -132,12 +144,12 @@ def test_approve_write_creates_testcase_draft_when_missing(tmp_path):
     content = output_path.read_text(encoding="utf-8")
     assert result.success
     assert result.wrote_file
-    assert "Runtime Skeleton" in content
+    assert "artifact_type: testcase_draft" in content
     assert "needs_human_review" in content
 
 
 def test_approve_write_does_not_overwrite_existing_testcases(tmp_path):
-    repo_root = create_runtime_repo(tmp_path)
+    repo_root = create_mvp_repo(tmp_path)
     formal_path = repo_root / "prd/demo-requirement/artifacts/testcases.md"
     write_file(formal_path, "人工已有内容")
 
@@ -152,7 +164,7 @@ def test_approve_write_does_not_overwrite_existing_testcases(tmp_path):
     assert formal_path.read_text(encoding="utf-8") == "人工已有内容"
 
 
-def test_quality_check_reports_missing_review_status_and_headers(tmp_path):
+def test_legacy_quality_check_reports_missing_review_status_and_headers(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
     state = QAWorkflowState(
         user_input="请生成测试用例",

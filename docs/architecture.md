@@ -45,3 +45,10 @@ Promote / Revise / Wait
 - 架构图放在 `docs/assets/`，不进入 `knowledge/`，避免污染业务 RAG 上下文。
 - README 只保留架构入口和简要链路，详细说明放在本文件。
 - AI 生成内容必须先进入候选产物和 Review Gate，不得直接覆盖正式产物。
+
+## Runtime Graph Path
+
+- Primary graph path: `workflows/runtime/*.workflow.yml` -> `runtime.workflow.loader` -> `runtime.workflow.builder` -> LangGraph.
+- Facade entry points in `runtime.graph.app` must call the WorkflowSpec/MVP path for current workflows.
+- `runtime.graph.langgraph_app` is deprecated legacy compatibility for old tests and recorded runs only.
+- Legacy node files under `runtime/graph/nodes/` are marked as legacy-only and should not receive new runtime behavior.

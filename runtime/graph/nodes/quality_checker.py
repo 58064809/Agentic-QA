@@ -1,3 +1,8 @@
+"""LEGACY ONLY: old langgraph_app quality checker.
+
+Merged for current runtime into mvp_quality nodes.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

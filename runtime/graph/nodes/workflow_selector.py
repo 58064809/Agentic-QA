@@ -1,3 +1,8 @@
+"""LEGACY ONLY: old langgraph_app workflow selector.
+
+Can delete after legacy langgraph_app tests/runs are removed.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path

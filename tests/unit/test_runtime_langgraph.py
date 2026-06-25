@@ -42,7 +42,7 @@ def create_runtime_repo(root: Path) -> Path:
     return root
 
 
-def test_build_testcase_generation_graph_succeeds(tmp_path):
+def test_legacy_build_testcase_generation_graph_succeeds(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
 
     graph = build_testcase_generation_graph(repo_root)
@@ -50,7 +50,7 @@ def test_build_testcase_generation_graph_succeeds(tmp_path):
     assert hasattr(graph, "invoke")
 
 
-def test_langgraph_dry_run_does_not_write_testcases(tmp_path):
+def test_legacy_langgraph_dry_run_does_not_write_testcases(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
 
     result = run_langgraph_testcase_generation_workflow(
@@ -71,7 +71,7 @@ def test_langgraph_dry_run_does_not_write_testcases(tmp_path):
     assert not preview_path.exists()
 
 
-def test_langgraph_approve_write_creates_testcase_draft(tmp_path):
+def test_legacy_langgraph_approve_write_creates_testcase_draft(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
 
     result = run_langgraph_testcase_generation_workflow(
@@ -97,7 +97,7 @@ def test_langgraph_approve_write_creates_testcase_draft(tmp_path):
     assert metadata["runtime_runs"][-1]["review_status"] == "write_approved"
 
 
-def test_langgraph_approve_write_does_not_overwrite_existing_testcases(tmp_path):
+def test_legacy_langgraph_approve_write_does_not_overwrite_existing_testcases(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
     formal_path = repo_root / "prd/demo-requirement/artifacts/testcases.md"
     write_file(formal_path, "人工已有内容")
@@ -113,7 +113,7 @@ def test_langgraph_approve_write_does_not_overwrite_existing_testcases(tmp_path)
     assert formal_path.read_text(encoding="utf-8") == "人工已有内容"
 
 
-def test_langgraph_known_intent_proceeds_to_workflow_selector(tmp_path):
+def test_legacy_langgraph_known_intent_proceeds_to_workflow_selector(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
 
     result = run_langgraph_testcase_generation_workflow(
@@ -129,7 +129,7 @@ def test_langgraph_known_intent_proceeds_to_workflow_selector(tmp_path):
     assert "workflow_selector_node" in result.executed_nodes
 
 
-def test_langgraph_unknown_intent_stops_before_workflow_selector(tmp_path):
+def test_legacy_langgraph_unknown_intent_stops_before_workflow_selector(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
 
     result = run_langgraph_testcase_generation_workflow(
@@ -146,7 +146,7 @@ def test_langgraph_unknown_intent_stops_before_workflow_selector(tmp_path):
     assert "artifact_generation_node" not in result.executed_nodes
 
 
-def test_langgraph_missing_prd_required_file_stops_before_generation(tmp_path):
+def test_legacy_langgraph_missing_prd_required_file_stops_before_generation(tmp_path):
     repo_root = create_runtime_repo(tmp_path)
     (repo_root / "prd/demo-requirement/input/requirement.md").unlink()
 
@@ -165,7 +165,7 @@ def test_langgraph_missing_prd_required_file_stops_before_generation(tmp_path):
     assert not preview_path.exists()
 
 
-def test_langgraph_quality_failure_stops_before_writer(tmp_path, monkeypatch):
+def test_legacy_langgraph_quality_failure_stops_before_writer(tmp_path, monkeypatch):
     repo_root = create_runtime_repo(tmp_path)
 
     def fake_artifact_generation_node(state):

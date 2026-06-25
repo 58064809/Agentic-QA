@@ -5,11 +5,21 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from runtime.graph.langgraph_app import run_langgraph_testcase_generation_workflow  # noqa: E402
+from test_runtime_mvp_generation import create_mvp_repo  # noqa: E402
+
+from runtime.graph.app import run_testcase_generation_workflow  # noqa: E402
 from runtime.records.run_id import generate_run_id  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def disable_real_llm_by_default(monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
 
 
 def write_file(path: Path, content: str = "placeholder") -> None:
@@ -54,9 +64,9 @@ def test_generate_run_id_format_is_stable():
 
 
 def test_dry_run_generates_run_record_by_default(tmp_path):
-    repo_root = create_runtime_repo(tmp_path)
+    repo_root = create_mvp_repo(tmp_path)
 
-    result = run_langgraph_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -77,9 +87,9 @@ def test_dry_run_generates_run_record_by_default(tmp_path):
 
 
 def test_record_run_false_does_not_generate_run_record(tmp_path):
-    repo_root = create_runtime_repo(tmp_path)
+    repo_root = create_mvp_repo(tmp_path)
 
-    result = run_langgraph_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -93,9 +103,9 @@ def test_record_run_false_does_not_generate_run_record(tmp_path):
 
 
 def test_run_record_json_contains_runtime_summary(tmp_path):
-    repo_root = create_runtime_repo(tmp_path)
+    repo_root = create_mvp_repo(tmp_path)
 
-    result = run_langgraph_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -107,7 +117,7 @@ def test_run_record_json_contains_runtime_summary(tmp_path):
     assert summary["success"] is True
     assert summary["run_status"] == "interrupted"
     assert summary["next_action"] == "wait_for_review"
-    assert summary["orchestration"] == "LangGraph StateGraph"
+    assert summary["orchestration"] == "YAML WorkflowSpec: testcase_generation"
     assert summary["executed_nodes"]
     assert summary["loaded_files"]
     assert summary["wrote_file"] is False
@@ -115,9 +125,9 @@ def test_run_record_json_contains_runtime_summary(tmp_path):
 
 
 def test_run_record_markdown_contains_nodes_and_review_status(tmp_path):
-    repo_root = create_runtime_repo(tmp_path)
+    repo_root = create_mvp_repo(tmp_path)
 
-    result = run_langgraph_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -126,15 +136,17 @@ def test_run_record_markdown_contains_nodes_and_review_status(tmp_path):
     assert result.run_summary_md is not None
     content = (repo_root / result.run_summary_md).read_text(encoding="utf-8")
     assert "## 节点轨迹" in content
-    assert "intent_router_node" in content
+    assert "mvp_command_router_node" in content
+    assert "testcase_generation_node" in content
     assert "review_status：needs_human_review" in content
 
 
 def test_failed_runtime_flow_still_generates_run_record(tmp_path):
-    repo_root = create_runtime_repo(tmp_path)
+    repo_root = create_mvp_repo(tmp_path)
+    (repo_root / "prd/demo-requirement/input/requirement.md").unlink()
 
-    result = run_langgraph_testcase_generation_workflow(
-        "帮我浇花",  # 完全未知的意图，走不到 workflow_selector
+    result = run_testcase_generation_workflow(
+        "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
     )
@@ -143,13 +155,15 @@ def test_failed_runtime_flow_still_generates_run_record(tmp_path):
     assert not result.success
     assert summary["success"] is False
     assert summary["errors"]
-    assert summary["executed_nodes"] == ["intent_router_node"]
+    assert "requirement_normalizer_node" in summary["executed_nodes"]
+    assert "context_loader" not in summary["executed_nodes"]
+    assert "testcase_generation_node" not in summary["executed_nodes"]
 
 
 def test_run_record_does_not_store_full_draft_artifact(tmp_path):
-    repo_root = create_runtime_repo(tmp_path)
+    repo_root = create_mvp_repo(tmp_path)
 
-    result = run_langgraph_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,

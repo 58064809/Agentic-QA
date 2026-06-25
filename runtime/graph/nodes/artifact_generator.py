@@ -1,3 +1,8 @@
+"""LEGACY ONLY: old langgraph_app artifact generator.
+
+Merged for current runtime into mvp_generation nodes.
+"""
+
 from __future__ import annotations
 
 from runtime.graph.state import QAWorkflowState

@@ -1,3 +1,9 @@
+"""DEPRECATED legacy hard-coded LangGraph workflow.
+
+New runtime workflows must use runtime.workflow.runner + workflows/runtime/*.workflow.yml.
+This module is kept only for temporary backward compatibility with old tests/runs.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable
