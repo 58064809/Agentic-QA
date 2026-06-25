@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_runtime_mvp_generation import create_mvp_repo  # noqa: E402
 
-from runtime.graph.app import run_testcase_generation_workflow  # noqa: E402
+from runtime.graph.app import run_mvp_testcase_generation_workflow  # noqa: E402
 from runtime.records.run_id import generate_run_id  # noqa: E402
 
 
@@ -66,7 +66,7 @@ def test_generate_run_id_format_is_stable():
 def test_dry_run_generates_run_record_by_default(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
 
-    result = run_testcase_generation_workflow(
+    result = run_mvp_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -89,7 +89,7 @@ def test_dry_run_generates_run_record_by_default(tmp_path):
 def test_record_run_false_does_not_generate_run_record(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
 
-    result = run_testcase_generation_workflow(
+    result = run_mvp_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -105,7 +105,7 @@ def test_record_run_false_does_not_generate_run_record(tmp_path):
 def test_run_record_json_contains_runtime_summary(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
 
-    result = run_testcase_generation_workflow(
+    result = run_mvp_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -127,7 +127,7 @@ def test_run_record_json_contains_runtime_summary(tmp_path):
 def test_run_record_markdown_contains_nodes_and_review_status(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
 
-    result = run_testcase_generation_workflow(
+    result = run_mvp_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -137,7 +137,7 @@ def test_run_record_markdown_contains_nodes_and_review_status(tmp_path):
     content = (repo_root / result.run_summary_md).read_text(encoding="utf-8")
     assert "## 节点轨迹" in content
     assert "mvp_command_router_node" in content
-    assert "testcase_generation_node" in content
+    assert "testcase_generator" in content
     assert "review_status：needs_human_review" in content
 
 
@@ -145,7 +145,7 @@ def test_failed_runtime_flow_still_generates_run_record(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
     (repo_root / "prd/demo-requirement/input/requirement.md").unlink()
 
-    result = run_testcase_generation_workflow(
+    result = run_mvp_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -156,14 +156,14 @@ def test_failed_runtime_flow_still_generates_run_record(tmp_path):
     assert summary["success"] is False
     assert summary["errors"]
     assert "requirement_normalizer_node" in summary["executed_nodes"]
-    assert "context_loader" not in summary["executed_nodes"]
-    assert "testcase_generation_node" not in summary["executed_nodes"]
+    assert "mvp_context_loader_node" not in summary["executed_nodes"]
+    assert "testcase_generator" not in summary["executed_nodes"]
 
 
 def test_run_record_does_not_store_full_draft_artifact(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
 
-    result = run_testcase_generation_workflow(
+    result = run_mvp_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,

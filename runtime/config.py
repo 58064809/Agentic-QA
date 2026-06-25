@@ -338,9 +338,12 @@ class AppConfig:
     profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
-    def rag(self) -> dict[str, Any]:
+    def rag(self):
+        """Lazy-imported typed RAG configuration."""
+        from rag.config import RagConfig
+
         raw_rag = self.raw.get("rag") or {}
-        return dict(raw_rag) if isinstance(raw_rag, dict) else {}
+        return RagConfig.from_app_config(dict(raw_rag) if isinstance(raw_rag, dict) else {})
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | None) -> AppConfig:

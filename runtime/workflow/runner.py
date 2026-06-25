@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
@@ -10,12 +9,7 @@ from langgraph.types import Command
 from runtime.config import load_app_config
 from runtime.graph.app import default_repo_root
 from runtime.graph.nodes.mvp_context_loader import TASK_MVP
-from runtime.graph.state import (
-    GraphQAWorkflowState,
-    QAWorkflowState,
-    from_graph_state,
-    to_graph_state,
-)
+from runtime.graph.state import QAWorkflowState
 from runtime.llm.config import OpenAICompatibleConfig
 from runtime.records.run_recorder import (
     append_review_event,
@@ -46,22 +40,20 @@ def workflow_id_for_task_type(task_type: str | None) -> str:
     return DEFAULT_WORKFLOW_REGISTRY.workflow_id_for_task_type(task_type)
 
 
-def _interrupts_from_graph_state(graph_state: GraphQAWorkflowState) -> list[Any]:
-    value = graph_state.get("__interrupt__")  # type: ignore[typeddict-item]
-    return list(value) if isinstance(value, list) else []
+def _interrupt_metadata(state: QAWorkflowState) -> list[dict]:
+    """Extract LangGraph interrupt info from the Pydantic model (extra field)."""
+    raw = state.model_extra.get("__interrupt__") if state.model_extra else None
+    interrupts = list(raw) if isinstance(raw, list) else []
+    return [
+        {"id": str(getattr(item, "id", "")), "value": getattr(item, "value", None)}
+        for item in interrupts
+    ]
 
 
-def _state_from_graph_output(graph_state: GraphQAWorkflowState) -> QAWorkflowState:
-    state = from_graph_state(graph_state)
-    interrupts = _interrupts_from_graph_state(graph_state)
+def _finalize_state(state: QAWorkflowState) -> QAWorkflowState:
+    """Post-process state after graph execution: detect interrupts / completion."""
+    interrupts = _interrupt_metadata(state)
     if interrupts:
-        interrupt_payloads = [
-            {
-                "id": str(getattr(item, "id", "")),
-                "value": getattr(item, "value", None),
-            }
-            for item in interrupts
-        ]
         state.review_status = "needs_human_review"
         state.next_action = "wait_for_review"
         state.run_status = "interrupted"
@@ -70,7 +62,7 @@ def _state_from_graph_output(graph_state: GraphQAWorkflowState) -> QAWorkflowSta
             "decision": None,
             "reviewed_by": None,
             "review_notes": None,
-            "interrupt": interrupt_payloads,
+            "interrupt": interrupts,
         }
         if "human_review_node" not in state.executed_nodes:
             state.executed_nodes.append("human_review_node")
@@ -116,13 +108,14 @@ def run_workflow_by_id(
     checkpointer = MemorySaver()
     graph = build_graph_from_spec(spec, root, checkpointer=checkpointer)
     graph_config = {"configurable": {"thread_id": thread_id}}
-    graph_state = graph.invoke(to_graph_state(initial_state), config=graph_config)
-    result = RuntimeResult.from_state(_state_from_graph_output(graph_state))
+    final_state = QAWorkflowState.model_validate(graph.invoke(initial_state, config=graph_config))
+    _finalize_state(final_state)
+    result = RuntimeResult.from_state(final_state)
     if record_run:
         return record_runtime_result(
             result,
             root,
-            graph_state=graph_state,
+            graph_state=final_state.model_dump(mode="json"),
             checkpointer=checkpointer,
         )
     return result
@@ -172,7 +165,7 @@ def resume_workflow_by_id(
 
     if action is None and user_input is None:
         snapshot = graph.get_state(graph_config)
-        state = from_graph_state(dict(snapshot.values))
+        state = QAWorkflowState.model_validate(snapshot.values)
         state.run_id = run_id
         state.thread_id = run_id
         if snapshot.next:
@@ -186,7 +179,7 @@ def resume_workflow_by_id(
         return record_runtime_result(
             result,
             root,
-            graph_state=to_graph_state(state),
+            graph_state=state.model_dump(mode="json"),
             checkpointer=checkpointer,
         )
 
@@ -198,13 +191,16 @@ def resume_workflow_by_id(
         "target_artifact": target_artifact,
     }
     previous_snapshot = graph.get_state(graph_config)
-    previous_state = from_graph_state(dict(previous_snapshot.values))
+    previous_state = QAWorkflowState.model_validate(previous_snapshot.values)
     previous_status = (
         "needs_human_review" if previous_snapshot.next else previous_state.review_status
     )
     previous_run_status = "interrupted" if previous_snapshot.next else previous_state.run_status
-    graph_state = graph.invoke(Command(resume=decision), config=graph_config)
-    result = RuntimeResult.from_state(_state_from_graph_output(graph_state))
+    final_state = QAWorkflowState.model_validate(
+        graph.invoke(Command(resume=decision), config=graph_config)
+    )
+    _finalize_state(final_state)
+    result = RuntimeResult.from_state(final_state)
     append_review_event(
         result,
         root,
@@ -217,6 +213,6 @@ def resume_workflow_by_id(
     return record_runtime_result(
         result,
         root,
-        graph_state=graph_state,
+        graph_state=final_state.model_dump(mode="json"),
         checkpointer=checkpointer,
     )

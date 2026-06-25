@@ -6,7 +6,6 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from rag.config import RagConfig
 from rag.manager import RagManager
 from rag.retriever import assemble_rag_context
 from runtime.config import load_app_config
@@ -48,7 +47,7 @@ def _prd_prefix(state: QAWorkflowState) -> str:
 def _build_rag_context(state: QAWorkflowState) -> str:
     repo_root = Path.cwd()
     app_config = load_app_config(repo_root)
-    config = RagConfig.from_app_config(app_config.rag)
+    config = app_config.rag
     if not config.enabled:
         return ""
     try:

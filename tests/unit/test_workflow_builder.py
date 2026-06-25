@@ -9,7 +9,7 @@ from pydantic import ValidationError
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from runtime.graph.state import QAWorkflowState, from_graph_state, to_graph_state  # noqa: E402
+from runtime.graph.state import QAWorkflowState  # noqa: E402
 from runtime.workflow.builder import build_graph_from_spec  # noqa: E402
 from runtime.workflow.schema import (  # noqa: E402
     EXECUTABLE_NODE_TYPES,
@@ -84,8 +84,8 @@ def test_build_graph_accepts_executable_node_types(node_type):
     )
 
     graph = build_graph_from_spec(spec, REPO_ROOT)
-    state = from_graph_state(
-        graph.invoke(to_graph_state(qa_state()), config=graph_config(f"type-{node_type}"))
+    state = QAWorkflowState.model_validate(
+        graph.invoke(qa_state(), config=graph_config(f"type-{node_type}"))
     )
 
     assert state.executed_nodes == ["node_a"]
@@ -163,8 +163,8 @@ def test_default_edge_runs_when_no_other_condition_matches():
     )
 
     graph = build_graph_from_spec(spec, REPO_ROOT)
-    state = from_graph_state(
-        graph.invoke(to_graph_state(qa_state()), config=graph_config("default-fallback"))
+    state = QAWorkflowState.model_validate(
+        graph.invoke(qa_state(), config=graph_config("default-fallback"))
     )
 
     assert state.executed_nodes == ["node_a", "node_c"]
@@ -183,8 +183,8 @@ def test_default_edge_is_evaluated_after_explicit_conditions():
 
     graph = build_graph_from_spec(spec, REPO_ROOT)
     initial_state = qa_state(errors=["boom"])
-    state = from_graph_state(
-        graph.invoke(to_graph_state(initial_state), config=graph_config("default-order"))
+    state = QAWorkflowState.model_validate(
+        graph.invoke(initial_state, config=graph_config("default-order"))
     )
 
     assert state.executed_nodes == ["node_a", "node_b"]

@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from runtime.graph.nodes.context_loader import resolve_prd_path
 from runtime.graph.nodes.mvp_context_loader import (
     TASK_ANALYSIS,
     TASK_MVP,
@@ -11,6 +10,7 @@ from runtime.graph.nodes.mvp_context_loader import (
 )
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.artifact_writer import ensure_within_directory
+from runtime.workspace import resolve_prd_path
 
 REQUIRED_ANALYSIS_SECTIONS = [
     "需求背景与目标",

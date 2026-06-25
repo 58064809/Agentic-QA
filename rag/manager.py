@@ -49,7 +49,7 @@ class RagManager:
         config: RagConfig | None = None,
     ) -> None:
         self.repo_root = repo_root.resolve()
-        self.config = config or RagConfig.from_app_config(load_app_config(self.repo_root).rag)
+        self.config = config or load_app_config(self.repo_root).rag
 
         self._embedder: EmbeddingAdapter | None = None
         self._vector_store: FaissVectorStore | MemoryVectorStore | None = None

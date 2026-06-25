@@ -3,10 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from runtime.graph.nodes.context_loader import resolve_prd_path
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.artifact_writer import ensure_within_directory
 from runtime.tools.document_converter import convert_requirement_to_markdown
+from runtime.workspace import resolve_prd_path
 
 SUPPORTED_REQUIREMENT_SOURCES = [
     "input/requirement.md",

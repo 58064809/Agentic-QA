@@ -6,7 +6,7 @@ import pytest
 
 import runtime.cli as cli
 from runtime.config import load_app_config
-from runtime.graph.nodes.workflow_selector import workflow_selector_node
+from runtime.graph.nodes.mvp_context_loader import mvp_workflow_selector_node
 from runtime.graph.state import QAWorkflowState
 from runtime.llm.config import OpenAICompatibleConfig
 
@@ -94,7 +94,7 @@ workflow:
         intent="testcase_generation",
     )
 
-    workflow_selector_node(state, tmp_path)
+    mvp_workflow_selector_node(state, tmp_path)
 
     assert state.workflow_files == ["workflows/custom-testcase.md"]
     assert not state.errors

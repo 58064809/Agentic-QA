@@ -11,7 +11,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from rag.config import RagConfig  # noqa: E402
 from rag.manager import RagManager  # noqa: E402
-from runtime.cli import _run_rag_command  # noqa: E402
+from runtime.cli.rag_cmds import run_rag_command  # noqa: E402
 from runtime.graph.nodes.mvp_generation import (  # noqa: E402
     _build_rag_context,
     _build_rag_query,
@@ -164,15 +164,15 @@ def test_rag_cli_status_build_search(
         "# State\n\nState transition testing covers valid and invalid status changes.",
     )
 
-    assert _run_rag_command(["status"], tmp_path) == 0
+    assert run_rag_command(["status"], tmp_path) == 0
     status_output = capsys.readouterr().out
     assert "embedding_provider: local" in status_output
 
-    assert _run_rag_command(["build"], tmp_path) == 0
+    assert run_rag_command(["build"], tmp_path) == 0
     build_output = capsys.readouterr().out
     assert "rebuilt: true" in build_output
 
-    assert _run_rag_command(["search", "status", "transition"], tmp_path) == 0
+    assert run_rag_command(["search", "status", "transition"], tmp_path) == 0
     search_output = capsys.readouterr().out
     assert "documents:" in search_output
     assert "knowledge" in search_output

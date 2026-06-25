@@ -4,12 +4,11 @@ import re
 from pathlib import Path
 
 from runtime.config import load_app_config
-from runtime.graph.nodes.context_loader import resolve_prd_path
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.artifact_writer import ensure_within_directory
 from runtime.tools.file_reader import read_existing_files, read_utf8
 from runtime.workflow.catalog import DEFAULT_WORKFLOW_REGISTRY
-from runtime.workspace import PRDWorkspace
+from runtime.workspace import PRDWorkspace, resolve_prd_path
 
 TASK_ANALYSIS = "analysis"
 TASK_TESTCASE_GENERATION = "testcase_generation"

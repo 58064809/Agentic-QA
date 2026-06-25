@@ -156,7 +156,7 @@ Runtime 内部执行记录当前保存到 `.runtime/runs/<run-id>/`：
 | `configs/` | 项目运行配置、Profile 配置和示例配置 |
 | `runtime/` | Runtime 主体代码，负责工作流编排和执行 |
 | `runtime/config.py` | 配置加载、合并、校验和环境变量解析 |
-| `runtime/llm/intent_router.py`、`runtime/graph/nodes/intent_router.py` | 意图识别、任务解析和结构化任务结果 |
+| `runtime/llm/intent_router.py` | 意图识别、任务解析和结构化任务结果 |
 | `runtime/workflow/` | 工作流选择、注册和执行入口 |
 | `runtime/graph/` | 工作流图、节点、状态和路由 |
 | `rag/` | 文档切分、索引、检索和上下文选择 |

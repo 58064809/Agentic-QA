@@ -7,51 +7,48 @@ from runtime.graph.nodes.mvp_context_loader import (
     TASK_MVP,
     TASK_TESTCASE_GENERATION,
 )
-from runtime.graph.state import GraphQAWorkflowState
+from runtime.graph.state import QAWorkflowState
 
-Condition = Callable[[GraphQAWorkflowState], bool]
+Condition = Callable[[QAWorkflowState], bool]
 DEFAULT_CONDITION = "default"
 
 
-def no_errors(state: GraphQAWorkflowState) -> bool:
-    return not state.get("errors")
+def no_errors(state: QAWorkflowState) -> bool:
+    return not state.errors
 
 
-def has_errors(state: GraphQAWorkflowState) -> bool:
-    return bool(state.get("errors"))
+def has_errors(state: QAWorkflowState) -> bool:
+    return bool(state.errors)
 
 
-def default(_state: GraphQAWorkflowState) -> bool:
+def default(_state: QAWorkflowState) -> bool:
     return True
 
 
-def no_quality_errors(state: GraphQAWorkflowState) -> bool:
-    return not state.get("errors") and not state.get("quality_errors")
+def no_quality_errors(state: QAWorkflowState) -> bool:
+    return not state.errors and not state.quality_errors
 
 
-def task_is_analysis_or_mvp(state: GraphQAWorkflowState) -> bool:
-    return no_errors(state) and state.get("task_type") in {TASK_ANALYSIS, TASK_MVP}
+def task_is_analysis_or_mvp(state: QAWorkflowState) -> bool:
+    return no_errors(state) and state.task_type in {TASK_ANALYSIS, TASK_MVP}
 
 
-def task_is_analysis(state: GraphQAWorkflowState) -> bool:
-    return no_errors(state) and state.get("task_type") == TASK_ANALYSIS
+def task_is_analysis(state: QAWorkflowState) -> bool:
+    return no_errors(state) and state.task_type == TASK_ANALYSIS
 
 
-def task_is_testcase_generation(state: GraphQAWorkflowState) -> bool:
-    return no_errors(state) and state.get("task_type") == TASK_TESTCASE_GENERATION
+def task_is_testcase_generation(state: QAWorkflowState) -> bool:
+    return no_errors(state) and state.task_type == TASK_TESTCASE_GENERATION
 
 
-def task_is_mvp(state: GraphQAWorkflowState) -> bool:
-    return no_quality_errors(state) and state.get("task_type") == TASK_MVP
+def task_is_mvp(state: QAWorkflowState) -> bool:
+    return no_quality_errors(state) and state.task_type == TASK_MVP
 
 
-def ready_to_write_preview(state: GraphQAWorkflowState) -> bool:
+def ready_to_write_preview(state: QAWorkflowState) -> bool:
     if not no_quality_errors(state):
         return False
-    return (
-        state.get("review_status") in {"approved", "write_approved"}
-        and state.get("next_action") == "promote"
-    )
+    return state.review_status in {"approved", "write_approved"} and state.next_action == "promote"
 
 
 CONDITIONS: dict[str, Condition] = {

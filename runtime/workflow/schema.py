@@ -17,12 +17,46 @@ EXECUTABLE_NODE_TYPES = frozenset(
 )
 
 
+class FailurePolicy(BaseModel):
+    """Node-level failure handling strategy."""
+
+    model_config = ConfigDict(frozen=True)
+
+    on_error: str = (
+        "fail_workflow"  # retry, skip, fallback, fail_workflow, wait_for_user, compensate
+    )
+    max_attempts: int = 1
+    retry_backoff_seconds: float = 0.0
+    fallback_node: str | None = None
+    timeout_seconds: float | None = None
+
+    @field_validator("on_error")
+    @classmethod
+    def validate_on_error(cls, value: str) -> str:
+        allowed = {"retry", "skip", "fallback", "fail_workflow", "wait_for_user", "compensate"}
+        normalized = value.strip()
+        if normalized not in allowed:
+            raise ValueError(
+                f"不支持的 failure_policy.on_error: {normalized}; "
+                f"支持: {', '.join(sorted(allowed))}"
+            )
+        return normalized
+
+    @field_validator("max_attempts")
+    @classmethod
+    def validate_max_attempts(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("max_attempts 必须 >= 1")
+        return value
+
+
 class NodeSpec(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     id: str = Field(min_length=1)
     type: str = Field(min_length=1)
     handler: str = Field(min_length=1)
+    failure_policy: FailurePolicy | None = None
 
     @field_validator("type")
     @classmethod

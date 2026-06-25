@@ -83,6 +83,12 @@ DIFF_FILE = "diff.md"
 QUALITY_CHECK_FILE = "quality-check.json"
 
 
+def resolve_prd_path(repo_root: Path, prd_path: str) -> Path:
+    """Resolve a PRD path: absolute paths used as-is; relative paths under repo_root."""
+    path = Path(prd_path)
+    return path if path.is_absolute() else repo_root / path
+
+
 def now_iso() -> str:
     return datetime.now(tz=UTC).replace(microsecond=0).isoformat()
 
