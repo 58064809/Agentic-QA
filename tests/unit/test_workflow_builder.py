@@ -11,7 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from runtime.graph.state import QAWorkflowState, from_graph_state, to_graph_state  # noqa: E402
 from runtime.workflow.builder import build_graph_from_spec  # noqa: E402
-from runtime.workflow.schema import EdgeSpec, NodeSpec, WorkflowSpec  # noqa: E402
+from runtime.workflow.schema import (  # noqa: E402
+    EXECUTABLE_NODE_TYPES,
+    EdgeSpec,
+    NodeSpec,
+    WorkflowSpec,
+)
 
 
 def node_a(state: QAWorkflowState) -> QAWorkflowState:
@@ -67,6 +72,28 @@ def test_build_graph_rejects_unknown_handler():
 
     with pytest.raises(ValueError, match="handler 不存在或不可调用"):
         build_graph_from_spec(spec, REPO_ROOT)
+
+
+@pytest.mark.parametrize("node_type", sorted(EXECUTABLE_NODE_TYPES))
+def test_build_graph_accepts_executable_node_types(node_type):
+    spec = workflow_spec(
+        nodes=[
+            NodeSpec(id="a", type=node_type, handler="test_workflow_builder.node_a"),
+        ],
+        edges=[EdgeSpec(source="start", target="a"), EdgeSpec(source="a", target="end")],
+    )
+
+    graph = build_graph_from_spec(spec, REPO_ROOT)
+    state = from_graph_state(
+        graph.invoke(to_graph_state(qa_state()), config=graph_config(f"type-{node_type}"))
+    )
+
+    assert state.executed_nodes == ["node_a"]
+
+
+def test_workflow_spec_rejects_unsupported_node_type():
+    with pytest.raises(ValidationError, match="unsupported node type"):
+        NodeSpec(id="a", type="shell", handler="test_workflow_builder.node_a")
 
 
 def test_build_graph_rejects_unknown_condition():

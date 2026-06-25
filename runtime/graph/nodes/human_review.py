@@ -6,7 +6,7 @@ from typing import Any
 from langgraph.types import interrupt
 
 from runtime.graph.state import QAWorkflowState
-from runtime.review import ReviewIntent, process_review_gate
+from runtime.review import ReviewDecision, ReviewIntent, process_review_gate
 from runtime.review.intent_parser import parse_review_decision
 
 ACTION_ALIASES = {
@@ -88,6 +88,33 @@ def _review_intent_to_state(intent: ReviewIntent) -> tuple[str, str, str]:
     if intent == ReviewIntent.REVISE:
         return "needs_changes", "needs_changes", "revise"
     return "needs_human_review", "interrupted", "wait_for_review"
+
+
+def _decision_from_action(
+    action: str,
+    *,
+    target_artifact: str | None,
+    reason: str,
+) -> ReviewDecision | None:
+    intent_by_action = {
+        "approve": ReviewIntent.APPROVE,
+        "reject": ReviewIntent.REJECT,
+        "revise": ReviewIntent.REVISE,
+        "show_diff": ReviewIntent.SHOW_DIFF,
+        "hold": ReviewIntent.HOLD,
+        "clarify": ReviewIntent.CLARIFY,
+    }
+    intent = intent_by_action.get(action)
+    if intent is None:
+        return None
+    return ReviewDecision(
+        intent=intent,
+        target_artifact=target_artifact,  # type: ignore[arg-type]
+        confidence=1.0,
+        reason=reason,
+        revision_request=reason if intent == ReviewIntent.REVISE else None,
+        requires_confirmation=intent == ReviewIntent.CLARIFY,
+    )
 
 
 def human_review_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
@@ -190,6 +217,13 @@ def human_review_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowStat
 
     if candidate_target and parsed_decision.target_artifact != candidate_target:
         parsed_decision = parsed_decision.model_copy(update={"target_artifact": candidate_target})
+    action_decision = _decision_from_action(
+        action,
+        target_artifact=parsed_decision.target_artifact,
+        reason=review_notes or user_input or action,
+    )
+    if action_decision is not None and parsed_decision.intent == ReviewIntent.CLARIFY:
+        parsed_decision = action_decision
     result = process_review_gate(
         repo_root=repo_root,
         prd_path=state.prd_path,

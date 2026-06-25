@@ -4,6 +4,18 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+EXECUTABLE_NODE_TYPES = frozenset(
+    {
+        "python",
+        "rag",
+        "agent",
+        "validator",
+        "writer",
+        "review_gate",
+        "tool",
+    }
+)
+
 
 class NodeSpec(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -11,6 +23,15 @@ class NodeSpec(BaseModel):
     id: str = Field(min_length=1)
     type: str = Field(min_length=1)
     handler: str = Field(min_length=1)
+
+    @field_validator("type")
+    @classmethod
+    def validate_node_type(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized not in EXECUTABLE_NODE_TYPES:
+            supported = ", ".join(sorted(EXECUTABLE_NODE_TYPES))
+            raise ValueError(f"unsupported node type: {normalized}; supported: {supported}")
+        return normalized
 
 
 class EdgeSpec(BaseModel):

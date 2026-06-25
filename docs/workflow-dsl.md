@@ -36,8 +36,8 @@ edges:
 
 - `id`、`name`、`version`、`nodes`、`edges` 为必填字段。
 - `version` 必须为大于等于 1 的整数。
-- `nodes[].type` 当前只支持 `python`。
-- `nodes[].handler` 必须是可动态 import 的 Python callable。
+- `nodes[].type` 当前支持 `python`、`rag`、`agent`、`validator`、`writer`、`review_gate`、`tool`。
+- `nodes[].handler` 必须是可动态 import 的 Python callable；非 `python` 类型先作为语义化节点类型进入 DSL，Runtime 仍通过 handler 绑定实际执行逻辑。
 - `edges[].from` 可以是 `start` 或已声明 node id。
 - `edges[].to` 可以是 `end` 或已声明 node id。
 - 同一 workflow 不允许重复 `node id` 或重复 `edge`。
@@ -322,6 +322,7 @@ edges:
 
 | 节点类型 | 说明 |
 |---|---|
+| `python` | 直接绑定 Python callable 的通用节点，兼容当前 MVP Runtime 节点实现 |
 | `tool` | 确定性工具节点，例如读取文件、创建确认记录、执行测试 |
 | `rag` | RAG 检索节点，负责文档加载、检索、筛选和上下文构建 |
 | `agent` | LLM Agent 节点，负责需求分析、用例生成、失败分析、报告生成等任务 |

@@ -15,7 +15,7 @@ from runtime.graph.state import (
 )
 from runtime.workflow.conditions import DEFAULT_CONDITION, get_condition
 from runtime.workflow.registry import call_handler, import_handler
-from runtime.workflow.schema import EdgeSpec, WorkflowSpec
+from runtime.workflow.schema import EXECUTABLE_NODE_TYPES, EdgeSpec, WorkflowSpec
 
 
 def _graph_node_name(node_id: str) -> str:
@@ -47,8 +47,11 @@ def _validate_workflow(spec: WorkflowSpec) -> None:
     if len(node_ids) != len(spec.nodes):
         raise ValueError(f"Workflow {spec.id} 存在重复 node id")
     for node in spec.nodes:
-        if node.type != "python":
-            raise ValueError(f"Workflow {spec.id} 仅支持 python node: {node.id}")
+        if node.type not in EXECUTABLE_NODE_TYPES:
+            supported = ", ".join(sorted(EXECUTABLE_NODE_TYPES))
+            raise ValueError(
+                f"Workflow {spec.id} node type unsupported: {node.type}; " f"supported: {supported}"
+            )
         if not node.handler:
             raise ValueError(f"Workflow {spec.id} node 缺少 handler: {node.id}")
         import_handler(node.handler)

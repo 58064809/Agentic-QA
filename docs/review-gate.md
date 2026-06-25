@@ -120,3 +120,15 @@ run_id: ""
 - 不能生成 `approved` review 记录。
 - `promote_artifacts` 必须继续拒绝没有 `approved` review 记录的 run。
 - Chat / Bot / CLI 生产入口不得传入该开关。
+
+## CLI Natural Publish
+
+用户在 CLI 自然语言入口表达“通过并发布”时，Runtime 必须按状态拆成确定性步骤：
+
+1. 如果存在 matching PRD 的 interrupted run，先用 `Command(resume=decision)` 恢复该 run，并走 `human_review_node -> process_review_gate()`。
+2. resume 成功进入 `approved` 后，才允许调用独立 `promote_artifacts()` 发布正式产物。
+3. 如果不存在 interrupted run，但已有 `approved` review 记录，可以直接执行 `promote_artifacts()`。
+4. 如果 latest run 仍是 `needs_human_review`，必须先写入 Review Gate approve 记录，再执行 promote；不能绕过 Review Gate 直接发布。
+5. “通过并发布”可以在一条 CLI 命令内完成，但运行记录中必须保留 approve/resume 与 promote 两个确定性阶段的痕迹。
+
+如果自然语言发布请求没有明确目标 artifact，且当前 run 包含多个候选产物，CLI 必须进入 clarify，不得默认发布全部。提示必须包含候选产物列表，并要求用户选择“只发布测试用例”“只发布需求分析”或“全部发布”。

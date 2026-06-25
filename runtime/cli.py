@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import sys
@@ -127,18 +128,114 @@ def _read_latest_run_id(workspace: PRDWorkspace) -> str | None:
     return str(run_id) if run_id else None
 
 
+def _read_recorded_run_result(repo_root: Path, run_id: str) -> dict[str, object]:
+    state_path = repo_root / ".runtime" / "runs" / run_id / "run-state.json"
+    if not state_path.is_file():
+        return {}
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    result = payload.get("result")
+    return result if isinstance(result, dict) else {}
+
+
+def _latest_recorded_run_for_prd(
+    repo_root: Path,
+    prd_rel: str,
+    *,
+    run_status: str | None = None,
+    review_status: str | None = None,
+) -> str | None:
+    runs_root = repo_root / ".runtime" / "runs"
+    if not runs_root.is_dir():
+        return None
+    candidates: list[tuple[float, str]] = []
+    for state_path in runs_root.glob("*/run-state.json"):
+        result = _read_recorded_run_result(repo_root, state_path.parent.name)
+        if result.get("prd_path") != prd_rel:
+            continue
+        if run_status and result.get("run_status") != run_status:
+            continue
+        if review_status and result.get("review_status") != review_status:
+            continue
+        candidates.append((state_path.stat().st_mtime, state_path.parent.name))
+    if not candidates:
+        return None
+    return max(candidates)[1]
+
+
+def _latest_run_id_for_prd(repo_root: Path, prd_rel: str) -> str | None:
+    workspace = PRDWorkspace(repo_root / prd_rel)
+    return _read_latest_run_id(workspace) or _latest_recorded_run_for_prd(repo_root, prd_rel)
+
+
+def _is_recorded_run_interrupted(repo_root: Path, run_id: str) -> bool:
+    result = _read_recorded_run_result(repo_root, run_id)
+    return result.get("run_status") == "interrupted" or (
+        result.get("review_status") == "needs_human_review"
+        and result.get("next_action") == "wait_for_review"
+    )
+
+
 def _extract_run_id(value: str) -> str | None:
     match = RUN_ID_RE.search(value)
     return match.group(0) if match else None
 
 
-def _artifact_keys_from_text(value: str) -> list[str]:
+def _explicit_artifact_keys_from_text(value: str) -> list[str]:
+    normalized_value = value.lower()
     keys = [
         key
         for key, aliases in ARTIFACT_ALIASES.items()
-        if any(alias.lower() in value.lower() for alias in aliases)
+        if any(alias.lower() in normalized_value for alias in aliases)
     ]
-    return keys or ["requirement_analysis", "testcases"]
+    if "娴嬭瘯" in value or "鐢ㄤ緥" in value:
+        keys.append("testcases")
+    if "\u95c7\u20ac\u59f9" in value and "\u9352\u55d8\u701d" in value:
+        keys.append("requirement_analysis")
+    if "\u5a34\u5b32\u762f\u9422\u3124\u7de5" in value or "\u9422\u3124\u7de5" in value:
+        keys.append("testcases")
+    keys = list(dict.fromkeys(keys))
+    return keys
+
+
+def _artifact_keys_from_text(value: str) -> list[str]:
+    return _explicit_artifact_keys_from_text(value) or ["requirement_analysis", "testcases"]
+
+
+def _publish_all_requested(value: str) -> bool:
+    return any(keyword in value for keyword in ("全部", "都通过", "都发布", "all"))
+
+
+def _artifact_keys_from_recorded_run(repo_root: Path, run_id: str | None) -> list[str]:
+    if not run_id:
+        return []
+    result = _read_recorded_run_result(repo_root, run_id)
+    output_paths = result.get("output_paths")
+    if isinstance(output_paths, dict) and output_paths:
+        return [str(key) for key in output_paths]
+    draft_artifacts = result.get("draft_artifacts")
+    if isinstance(draft_artifacts, dict) and draft_artifacts:
+        return [str(key) for key in draft_artifacts]
+    artifacts = result.get("artifacts")
+    if isinstance(artifacts, list):
+        keys = [
+            str(item.get("name"))
+            for item in artifacts
+            if isinstance(item, dict) and item.get("name")
+        ]
+        if keys:
+            return keys
+    return []
+
+
+def _clarify_multi_artifact_message(artifact_keys: list[str]) -> str:
+    readable = "、".join(artifact_keys)
+    return (
+        f"检测到本次 run 包含多个候选产物：{readable}。\n"
+        "请明确：\n"
+        "1. 只发布测试用例\n"
+        "2. 只发布需求分析\n"
+        "3. 全部发布"
+    )
 
 
 def _task_type_from_artifact_keys(keys: list[str]) -> str:
@@ -324,11 +421,58 @@ def _run_natural_promote_request(
         raise ValueError("未指定 PRD 工作区，且没有可复用的上次工作区。")
     prd_rel = _ensure_prd_workspace(repo_root, prd_path)
     run_id = _extract_run_id(user_input)
-    artifact_keys = _artifact_keys_from_text(user_input)
+    explicit_artifact_keys = _explicit_artifact_keys_from_text(user_input)
+    selected_run_id = run_id or _latest_run_id_for_prd(repo_root, prd_rel)
+    interrupted_run_id = (
+        selected_run_id
+        if selected_run_id and _is_recorded_run_interrupted(repo_root, selected_run_id)
+        else _latest_recorded_run_for_prd(
+            repo_root,
+            prd_rel,
+            run_status="interrupted",
+            review_status="needs_human_review",
+        )
+    )
+    candidate_run_id = interrupted_run_id or selected_run_id
+    run_artifact_keys = _artifact_keys_from_recorded_run(repo_root, candidate_run_id)
+    if _publish_all_requested(user_input):
+        artifact_keys = run_artifact_keys or ["requirement_analysis", "testcases"]
+    else:
+        artifact_keys = (
+            explicit_artifact_keys or run_artifact_keys or _artifact_keys_from_text(user_input)
+        )
+    needs_artifact_clarify = (
+        not explicit_artifact_keys
+        and not _publish_all_requested(user_input)
+        and len(artifact_keys) > 1
+    )
+    if needs_artifact_clarify:
+        raise ValueError(_clarify_multi_artifact_message(artifact_keys))
+
+    if interrupted_run_id:
+        target_artifact = artifact_keys[0] if len(artifact_keys) == 1 else "all"
+        resumed = resume_recorded_workflow(
+            interrupted_run_id,
+            action="approve",
+            user_input=user_input,
+            reviewed_by="cli",
+            target_artifact=target_artifact,
+            repo_root=repo_root,
+        )
+        if not resumed.success or resumed.review_status != "approved":
+            return prd_rel, resumed
+        result = promote_artifacts(
+            prd_rel,
+            interrupted_run_id,
+            repo_root=repo_root,
+            task_type=_task_type_from_artifact_keys(list(resumed.output_paths) or artifact_keys),
+        )
+        return prd_rel, result
+
     result = _run_promote(
         repo_root,
         prd_rel,
-        run_id,
+        selected_run_id,
         artifact_keys,
         source_message=user_input,
         natural_language=True,

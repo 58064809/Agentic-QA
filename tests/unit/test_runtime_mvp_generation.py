@@ -587,6 +587,91 @@ def test_cli_natural_language_promote_approves_and_publishes_testcases(tmp_path)
     assert review["promoted_run_id"] == result.run_id
 
 
+def test_cli_natural_language_promote_resumes_interrupted_run_before_promote(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_analysis_and_testcases_workflow(
+        "璇峰垎鏋愰渶姹傚苟鐢熸垚娴嬭瘯鐢ㄤ緥",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+    )
+
+    prd_rel, promoted = cli._run_natural_promote_request(
+        "娴嬭瘯鐢ㄤ緥閫氳繃锛屽彂甯冩寮忎骇鐗?prd/demo-requirement",
+        repo_root,
+    )
+
+    assert prd_rel == "prd/demo-requirement"
+    assert promoted.success
+    assert promoted.review_status == "confirmed"
+    assert promoted.output_paths == {"testcases": "prd/demo-requirement/artifacts/testcases.md"}
+    assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").is_file()
+    review = yaml.safe_load(
+        (repo_root / "prd/demo-requirement/reviews/testcases.review.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert review["status"] == "confirmed"
+    assert review["decision"] == "promoted"
+    assert review["promoted_run_id"] == result.run_id
+    review_events = repo_root / ".runtime" / "runs" / (result.run_id or "") / "review-events.jsonl"
+    assert review_events.is_file()
+    assert "cli" in review_events.read_text(encoding="utf-8")
+
+
+def test_cli_natural_language_promote_clarifies_multi_artifact_without_target(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    run_mvp_analysis_and_testcases_workflow(
+        "璇峰垎鏋愰渶姹傚苟鐢熸垚娴嬭瘯鐢ㄤ緥",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        cli._run_natural_promote_request(
+            "閫氳繃锛屽彂甯冩寮忎骇鐗?prd/demo-requirement",
+            repo_root,
+        )
+
+    message = str(excinfo.value)
+    assert "requirement_analysis" in message
+    assert "testcases" in message
+    assert "只发布测试用例" in message
+    assert "只发布需求分析" in message
+    assert "全部发布" in message
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
+
+
+def test_cli_natural_language_promote_all_publishes_multi_artifact(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_analysis_and_testcases_workflow(
+        "璇峰垎鏋愰渶姹傚苟鐢熸垚娴嬭瘯鐢ㄤ緥",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+    )
+
+    prd_rel, promoted = cli._run_natural_promote_request(
+        "全部通过，全部发布 prd/demo-requirement",
+        repo_root,
+    )
+
+    assert prd_rel == "prd/demo-requirement"
+    assert promoted.success
+    assert promoted.review_status == "confirmed"
+    assert promoted.output_paths == {
+        "requirement_analysis": "prd/demo-requirement/artifacts/requirement-analysis.md",
+        "testcases": "prd/demo-requirement/artifacts/testcases.md",
+    }
+    assert (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").is_file()
+    assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").is_file()
+    review = yaml.safe_load(
+        (repo_root / "prd/demo-requirement/reviews/testcases.review.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert review["promoted_run_id"] == result.run_id
+
+
 def test_cli_promote_command_publishes_selected_artifact(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
     result = run_mvp_analysis_and_testcases_workflow(

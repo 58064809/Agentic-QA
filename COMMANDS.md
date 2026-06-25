@@ -343,3 +343,26 @@ run-20260616-060850-0ec07a 的测试用例通过，发布正式产物 prd/demo-r
 - 下一步建议
 
 Chat 中不粘贴完整大文件，不用完整 diff 代替文件路径和验收结果。
+## CLI-1 自然语言发布决策顺序
+
+当用户输入“测试用例通过，发布正式产物”这类自然语言发布请求时，CLI 不应把它简单等同于显式 `promote` 子命令。Runtime 必须按当前 run / review 状态拆解执行：
+
+1. 存在 matching PRD 的 `interrupted` run 时，优先执行 `resume_recorded_workflow()`，通过 `Command(resume=decision)` 回到 interrupt checkpoint。
+2. resume 后只有进入 `approved`，才能继续调用确定性 `promote_artifacts()`。
+3. 如果不存在 interrupted run，但目标 artifact 已有 `approved` review 记录，可以直接 promote。
+4. 如果 latest run 仍是 `needs_human_review`，必须先经 `process_review_gate()` 写入 approve 记录，再 promote。
+5. 一条自然语言命令可以完成 approve + promote，但内部必须拆成 Review Gate 和 promote 两个阶段，并保留运行记录。
+
+## CLI-2 多产物发布澄清
+
+当自然语言发布请求没有明确目标 artifact，而当前 run 同时包含 `requirement_analysis` 和 `testcases` 等多个候选产物时，CLI 必须停止发布并提示用户明确选择：
+
+```text
+检测到本次 run 包含多个候选产物：requirement_analysis、testcases。
+请明确：
+1. 只发布测试用例
+2. 只发布需求分析
+3. 全部发布
+```
+
+只有用户明确选择单个产物或“全部发布”后，Runtime 才能继续执行 Review Gate approve 与 `promote_artifacts()`。
