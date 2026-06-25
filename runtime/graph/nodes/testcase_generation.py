@@ -9,7 +9,7 @@ def testcase_generation_node(state: QAWorkflowState) -> QAWorkflowState:
         return state
 
     source_lines = "\n".join(f"- `{path}`" for path in sorted(state.loaded_files))
-    mode = "approve-write" if state.approve_write else "dry-run"
+    mode = "debug-preview-write" if state.debug_approve_preview_write else "dry-run"
     state.draft_artifact = f"""---
 status: needs_human_review
 human_review_required: true

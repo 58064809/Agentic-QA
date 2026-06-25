@@ -53,25 +53,13 @@ def _decision_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {"action": str(value)}
 
 
-def _normalize_target_artifact(
-    *, action: str, target_artifact: Any, artifact_keys: list[str]
-) -> tuple[str | None, str | None]:
+def _validate_target_artifact_hint(*, target_artifact: Any, artifact_keys: list[str]) -> str | None:
     target = str(target_artifact or "").strip()
-    if len(artifact_keys) == 1:
-        if not target:
-            return artifact_keys[0], None
-        if target in {artifact_keys[0], ALL_ARTIFACTS_TARGET}:
-            return target, None
-        return None, f"target_artifact 不在候选产物中: {target}"
-
-    if action in {"reject", "show_diff", "hold", "clarify"} and not target:
-        return ALL_ARTIFACTS_TARGET, None
-
     if not target:
-        return None, "多产物 Review Gate 需要明确 target_artifact 或 all。"
-    if target == ALL_ARTIFACTS_TARGET or target in artifact_keys:
-        return target, None
-    return None, f"target_artifact 不在候选产物中: {target}"
+        return None
+    if target != ALL_ARTIFACTS_TARGET and target not in artifact_keys:
+        return f"target_artifact 不在候选产物中: {target}"
+    return None
 
 
 def _keep_waiting_for_review(state: QAWorkflowState, message: str | None = None) -> None:
@@ -107,18 +95,24 @@ def human_review_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowStat
     if state.errors or state.quality_errors:
         return state
 
-    if state.approve_write:
+    debug_preview_write = state.debug_approve_preview_write or state.approve_write
+    if debug_preview_write:
         state.review_status = "write_approved"
         state.run_status = "write_approved"
         state.next_action = "promote"
+        state.debug_approve_preview_write = True
+        state.approve_write = True
         state.human_review = {
             "status": "write_approved",
             "decision": {
-                "action": "approve_write",
-                "source": "approve_write",
+                "action": "debug_approve_preview_write",
+                "source": "debug_approve_preview_write",
             },
             "reviewed_by": None,
-            "review_notes": "approve_write 已授权 Runtime 写入草稿",
+            "review_notes": (
+                "debug_approve_preview_write only writes candidate preview; "
+                "it cannot confirm or promote artifacts."
+            ),
             "interrupt": None,
         }
         return state
@@ -175,8 +169,7 @@ def human_review_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowStat
     artifact_keys = list(payload["artifact_keys"])
     parsed_decision = parse_review_decision(user_input)
     candidate_target = decision.get("target_artifact") or parsed_decision.target_artifact
-    target_artifact, target_error = _normalize_target_artifact(
-        action=action,
+    target_error = _validate_target_artifact_hint(
         target_artifact=candidate_target,
         artifact_keys=artifact_keys,
     )
@@ -195,8 +188,8 @@ def human_review_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowStat
         }
         return state
 
-    if target_artifact and parsed_decision.target_artifact is None:
-        parsed_decision = parsed_decision.model_copy(update={"target_artifact": target_artifact})
+    if candidate_target and parsed_decision.target_artifact != candidate_target:
+        parsed_decision = parsed_decision.model_copy(update={"target_artifact": candidate_target})
     result = process_review_gate(
         repo_root=repo_root,
         prd_path=state.prd_path,

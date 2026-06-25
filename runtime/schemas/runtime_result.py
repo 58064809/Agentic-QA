@@ -25,6 +25,7 @@ class RuntimeResult:
     output_path: str | None
     dry_run: bool
     approve_write: bool
+    debug_approve_preview_write: bool
     use_llm: bool
     max_llm_calls: int
     llm: dict[str, Any]
@@ -64,6 +65,7 @@ class RuntimeResult:
             output_path=state.output_path,
             dry_run=state.dry_run,
             approve_write=state.approve_write,
+            debug_approve_preview_write=state.debug_approve_preview_write,
             use_llm=state.use_llm,
             max_llm_calls=state.max_llm_calls,
             llm=dict(state.llm),

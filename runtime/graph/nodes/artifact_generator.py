@@ -33,7 +33,7 @@ def _build_draft(
     extra_sections: str = "",
 ) -> str:
     """生成统一格式的产物草稿。"""
-    mode = "approve-write" if state.approve_write else "dry-run"
+    mode = "debug-preview-write" if state.debug_approve_preview_write else "dry-run"
     artifact_type = (state.intent or "unknown") + "_draft"
     description = INTENT_DESCRIPTIONS.get(state.intent or "", state.intent or "unknown")
 

@@ -52,6 +52,7 @@ class GraphQAWorkflowState(TypedDict, total=False):
     output_path: str | None
     dry_run: bool
     approve_write: bool
+    debug_approve_preview_write: bool
     use_llm: bool
     fast_llm: bool
     max_llm_calls: int
@@ -93,6 +94,7 @@ class QAWorkflowState:
     output_path: str | None = None
     dry_run: bool = True
     approve_write: bool = False
+    debug_approve_preview_write: bool = False
     use_llm: bool = False
     fast_llm: bool = False
     max_llm_calls: int = 0
@@ -143,6 +145,7 @@ def to_graph_state(state: QAWorkflowState) -> GraphQAWorkflowState:
         "output_path": state.output_path,
         "dry_run": state.dry_run,
         "approve_write": state.approve_write,
+        "debug_approve_preview_write": state.debug_approve_preview_write,
         "use_llm": state.use_llm,
         "fast_llm": state.fast_llm,
         "max_llm_calls": state.max_llm_calls,
@@ -210,6 +213,12 @@ def from_graph_state(graph_state: GraphQAWorkflowState) -> QAWorkflowState:
         output_path=graph_state.get("output_path"),
         dry_run=bool(graph_state.get("dry_run", True)),
         approve_write=bool(graph_state.get("approve_write", False)),
+        debug_approve_preview_write=bool(
+            graph_state.get(
+                "debug_approve_preview_write",
+                graph_state.get("approve_write", False),
+            )
+        ),
         use_llm=bool(graph_state.get("use_llm", False)),
         fast_llm=bool(graph_state.get("fast_llm", False)),
         max_llm_calls=int(graph_state.get("max_llm_calls", 0) or 0),

@@ -181,15 +181,18 @@ def run_langgraph_testcase_generation_workflow(
     *,
     repo_root: Path | None = None,
     approve_write: bool = False,
+    debug_approve_preview_write: bool = False,
     record_run: bool = True,
 ) -> RuntimeResult:
     root = (repo_root or default_repo_root()).resolve()
     run_id, thread_id = create_run_identity()
+    preview_write = debug_approve_preview_write or approve_write
     initial_state = QAWorkflowState(
         user_input=user_input,
         prd_path=Path(prd_path).as_posix(),
-        dry_run=not approve_write,
-        approve_write=approve_write,
+        dry_run=not preview_write,
+        approve_write=preview_write,
+        debug_approve_preview_write=preview_write,
         orchestration="LangGraph StateGraph",
         run_id=run_id if record_run else None,
         thread_id=thread_id,

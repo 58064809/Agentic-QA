@@ -86,6 +86,7 @@ def run_workflow_by_id(
     *,
     repo_root: Path | None = None,
     approve_write: bool = False,
+    debug_approve_preview_write: bool = False,
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
@@ -94,12 +95,14 @@ def run_workflow_by_id(
     run_id, thread_id = create_run_identity()
     app_config = load_app_config(root)
     config = OpenAICompatibleConfig.from_app_config(app_config.llm)
+    preview_write = debug_approve_preview_write or approve_write
 
     initial_state = QAWorkflowState(
         user_input=user_input,
         prd_path=Path(prd_path).as_posix(),
-        dry_run=not approve_write,
-        approve_write=approve_write,
+        dry_run=not preview_write,
+        approve_write=preview_write,
+        debug_approve_preview_write=preview_write,
         use_llm=use_llm,
         llm=config.to_metadata(enabled=use_llm),
         orchestration=f"YAML WorkflowSpec: {workflow_id}",

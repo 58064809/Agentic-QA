@@ -152,6 +152,29 @@ def test_multifact_without_target_enters_clarify(tmp_path):
     assert result.decision.requires_confirmation
 
 
+def test_process_review_gate_defaults_reject_without_target_to_all(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+
+    result = process_review_gate(
+        repo_root=repo_root,
+        prd_path="prd/demo-requirement",
+        run_id="run-1",
+        user_input="涓嶉€氳繃",
+        artifact_keys=["requirement_analysis", "testcases"],
+        decision=ReviewDecision(
+            intent=ReviewIntent.REJECT,
+            confidence=1,
+            reason="reject all candidates",
+        ),
+    )
+
+    assert result.success
+    assert result.decision.target_artifact == "all"
+    assert result.target_artifacts == ["requirement_analysis", "testcases"]
+    assert read_review(repo_root, "requirement-analysis.review.yml")["status"] == "rejected"
+    assert read_review(repo_root, "testcases.review.yml")["status"] == "rejected"
+
+
 def test_explicit_review_decision_schema_is_pydantic():
     decision = ReviewDecision(
         intent=ReviewIntent.APPROVE,

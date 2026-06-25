@@ -62,6 +62,7 @@ target_artifact: ""
 - 多产物 `reject` 可省略 `target_artifact`，Runtime 会按 `all` 记录。
 - 非法 `target_artifact` 不允许进入 `approved` 或 `promote`。
 - `action` 只能作为外部入口的结构化提示；最终审核语义必须由 `process_review_gate()` 解析和校验。
+- `human_review_node` 只负责 interrupt payload 与 resume payload 的基础合法性检查；Review 语义、target 归一化和状态迁移以 `process_review_gate()` 为准。
 
 ## 确认意图类型
 
@@ -107,3 +108,15 @@ run_id: ""
 - CLI 自然语言确认和 LangGraph interrupt resume 必须复用同一套 `process_review_gate()` 语义。
 - 所有确认动作必须记录原始用户输入、识别意图、确认决策、确认人、确认时间、意见和下一步动作。
 - Chat / Bot / CLI 中的确认语义必须落到结构化确认记录，不能只停留在对话文本里。
+
+## Debug Preview Write
+
+`debug_approve_preview_write` 仅允许用于本地 debug / test 场景，用来跳过 interrupt 并写入 `runs/<run-id>/artifact-preview.md` 候选预览。
+
+该开关不得作为生产 Review Gate 替代路径：
+
+- 只能写候选 preview，不能写正式 `artifacts/`。
+- 不能设置 `confirmed`。
+- 不能生成 `approved` review 记录。
+- `promote_artifacts` 必须继续拒绝没有 `approved` review 记录的 run。
+- Chat / Bot / CLI 生产入口不得传入该开关。

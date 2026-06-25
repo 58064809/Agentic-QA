@@ -58,6 +58,23 @@ def _target_artifacts(decision: ReviewDecision, artifact_keys: list[str]) -> lis
     return []
 
 
+def _normalize_decision_target(
+    decision: ReviewDecision, artifact_keys: list[str]
+) -> ReviewDecision:
+    if decision.target_artifact:
+        return decision
+    if len(artifact_keys) == 1:
+        return decision.model_copy(update={"target_artifact": artifact_keys[0]})
+    if decision.intent in {
+        ReviewIntent.REJECT,
+        ReviewIntent.SHOW_DIFF,
+        ReviewIntent.HOLD,
+        ReviewIntent.CLARIFY,
+    }:
+        return decision.model_copy(update={"target_artifact": "all"})
+    return decision
+
+
 def _write_review_decision(
     workspace: PRDWorkspace,
     artifact_key: str,
@@ -113,7 +130,10 @@ def process_review_gate(
             errors=["未识别目标产物。"],
         )
 
-    parsed = decision or parse_review_decision(user_input, config=config)
+    parsed = _normalize_decision_target(
+        decision or parse_review_decision(user_input, config=config),
+        available_artifacts,
+    )
     target_artifacts = _target_artifacts(parsed, available_artifacts)
     if parsed.intent == ReviewIntent.SHOW_DIFF:
         diff_path = workspace.diff_path(run_id)

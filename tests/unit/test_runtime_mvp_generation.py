@@ -694,6 +694,52 @@ def test_mvp_approve_write_creates_analysis_and_testcases(tmp_path):
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
+def test_debug_approve_preview_write_never_confirms_or_promotes(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+
+    result = run_mvp_analysis_and_testcases_workflow(
+        "璇峰垎鏋愰渶姹傚苟鐢熸垚娴嬭瘯鐢ㄤ緥",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        debug_approve_preview_write=True,
+    )
+
+    assert result.success
+    assert result.wrote_file
+    assert result.approve_write is True
+    assert result.debug_approve_preview_write is True
+    assert result.review_status == "write_approved"
+    assert result.review_status != "confirmed"
+    assert result.human_review["decision"]["action"] == "debug_approve_preview_write"
+
+    metadata = yaml.safe_load(
+        (repo_root / "prd/demo-requirement/metadata.yml").read_text(encoding="utf-8")
+    )
+    assert metadata["status"] == "needs_human_review"
+    assert metadata["artifacts"]["requirement_analysis"]["status"] == "needs_human_review"
+    assert metadata["artifacts"]["testcases"]["status"] == "needs_human_review"
+
+    review = yaml.safe_load(
+        (repo_root / "prd/demo-requirement/reviews/testcases.review.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert review["status"] == "needs_human_review"
+    assert review["decision"] == ""
+
+    promoted = promote_mvp_artifacts(
+        "prd/demo-requirement",
+        result.run_id or "",
+        repo_root=repo_root,
+    )
+
+    assert not promoted.success
+    assert promoted.review_status != "confirmed"
+    assert any("approved" in error for error in promoted.errors)
+    assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
 def test_mvp_approve_write_writes_run_candidates_when_defaults_exist(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
     existing_analysis = repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md"

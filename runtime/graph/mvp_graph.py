@@ -225,6 +225,7 @@ def run_mvp_generation_workflow(
     task_type: str,
     repo_root: Path | None = None,
     approve_write: bool = False,
+    debug_approve_preview_write: bool = False,
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
@@ -233,12 +234,14 @@ def run_mvp_generation_workflow(
     app_config = load_app_config(root)
     config = OpenAICompatibleConfig.from_app_config(app_config.llm)
     max_llm_calls = 2 if task_type == TASK_MVP else 1
+    preview_write = debug_approve_preview_write or approve_write
     initial_state = QAWorkflowState(
         user_input=user_input,
         prd_path=Path(prd_path).as_posix(),
         task_type=task_type,
-        dry_run=not approve_write,
-        approve_write=approve_write,
+        dry_run=not preview_write,
+        approve_write=preview_write,
+        debug_approve_preview_write=preview_write,
         use_llm=use_llm,
         max_llm_calls=max_llm_calls,
         llm=config.to_metadata(enabled=use_llm),
@@ -308,6 +311,7 @@ def run_requirement_analysis_workflow(
     *,
     repo_root: Path | None = None,
     approve_write: bool = False,
+    debug_approve_preview_write: bool = False,
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
@@ -319,6 +323,7 @@ def run_requirement_analysis_workflow(
         prd_path=prd_path,
         repo_root=repo_root,
         approve_write=approve_write,
+        debug_approve_preview_write=debug_approve_preview_write,
         record_run=record_run,
         use_llm=use_llm,
     )
@@ -330,6 +335,7 @@ def run_mvp_testcase_generation_workflow(
     *,
     repo_root: Path | None = None,
     approve_write: bool = False,
+    debug_approve_preview_write: bool = False,
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
@@ -341,6 +347,7 @@ def run_mvp_testcase_generation_workflow(
         prd_path=prd_path,
         repo_root=repo_root,
         approve_write=approve_write,
+        debug_approve_preview_write=debug_approve_preview_write,
         record_run=record_run,
         use_llm=use_llm,
     )
@@ -352,6 +359,7 @@ def run_mvp_analysis_and_testcases_workflow(
     *,
     repo_root: Path | None = None,
     approve_write: bool = False,
+    debug_approve_preview_write: bool = False,
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
@@ -363,6 +371,7 @@ def run_mvp_analysis_and_testcases_workflow(
         prd_path=prd_path,
         repo_root=repo_root,
         approve_write=approve_write,
+        debug_approve_preview_write=debug_approve_preview_write,
         record_run=record_run,
         use_llm=use_llm,
     )
