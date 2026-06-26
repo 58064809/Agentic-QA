@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -132,14 +131,6 @@ def _import_markdown_requirement(
     write_yaml_mapping(metadata_path, metadata)
     print(f"📁 创建 PRD 工作区: {prd_rel} （来源: inline markdown）")
     return prd_rel
-
-
-_URL_RE = re.compile(r"https?://[^\s]+", re.IGNORECASE)
-
-
-def _looks_like_markdown_requirement(text: str) -> bool:
-    """Heuristic: if input looks like a markdown requirement (has headers), treat as inline."""
-    return bool(re.search(r"^#{1,3}\s", text, re.MULTILINE))
 
 
 def _import_feishu_url(repo_root: Path, url: str) -> str:

@@ -274,9 +274,9 @@ def _run_promote_command(args: list[str], repo_root: Path) -> int:
 
 
 def _run_workflow(
-    *,
     user_input: str,
     prd_path: str,
+    *,
     intent: str,
     repo_root: Path,
     session: object | None = None,
@@ -308,9 +308,9 @@ def _run_workflow(
             approve_write = approve_write or session.debug_approve_preview_write
 
     if intent == "requirement_analysis":
-        from runtime.graph.app import run_requirement_analysis_workflow
+        import runtime.cli as cli_api
 
-        return run_requirement_analysis_workflow(
+        return cli_api.run_requirement_analysis_workflow(
             user_input=user_input,
             prd_path=Path(prd_path),
             repo_root=repo_root,
@@ -319,9 +319,9 @@ def _run_workflow(
             use_llm=requirement_analysis_use_llm,
         )
     elif intent == "testcase_generation":
-        from runtime.graph.app import run_mvp_testcase_generation_workflow
+        import runtime.cli as cli_api
 
-        return run_mvp_testcase_generation_workflow(
+        return cli_api.run_mvp_testcase_generation_workflow(
             user_input=user_input,
             prd_path=Path(prd_path),
             repo_root=repo_root,
@@ -330,9 +330,9 @@ def _run_workflow(
             use_llm=testcase_generation_use_llm,
         )
     else:
-        from runtime.graph.app import run_mvp_analysis_and_testcases_workflow
+        import runtime.cli as cli_api
 
-        return run_mvp_analysis_and_testcases_workflow(
+        return cli_api.run_mvp_analysis_and_testcases_workflow(
             user_input=user_input,
             prd_path=Path(prd_path),
             repo_root=repo_root,

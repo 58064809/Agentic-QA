@@ -23,6 +23,7 @@ from runtime.cli.promoter import (
     _run_natural_promote_request,
     _run_promote_command,
     _run_resume_command,
+    _run_workflow,
 )
 from runtime.graph.app import (
     run_mvp_analysis_and_testcases_workflow,
@@ -59,52 +60,6 @@ def _import_feishu_url(repo_root: Path, url: str) -> str:
         title=title,
         source_url=url,
         source_type="feishu",
-    )
-
-
-def _run_workflow(
-    user_input: str,
-    prd_path: str,
-    *,
-    intent: str,
-    repo_root: Path,
-    session: object | None = None,
-    debug: bool = False,
-):
-    from runtime.config import load_app_config
-    from runtime.session import Session
-
-    app_config = load_app_config(repo_root)
-    llm_enabled = app_config.llm.enabled and not debug
-    approve_write = False
-    if isinstance(session, Session):
-        approve_write = session.debug_approve_preview_write
-
-    if intent == "requirement_analysis":
-        return run_requirement_analysis_workflow(
-            user_input=user_input,
-            prd_path=Path(prd_path),
-            repo_root=repo_root,
-            approve_write=approve_write,
-            record_run=True,
-            use_llm=llm_enabled and app_config.workflow.use_llm_for("requirement_analysis"),
-        )
-    if intent == "testcase_generation":
-        return run_mvp_testcase_generation_workflow(
-            user_input=user_input,
-            prd_path=Path(prd_path),
-            repo_root=repo_root,
-            approve_write=approve_write,
-            record_run=True,
-            use_llm=llm_enabled and app_config.workflow.use_llm_for("testcase_generation"),
-        )
-    return run_mvp_analysis_and_testcases_workflow(
-        user_input=user_input,
-        prd_path=Path(prd_path),
-        repo_root=repo_root,
-        approve_write=approve_write,
-        record_run=True,
-        use_llm=llm_enabled and app_config.workflow.use_llm_for("mvp_analysis_testcases"),
     )
 
 

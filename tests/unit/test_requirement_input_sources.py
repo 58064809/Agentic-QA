@@ -3,6 +3,7 @@ from __future__ import annotations
 import yaml
 
 import runtime.cli as cli
+from runtime.cli import importer, promoter
 
 
 def test_import_markdown_requirement_creates_prd_workspace(tmp_path):
@@ -40,6 +41,11 @@ def test_import_feishu_url_normalizes_to_requirement_markdown(tmp_path, monkeypa
 def test_inline_markdown_detection():
     assert cli._looks_like_markdown_requirement("# Title\n\n## Scope\n\n- item")
     assert not cli._looks_like_markdown_requirement("analyze prd/demo")
+    assert not hasattr(importer, "_looks_like_markdown_requirement")
+
+
+def test_cli_package_reexports_promoter_run_workflow():
+    assert cli._run_workflow is promoter._run_workflow
 
 
 def test_extract_prd_workspace_path_from_natural_language():
