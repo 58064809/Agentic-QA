@@ -91,6 +91,9 @@ class RagConfig:
     query_max_chars: int = DEFAULT_QUERY_MAX_CHARS
     warnings: tuple[str, ...] = ()
 
+    def __getitem__(self, key: str):
+        return getattr(self, key)
+
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> RagConfig:
         env = environ or os.environ

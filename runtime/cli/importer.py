@@ -7,7 +7,12 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from runtime.workspace import PRDWorkspace, default_metadata, write_yaml_mapping
+from runtime.workspace import (
+    PRDWorkspace,
+    default_metadata,
+    read_yaml_mapping,
+    write_yaml_mapping,
+)
 
 
 def _workspace_name(path: Path) -> str:
@@ -107,6 +112,7 @@ def _import_markdown_requirement(
     *,
     title: str = "manual-markdown-requirement",
     source_url: str | None = None,
+    source_type: str = "manual_markdown",
 ) -> str:
     """Create a PRD workspace from already-normalized Markdown text."""
     name = _safe_workspace_name(title)
@@ -116,8 +122,14 @@ def _import_markdown_requirement(
     input_dir = workspace_dir / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
     requirement_md = input_dir / "requirement.md"
-    requirement_md.write_text(markdown, encoding="utf-8")
+    requirement_md.write_text(markdown.rstrip() + "\n", encoding="utf-8")
     _init_workspace_metadata(workspace_dir, name)
+    metadata_path = PRDWorkspace(workspace_dir).metadata_path
+    metadata = read_yaml_mapping(metadata_path)
+    metadata["source_type"] = source_type
+    if source_url:
+        metadata["source_url"] = source_url
+    write_yaml_mapping(metadata_path, metadata)
     print(f"📁 创建 PRD 工作区: {prd_rel} （来源: inline markdown）")
     return prd_rel
 
@@ -138,9 +150,15 @@ def _import_feishu_url(repo_root: Path, url: str) -> str:
     if not _is_feishu_url(url):
         raise ValueError(f"不是飞书链接: {url}")
     document = _fetch_feishu_doc(url)
+    if isinstance(document, tuple):
+        title, content = document
+    else:
+        title = document.title
+        content = document.content
     return _import_markdown_requirement(
         repo_root,
-        document.content,
-        title=document.title,
+        content,
+        title=title,
         source_url=url,
+        source_type="feishu",
     )

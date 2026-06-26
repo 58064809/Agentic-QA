@@ -50,5 +50,5 @@ Promote / Revise / Wait
 
 - Primary graph path: `workflows/runtime/*.workflow.yml` -> `runtime.workflow.loader` -> `runtime.workflow.builder` -> LangGraph.
 - Facade entry points in `runtime.graph.app` must call the WorkflowSpec/MVP path for current workflows.
-- `runtime.graph.langgraph_app` is deprecated legacy compatibility for old tests and recorded runs only.
-- Legacy node files under `runtime/graph/nodes/` are marked as legacy-only and should not receive new runtime behavior.
+- No hard-coded graph compatibility path is kept in source.
+- Runtime graph behavior must be changed through WorkflowSpec YAML, workflow builder code, or current MVP nodes only.

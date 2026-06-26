@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from runtime.workspace import PRDWorkspace, read_yaml_mapping
+from runtime.workspace import ARTIFACT_SPECS, PRDWorkspace, read_yaml_mapping
 
 # ── 正则与常量 ────────────────────────────────────────────────
 
@@ -31,6 +31,11 @@ ARTIFACT_ALIASES: dict[str, tuple[str, ...]] = {
     "testcases": ("testcases", "testcase", "test-cases", "测试用例", "用例"),
     "qa_report": ("qa_report", "qa-report", "QA报告", "qa report"),
 }
+
+
+def _supported_artifact_keys(keys: list[str]) -> list[str]:
+    return [key for key in dict.fromkeys(keys) if key in ARTIFACT_SPECS]
+
 
 HELP_TEXT = """用法:
     agentic-qa "你的自然语言命令"
@@ -71,9 +76,9 @@ def _explicit_artifact_keys_from_text(value: str) -> list[str]:
         if any(alias.lower() in normalized_value for alias in aliases)
     ]
     # 中文字符回退
-    if "测试" in value or "用例" in value:
+    if "测试" in value or "用例" in value or "娴嬭瘯" in value or "鐢ㄤ緥" in value:
         keys.append("testcases")
-    if "需求" in value and "分析" in value:
+    if ("需求" in value and "分析" in value) or ("闇€姹" in value and "鍒嗘瀽" in value):
         keys.append("requirement_analysis")
     keys = list(dict.fromkeys(keys))
     return keys
@@ -93,10 +98,14 @@ def _artifact_keys_from_recorded_run(repo_root: Path, run_id: str | None) -> lis
     result = _read_recorded_run_result(repo_root, run_id)
     output_paths = result.get("output_paths")
     if isinstance(output_paths, dict) and output_paths:
-        return [str(key) for key in output_paths]
+        keys = _supported_artifact_keys([str(key) for key in output_paths])
+        if keys:
+            return keys
     draft_artifacts = result.get("draft_artifacts")
     if isinstance(draft_artifacts, dict) and draft_artifacts:
-        return [str(key) for key in draft_artifacts]
+        keys = _supported_artifact_keys([str(key) for key in draft_artifacts])
+        if keys:
+            return keys
     artifacts = result.get("artifacts")
     if isinstance(artifacts, list):
         keys = [
@@ -104,6 +113,7 @@ def _artifact_keys_from_recorded_run(repo_root: Path, run_id: str | None) -> lis
             for item in artifacts
             if isinstance(item, dict) and item.get("name")
         ]
+        keys = _supported_artifact_keys(keys)
         if keys:
             return keys
     return []

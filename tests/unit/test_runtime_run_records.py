@@ -137,7 +137,7 @@ def test_run_record_markdown_contains_nodes_and_review_status(tmp_path):
     content = (repo_root / result.run_summary_md).read_text(encoding="utf-8")
     assert "## 节点轨迹" in content
     assert "mvp_command_router_node" in content
-    assert "testcase_generator" in content
+    assert "testcase_generation_node" in content
     assert "review_status：needs_human_review" in content
 
 
@@ -157,7 +157,7 @@ def test_failed_runtime_flow_still_generates_run_record(tmp_path):
     assert summary["errors"]
     assert "requirement_normalizer_node" in summary["executed_nodes"]
     assert "mvp_context_loader_node" not in summary["executed_nodes"]
-    assert "testcase_generator" not in summary["executed_nodes"]
+    assert "testcase_generation_node" not in summary["executed_nodes"]
 
 
 def test_run_record_does_not_store_full_draft_artifact(tmp_path):

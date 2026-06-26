@@ -8,7 +8,9 @@ from runtime.cli.parser import (
     _artifact_keys_from_recorded_run,
     _artifact_keys_from_text,
     _clarify_multi_artifact_message,
+    _explicit_artifact_keys_from_text,
     _extract_run_id,
+    _is_recorded_run_interrupted,
     _latest_run_id_for_prd,
     _read_latest_run_id,
     _task_type_from_artifact_keys,
@@ -16,7 +18,7 @@ from runtime.cli.parser import (
 from runtime.graph.app import promote_artifacts, resume_recorded_workflow
 from runtime.review import ReviewDecision, ReviewIntent, process_review_gate
 from runtime.schemas.runtime_result import RuntimeResult
-from runtime.workspace import PRDWorkspace
+from runtime.workspace import PRDWorkspace, read_yaml_mapping
 
 
 def _approve_reviews_via_gate_for_promotion(
@@ -28,13 +30,34 @@ def _approve_reviews_via_gate_for_promotion(
     source_message: str,
     natural_language: bool,
 ) -> list[str]:
+    workspace = PRDWorkspace(repo_root / prd_rel)
+    already_approved = True
+    for key in artifact_keys:
+        review_path = workspace.review_path(key)
+        if not review_path.is_file():
+            already_approved = False
+            break
+        review = read_yaml_mapping(review_path)
+        if review.get("status") != "approved":
+            already_approved = False
+            break
+    if already_approved:
+        return artifact_keys
+
     if natural_language:
+        target_artifact = artifact_keys[0] if len(artifact_keys) == 1 else "all"
         gate_result = process_review_gate(
             repo_root=repo_root,
             prd_path=prd_rel,
             run_id=run_id,
             user_input=source_message,
             artifact_keys=artifact_keys,
+            decision=ReviewDecision(
+                intent=ReviewIntent.APPROVE,
+                target_artifact=target_artifact,
+                confidence=1.0,
+                reason="自然语言发布请求已由 CLI 解析为确定性审核通过",
+            ),
         )
         if not gate_result.approved_for_promote:
             details = "; ".join(gate_result.errors) or gate_result.decision.reason
@@ -102,6 +125,19 @@ def _run_natural_promote_request(
     prd_rel = _extract_prd_from_natural(user_input, repo_root, fallback_prd)
     run_id = _find_run_for_promote(repo_root, prd_rel)
     artifact_keys = _resolve_artifact_keys(repo_root, run_id, user_input)
+    if _is_recorded_run_interrupted(repo_root, run_id):
+        target_artifact = artifact_keys[0] if len(artifact_keys) == 1 else "all"
+        resumed = resume_recorded_workflow(
+            run_id,
+            action="approve",
+            user_input=user_input,
+            reviewed_by="cli",
+            target_artifact=target_artifact,
+            repo_root=repo_root,
+        )
+        if not resumed.success:
+            details = "; ".join(resumed.errors) or "resume interrupted run failed"
+            raise ValueError(details)
     result = _run_promote(
         repo_root,
         prd_rel,
@@ -139,9 +175,9 @@ def _resolve_artifact_keys(
     run_id: str,
     user_input: str,
 ) -> list[str]:
-    from runtime.cli.parser import _artifact_keys_from_text, _publish_all_requested
+    from runtime.cli.parser import _publish_all_requested
 
-    explicit = _artifact_keys_from_text(user_input)
+    explicit = _explicit_artifact_keys_from_text(user_input)
     if explicit:
         return explicit
     recorded = _artifact_keys_from_recorded_run(repo_root, run_id)
@@ -250,7 +286,7 @@ def _run_workflow(
     from runtime.config import load_app_config
 
     app_config = load_app_config(repo_root)
-    llm_enabled = app_config.workflow.use_llm and not debug
+    llm_enabled = app_config.llm.enabled and not debug
     requirement_analysis_use_llm = llm_enabled and app_config.workflow.use_llm_for(
         "requirement_analysis"
     )

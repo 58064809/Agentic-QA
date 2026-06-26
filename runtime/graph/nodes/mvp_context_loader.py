@@ -44,9 +44,12 @@ def mvp_workflow_selector_node(state: QAWorkflowState, repo_root: Path) -> QAWor
     if state.errors:
         return state
 
+    if state.task_type is None and state.intent:
+        state.task_type = state.intent
+
     definition = DEFAULT_WORKFLOW_REGISTRY.definition_for_task_type(state.task_type)
     workflow_config = load_app_config(repo_root).workflow
-    configured_files = {
+    configured_files = workflow_config.intent_workflow_files.get(str(state.task_type)) or {
         TASK_ANALYSIS: workflow_config.mvp_analysis_workflow_files,
         TASK_TESTCASE_GENERATION: workflow_config.mvp_testcase_workflow_files,
     }.get(str(state.task_type))

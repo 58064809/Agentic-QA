@@ -52,7 +52,7 @@ def _target_artifacts(decision: ReviewDecision, artifact_keys: list[str]) -> lis
     if decision.target_artifact == "all":
         return list(artifact_keys)
     if decision.target_artifact:
-        return [decision.target_artifact]
+        return [decision.target_artifact] if decision.target_artifact in artifact_keys else []
     if len(artifact_keys) == 1:
         return list(artifact_keys)
     return []
