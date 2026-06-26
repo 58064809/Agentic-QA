@@ -24,33 +24,23 @@ class OpenAICompatibleAdapter:
             raise RuntimeError("openai SDK 未安装，无法调用 LLM。")
 
         client = self._create_client()
-        response_error: Exception | None = None
+        # chat.completions 优先 (兼容 DeepSeek / 多数 provider)
+        try:
+            content = self._generate_with_chat_completions(client, prompt)
+            if content:
+                return content
+        except Exception:
+            pass
+
+        # responses API fallback (仅支持该接口的 provider)
         try:
             content = self._generate_with_responses(client, prompt)
             if content:
                 return content
-        except Exception as exc:  # noqa: BLE001 - adapter must support fallback.
-            response_error = exc
+        except Exception as exc:
+            raise RuntimeError("chat.completions 与 responses 均调用失败: " f"{exc}") from exc
 
-        if not self.config.enable_chat_fallback:
-            raise RuntimeError(
-                "responses.create 调用失败，且 chat.completions fallback 当前关闭: "
-                f"{response_error}"
-            ) from response_error
-
-        try:
-            content = self._generate_with_chat_completions(client, prompt)
-        except Exception as exc:  # noqa: BLE001 - surface both attempts.
-            if response_error is not None:
-                raise RuntimeError(
-                    f"responses.create 调用失败: {response_error}; "
-                    f"chat.completions 调用失败: {exc}"
-                ) from exc
-            raise
-
-        if not content:
-            raise ValueError("LLM 返回内容为空。")
-        return content
+        raise ValueError("LLM 返回内容为空。")
 
     def _create_client(self) -> Any:
         return OpenAI(

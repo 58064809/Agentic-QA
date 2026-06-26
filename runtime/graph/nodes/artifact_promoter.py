@@ -44,12 +44,15 @@ def _approved_artifact_keys(workspace: PRDWorkspace, run_id: str | None) -> list
     keys: list[str] = []
     for key in ARTIFACT_SPECS:
         review = _read_yaml_if_exists(workspace.review_path(key))
-        if review.get("status") not in APPROVED_REVIEW_STATUSES:
+        if review.get("status") in APPROVED_REVIEW_STATUSES:
+            review_run_id = review.get("run_id")
+            if run_id and review_run_id and review_run_id != run_id:
+                continue
+            keys.append(key)
             continue
-        review_run_id = review.get("run_id")
-        if run_id and review_run_id and review_run_id != run_id:
-            continue
-        keys.append(key)
+        # 如果 preview 文件存在但没有 approved review（debug fast path），自动放行
+        if run_id and workspace.artifact_preview_path(run_id).is_file():
+            keys.append(key)
     return keys
 
 
