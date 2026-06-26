@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_runtime_mvp_generation import create_mvp_repo  # noqa: E402
 
-from runtime.graph.app import resume_recorded_workflow  # noqa: E402
+import runtime.graph.app as graph_app  # noqa: E402
 from runtime.workflow import load_workflow_spec, run_workflow_by_id  # noqa: E402
 from runtime.workflow.builder import build_graph_from_spec  # noqa: E402
 from runtime.workflow.loader import load_workflow_spec_by_id  # noqa: E402
@@ -88,6 +88,39 @@ def test_run_requirement_analysis_workflow_by_id_returns_runtime_result(tmp_path
     assert "testcases" not in result.draft_artifacts
 
 
+def test_graph_app_facades_use_runtime_workflow_specs(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+
+    analysis = graph_app.run_requirement_analysis_workflow(
+        "analyze this requirement",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=False,
+        use_llm=False,
+    )
+    testcases = graph_app.run_mvp_testcase_generation_workflow(
+        "generate testcases",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=False,
+        use_llm=False,
+    )
+    mvp = graph_app.run_mvp_analysis_and_testcases_workflow(
+        "analyze requirement and generate testcases",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=False,
+        use_llm=False,
+    )
+
+    assert analysis.orchestration == "YAML WorkflowSpec: requirement_analysis"
+    assert testcases.orchestration == "YAML WorkflowSpec: testcase_generation"
+    assert mvp.orchestration == "YAML WorkflowSpec: analysis_and_testcases"
+    assert analysis.task_type == "analysis"
+    assert testcases.task_type == "testcase_generation"
+    assert mvp.task_type == "mvp_analysis_testcases"
+
+
 def test_resume_workflow_for_run_uses_recorded_task_type(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
     result = run_workflow_by_id(
@@ -125,7 +158,7 @@ def test_resume_recorded_workflow_routes_mvp_task_type_to_runtime_dsl(tmp_path):
         use_llm=False,
     )
 
-    resumed = resume_recorded_workflow(
+    resumed = graph_app.resume_recorded_workflow(
         result.run_id or "",
         repo_root=repo_root,
     )

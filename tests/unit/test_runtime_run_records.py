@@ -22,33 +22,6 @@ def disable_real_llm_by_default(monkeypatch):
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
 
 
-def write_file(path: Path, content: str = "placeholder") -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-
-
-def create_runtime_repo(root: Path) -> Path:
-    required_files = [
-        "AGENTS.md",
-        "COMMANDS.md",
-        "docs/roadmap.md",
-        "workflows/10-runtime-testcase-generation-workflow.md",
-        "workflows/02-testcase-generation-workflow.md",
-        "prompts/testcase-design-prompt.md",
-        "rules/testcase-rules.md",
-        "rules/review-gate-rules.md",
-        "rules/artifact-path-rules.md",
-        "skills/test-design/test-design-skill.md",
-        "knowledge/templates/testcase-template.md",
-        "prd/demo-requirement/metadata.yml",
-        "prd/demo-requirement/input/requirement.md",
-    ]
-    for relative_path in required_files:
-        write_file(root / relative_path)
-    (root / "prd/demo-requirement/runs").mkdir(parents=True, exist_ok=True)
-    return root
-
-
 def read_summary_json(result, repo_root: Path) -> dict:
     assert result.run_summary_json is not None
     return json.loads((repo_root / result.run_summary_json).read_text(encoding="utf-8"))

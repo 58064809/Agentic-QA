@@ -43,6 +43,23 @@ def test_workflow_selection_uses_registry_lookup():
     assert workflow_id_for_task_type("mvp_analysis_testcases") == "analysis_and_testcases"
 
 
+def test_legacy_hardcoded_graph_path_is_removed():
+    removed_paths = [
+        "runtime/graph/langgraph_app.py",
+        "runtime/graph/nodes/intent_router.py",
+        "runtime/graph/nodes/workflow_selector.py",
+        "runtime/graph/nodes/context_loader.py",
+        "runtime/graph/nodes/artifact_generator.py",
+        "runtime/graph/nodes/artifact_writer.py",
+        "runtime/graph/nodes/quality_checker.py",
+        "tests/unit/test_runtime_langgraph.py",
+        "tests/unit/test_runtime_skeleton.py",
+    ]
+
+    for relative_path in removed_paths:
+        assert not (REPO_ROOT / relative_path).exists(), relative_path
+
+
 def test_cli_declares_natural_language_and_debug_modes_without_absolute_claims():
     cli_text = (REPO_ROOT / "runtime/cli.py").read_text(encoding="utf-8")
     commands_text = (REPO_ROOT / "COMMANDS.md").read_text(encoding="utf-8")
