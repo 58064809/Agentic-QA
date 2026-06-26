@@ -8,6 +8,7 @@ from runtime.graph.nodes.artifact_promoter import (
     _artifact_keys_for_task,
     _extract_marked_preview,
     _preview_content_for_key,
+    _promoted_front_matter,
 )
 from runtime.graph.state import QAWorkflowState
 
@@ -59,6 +60,49 @@ def test_preview_multi_marked():
     assert result is not None
     assert "A" in result
     assert "B" not in result
+
+
+def test_preview_single_target_still_extracts_marked_section():
+    preview = (
+        "# 候选产物预览\n\n"
+        "<!-- artifact:start requirement_analysis -->\n\n"
+        "## 需求分析候选\n\n"
+        "---\nstatus: needs_human_review\nartifact_type: requirement_analysis\n"
+        "human_review_required: true\n---\n\n"
+        "# 需求分析草稿\n\nanalysis only\n"
+        "<!-- artifact:end requirement_analysis -->\n\n"
+        "<!-- artifact:start testcases -->\n\n"
+        "## 测试用例候选\n\n# 测试用例草稿\n\n| 用例ID |\n"
+        "<!-- artifact:end testcases -->\n"
+    )
+
+    result = _preview_content_for_key(preview, "requirement_analysis", ["requirement_analysis"])
+
+    assert result.startswith("---")
+    assert "需求分析候选" not in result
+    assert "测试用例候选" not in result
+    assert "| 用例ID |" not in result
+    assert "analysis only" in result
+
+
+def test_promoted_front_matter_marks_formal_artifact():
+    content = (
+        "---\nstatus: needs_human_review\nartifact_type: testcases\n"
+        "human_review_required: true\n---\n\n# 测试用例草稿\n"
+    )
+
+    result = _promoted_front_matter(
+        content,
+        key="testcases",
+        version="v1",
+        promoted_at="2026-01-01T00:00:00+00:00",
+        run_id="run-1",
+    )
+
+    assert "status: confirmed" in result
+    assert "human_review_required: false" in result
+    assert "promoted_from_run: run-1" in result
+    assert "current_version: v1" in result
 
 
 def test_preview_multi_missing():

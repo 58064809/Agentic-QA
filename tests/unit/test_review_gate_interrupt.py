@@ -230,7 +230,8 @@ def test_interrupt_resume_show_diff_does_not_change_review_status(tmp_path):
     assert resumed.review_status == "needs_human_review"
     assert resumed.next_action == "wait_for_review"
     assert resumed.human_review["decision"]["intent"] == "show_diff"
-    assert not resumed.wrote_file
+    assert resumed.wrote_file
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
 def test_interrupt_resume_clarify_keeps_waiting_review(tmp_path):
@@ -255,7 +256,7 @@ def test_interrupt_resume_clarify_keeps_waiting_review(tmp_path):
     assert resumed.next_action == "wait_for_review"
     assert resumed.run_status == "interrupted"
     assert resumed.human_review["decision"]["intent"] == "clarify"
-    assert not resumed.wrote_file
+    assert resumed.wrote_file
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
@@ -280,7 +281,8 @@ def test_multi_artifact_approve_requires_target_artifact(tmp_path):
     assert resumed.next_action == "wait_for_review"
     assert resumed.run_status == "interrupted"
     assert any("target_artifact" in error for error in resumed.errors)
-    assert "artifact_preview_writer_node" not in resumed.executed_nodes
+    assert (repo_root / f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md").exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
 def test_multi_artifact_approve_rejects_invalid_target_artifact(tmp_path):
@@ -390,7 +392,8 @@ def test_reject_without_target_defaults_to_all_for_multi_artifact(tmp_path):
     assert resumed.next_action == "stop"
     assert resumed.run_status == "rejected"
     assert resumed.human_review["decision"]["target_artifact"] == "all"
-    assert not resumed.wrote_file
+    assert resumed.wrote_file
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
 def test_revise_requires_target_for_multi_artifact(tmp_path):

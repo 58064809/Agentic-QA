@@ -56,7 +56,7 @@ def test_dry_run_generates_run_record_by_default(tmp_path):
     assert (repo_root / result.run_record_dir / "graph-state.json").is_file()
     assert (repo_root / result.run_record_dir / "run-state.json").is_file()
     preview_path = repo_root / f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
-    assert not preview_path.exists()
+    assert preview_path.exists()
 
 
 def test_record_run_false_does_not_generate_run_record(tmp_path):
@@ -93,7 +93,7 @@ def test_run_record_json_contains_runtime_summary(tmp_path):
     assert summary["orchestration"] == "YAML WorkflowSpec: testcase_generation"
     assert summary["executed_nodes"]
     assert summary["loaded_files"]
-    assert summary["wrote_file"] is False
+    assert summary["wrote_file"] is True
     assert summary["human_review"]["status"] == "needs_human_review"
 
 

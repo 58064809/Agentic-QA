@@ -26,6 +26,31 @@ RUN_ID_RE = re.compile(r"run-\d{8}-\d{6}-[a-z0-9]+|runtime", re.IGNORECASE)
 PROMOTE_KEYWORDS = ("发布正式产物", "发布产物", "正式发布", "通过并发布", "发布吧", "promote")
 APPROVE_KEYWORDS = ("通过", "确认", "approved", "confirmed", "approve")
 
+PROMOTE_KEYWORDS = PROMOTE_KEYWORDS + (
+    "发布正式产物",
+    "发布产物",
+    "正式发布",
+    "通过并发布",
+    "发布",
+)
+APPROVE_KEYWORDS = APPROVE_KEYWORDS + (
+    "通过",
+    "确认",
+    "没问题",
+    "沒問題",
+    "ok",
+)
+NO_PUBLISH_KEYWORDS = (
+    "不要发布",
+    "先不发布",
+    "暂不发布",
+    "不发布",
+    "只确认",
+    "先确认",
+    "通过但不发布",
+    "只确认不发布",
+)
+
 ARTIFACT_ALIASES: dict[str, tuple[str, ...]] = {
     "requirement_analysis": ("requirement_analysis", "requirement-analysis", "需求分析"),
     "testcases": ("testcases", "testcase", "test-cases", "测试用例", "用例"),
@@ -89,7 +114,18 @@ def _artifact_keys_from_text(value: str) -> list[str]:
 
 
 def _publish_all_requested(value: str) -> bool:
-    return any(keyword in value for keyword in ("全部", "都通过", "都发布", "all"))
+    return any(
+        keyword in value
+        for keyword in (
+            "全部",
+            "都通过",
+            "全部通过",
+            "全部发布",
+            "都发布",
+            "全都发布",
+            "all",
+        )
+    )
 
 
 def _artifact_keys_from_recorded_run(repo_root: Path, run_id: str | None) -> list[str]:
@@ -140,9 +176,15 @@ def _task_type_from_artifact_keys(keys: list[str]) -> str:
 
 
 def _is_promote_request(user_input: str) -> bool:
-    return any(keyword in user_input for keyword in PROMOTE_KEYWORDS) and any(
-        keyword in user_input for keyword in APPROVE_KEYWORDS
+    normalized = user_input.lower()
+    return any(keyword.lower() in normalized for keyword in APPROVE_KEYWORDS) or (
+        any(keyword.lower() in normalized for keyword in PROMOTE_KEYWORDS)
+        and not _approve_without_publish_requested(user_input)
     )
+
+
+def _approve_without_publish_requested(user_input: str) -> bool:
+    return any(keyword in user_input for keyword in NO_PUBLISH_KEYWORDS)
 
 
 def _looks_like_markdown_requirement(text: str) -> bool:

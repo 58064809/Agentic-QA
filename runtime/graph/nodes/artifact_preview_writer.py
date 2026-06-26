@@ -234,11 +234,22 @@ def artifact_preview_writer_node(state: QAWorkflowState, repo_root: Path) -> QAW
     state.record_node("artifact_preview_writer_node")
     if state.errors or state.quality_errors:
         return state
+    if state.review_status == "not_started":
+        state.review_status = "needs_human_review"
+        state.run_status = "interrupted"
+        state.next_action = "wait_for_review"
     if state.review_status not in {"needs_human_review", "approved", "write_approved"}:
         state.errors.append("未进入 Review Gate，拒绝写入候选产物。")
         return state
 
     keys = _artifact_keys_for_task(state)
+    if state.wrote_file:
+        paths = [
+            repo_root / Path(state.output_paths[key]) for key in keys if state.output_paths.get(key)
+        ]
+        if paths and all(path.exists() for path in paths):
+            return state
+
     missing = [
         key for key in keys if not state.output_paths.get(key) or not state.draft_artifacts.get(key)
     ]

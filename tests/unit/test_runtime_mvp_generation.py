@@ -368,7 +368,9 @@ def test_mvp_dry_run_generates_two_drafts_without_writing(tmp_path):
     assert result.run_status == "interrupted"
     assert result.review_status == "needs_human_review"
     assert result.next_action == "wait_for_review"
-    assert "artifact_preview_writer_node" not in result.executed_nodes
+    assert "artifact_preview_writer_node" in result.executed_nodes
+    assert result.wrote_file
+    assert (repo_root / result.output_paths["testcases"]).is_file()
     assert set(result.draft_artifacts) == {"requirement_analysis", "testcases"}
     assert "## 12. 需求到测试覆盖映射" in result.draft_artifacts["requirement_analysis"]
     assert count_testcase_rows(result.draft_artifacts["testcases"]) >= 15
@@ -450,8 +452,7 @@ def test_interrupt_review_gate_reject_resume_stops_without_formal_artifact(tmp_p
     assert resumed.review_status == "rejected"
     assert resumed.next_action == "stop"
     assert resumed.run_status == "rejected"
-    assert not resumed.wrote_file
-    assert "artifact_preview_writer_node" not in resumed.executed_nodes
+    assert resumed.wrote_file
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
@@ -478,7 +479,8 @@ def test_interrupt_review_gate_revise_resume_enters_needs_changes(tmp_path):
     assert resumed.next_action == "revise"
     assert resumed.run_status == "needs_changes"
     assert resumed.human_review["decision"]["target_artifact"] == "testcases"
-    assert not resumed.wrote_file
+    assert resumed.wrote_file
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
 def test_promote_artifacts_requires_approved_reviews(tmp_path):
@@ -541,6 +543,13 @@ def test_promote_artifacts_publishes_confirmed_preview(tmp_path):
     assert promoted.run_status == "completed"
     assert analysis_path.is_file()
     assert testcases_path.is_file()
+    analysis_content = analysis_path.read_text(encoding="utf-8")
+    testcases_content = testcases_path.read_text(encoding="utf-8")
+    assert "artifact_type: artifact_preview" not in analysis_content
+    assert "artifact_type: artifact_preview" not in testcases_content
+    assert "status: confirmed" in analysis_content
+    assert "status: confirmed" in testcases_content
+    assert "| 鐢ㄤ緥ID |" not in analysis_content
     assert "## 12. 需求到测试覆盖映射" in analysis_path.read_text(encoding="utf-8")
     assert "| 用例ID |" in testcases_path.read_text(encoding="utf-8")
     history_dir = repo_root / "prd/demo-requirement/artifacts/history/testcases"
@@ -584,6 +593,33 @@ def test_cli_natural_language_promote_approves_and_publishes_testcases(tmp_path)
     )
     assert review["status"] == "confirmed"
     assert review["decision"] == "promoted"
+    assert review["promoted_run_id"] == result.run_id
+
+
+def test_cli_natural_language_plain_approve_promotes_single_artifact(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+    )
+
+    prd_rel, promoted = cli._run_natural_promote_request(
+        "通过",
+        repo_root,
+        fallback_prd="prd/demo-requirement",
+    )
+
+    assert prd_rel == "prd/demo-requirement"
+    assert promoted.success
+    assert promoted.review_status == "confirmed"
+    assert promoted.output_paths == {"testcases": "prd/demo-requirement/artifacts/testcases.md"}
+    assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").is_file()
+    review = yaml.safe_load(
+        (repo_root / "prd/demo-requirement/reviews/testcases.review.yml").read_text(
+            encoding="utf-8"
+        )
+    )
     assert review["promoted_run_id"] == result.run_id
 
 
@@ -642,6 +678,27 @@ def test_cli_natural_language_promote_clarifies_multi_artifact_without_target(tm
     assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
 
 
+def test_cli_natural_language_plain_approve_clarifies_multi_artifact(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    run_mvp_analysis_and_testcases_workflow(
+        "请分析需求并生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        cli._run_natural_promote_request(
+            "通过",
+            repo_root,
+            fallback_prd="prd/demo-requirement",
+        )
+
+    assert "requirement_analysis" in str(excinfo.value)
+    assert "testcases" in str(excinfo.value)
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
+
+
 def test_cli_natural_language_promote_all_publishes_multi_artifact(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
     result = run_mvp_analysis_and_testcases_workflow(
@@ -672,6 +729,40 @@ def test_cli_natural_language_promote_all_publishes_multi_artifact(tmp_path):
     assert review["promoted_run_id"] == result.run_id
 
 
+def test_cli_natural_language_approve_without_publish_only_approves(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    run_mvp_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+    )
+
+    prd_rel, approved = cli._run_natural_promote_request(
+        "通过但不发布",
+        repo_root,
+        fallback_prd="prd/demo-requirement",
+    )
+
+    assert prd_rel == "prd/demo-requirement"
+    assert approved.success
+    assert approved.review_status == "approved"
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+    review = yaml.safe_load(
+        (repo_root / "prd/demo-requirement/reviews/testcases.review.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert review["status"] == "approved"
+    assert review["decision"] == "approve"
+
+
+def test_cli_natural_language_plain_approve_requires_context(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+
+    with pytest.raises(ValueError):
+        cli._run_natural_promote_request("通过", repo_root)
+
+
 def test_cli_promote_command_publishes_selected_artifact(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
     result = run_mvp_analysis_and_testcases_workflow(
@@ -691,7 +782,7 @@ def test_cli_promote_command_publishes_selected_artifact(tmp_path):
     assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
 
 
-def test_cli_resume_command_approves_without_promoting(tmp_path):
+def test_cli_resume_command_approves_and_promotes_single_artifact(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
     result = run_mvp_testcase_generation_workflow(
         "请生成测试用例",
@@ -705,14 +796,14 @@ def test_cli_resume_command_approves_without_promoting(tmp_path):
     )
 
     assert exit_code == 0
+    assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").is_file()
     review = yaml.safe_load(
         (repo_root / "prd/demo-requirement/reviews/testcases.review.yml").read_text(
             encoding="utf-8"
         )
     )
-    assert review["status"] == "approved"
-    assert review["decision"] == "approve"
-    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+    assert review["status"] == "confirmed"
+    assert review["decision"] == "promoted"
 
 
 def test_cli_resume_command_hold_keeps_waiting_review(tmp_path):

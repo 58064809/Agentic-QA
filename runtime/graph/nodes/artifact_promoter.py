@@ -5,6 +5,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from runtime.graph.state import QAWorkflowState
 from runtime.workspace import (
     ARTIFACT_SPECS,
@@ -86,12 +88,48 @@ def _extract_heading_preview(preview: str, key: str) -> str | None:
     return "\n".join(lines[start:end]).strip() + "\n"
 
 
+def _strip_candidate_section_heading(content: str) -> str:
+    lines = content.splitlines()
+    if lines and lines[0].startswith("## ") and "候选" in lines[0]:
+        return "\n".join(lines[1:]).lstrip() + "\n"
+    return content
+
+
+def _promoted_front_matter(
+    content: str,
+    *,
+    key: str,
+    version: str,
+    promoted_at: str,
+    run_id: str | None,
+) -> str:
+    body = content.strip() + "\n"
+    metadata: dict[str, Any] = {}
+    if body.startswith("---\n"):
+        end = body.find("\n---\n", 4)
+        if end != -1:
+            parsed = yaml.safe_load(body[4:end]) or {}
+            if isinstance(parsed, dict):
+                metadata.update(parsed)
+            body = body[end + len("\n---\n") :].lstrip()
+
+    metadata["artifact_type"] = ARTIFACT_SPECS[key]["artifact_type"]
+    metadata["status"] = "confirmed"
+    metadata["human_review_required"] = False
+    metadata["generated_by"] = metadata.get("generated_by") or "agentic-qa-runtime"
+    metadata["promoted_from_run"] = run_id or ""
+    metadata["current_version"] = version
+    metadata["promoted_at"] = promoted_at
+    front_matter = yaml.safe_dump(metadata, allow_unicode=True, sort_keys=False).strip()
+    return f"---\n{front_matter}\n---\n\n{body}"
+
+
 def _preview_content_for_key(preview: str, key: str, keys: list[str]) -> str:
-    if len(keys) == 1:
-        return preview.rstrip() + "\n"
     extracted = _extract_marked_preview(preview, key) or _extract_heading_preview(preview, key)
     if extracted:
-        return extracted
+        return _strip_candidate_section_heading(extracted)
+    if len(keys) == 1:
+        return preview.rstrip() + "\n"
     raise ValueError(f"artifact-preview.md 中未找到 {key} 对应的候选内容")
 
 
@@ -224,6 +262,13 @@ def artifact_promoter_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflo
     try:
         for key in target_keys:
             content = _preview_content_for_key(preview, key, task_keys)
+            content = _promoted_front_matter(
+                content,
+                key=key,
+                version=version,
+                promoted_at=promoted_at,
+                run_id=state.run_id,
+            )
             current_path = workspace.current_artifact_path(key)
             current_path.parent.mkdir(parents=True, exist_ok=True)
             archived_previous = _archive_existing_current(

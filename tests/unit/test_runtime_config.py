@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from runtime.config import load_app_config
 from runtime.graph.nodes.mvp_context_loader import mvp_workflow_selector_node
 from runtime.graph.state import QAWorkflowState
 from runtime.llm.config import OpenAICompatibleConfig
+from runtime.session import SessionManager
 
 
 def write_file(path: Path, content: str = "placeholder") -> None:
@@ -156,6 +158,35 @@ workflow:
         ("testcase_generation", True),
         ("mvp_analysis_testcases", False),
     ]
+
+
+def test_cli_module_entrypoint_exists() -> None:
+    assert importlib.util.find_spec("runtime.cli.__main__") is not None
+
+
+def test_cli_run_workflow_accepts_session_without_debug_flag(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    write_file(tmp_path / "configs/config.yaml", "workflow: {}\n")
+    session = SessionManager(tmp_path).get_or_create()
+    calls: list[bool] = []
+
+    def fake_mvp(**kwargs):
+        calls.append(kwargs["approve_write"])
+        return object()
+
+    monkeypatch.setattr(cli, "run_mvp_analysis_and_testcases_workflow", fake_mvp)
+
+    cli._run_workflow(
+        "all",
+        "prd/demo",
+        intent="mvp",
+        repo_root=tmp_path,
+        session=session,
+    )
+
+    assert calls == [False]
 
 
 def test_cli_global_llm_disabled_overrides_workflow_switch(tmp_path: Path, monkeypatch) -> None:

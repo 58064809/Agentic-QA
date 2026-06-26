@@ -86,23 +86,28 @@ edges:
     to: testcase_quality
 
   - from: testcase_quality
-    to: review_gate
+    to: artifact_preview_writer
     condition: no_quality_errors
 
   - from: testcase_quality
     to: end
     condition: default
 
+  - from: artifact_preview_writer
+    to: review_gate
+    condition: no_errors
+
+  - from: artifact_preview_writer
+    to: end
+    condition: default
+
   - from: review_gate
-    to: artifact_preview_writer
-    condition: ready_to_write_preview
+    to: metadata_update
+    condition: no_errors
 
   - from: review_gate
     to: end
     condition: default
-
-  - from: artifact_preview_writer
-    to: metadata_update
 
   - from: metadata_update
     to: end
