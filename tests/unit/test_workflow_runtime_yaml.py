@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_WORKFLOW_DIR = REPO_ROOT / "workflows/runtime"
 EXPECTED_RUNTIME_WORKFLOWS = {
     "analysis-and-testcases.workflow.yml": ("analysis_and_testcases", "mvp_analysis_testcases"),
+    "api-test-draft.workflow.yml": ("api_test_draft", "api_test_draft"),
     "requirement-analysis.workflow.yml": ("requirement_analysis", "analysis"),
     "testcase-generation.workflow.yml": ("testcase_generation", "testcase_generation"),
 }

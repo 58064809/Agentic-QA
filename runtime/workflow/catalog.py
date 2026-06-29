@@ -52,6 +52,15 @@ TESTCASE_CONTEXT_FILES = (
     "skills/test-design/risk-based-testing-skill.md",
     "knowledge/templates/testcase-template.md",
 )
+API_TEST_CONTEXT_FILES = (
+    *BASE_CONTEXT_FILES,
+    "docs/api-test-generation.md",
+    "workflows/runtime/api-test-draft.workflow.yml",
+    "prompts/api-test-generation.md",
+    "skills/api-testing.md",
+    "rules/review-gate-rules.md",
+    "rules/artifact-path-rules.md",
+)
 
 
 class WorkflowRegistry:
@@ -95,6 +104,11 @@ DEFAULT_WORKFLOW_REGISTRY = WorkflowRegistry(
             workflow_id="testcase_generation",
             task_type="testcase_generation",
             context_files=TESTCASE_CONTEXT_FILES,
+        ),
+        RuntimeWorkflowDefinition(
+            workflow_id="api_test_draft",
+            task_type="api_test_draft",
+            context_files=API_TEST_CONTEXT_FILES,
         ),
         RuntimeWorkflowDefinition(
             workflow_id="analysis_and_testcases",

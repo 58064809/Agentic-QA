@@ -26,6 +26,7 @@ from runtime.cli.promoter import (
     _run_workflow,
 )
 from runtime.graph.app import (
+    run_api_test_draft_workflow,
     run_mvp_analysis_and_testcases_workflow,
     run_mvp_testcase_generation_workflow,
     run_requirement_analysis_workflow,
@@ -78,6 +79,7 @@ __all__ = [
     "fetch_feishu_doc",
     "is_feishu_url",
     "main",
+    "run_api_test_draft_workflow",
     "run_mvp_analysis_and_testcases_workflow",
     "run_mvp_testcase_generation_workflow",
     "run_requirement_analysis_workflow",

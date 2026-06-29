@@ -54,6 +54,14 @@ NO_PUBLISH_KEYWORDS = (
 ARTIFACT_ALIASES: dict[str, tuple[str, ...]] = {
     "requirement_analysis": ("requirement_analysis", "requirement-analysis", "需求分析"),
     "testcases": ("testcases", "testcase", "test-cases", "测试用例", "用例"),
+    "api_test_draft": (
+        "api_test_draft",
+        "api-test-draft",
+        "接口测试草稿",
+        "接口自动化草稿",
+        "接口测试",
+        "pytest requests",
+    ),
     "qa_report": ("qa_report", "qa-report", "QA报告", "qa report"),
 }
 
@@ -73,6 +81,7 @@ HELP_TEXT = """用法:
 示例:
     agentic-qa "帮我分析登录需求 D:\\需求\\登录.md"
     agentic-qa "分析 prd/sample-login-requirement 并生成测试用例"
+    agentic-qa "基于 prd/sample-login-requirement 生成接口测试草稿"
     agentic-qa "测试用例通过，发布正式产物 prd/sample-login-requirement"
     agentic-qa "处理这个飞书链接 https://xxx.feishu.cn/docx/123"
 """
@@ -101,8 +110,15 @@ def _explicit_artifact_keys_from_text(value: str) -> list[str]:
         if any(alias.lower() in normalized_value for alias in aliases)
     ]
     # 中文字符回退
-    if "测试" in value or "用例" in value or "娴嬭瘯" in value or "鐢ㄤ緥" in value:
+    is_api_test_text = (
+        "接口测试" in value or "接口自动化" in value or "api-test" in normalized_value
+    )
+    if not is_api_test_text and (
+        "测试" in value or "用例" in value or "娴嬭瘯" in value or "鐢ㄤ緥" in value
+    ):
         keys.append("testcases")
+    if is_api_test_text:
+        keys.append("api_test_draft")
     if ("需求" in value and "分析" in value) or ("闇€姹" in value and "鍒嗘瀽" in value):
         keys.append("requirement_analysis")
     keys = list(dict.fromkeys(keys))
@@ -172,6 +188,8 @@ def _task_type_from_artifact_keys(keys: list[str]) -> str:
         return "analysis"
     if normalized == {"testcases"}:
         return "testcase_generation"
+    if normalized == {"api_test_draft"}:
+        return "api_test_draft"
     return "mvp_analysis_testcases"
 
 

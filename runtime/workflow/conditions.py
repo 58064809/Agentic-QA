@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from runtime.graph.nodes.mvp_context_loader import (
     TASK_ANALYSIS,
+    TASK_API_TEST_DRAFT,
     TASK_MVP,
     TASK_TESTCASE_GENERATION,
 )
@@ -41,6 +42,10 @@ def task_is_testcase_generation(state: QAWorkflowState) -> bool:
     return no_errors(state) and state.task_type == TASK_TESTCASE_GENERATION
 
 
+def task_is_api_test_draft(state: QAWorkflowState) -> bool:
+    return no_errors(state) and state.task_type == TASK_API_TEST_DRAFT
+
+
 def task_is_mvp(state: QAWorkflowState) -> bool:
     return no_quality_errors(state) and state.task_type == TASK_MVP
 
@@ -59,6 +64,7 @@ CONDITIONS: dict[str, Condition] = {
     "ready_to_write_preview": ready_to_write_preview,
     "task_is_analysis": task_is_analysis,
     "task_is_analysis_or_mvp": task_is_analysis_or_mvp,
+    "task_is_api_test_draft": task_is_api_test_draft,
     "task_is_mvp": task_is_mvp,
     "task_is_testcase_generation": task_is_testcase_generation,
 }

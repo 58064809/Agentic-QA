@@ -13,6 +13,7 @@ from runtime.workspace import PRDWorkspace, resolve_prd_path
 TASK_ANALYSIS = "analysis"
 TASK_TESTCASE_GENERATION = "testcase_generation"
 TASK_MVP = "mvp_analysis_testcases"
+TASK_API_TEST_DRAFT = "api_test_draft"
 
 REQUIRED_PRD_FILES = ["metadata.yml", "input/requirement.md"]
 ROADMAP_CANDIDATES = [
@@ -31,7 +32,7 @@ IMAGE_IGNORED_WARNING = (
 
 def mvp_command_router_node(state: QAWorkflowState) -> QAWorkflowState:
     state.record_node("mvp_command_router_node")
-    allowed = {TASK_ANALYSIS, TASK_TESTCASE_GENERATION, TASK_MVP}
+    allowed = {TASK_ANALYSIS, TASK_TESTCASE_GENERATION, TASK_MVP, TASK_API_TEST_DRAFT}
     if state.task_type not in allowed:
         state.errors.append(f"不支持的 Runtime MVP 任务类型: {state.task_type}")
         return state
@@ -82,10 +83,14 @@ def _set_output_paths(state: QAWorkflowState, repo_root: Path, prd_path: Path) -
         state.output_paths["requirement_analysis"] = preview_path
     if state.task_type in {TASK_TESTCASE_GENERATION, TASK_MVP}:
         state.output_paths["testcases"] = preview_path
+    if state.task_type == TASK_API_TEST_DRAFT:
+        state.output_paths["api_test_draft"] = preview_path
 
     if state.task_type == TASK_ANALYSIS:
         state.output_path = preview_path
     elif state.task_type == TASK_TESTCASE_GENERATION:
+        state.output_path = preview_path
+    elif state.task_type == TASK_API_TEST_DRAFT:
         state.output_path = preview_path
 
 
@@ -149,10 +154,20 @@ def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkfl
     analysis_relative_path = analysis_file.relative_to(repo_root).as_posix()
     if analysis_file.is_file():
         state.loaded_files[analysis_relative_path] = read_utf8(analysis_file)
-    elif state.task_type == TASK_TESTCASE_GENERATION:
+    elif state.task_type in {TASK_TESTCASE_GENERATION, TASK_API_TEST_DRAFT}:
         state.warnings.append(
-            "需求分析文件不存在，将基于 input/requirement.md 生成测试用例草稿: "
+            "需求分析文件不存在，将基于 input/requirement.md 生成候选草稿: "
             f"{analysis_relative_path}"
+        )
+
+    testcases_file = prd_path / "artifacts" / "testcases.md"
+    testcases_relative_path = testcases_file.relative_to(repo_root).as_posix()
+    if testcases_file.is_file():
+        state.loaded_files[testcases_relative_path] = read_utf8(testcases_file)
+    elif state.task_type == TASK_API_TEST_DRAFT:
+        state.warnings.append(
+            "测试用例正式产物不存在，将基于需求和接口文档生成接口测试候选点: "
+            f"{testcases_relative_path}"
         )
 
     _set_output_paths(state, repo_root, prd_path)

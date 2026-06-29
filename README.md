@@ -260,6 +260,7 @@ ruff check .
 | [`docs/review-gate.md`](docs/review-gate.md) | 自然语言确认机制和 Review Gate Workflow |
 | [`docs/artifact-standards.md`](docs/artifact-standards.md) | QA 产物标准、元数据和状态定义 |
 | [`docs/testcase-standards.md`](docs/testcase-standards.md) | 测试用例结构、字段说明、优先级和质量要求 |
+| [`docs/api-test-generation.md`](docs/api-test-generation.md) | 接口测试草稿生成、输入规则、质量门和发布路径 |
 | [`docs/rag-design.md`](docs/rag-design.md) | RAG 链路、召回追踪和上下文构建 |
 | [`docs/roadmap.md`](docs/roadmap.md) | 建设路线图 |
 

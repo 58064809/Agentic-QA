@@ -148,6 +148,11 @@ def create_workspace(
             allow_unicode=True,
             sort_keys=False,
         ),
+        "artifacts/history/api-test-draft/index.yml": yaml.safe_dump(
+            history_index("artifacts/api-test-draft.md", "api_test_draft"),
+            allow_unicode=True,
+            sort_keys=False,
+        ),
         "artifacts/history/requirement-analysis/index.yml": yaml.safe_dump(
             history_index("artifacts/requirement-analysis.md", "requirement_analysis"),
             allow_unicode=True,
@@ -237,11 +242,7 @@ def validate_workspace(workspace_path: Path | str) -> ValidationResult:
             if not isinstance(metadata.get("reviews"), dict):
                 errors.append("metadata.yml reviews 必须是对象")
 
-    for review_file in [
-        "reviews/requirement-analysis.review.yml",
-        "reviews/testcases.review.yml",
-        "reviews/qa-report.review.yml",
-    ]:
+    for review_file in [spec["review_path"] for spec in ARTIFACT_SPECS.values()]:
         path = workspace / review_file
         if path.exists():
             try:

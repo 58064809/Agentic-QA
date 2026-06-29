@@ -26,6 +26,10 @@ def test_testcase_keys():
     assert _artifact_keys_for_task(_state("testcase_generation")) == ["testcases"]
 
 
+def test_api_test_draft_keys():
+    assert _artifact_keys_for_task(_state("api_test_draft")) == ["api_test_draft"]
+
+
 def test_mvp_keys():
     keys = _artifact_keys_for_task(_state("mvp_analysis_testcases"))
     assert keys == ["requirement_analysis", "testcases"]
@@ -35,6 +39,7 @@ def test_empty_keys():
     keys = _artifact_keys_for_task(_state(""))
     assert "requirement_analysis" in keys
     assert "testcases" in keys
+    assert "api_test_draft" in keys
 
 
 def test_marked_preview_extract():

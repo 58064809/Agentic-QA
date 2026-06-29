@@ -24,6 +24,8 @@ def _artifact_keys_for_task(state: QAWorkflowState) -> list[str]:
         return ["requirement_analysis"]
     if state.task_type == "testcase_generation" or state.task_type is None:
         return ["testcases"]
+    if state.task_type == "api_test_draft":
+        return ["api_test_draft"]
     if state.task_type == "mvp_analysis_testcases":
         return ["requirement_analysis", "testcases"]
     return list(ARTIFACT_SPECS)
@@ -69,6 +71,7 @@ def _extract_heading_preview(preview: str, key: str) -> str | None:
     titles = {
         "requirement_analysis": "需求分析候选",
         "testcases": "测试用例候选",
+        "api_test_draft": "接口测试草稿候选",
         "qa_report": "QA 报告候选",
     }
     title = titles.get(key, key)

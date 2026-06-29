@@ -57,6 +57,7 @@ edges:
 | `task_is_analysis_or_mvp` | 当前任务为需求分析或需求分析加用例生成 |
 | `task_is_mvp` | 当前任务为需求分析加用例生成，且无质量错误 |
 | `ready_to_write_preview` | `approved/write_approved` 且 `next_action=promote` 时允许写入候选产物 |
+| `task_is_api_test_draft` | 当前任务为接口测试草稿生成 |
 | `default` | 条件边兜底分支 |
 
 ### 当前 Runtime workflow 文件
@@ -66,6 +67,7 @@ edges:
 | `analysis_and_testcases` | `workflows/runtime/analysis-and-testcases.workflow.yml` | `mvp_analysis_testcases` |
 | `requirement_analysis` | `workflows/runtime/requirement-analysis.workflow.yml` | `analysis` |
 | `testcase_generation` | `workflows/runtime/testcase-generation.workflow.yml` | `testcase_generation` |
+| `api_test_draft` | `workflows/runtime/api-test-draft.workflow.yml` | `api_test_draft` |
 
 ## 最小工作流示例
 
