@@ -21,6 +21,17 @@ PRD_WORKSPACE_PATH_RE = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
+API_DOC_PATH_RE = re.compile(
+    r"""
+    (?:
+        [a-zA-Z]:\\(?:[^\s\\"']+\\)*[^\s\\"']+\.(?:json|ya?ml)
+        |
+        (?:\.?\.?[/\\])?(?:[^\s\\"']+[/\\])*[^\s\\"']+\.(?:json|ya?ml)
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
 RUN_ID_RE = re.compile(r"run-\d{8}-\d{6}-[a-z0-9]+|runtime", re.IGNORECASE)
 
 PROMOTE_KEYWORDS = ("发布正式产物", "发布产物", "正式发布", "通过并发布", "发布吧", "promote")
@@ -95,6 +106,16 @@ def _extract_prd_workspace_path(user_input: str) -> str | None:
     if not match:
         return None
     return match.group(0).strip().rstrip("，。；,;.)>")
+
+
+def _extract_api_doc_path(user_input: str) -> str | None:
+    for match in API_DOC_PATH_RE.finditer(user_input):
+        value = match.group(0).strip().rstrip("，。；,;.)>")
+        lowered = value.lower().replace("\\", "/")
+        if "/prd/" in lowered or lowered.startswith("prd/"):
+            continue
+        return value
+    return None
 
 
 def _extract_run_id(value: str) -> str | None:

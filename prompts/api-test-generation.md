@@ -6,6 +6,7 @@
 
 - `input/requirement.md`
 - `input/api.md`（可选；有可用内容时优先）
+- `input/api.openapi.json|yaml`、`input/api.swagger.json|yaml`、`input/api.apifox.json|yaml`（可选；会先归一化为 `input/api.md`）
 - `artifacts/requirement-analysis.md`（如存在）
 - `artifacts/testcases.md`（如存在）
 - `skills/api-testing.md`
@@ -39,6 +40,7 @@ human_review_required: true
 ## 关键规则
 
 - 有 `input/api.md` 时，以接口文档为准。
+- 有 OpenAPI / Swagger / Apifox 导出文件时，URL、Method、请求字段、响应字段必须来自归一化接口文档。
 - 无可用 `input/api.md` 时，只能输出接口候选点，必须标记“待补充接口文档”。
 - 未确认的 URL、Method、请求字段、响应字段、鉴权方式必须写成待确认项。
 - 不执行真实 HTTP 请求，不输出执行结论。

@@ -102,13 +102,13 @@ def _extract_paths_fallback(user_input: str) -> tuple[str | None, str | None]:
     prd_path = None
     url = None
 
-    m = LOCAL_PATH_RE.search(user_input)
+    m = PRD_WORKSPACE_RE.search(user_input)
     if m:
-        prd_path = m.group(0).strip()
+        prd_path = m.group(0).strip().rstrip("，。；,;.)>")
     else:
-        m = PRD_WORKSPACE_RE.search(user_input)
+        m = LOCAL_PATH_RE.search(user_input)
         if m:
-            prd_path = m.group(0).strip().rstrip("，。；,;.)>")
+            prd_path = m.group(0).strip()
 
     m = URL_RE.search(user_input)
     if m:

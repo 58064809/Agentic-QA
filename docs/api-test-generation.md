@@ -22,10 +22,34 @@ promote 到 artifacts/api-test-draft.md
 
 - `prd/<需求ID>/input/requirement.md`
 - `prd/<需求ID>/input/api.md`：可选，有可用内容时优先作为接口事实来源。
+- `prd/<需求ID>/input/api.openapi.json|yaml`：可选，Swagger/OpenAPI/Apifox 导出文件。
 - `prd/<需求ID>/artifacts/requirement-analysis.md`：可选，提供业务规则和风险。
 - `prd/<需求ID>/artifacts/testcases.md`：可选，提供已确认测试覆盖点。
 - `prompts/api-test-generation.md`
 - `skills/api-testing.md`
+
+## OpenAPI / Swagger 导入
+
+CLI 支持传入本地 OpenAPI / Swagger / Apifox 导出文件：
+
+```bash
+agentic-qa "基于 D:\api\activity-openapi.json 生成接口测试草稿，PRD 是 prd/5月活动玩法"
+```
+
+Runtime 会复制源文件到：
+
+```text
+prd/<需求ID>/input/api.openapi.json
+```
+
+并生成归一化 Markdown：
+
+```text
+prd/<需求ID>/input/api.md
+```
+
+如果工作区中已存在 `input/api.openapi.json`、`input/api.swagger.json`、`input/api.apifox.json`
+或对应 YAML 文件，`api_test_draft` workflow 会先归一化，再生成草稿。
 
 ## 无接口文档规则
 

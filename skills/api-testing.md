@@ -17,6 +17,7 @@
 ## 草稿要求
 
 - 有接口文档时，以接口文档为事实来源。
+- OpenAPI / Swagger / Apifox 导出文件需先归一化为接口清单、参数、requestBody、response 和 securitySchemes。
 - 没有接口文档时，只输出接口候选点，不把推断内容写成确定事实。
 - pytest + requests 示例必须默认通过环境变量读取 base URL 和鉴权信息。
 - 脚本草稿应在环境变量缺失时 `pytest.skip`，避免误请求真实服务。

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from runtime.config import load_app_config
 from runtime.graph.state import QAWorkflowState
+from runtime.tools.api_doc_loader import API_DOC_FILENAMES, normalize_workspace_api_docs
 from runtime.tools.artifact_writer import ensure_within_directory
 from runtime.tools.file_reader import read_existing_files, read_utf8
 from runtime.workflow.catalog import DEFAULT_WORKFLOW_REGISTRY
@@ -125,6 +126,19 @@ def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkfl
         state.errors.append(f"PRD 工作区必须位于 prd/ 下: {state.prd_path}")
         return state
 
+    if state.task_type == TASK_API_TEST_DRAFT:
+        try:
+            normalized_api = normalize_workspace_api_docs(repo_root, state.prd_path)
+        except (OSError, ValueError) as exc:
+            state.errors.append(f"API 文档归一化失败: {exc}")
+            return state
+        if normalized_api is not None:
+            state.warnings.append(
+                "已归一化 OpenAPI/Swagger 文档: "
+                f"{normalized_api.copied_path.relative_to(repo_root).as_posix()} -> "
+                f"{normalized_api.markdown_path.relative_to(repo_root).as_posix()}"
+            )
+
     loaded, errors = read_existing_files(
         repo_root,
         _resolve_context_files(repo_root, state.task_type),
@@ -149,6 +163,12 @@ def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkfl
     api_doc = prd_path / "input/api.md"
     if api_doc.is_file():
         state.loaded_files[api_doc.relative_to(repo_root).as_posix()] = read_utf8(api_doc)
+    for api_doc_name in API_DOC_FILENAMES:
+        raw_api_doc = prd_path / "input" / api_doc_name
+        if raw_api_doc.is_file():
+            state.loaded_files[raw_api_doc.relative_to(repo_root).as_posix()] = read_utf8(
+                raw_api_doc
+            )
 
     analysis_file = prd_path / "artifacts" / "requirement-analysis.md"
     analysis_relative_path = analysis_file.relative_to(repo_root).as_posix()

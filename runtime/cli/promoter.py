@@ -368,6 +368,7 @@ def _run_workflow(
     repo_root: Path,
     session: object | None = None,
     debug: bool = False,
+    api_doc_path: str | None = None,
 ) -> RuntimeResult:
     """Execute workflow based on intent.  Called from main loop."""
     from runtime.config import load_app_config
@@ -417,6 +418,10 @@ def _run_workflow(
         )
     elif intent == "api_test_draft":
         import runtime.cli as cli_api
+        from runtime.tools.api_doc_loader import import_api_document_to_workspace
+
+        if api_doc_path:
+            import_api_document_to_workspace(repo_root, prd_path, api_doc_path)
 
         return cli_api.run_api_test_draft_workflow(
             user_input=user_input,
