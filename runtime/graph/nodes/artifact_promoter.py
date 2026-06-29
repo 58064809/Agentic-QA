@@ -50,9 +50,6 @@ def _approved_artifact_keys(workspace: PRDWorkspace, run_id: str | None) -> list
                 continue
             keys.append(key)
             continue
-        # 如果 preview 文件存在但没有 approved review（debug fast path），自动放行
-        if run_id and workspace.artifact_preview_path(run_id).is_file():
-            keys.append(key)
     return keys
 
 
@@ -206,6 +203,23 @@ def _update_metadata_and_review(
     metadata["updated_at"] = promoted_at
     metadata["last_updated_by"] = "runtime.artifact_promoter_node"
     metadata["status"] = "confirmed"
+    runtime_summary = {
+        "run_id": run_id or "",
+        "thread_id": run_id or "",
+        "task_type": "promote_artifacts",
+        "review_status": "confirmed",
+        "next_action": "",
+        "run_status": "completed",
+        "wrote_file": True,
+        "updated_at": promoted_at,
+    }
+    metadata["last_runtime_run"] = runtime_summary
+    runtime_runs = metadata.get("runtime_runs")
+    if not isinstance(runtime_runs, list):
+        runtime_runs = []
+    if not runtime_runs or runtime_runs[-1].get("run_id") != runtime_summary["run_id"]:
+        runtime_runs.append(runtime_summary)
+    metadata["runtime_runs"] = runtime_runs
     artifacts = metadata.get("artifacts")
     if not isinstance(artifacts, dict):
         artifacts = {}

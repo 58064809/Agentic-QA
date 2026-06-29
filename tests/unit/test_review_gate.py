@@ -136,6 +136,40 @@ def test_confirmed_status_rejects_reapprove(tmp_path):
     assert read_review(repo_root, "testcases.review.yml")["status"] == "confirmed"
 
 
+def test_confirmed_previous_run_can_approve_new_candidate(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    review_path = repo_root / "prd/demo-requirement/reviews/testcases.review.yml"
+    review_path.parent.mkdir(parents=True, exist_ok=True)
+    review_path.write_text(
+        yaml.safe_dump(
+            {
+                "artifact": "artifacts/testcases.md",
+                "artifact_type": "testcases",
+                "status": "confirmed",
+                "decision": "promoted",
+                "run_id": "run-1",
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = process_review_gate(
+        repo_root=repo_root,
+        prd_path="prd/demo-requirement",
+        run_id="run-2",
+        user_input="可以了，发布吧",
+        artifact_keys=["testcases"],
+    )
+
+    assert result.success
+    assert result.approved_for_promote
+    review = read_review(repo_root, "testcases.review.yml")
+    assert review["status"] == "approved"
+    assert review["run_id"] == "run-2"
+
+
 def test_multifact_without_target_enters_clarify(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
 

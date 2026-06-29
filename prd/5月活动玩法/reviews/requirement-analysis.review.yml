@@ -1,0 +1,19 @@
+artifact: artifacts/requirement-analysis.md
+artifact_type: requirement-analysis
+status: confirmed
+decision: promoted
+reviewed_by: cli
+run_id: run-20260629-010935-535ca3
+reviewed_at: '2026-06-29T01:12:49+00:00'
+promoted_at: '2026-06-29T01:23:16+00:00'
+promoted_run_id: run-20260629-010935-535ca3
+current_version: v2026-06-29T011249Z-run-20260629-010935-535ca3
+reviewer: cli
+source_message: 需求分析及测试用例通过并发布
+review_decision:
+  intent: approve
+  target_artifact: requirement_analysis
+  confidence: 1.0
+  reason: 用户已授权本轮测试通过并发布
+  revision_request: null
+  requires_confirmation: false

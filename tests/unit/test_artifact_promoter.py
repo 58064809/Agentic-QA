@@ -9,6 +9,7 @@ from runtime.graph.nodes.artifact_promoter import (
     _extract_marked_preview,
     _preview_content_for_key,
     _promoted_front_matter,
+    promote_artifacts,
 )
 from runtime.graph.state import QAWorkflowState
 
@@ -108,3 +109,21 @@ def test_promoted_front_matter_marks_formal_artifact():
 def test_preview_multi_missing():
     with pytest.raises(ValueError):
         _preview_content_for_key("no match", "x", ["a", "b"])
+
+
+def test_promote_requires_approved_review_even_when_preview_exists(tmp_path):
+    repo_root = tmp_path
+    preview_path = repo_root / "prd/demo/runs/run-1/artifact-preview.md"
+    preview_path.parent.mkdir(parents=True)
+    preview_path.write_text("# candidate\n", encoding="utf-8")
+
+    promoted = promote_artifacts(
+        "prd/demo",
+        "run-1",
+        repo_root=repo_root,
+        task_type="testcase_generation",
+    )
+
+    assert not promoted.success
+    assert any("approved" in error for error in promoted.errors)
+    assert not (repo_root / "prd/demo/artifacts/testcases.md").exists()

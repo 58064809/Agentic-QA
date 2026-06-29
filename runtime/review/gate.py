@@ -103,6 +103,14 @@ def _write_review_decision(
     write_yaml_mapping(workspace.review_path(artifact_key), review)
 
 
+def _review_status_for_run(review: dict[str, Any], run_id: str) -> str:
+    current_status = str(review.get("status") or "needs_human_review")
+    review_run_id = str(review.get("run_id") or "")
+    if current_status == "confirmed" and review_run_id and review_run_id != run_id:
+        return "needs_human_review"
+    return current_status
+
+
 def process_review_gate(
     *,
     repo_root: Path,
@@ -177,7 +185,7 @@ def process_review_gate(
     next_status = ""
     for artifact_key in target_artifacts:
         review = _read_review(workspace, artifact_key)
-        current_status = str(review.get("status") or "needs_human_review")
+        current_status = _review_status_for_run(review, run_id)
         transition_decision = (
             parsed.model_copy(update={"target_artifact": artifact_key})
             if parsed.target_artifact == "all"

@@ -1,0 +1,58 @@
+artifact: artifacts/testcases.md
+artifact_type: testcases
+current_version: v2026-06-29T011249Z-run-20260629-010935-535ca3
+versions:
+- version: v2026-06-26T061931Z-run-20260626-035855-76c7a7
+  path: artifacts/testcases.md
+  source_run_id: run-20260626-035855-76c7a7
+  promoted_at: '2026-06-26T06:19:31+00:00'
+- version: v2026-06-26T064501Z-run-20260626-035855-76c7a7
+  path: artifacts/testcases.md
+  source_run_id: run-20260626-035855-76c7a7
+  promoted_at: '2026-06-26T06:45:01+00:00'
+  archived_previous:
+    version: v2026-06-26T064501Z-run-20260626-035855-76c7a7
+    path: artifacts/history/testcases/v2026-06-26T064501Z-run-20260626-035855-76c7a7.previous.md
+    source: artifacts/testcases.md
+    source_run_id: run-20260626-035855-76c7a7
+    archived_at: '2026-06-26T06:45:01+00:00'
+- version: v2026-06-26T075822Z-run-20260626-074914-6bb758
+  path: artifacts/testcases.md
+  source_run_id: run-20260626-074914-6bb758
+  promoted_at: '2026-06-26T07:58:22+00:00'
+  archived_previous:
+    version: v2026-06-26T075822Z-run-20260626-074914-6bb758
+    path: artifacts/history/testcases/v2026-06-26T075822Z-run-20260626-074914-6bb758.previous.md
+    source: artifacts/testcases.md
+    source_run_id: run-20260626-074914-6bb758
+    archived_at: '2026-06-26T07:58:22+00:00'
+- version: v2026-06-29T010553Z-run-20260626-080852-2578c7
+  path: artifacts/testcases.md
+  source_run_id: run-20260626-080852-2578c7
+  promoted_at: '2026-06-29T01:05:53+00:00'
+  archived_previous:
+    version: v2026-06-29T010553Z-run-20260626-080852-2578c7
+    path: artifacts/history/testcases/v2026-06-29T010553Z-run-20260626-080852-2578c7.previous.md
+    source: artifacts/testcases.md
+    source_run_id: run-20260626-080852-2578c7
+    archived_at: '2026-06-29T01:05:53+00:00'
+- version: v2026-06-29T010914Z-run-20260629-010610-43048c
+  path: artifacts/testcases.md
+  source_run_id: run-20260629-010610-43048c
+  promoted_at: '2026-06-29T01:09:14+00:00'
+  archived_previous:
+    version: v2026-06-29T010914Z-run-20260629-010610-43048c
+    path: artifacts/history/testcases/v2026-06-29T010914Z-run-20260629-010610-43048c.previous.md
+    source: artifacts/testcases.md
+    source_run_id: run-20260629-010610-43048c
+    archived_at: '2026-06-29T01:09:14+00:00'
+- version: v2026-06-29T011249Z-run-20260629-010935-535ca3
+  path: artifacts/testcases.md
+  source_run_id: run-20260629-010935-535ca3
+  promoted_at: '2026-06-29T01:12:49+00:00'
+  archived_previous:
+    version: v2026-06-29T011249Z-run-20260629-010935-535ca3
+    path: artifacts/history/testcases/v2026-06-29T011249Z-run-20260629-010935-535ca3.previous.md
+    source: artifacts/testcases.md
+    source_run_id: run-20260629-010935-535ca3
+    archived_at: '2026-06-29T01:12:49+00:00'

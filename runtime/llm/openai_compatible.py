@@ -24,17 +24,17 @@ class OpenAICompatibleAdapter:
             raise RuntimeError("openai SDK 未安装，无法调用 LLM。")
 
         client = self._create_client()
-        # chat.completions 优先 (兼容 DeepSeek / 多数 provider)
+        # Prefer responses.create; fall back to chat.completions for compatible providers.
         try:
-            content = self._generate_with_chat_completions(client, prompt)
+            content = self._generate_with_responses(client, prompt)
             if content:
                 return content
         except Exception:
             pass
 
-        # responses API fallback (仅支持该接口的 provider)
+        # chat.completions fallback (DeepSeek and many OpenAI-compatible providers).
         try:
-            content = self._generate_with_responses(client, prompt)
+            content = self._generate_with_chat_completions(client, prompt)
             if content:
                 return content
         except Exception as exc:
