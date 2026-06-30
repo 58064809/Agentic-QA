@@ -183,6 +183,46 @@ def render_api_discovery_report(result: ApiDiscoveryResult, *, run_id: str | Non
     return "\n".join(lines).rstrip() + "\n"
 
 
+def save_discovery_json(result: ApiDiscoveryResult, *, output_path: Path) -> None:
+    """Write a structured JSON snapshot of the discovery result.
+
+    Format is designed for machine consumption (e.g. by ``api_test_generation``).
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "source_path": result.source_path,
+        "calls": [
+            {
+                "order": c.order,
+                "method": c.method,
+                "url": c.url,
+                "path": c.path,
+                "status": c.status,
+                "resource_type": c.resource_type,
+                "duration_ms": c.duration_ms,
+                "is_business": c.is_business_candidate,
+            }
+            for c in result.calls
+        ],
+        "candidates": [
+            {
+                "method": c.method,
+                "path": c.path,
+                "call_count": c.call_count,
+                "status_codes": c.status_codes,
+                "avg_duration_ms": c.avg_duration_ms,
+                "request_schema": c.request_schema,
+                "response_schema": c.response_schema,
+            }
+            for c in result.candidates
+        ],
+    }
+    output_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+
+
 def _raw_calls(payload: dict[str, Any] | list[Any]) -> list[dict[str, Any]]:
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)]

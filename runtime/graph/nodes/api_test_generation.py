@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -343,3 +344,87 @@ def api_test_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWo
             "接口测试草稿输出路径不符合约定: runs/<run_id>/artifact-preview.md"
         )
     return state
+
+
+def _discovery_endpoints(state: QAWorkflowState) -> list[tuple[str, str, str, dict]]:
+    """Extract endpoints from api_discovery JSON output.
+
+    Returns list of (name, method, path, candidate_dict).
+    Returns empty list if no discovery JSON found.
+    """
+    import json
+
+    discovery_path = Path.cwd() / state.prd_path / "runs" if state.prd_path else None
+    if not discovery_path or not discovery_path.is_dir():
+        return []
+    for run_dir in sorted(discovery_path.iterdir(), reverse=True):
+        json_path = run_dir / "api_discovery_report.discovery.json"
+        if json_path.is_file():
+            try:
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+                candidates = data.get("candidates", [])
+                return [
+                    (
+                        f"API-{i:03d}",
+                        c.get("method", "GET"),
+                        c.get("path", "/"),
+                        c,
+                    )
+                    for i, c in enumerate(candidates, start=1)
+                ]
+            except Exception:
+                continue
+    return []
+
+
+def render_pytest_script(
+    state: QAWorkflowState,
+    endpoints: list[tuple[str, str, str, dict]],
+) -> str:
+    """Generate a pytest + requests script from discovered or documented endpoints."""
+    base_url = (
+        os.environ.get("AGENTIC_QA_BASE_URL") or os.environ.get("BASE_URL") or "http://localhost"
+    )
+    lines = [
+        '"""Auto-generated API tests from api_discovery / api.md."""',
+        "from __future__ import annotations",
+        "",
+        "import json",
+        "import os",
+        "",
+        "import pytest",
+        "import requests",
+        "",
+        f'BASE_URL = os.getenv("AGENTIC_QA_BASE_URL", "{base_url}")',
+        'HEADERS = {"Content-Type": "application/json"}',
+        "",
+        "# ── Auth ────────────────────────────────────────────────────",
+        "# TODO: set AGENTIC_QA_AUTH_TOKEN or replace with actual auth",
+        'AUTH_TOKEN = os.getenv("AGENTIC_QA_AUTH_TOKEN", "")',
+        "if AUTH_TOKEN:",
+        '    HEADERS["Authorization"] = f"Bearer {AUTH_TOKEN}"',
+        "",
+    ]
+
+    if not endpoints:
+        lines.append("# No endpoints discovered — test file is a placeholder.")
+        lines.append("def test_placeholder():")
+        lines.append('    """Replace with actual API tests when endpoints are available."""')
+        lines.append("    assert True")
+        return "\n".join(lines) + "\n"
+
+    for name, method, path, _ in endpoints:
+        safe_name = f"test_{method.lower()}_{path.strip('/').replace('/', '_').replace('-', '_')}"
+        lines.append("")
+        lines.append(f"def {safe_name}():")
+        lines.append(f'    """Auto-generated from {name}: {method} {path}"""')
+        lines.append(f'    url = f"{{BASE_URL}}{path}"')
+        lines.append(f'    resp = requests.request("{method}", url, headers=HEADERS, timeout=15)')
+        lines.append(
+            '    assert resp.status_code < 500, f"Unexpected {resp.status_code}: {resp.text}"'
+        )
+        lines.append("    data = resp.json()")
+        lines.append("    # TODO: add business assertion based on discovery schema")
+        lines.append("    assert data is not None")
+
+    return "\n".join(lines) + "\n"

@@ -6,7 +6,11 @@ from pathlib import Path
 from runtime.graph.nodes.mvp_context_loader import TASK_API_DISCOVERY_REPORT
 from runtime.graph.nodes.mvp_generation import _upsert_artifact
 from runtime.graph.state import QAWorkflowState
-from runtime.tools.api_discovery_normalizer import load_network_capture, render_api_discovery_report
+from runtime.tools.api_discovery_normalizer import (
+    load_network_capture,
+    render_api_discovery_report,
+    save_discovery_json,
+)
 from runtime.workspace import resolve_prd_path
 
 REQUIRED_DISCOVERY_SECTIONS = [
@@ -57,6 +61,9 @@ def api_discovery_report_node(state: QAWorkflowState, repo_root: Path) -> QAWork
             artifact_type="api_discovery_report",
             output_path=output_path,
         )
+        # Also write structured JSON for api-test-draft consumption
+        json_path = Path(output_path).parent / "api_discovery_report.discovery.json"
+        save_discovery_json(result, output_path=json_path)
     return state
 
 
