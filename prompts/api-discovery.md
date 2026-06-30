@@ -8,4 +8,4 @@
 - 必须脱敏 Authorization、Cookie、Set-Cookie、token、session 和 PII。
 - 默认不保存完整 response body，只保留 schema 摘要。
 - 过滤静态资源，合并重复接口，统计调用次数和状态码。
-- 不默认生产环境执行，不启动浏览器。
+- 不默认连接任何未授权环境，不启动浏览器。

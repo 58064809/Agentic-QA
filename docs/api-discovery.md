@@ -30,4 +30,4 @@
 - 抓包结果不是完整接口契约。
 - 不保存真实 Authorization、Cookie、token 或 PII。
 - 默认不保存完整 response body，只保存 schema 摘要。
-- 不默认生产环境执行。
+- 不默认连接任何未授权环境；执行环境必须由输入文件和运行配置显式指定。

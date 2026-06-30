@@ -38,5 +38,5 @@ promote 到 artifacts/ui-test-draft.md
 - 包含不适合自动化或需人工确认的场景。
 - 不出现“已执行 / 执行通过 / 实测通过”等执行结论。
 - 不包含真实账号、token、Cookie 或密钥。
-- 不建议在生产环境执行。
+- 不默认连接任何未授权环境；执行环境必须由环境变量或测试配置显式指定。
 - Android 草稿必须包含 Android Studio、Android SDK、Emulator、ADB、Appium 2、appium-uiautomator2-driver、APK 或 appPackage/appActivity，以及 `ANDROID_DEVICE_NAME`、`ANDROID_APP_PACKAGE`、`ANDROID_APP_ACTIVITY`、`APPIUM_SERVER_URL`。

@@ -66,7 +66,7 @@ target_agent: UI Test Generation Agent
 ## 禁止事项
 
 - 不绕过验证码和风控
-- 不默认在生产环境执行
+- 不默认连接任何未授权环境
 - 不使用脆弱选择器（如纯 CSS class 或索引位置）
 
 ## 待人工确认项
