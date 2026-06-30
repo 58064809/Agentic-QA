@@ -335,7 +335,9 @@ def _run_resume_command(args: list[str], repo_root: Path) -> int:
 def _run_promote_command(args: list[str], repo_root: Path) -> int:
     if not args or args[0] in {"help", "--help", "-h"}:
         print(
-            "用法: agentic-qa promote prd/<requirement> [run_id] [testcases|requirement_analysis]"
+            "用法: agentic-qa promote prd/<requirement> [run_id] [artifact]\n"
+            "artifact 支持: requirement_analysis, testcases, api_test_draft, "
+            "ui_test_draft, api_discovery_report, qa_report"
         )
         return 0
     from runtime.cli.importer import _ensure_prd_workspace

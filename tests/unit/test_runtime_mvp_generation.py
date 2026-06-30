@@ -896,6 +896,17 @@ def test_cli_promote_command_without_artifact_uses_latest_api_discovery_run_keys
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
+def test_cli_promote_command_without_artifact_uses_latest_qa_report_run_keys(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    write_promote_fixture(repo_root, artifact_keys=["qa_report"])
+
+    exit_code = cli._run_promote_command(["prd/demo-requirement"], repo_root)
+
+    assert exit_code == 0
+    assert (repo_root / "prd/demo-requirement/artifacts/qa-report.md").is_file()
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
 def test_cli_promote_command_without_artifact_publishes_latest_mvp_run_keys(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
     write_promote_fixture(repo_root, artifact_keys=["requirement_analysis", "testcases"])

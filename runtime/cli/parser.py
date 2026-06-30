@@ -121,7 +121,7 @@ HELP_TEXT = """用法:
     agentic-qa rag build
     agentic-qa rag search "边界值 活动玩法"
     agentic-qa resume <run_id> "测试用例通过，发布正式产物"
-    agentic-qa promote prd/sample-login-requirement [run_id] [testcases|requirement_analysis]
+    agentic-qa promote prd/sample-login-requirement [run_id] [artifact]
 
 示例:
     agentic-qa "帮我分析登录需求 D:\\需求\\登录.md"
@@ -294,6 +294,8 @@ def _task_type_from_artifact_keys(keys: list[str]) -> str:
         return "ui_test_draft"
     if normalized == {"api_discovery_report"}:
         return "api_discovery_report"
+    if normalized == {"qa_report"}:
+        return "qa_report"
     return "mvp_analysis_testcases"
 
 

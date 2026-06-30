@@ -30,6 +30,8 @@ def _artifact_keys_for_task(state: QAWorkflowState) -> list[str]:
         return ["ui_test_draft"]
     if state.task_type == "api_discovery_report":
         return ["api_discovery_report"]
+    if state.task_type == "qa_report":
+        return ["qa_report"]
     if state.task_type == "mvp_analysis_testcases":
         return ["requirement_analysis", "testcases"]
     return list(ARTIFACT_SPECS)

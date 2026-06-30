@@ -190,7 +190,8 @@ python -m runtime.cli promote prd/<requirement> [run_id] [artifact]
 
 - `prd/<requirement>`：必填，目标 PRD 工作区。
 - `run_id`：可选。缺省时读取目标工作区的 latest run 指针。
-- `artifact`：可选。支持 `testcases`、`requirement_analysis`。缺省时按需求分析 + 测试用例处理。
+- `artifact`：可选。支持 `requirement_analysis`、`testcases`、`api_test_draft`、`ui_test_draft`、`api_discovery_report`、`qa_report`。
+  缺省时优先读取目标工作区 latest run 中的 artifact；如果 latest run 无法识别，再回退到 `requirement_analysis` + `testcases`。
 - 除 PRD 路径外，Runtime 会从剩余参数文本中识别 `run_id` 和 `artifact`。参数顺序不强制，但推荐按 `[run_id] [artifact]` 编写，便于人工阅读和排查。
 
 示例：
