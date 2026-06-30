@@ -32,6 +32,17 @@ API_DOC_PATH_RE = re.compile(
     re.IGNORECASE | re.VERBOSE,
 )
 
+NETWORK_CAPTURE_PATH_RE = re.compile(
+    r"""
+    (?:
+        [a-zA-Z]:\\(?:[^\s\\"']+\\)*[^\s\\"']+\.(?:har|json)
+        |
+        (?:\.?\.?[/\\])?(?:[^\s\\"']+[/\\])*[^\s\\"']+\.(?:har|json)
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
 RUN_ID_RE = re.compile(r"run-\d{8}-\d{6}-[a-z0-9]+|runtime", re.IGNORECASE)
 
 PROMOTE_KEYWORDS = ("发布正式产物", "发布产物", "正式发布", "通过并发布", "发布吧", "promote")
@@ -80,6 +91,13 @@ ARTIFACT_ALIASES: dict[str, tuple[str, ...]] = {
         "Playwright 测试草稿",
         "H5 自动化测试",
         "后台页面自动化测试",
+        "Android 自动化",
+        "安卓自动化",
+        "模拟器",
+        "APK",
+        "appPackage",
+        "appActivity",
+        "UiAutomator2",
     ),
     "api_discovery_report": (
         "api_discovery_report",
@@ -118,10 +136,36 @@ HELP_TEXT = """用法:
 
 
 def _extract_prd_workspace_path(user_input: str) -> str | None:
+    capture_path = _extract_network_capture_path(user_input)
+    if capture_path:
+        prd_root = _prd_workspace_from_capture_path(capture_path)
+        if prd_root:
+            return prd_root
     match = PRD_WORKSPACE_PATH_RE.search(user_input)
     if not match:
         return None
     return match.group(0).strip().rstrip("，。；,;.)>")
+
+
+def _extract_network_capture_path(user_input: str) -> str | None:
+    for match in NETWORK_CAPTURE_PATH_RE.finditer(user_input):
+        value = match.group(0).strip().rstrip("，。；,;.)>")
+        normalized = value.replace("\\", "/").lower()
+        filename = normalized.rsplit("/", 1)[-1]
+        if filename in {"network-capture.har", "network-capture.json"} or filename.endswith(".har"):
+            return value
+    return None
+
+
+def _prd_workspace_from_capture_path(value: str) -> str | None:
+    parts = [part for part in re.split(r"[/\\]+", value.strip()) if part]
+    lowered = [part.lower() for part in parts]
+    for index, part in enumerate(lowered):
+        if part != "prd" or index + 2 >= len(parts):
+            continue
+        if lowered[index + 2] == "input":
+            return "/".join(parts[index : index + 2])
+    return None
 
 
 def _extract_api_doc_path(user_input: str) -> str | None:
@@ -157,7 +201,20 @@ def _explicit_artifact_keys_from_text(value: str) -> list[str]:
     if is_api_test_text:
         keys.append("api_test_draft")
     if any(
-        keyword in value for keyword in ("UI 自动化", "Playwright", "H5 自动化", "后台页面自动化")
+        keyword in value
+        for keyword in (
+            "UI 自动化",
+            "Playwright",
+            "H5 自动化",
+            "后台页面自动化",
+            "Android",
+            "安卓",
+            "模拟器",
+            "APK",
+            "appPackage",
+            "appActivity",
+            "UiAutomator2",
+        )
     ):
         keys.append("ui_test_draft")
     if any(keyword in value for keyword in ("接口发现", "抓包", "接口调用链", "network-capture")):

@@ -492,13 +492,13 @@ def build_ui_test_prompt(
     )
     prompt = f"""# 系统指令：UI 测试生成
 
-你是 UI 自动化测试 Agent。你的任务是根据需求和用例生成 Playwright UI 自动化草稿。
+你是 UI 自动化测试 Agent。你的任务是根据需求和用例生成 Web/Android UI 自动化草稿。
 
 ## 输出要求
 
 输出应包含以下内容：
-1. **Playwright 脚本草稿** — 使用 Page Object Model，可执行业务流程
-2. **选择器策略** — 优先 data-testid > aria-label > text > CSS class
+1. **自动化脚本草稿** — Web 使用 Playwright，Android 使用 Appium 2 + UiAutomator2
+2. **选择器策略** — Web 优先 data-testid > aria-label > text > CSS class；Android 优先 resource-id > accessibility id/content-desc > UiSelector
 3. **测试数据和环境说明** — 需要哪些前置数据和配置
 4. **不适合自动化的场景说明** — 如验证码、风控、第三方依赖
 
@@ -508,6 +508,7 @@ def build_ui_test_prompt(
 2. 明确等待策略：等待元素可见、可交互，避免固定 sleep
 3. 断言清晰：包含页面文案、元素状态、URL 跳转
 4. 失败信息明确：每个断言添加自定义失败提示
+5. 命中 Android、安卓、模拟器、APK、appPackage、appActivity、UiAutomator2 时，必须包含 Android Studio、Android SDK、Emulator、ADB、Appium 2、appium-uiautomator2-driver 和 `ANDROID_DEVICE_NAME`、`ANDROID_APP_PACKAGE`、`ANDROID_APP_ACTIVITY`、`APPIUM_SERVER_URL`
 
 ## 禁止事项
 

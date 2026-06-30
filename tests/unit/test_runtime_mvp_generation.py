@@ -20,6 +20,7 @@ from runtime.graph.mvp_graph import (  # noqa: E402
 from runtime.graph.nodes import mvp_generation  # noqa: E402
 from runtime.llm.openai_compatible import OpenAICompatibleAdapter  # noqa: E402
 from runtime.workflow.runner import resume_workflow_for_run  # noqa: E402
+from runtime.workspace import ARTIFACT_SPECS  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -249,6 +250,97 @@ def build_valid_testcases(row_count: int = 15, *, priority: str = "P1") -> str:
             "检查接口响应、页面提示和数据状态 | 无 |"
         )
     return "\n".join(lines) + "\n"
+
+
+def write_promote_fixture(
+    repo_root: Path,
+    *,
+    artifact_keys: list[str],
+    run_id: str = "run-20260101-000000-promote",
+) -> str:
+    prd_rel = "prd/demo-requirement"
+    run_dir = repo_root / prd_rel / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    runtime_dir = repo_root / ".runtime" / "runs" / run_id
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    if len(artifact_keys) == 1:
+        key = artifact_keys[0]
+        preview = (
+            "---\n"
+            f"artifact_type: {ARTIFACT_SPECS[key]['artifact_type']}\n"
+            "status: needs_human_review\n"
+            "human_review_required: true\n"
+            "---\n\n"
+            f"# {key} candidate\n"
+        )
+    else:
+        sections = [
+            "---",
+            "artifact_type: artifact_preview",
+            "status: needs_human_review",
+            "human_review_required: true",
+            "---",
+            "",
+            "# 候选产物预览",
+            "",
+        ]
+        for key in artifact_keys:
+            sections.extend(
+                [
+                    f"<!-- artifact:start {key} -->",
+                    "",
+                    "---",
+                    f"artifact_type: {ARTIFACT_SPECS[key]['artifact_type']}",
+                    "status: needs_human_review",
+                    "human_review_required: true",
+                    "---",
+                    "",
+                    f"# {key} candidate",
+                    "",
+                    f"<!-- artifact:end {key} -->",
+                    "",
+                ]
+            )
+        preview = "\n".join(sections)
+
+    preview_rel = f"{prd_rel}/runs/{run_id}/artifact-preview.md"
+    (repo_root / preview_rel).write_text(preview, encoding="utf-8")
+    (repo_root / prd_rel / "runs/latest.yml").write_text(
+        yaml.safe_dump({"run_id": run_id}, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    result = {
+        "prd_path": prd_rel,
+        "run_id": run_id,
+        "run_status": "interrupted",
+        "review_status": "needs_human_review",
+        "output_paths": {key: preview_rel for key in artifact_keys},
+        "draft_artifacts": {key: f"# {key} candidate\n" for key in artifact_keys},
+        "artifacts": [{"name": key} for key in artifact_keys],
+    }
+    (runtime_dir / "run-state.json").write_text(
+        json.dumps({"result": result}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    for key in artifact_keys:
+        review_path = repo_root / prd_rel / ARTIFACT_SPECS[key]["review_path"]
+        review_path.parent.mkdir(parents=True, exist_ok=True)
+        review_path.write_text(
+            yaml.safe_dump(
+                {
+                    "artifact": ARTIFACT_SPECS[key]["current_path"],
+                    "artifact_type": ARTIFACT_SPECS[key]["artifact_type"],
+                    "status": "approved",
+                    "decision": "approve",
+                    "run_id": run_id,
+                },
+                allow_unicode=True,
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+    return run_id
 
 
 def test_analyze_dry_run_generates_analysis_without_writing(tmp_path):
@@ -780,6 +872,39 @@ def test_cli_promote_command_publishes_selected_artifact(tmp_path):
     assert exit_code == 0
     assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").is_file()
     assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
+
+
+def test_cli_promote_command_without_artifact_uses_latest_ui_run_keys(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    write_promote_fixture(repo_root, artifact_keys=["ui_test_draft"])
+
+    exit_code = cli._run_promote_command(["prd/demo-requirement"], repo_root)
+
+    assert exit_code == 0
+    assert (repo_root / "prd/demo-requirement/artifacts/ui-test-draft.md").is_file()
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
+def test_cli_promote_command_without_artifact_uses_latest_api_discovery_run_keys(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    write_promote_fixture(repo_root, artifact_keys=["api_discovery_report"])
+
+    exit_code = cli._run_promote_command(["prd/demo-requirement"], repo_root)
+
+    assert exit_code == 0
+    assert (repo_root / "prd/demo-requirement/artifacts/api-discovery-report.md").is_file()
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
+def test_cli_promote_command_without_artifact_publishes_latest_mvp_run_keys(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    write_promote_fixture(repo_root, artifact_keys=["requirement_analysis", "testcases"])
+
+    exit_code = cli._run_promote_command(["prd/demo-requirement"], repo_root)
+
+    assert exit_code == 0
+    assert (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").is_file()
+    assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").is_file()
 
 
 def test_cli_resume_command_approves_and_promotes_single_artifact(tmp_path):

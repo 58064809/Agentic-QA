@@ -16,6 +16,7 @@ from runtime.cli.importer import (
 from runtime.cli.main import main
 from runtime.cli.parser import (
     _extract_api_doc_path,
+    _extract_network_capture_path,
     _extract_prd_workspace_path,
     _is_promote_request,
     _looks_like_markdown_requirement,
@@ -70,6 +71,7 @@ def _import_feishu_url(repo_root: Path, url: str) -> str:
 __all__ = [
     "_ensure_prd_workspace",
     "_extract_api_doc_path",
+    "_extract_network_capture_path",
     "_extract_prd_workspace_path",
     "_import_feishu_url",
     "_import_markdown_requirement",

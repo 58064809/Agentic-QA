@@ -83,6 +83,55 @@ def test_ui_test_draft_approve_write_only_writes_run_preview(tmp_path):
     assert not (repo_root / "prd/demo-requirement/artifacts/ui-test-draft.md").exists()
 
 
+def test_ui_test_draft_fallback_passes_quality_gate_without_llm(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    add_ui_context_files(repo_root)
+
+    result = run_ui_test_draft_workflow(
+        "生成 UI 自动化草稿",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        approve_write=True,
+        use_llm=False,
+    )
+
+    assert result.success
+    assert result.quality_errors == []
+
+
+def test_android_ui_test_draft_prioritizes_emulator_and_appium(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    add_ui_context_files(repo_root)
+
+    result = run_ui_test_draft_workflow(
+        "基于 Android 模拟器和 APK 生成 UI 自动化草稿，appPackage appActivity UiAutomator2",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        approve_write=True,
+        use_llm=False,
+    )
+
+    assert result.success
+    content = (repo_root / result.output_paths["ui_test_draft"]).read_text(encoding="utf-8")
+    for expected in (
+        "Android Studio",
+        "Android SDK",
+        "Emulator",
+        "ADB",
+        "Appium 2",
+        "appium-uiautomator2-driver",
+        "ANDROID_DEVICE_NAME",
+        "ANDROID_APP_PACKAGE",
+        "ANDROID_APP_ACTIVITY",
+        "APPIUM_SERVER_URL",
+        "resource-id > accessibility id/content-desc > UiSelector text/description",
+        "className + 层级辅助 > XPath 兜底",
+        "禁止坐标点击作为常规方案",
+    ):
+        assert expected in content
+    assert "生产环境" not in content
+
+
 def test_ui_test_draft_promote_writes_formal_artifact(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
     add_ui_context_files(repo_root)
@@ -133,5 +182,5 @@ def test_ui_test_quality_rejects_missing_sections_and_execution_claims(tmp_path)
 
     checked = ui_test_quality_check_node(state, repo_root)
 
-    assert any("缺少章节: Playwright 脚本草稿" in error for error in checked.quality_errors)
+    assert any("缺少章节: 自动化脚本草稿" in error for error in checked.quality_errors)
     assert any("执行通过" in error or "已执行" in error for error in checked.quality_errors)

@@ -19,7 +19,7 @@ from runtime.workspace import resolve_prd_path
 REQUIRED_UI_SECTIONS = [
     "页面/入口清单",
     "UI 自动化场景矩阵",
-    "Playwright 脚本草稿",
+    "自动化脚本草稿",
     "选择器策略",
     "等待与断言策略",
     "测试数据与环境配置",
@@ -27,7 +27,37 @@ REQUIRED_UI_SECTIONS = [
     "后续可接入网络抓包的页面动作",
 ]
 EXECUTION_CLAIMS = ["已执行", "执行通过", "实测通过", "测试通过", "浏览器已运行"]
-FORBIDDEN_ENV = ["生产环境", "线上环境", "prod 环境", "production"]
+FORBIDDEN_ENV_PATTERNS = [
+    re.compile(r"(在|到|访问|连接|执行|默认).{0,12}(生产环境|线上环境|production)", re.IGNORECASE),
+    re.compile(
+        r"(生产环境|线上环境|production).{0,12}(执行|访问|base_url|BASE_URL)",
+        re.IGNORECASE,
+    ),
+]
+ANDROID_KEYWORDS = (
+    "android",
+    "安卓",
+    "模拟器",
+    "apk",
+    "apppackage",
+    "appactivity",
+    "uiautomator2",
+)
+ANDROID_REQUIRED_TERMS = (
+    "Android Studio",
+    "Android SDK",
+    "Emulator",
+    "ADB",
+    "Appium 2",
+    "appium-uiautomator2-driver",
+    "ANDROID_DEVICE_NAME",
+    "ANDROID_APP_PACKAGE",
+    "ANDROID_APP_ACTIVITY",
+    "APPIUM_SERVER_URL",
+    "resource-id",
+    "accessibility id",
+    "UiSelector",
+)
 SECRET_PATTERNS = [
     re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]{16,}", re.IGNORECASE),
     re.compile(r"(?i)(token|cookie|secret|password)\s*[:=]\s*['\"]?[A-Za-z0-9._~+/=-]{12,}"),
@@ -38,6 +68,12 @@ def render_ui_test_draft_skeleton(state: QAWorkflowState) -> str:
     source_lines = _render_source_files(state)
     requirement = _path_content(state, "input/requirement.md")
     title = _first_heading(requirement) or "目标业务页面"
+    if _prefers_android(state):
+        return _render_android_ui_test_draft(title, source_lines)
+    return _render_web_ui_test_draft(title, source_lines)
+
+
+def _render_web_ui_test_draft(title: str, source_lines: str) -> str:
     return f"""---
 status: needs_human_review
 artifact_type: ui_test_draft
@@ -64,9 +100,9 @@ generated_by: agentic-qa-runtime
 | 重复点击提交按钮 | 幂等/并发 | P1 | 快速点击两次 | 按钮禁用；确认防重策略 |
 | 依赖接口失败时页面可恢复 | 接口异常 | P2 | 触发动作并等待错误 | 错误态可见；确认 mock 方式 |
 
-## 3. Playwright 脚本草稿
+## 3. 自动化脚本草稿
 
-### fixtures 建议
+### Web / Playwright fixtures 建议
 
 ```python
 import os
@@ -144,13 +180,128 @@ async def test_main_ui_flow(page, base_url, test_user):
 
 - 验证码、人脸识别、短信验证、风控拦截。
 - 第三方支付、微信分享、App/小程序原生能力。
-- 依赖真实生产数据或无法回滚的资金/库存/奖励场景。
+- 依赖真实线上数据或无法回滚的资金/库存/奖励场景。
 - 页面缺少稳定选择器、流程依赖人工审核或外部系统回调。
 
 ## 8. 后续可接入网络抓包的页面动作
 
 - 打开目标页面并记录首屏接口调用链。
 - 提交主流程表单并记录创建/更新接口。
+- 触发异常提示并记录错误响应。
+- 列表刷新、详情查看、状态流转动作可作为 API Discovery 候选输入。
+
+## 来源文件
+
+{source_lines}
+"""
+
+
+def _render_android_ui_test_draft(title: str, source_lines: str) -> str:
+    return f"""---
+status: needs_human_review
+artifact_type: ui_test_draft
+human_review_required: true
+generated_by: agentic-qa-runtime
+---
+
+# UI 自动化测试草稿
+
+## 1. 页面/入口清单
+
+- {title} Android App 入口：使用 Android 模拟器或测试机，APK 或 appPackage/appActivity 待确认。
+- Appium Server 入口：`APPIUM_SERVER_URL` 指向授权测试环境。
+  本阶段只生成草稿，不启动设备、不执行用例。
+
+## 2. UI 自动化场景矩阵
+
+| 场景 | 测试类型 | 优先级 | 操作步骤 | 断言/待确认 |
+|---|---|---|---|---|
+| App 启动 | 正常/入口 | P0 | 启动 APK 或包名/Activity | 首屏可见；确认包名、Activity |
+| 主流程点击与提交 | 正常/规则 | P0 | 按业务步骤点击、输入、提交 | 成功态文案或目标页面可见 |
+| 必填项缺失提示 | 参数校验 | P1 | 清空必填项后提交 | 错误提示可见；确认文案 |
+| 无权限态访问 | 权限/认证 | P0 | 使用隔离账号进入受限页面 | 无权限提示或跳转符合预期 |
+| 网络异常恢复 | 接口异常 | P2 | 使用测试环境 mock 或断网策略触发失败 | 错误态可观察，可重试恢复 |
+
+## 3. 自动化脚本草稿
+
+### Android 前置条件
+
+- Android Studio、Android SDK、Android Emulator 和 ADB 已安装并可在命令行访问。
+- Appium 2 已安装，并安装 `appium-uiautomator2-driver`。
+- 待测应用通过 APK 文件安装，或提供 `ANDROID_APP_PACKAGE` / `ANDROID_APP_ACTIVITY`。
+- 环境变量：`ANDROID_DEVICE_NAME`、`ANDROID_APP_PACKAGE`、
+  `ANDROID_APP_ACTIVITY`、`APPIUM_SERVER_URL`。
+
+### pytest + Appium 示例
+
+```python
+import os
+
+import pytest
+from appium import webdriver
+from appium.options.android import UiAutomator2Options
+
+
+@pytest.fixture
+def driver():
+    server_url = os.getenv("APPIUM_SERVER_URL")
+    device_name = os.getenv("ANDROID_DEVICE_NAME")
+    app_package = os.getenv("ANDROID_APP_PACKAGE")
+    app_activity = os.getenv("ANDROID_APP_ACTIVITY")
+    if not all([server_url, device_name, app_package, app_activity]):
+        pytest.skip("Android/Appium 环境变量未配置，本阶段只生成草稿，不执行用例")
+
+    options = UiAutomator2Options()
+    options.platform_name = "Android"
+    options.automation_name = "UiAutomator2"
+    options.device_name = device_name
+    options.app_package = app_package
+    options.app_activity = app_activity
+    driver = webdriver.Remote(server_url, options=options)
+    yield driver
+    driver.quit()
+
+
+def test_android_main_flow(driver):
+    driver.find_element("id", "待确认_resource_id").click()
+    driver.find_element("accessibility id", "待确认_content_desc").click()
+    assert driver.find_element("android uiautomator", 'new UiSelector().text("待确认成功文案")')
+```
+
+## 4. 选择器策略
+
+- Android 定位优先级：
+  `resource-id > accessibility id/content-desc > UiSelector text/description >
+  className + 层级辅助 > XPath 兜底 > 禁止坐标点击作为常规方案`。
+- 为核心按钮、输入框、列表项、弹窗和错误提示补充稳定 resource-id 或 content-desc。
+- XPath 只作为临时兜底，禁止依赖动态层级、随机文本和屏幕坐标。
+
+## 5. 等待与断言策略
+
+- 等待 App 启动：等待目标 Activity 或首屏关键元素出现。
+- 等待元素：使用显式等待，避免固定 sleep。
+- UI 断言：页面标题、按钮状态、弹窗、Toast、列表数据、表单错误提示。
+- 接口/数据断言建议：仅针对授权测试环境做状态码、业务 code、关键字段或状态流转校验。
+
+## 6. 测试数据与环境配置
+
+- Appium 连接从 `APPIUM_SERVER_URL` 读取，不默认连接任何环境。
+- 设备名从 `ANDROID_DEVICE_NAME` 读取；
+  包名和 Activity 从 `ANDROID_APP_PACKAGE`、`ANDROID_APP_ACTIVITY` 读取。
+- APK 路径、测试账号、Cookie、Token 和密码不得写入仓库；使用环境变量或测试数据服务注入。
+- 测试数据需使用隔离账号、可回滚业务对象和授权测试环境。
+
+## 7. 不适合自动化或需人工确认的场景
+
+- 验证码、人脸识别、短信验证、风控拦截。
+- 第三方支付、系统权限弹窗、深度链接、推送通知和厂商 ROM 差异。
+- 依赖真实线上数据或无法回滚的资金/库存/奖励场景。
+- 页面缺少稳定 resource-id/content-desc，流程依赖人工审核或外部系统回调。
+
+## 8. 后续可接入网络抓包的页面动作
+
+- 启动 App 并记录首屏接口调用链。
+- 完成主流程点击和提交并记录创建/更新接口。
 - 触发异常提示并记录错误响应。
 - 列表刷新、详情查看、状态流转动作可作为 API Discovery 候选输入。
 
@@ -205,11 +356,17 @@ def ui_test_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWor
     for section in REQUIRED_UI_SECTIONS:
         if not _has_section(artifact, section):
             state.quality_errors.append(f"UI 自动化草稿缺少章节: {section}")
-    if "Playwright" not in artifact:
-        state.quality_errors.append("UI 自动化草稿缺少 Playwright 脚本草稿。")
+    if not any(keyword in artifact for keyword in ("Playwright", "Appium", "UiAutomator2")):
+        state.quality_errors.append("UI 自动化草稿缺少 Playwright 或 Appium 脚本草稿。")
+    if _prefers_android(state) or "UiAutomator2" in artifact:
+        missing_terms = [term for term in ANDROID_REQUIRED_TERMS if term not in artifact]
+        if missing_terms:
+            state.quality_errors.append(
+                "Android UI 自动化草稿缺少关键配置或策略: " + "、".join(missing_terms)
+            )
     if any(claim in artifact for claim in EXECUTION_CLAIMS):
         state.quality_errors.append("UI 自动化草稿不允许出现已执行或执行通过结论。")
-    if any(env in artifact for env in FORBIDDEN_ENV):
+    if any(pattern.search(artifact) for pattern in FORBIDDEN_ENV_PATTERNS):
         state.quality_errors.append("UI 自动化草稿不允许建议在生产环境执行。")
     if any(pattern.search(artifact) for pattern in SECRET_PATTERNS):
         state.quality_errors.append("UI 自动化草稿疑似包含真实账号、token、Cookie 或密钥。")
@@ -222,6 +379,16 @@ def _first_heading(markdown: str) -> str | None:
         if line.startswith("# "):
             return line.lstrip("#").strip()
     return None
+
+
+def _prefers_android(state: QAWorkflowState) -> bool:
+    haystack = "\n".join(
+        [
+            state.user_input,
+            *[str(content) for content in state.loaded_files.values()],
+        ]
+    ).lower()
+    return any(keyword in haystack for keyword in ANDROID_KEYWORDS)
 
 
 def _has_section(markdown: str, section: str) -> bool:

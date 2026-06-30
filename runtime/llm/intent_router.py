@@ -104,10 +104,10 @@ def _extract_paths_fallback(user_input: str) -> tuple[str | None, str | None]:
     prd_path = None
     url = None
 
-    m = PRD_WORKSPACE_RE.search(user_input)
-    if m:
-        prd_path = m.group(0).strip().rstrip("，。；,;.)>")
-    else:
+    from runtime.cli.parser import _extract_prd_workspace_path
+
+    prd_path = _extract_prd_workspace_path(user_input)
+    if not prd_path:
         m = LOCAL_PATH_RE.search(user_input)
         if m:
             prd_path = m.group(0).strip()
@@ -138,7 +138,20 @@ def _infer_intent_fallback(user_input: str) -> str:
         return "api_discovery_report"
     if any(
         keyword in user_input
-        for keyword in ("UI 自动化", "Playwright", "H5 自动化", "后台页面自动化", "UI 自动化脚本")
+        for keyword in (
+            "UI 自动化",
+            "Playwright",
+            "H5 自动化",
+            "后台页面自动化",
+            "UI 自动化脚本",
+            "Android",
+            "安卓",
+            "模拟器",
+            "APK",
+            "appPackage",
+            "appActivity",
+            "UiAutomator2",
+        )
     ):
         return "ui_test_draft"
     if any(

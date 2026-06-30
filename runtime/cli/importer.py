@@ -153,3 +153,29 @@ def _import_feishu_url(repo_root: Path, url: str) -> str:
         source_url=url,
         source_type="feishu",
     )
+
+
+def _import_network_capture_to_workspace(
+    repo_root: Path,
+    prd_path: str,
+    capture_path: str,
+) -> Path:
+    """Copy a HAR/JSON network capture into the PRD input standard location."""
+    source = Path(capture_path)
+    if not source.is_absolute():
+        source = repo_root / source
+    source = source.resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f"抓包文件不存在: {capture_path}")
+
+    suffix = source.suffix.lower()
+    if suffix not in {".har", ".json"}:
+        raise ValueError(f"抓包文件仅支持 .har/.json: {capture_path}")
+
+    workspace = PRDWorkspace(repo_root / prd_path)
+    target_name = "network-capture.har" if suffix == ".har" else "network-capture.json"
+    target = workspace.root / "input" / target_name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if source != target.resolve():
+        shutil.copy2(source, target)
+    return target

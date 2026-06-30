@@ -22,28 +22,6 @@ ALLOWED_ARTIFACT_STATUSES = {
 
 BLOCKING_ARTIFACT_STATUSES = {"needs_human_review", "needs_changes", "partial", "failed"}
 
-WORKSPACE_DIRS = [
-    "input",
-    "input/attachments",
-    "artifacts",
-    "artifacts/history",
-    "artifacts/history/requirement-analysis",
-    "artifacts/history/testcases",
-    "artifacts/history/qa-report",
-    "reviews",
-    "runs",
-]
-
-REQUIRED_WORKSPACE_FILES = [
-    "input/requirement.md",
-    "input/api.md",
-    "metadata.yml",
-    "reviews/requirement-analysis.review.yml",
-    "reviews/testcases.review.yml",
-    "reviews/qa-report.review.yml",
-    "artifacts/history/testcases/index.yml",
-]
-
 REQUIRED_METADATA_KEYS = [
     "requirement_id",
     "title",
@@ -93,6 +71,27 @@ ARTIFACT_SPECS: dict[str, dict[str, str]] = {
         "review_path": "reviews/qa-report.review.yml",
     },
 }
+
+WORKSPACE_DIRS = [
+    "input",
+    "input/attachments",
+    "artifacts",
+    "artifacts/history",
+    "reviews",
+    "runs",
+    *dict.fromkeys(
+        str(Path(spec["history_index"]).parent).replace("\\", "/")
+        for spec in ARTIFACT_SPECS.values()
+    ),
+]
+
+REQUIRED_WORKSPACE_FILES = [
+    "input/requirement.md",
+    "input/api.md",
+    "metadata.yml",
+    *[spec["review_path"] for spec in ARTIFACT_SPECS.values()],
+    *[spec["history_index"] for spec in ARTIFACT_SPECS.values()],
+]
 
 METADATA_FILE = "metadata.yml"
 RUNS_DIR = "runs"

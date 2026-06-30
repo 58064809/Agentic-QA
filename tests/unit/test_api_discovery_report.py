@@ -11,6 +11,11 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from test_runtime_mvp_generation import create_mvp_repo  # noqa: E402
 
+from runtime.cli.importer import _import_network_capture_to_workspace  # noqa: E402
+from runtime.cli.parser import (  # noqa: E402
+    _extract_network_capture_path,
+    _extract_prd_workspace_path,
+)
 from runtime.graph.app import (  # noqa: E402
     promote_artifacts,
     resume_recorded_workflow,
@@ -74,6 +79,30 @@ def test_intent_routes_api_discovery_without_llm(monkeypatch):
     )
 
     assert route.intent == "api_discovery_report"
+    assert route.prd_path == "prd/demo-requirement"
+
+
+def test_network_capture_path_parser_derives_prd_workspace():
+    command = "基于 prd/demo/input/network-capture.har 生成接口发现报告"
+
+    assert _extract_network_capture_path(command) == "prd/demo/input/network-capture.har"
+    assert _extract_prd_workspace_path(command) == "prd/demo"
+
+
+def test_external_network_capture_is_copied_to_standard_workspace_path(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    external = tmp_path / "captures" / "activity.har"
+    external.parent.mkdir()
+    external.write_text('{"log":{"entries":[]}}', encoding="utf-8")
+
+    target = _import_network_capture_to_workspace(
+        repo_root,
+        "prd/demo-requirement",
+        str(external),
+    )
+
+    assert target == repo_root / "prd/demo-requirement/input/network-capture.har"
+    assert target.read_text(encoding="utf-8") == external.read_text(encoding="utf-8")
 
 
 def test_api_discovery_report_generates_preview_and_sanitizes(tmp_path):

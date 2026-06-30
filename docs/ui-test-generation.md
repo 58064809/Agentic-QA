@@ -1,6 +1,6 @@
 # UI 自动化草稿生成
 
-`ui_test_draft` 用于从 PRD、需求分析、测试用例和接口文档生成 Playwright UI 自动化草稿。本阶段不启动浏览器，不访问真实环境。
+`ui_test_draft` 用于从 PRD、需求分析、测试用例和接口文档生成 Web/Android UI 自动化草稿。本阶段不启动浏览器、模拟器或真实设备，不访问真实环境。
 
 ## 工作流
 
@@ -32,10 +32,11 @@ promote 到 artifacts/ui-test-draft.md
 
 - 包含页面/入口清单。
 - 包含 UI 自动化场景矩阵。
-- 包含 Playwright 脚本草稿。
+- 包含自动化脚本草稿。Web 优先 Playwright；命中 Android、安卓、模拟器、APK、appPackage、appActivity、UiAutomator2 等关键词时优先 Appium 2 + UiAutomator2。
 - 包含选择器策略。
 - 包含等待与断言策略。
 - 包含不适合自动化或需人工确认的场景。
 - 不出现“已执行 / 执行通过 / 实测通过”等执行结论。
 - 不包含真实账号、token、Cookie 或密钥。
 - 不建议在生产环境执行。
+- Android 草稿必须包含 Android Studio、Android SDK、Emulator、ADB、Appium 2、appium-uiautomator2-driver、APK 或 appPackage/appActivity，以及 `ANDROID_DEVICE_NAME`、`ANDROID_APP_PACKAGE`、`ANDROID_APP_ACTIVITY`、`APPIUM_SERVER_URL`。

@@ -324,7 +324,7 @@ def _run_resume_command(args: list[str], repo_root: Path) -> int:
                 natural_language=True,
             )
         except (FileNotFoundError, ValueError) as exc:
-            print(f"鉂?{exc}")
+            print(f"❌ {exc}")
             return 1
         _print_promote_result(promoted)
         return 0 if promoted.success else 1
@@ -343,12 +343,17 @@ def _run_promote_command(args: list[str], repo_root: Path) -> int:
     prd_rel = _ensure_prd_workspace(repo_root, args[0])
     rest = " ".join(args[1:])
     run_id = _extract_run_id(rest)
-    artifact_keys = _artifact_keys_from_text(rest)
+    selected_run_id = run_id or _latest_run_id_for_prd(repo_root, prd_rel)
+    artifact_keys = _explicit_artifact_keys_from_text(rest)
+    if not artifact_keys:
+        artifact_keys = _artifact_keys_from_recorded_run(repo_root, selected_run_id)
+    if not artifact_keys:
+        artifact_keys = _artifact_keys_from_text(rest)
     try:
         result = _run_promote(
             repo_root,
             prd_rel,
-            run_id,
+            selected_run_id,
             artifact_keys,
             source_message="agentic-qa promote " + " ".join(args),
             natural_language=False,
@@ -369,6 +374,7 @@ def _run_workflow(
     session: object | None = None,
     debug: bool = False,
     api_doc_path: str | None = None,
+    network_capture_path: str | None = None,
 ) -> RuntimeResult:
     """Execute workflow based on intent.  Called from main loop."""
     from runtime.config import load_app_config
@@ -445,6 +451,10 @@ def _run_workflow(
         )
     elif intent == "api_discovery_report":
         import runtime.cli as cli_api
+        from runtime.cli.importer import _import_network_capture_to_workspace
+
+        if network_capture_path:
+            _import_network_capture_to_workspace(repo_root, prd_path, network_capture_path)
 
         return cli_api.run_api_discovery_report_workflow(
             user_input=user_input,

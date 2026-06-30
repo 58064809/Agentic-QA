@@ -13,6 +13,7 @@ from runtime.cli.importer import (
 from runtime.cli.parser import (
     HELP_TEXT,
     _extract_api_doc_path,
+    _extract_network_capture_path,
     _extract_prd_workspace_path,
     _is_promote_request,
     _looks_like_markdown_requirement,
@@ -180,6 +181,7 @@ def _dialogue_loop(
             session=session,
             debug=debug,
             api_doc_path=_extract_api_doc_path(line),
+            network_capture_path=_extract_network_capture_path(line),
         )
         _print_result(result, intent)
         session.append_history("assistant", str(result))
@@ -279,6 +281,7 @@ def main() -> int:
         repo_root=repo_root,
         session=session,
         api_doc_path=_extract_api_doc_path(user_input),
+        network_capture_path=_extract_network_capture_path(user_input),
     )
 
     _print_result(result, intent)

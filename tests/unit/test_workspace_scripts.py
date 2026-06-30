@@ -18,6 +18,8 @@ from create_prd_workspace import (  # noqa: E402
     write_yaml,
 )
 
+from runtime.workspace import ARTIFACT_SPECS, REQUIRED_WORKSPACE_FILES  # noqa: E402
+
 
 def test_create_prd_workspace_creates_standard_directories(tmp_path):
     workspace = create_workspace("demo-requirement", prd_root=tmp_path / "prd")
@@ -27,6 +29,9 @@ def test_create_prd_workspace_creates_standard_directories(tmp_path):
     assert (workspace / "metadata.yml").is_file()
     assert (workspace / "reviews/testcases.review.yml").is_file()
     assert (workspace / "artifacts/history/testcases/index.yml").is_file()
+    for spec in ARTIFACT_SPECS.values():
+        assert (workspace / spec["review_path"]).is_file()
+        assert (workspace / spec["history_index"]).is_file()
     for directory in WORKSPACE_DIRS:
         assert (workspace / directory).is_dir()
 
@@ -86,3 +91,34 @@ def test_validate_workspace_rejects_invalid_review_status(tmp_path):
 
     assert not result.ok
     assert any("status 非法" in error for error in result.errors)
+
+
+def test_validate_workspace_detects_missing_generated_review_and_history(tmp_path):
+    workspace = create_workspace("demo-requirement", prd_root=tmp_path / "prd")
+    (workspace / "reviews/ui-test-draft.review.yml").unlink()
+    (workspace / "artifacts/history/api-discovery-report/index.yml").unlink()
+
+    result = validate_workspace(workspace)
+
+    assert not result.ok
+    assert "缺少文件: reviews/ui-test-draft.review.yml" in result.errors
+    assert "缺少文件: artifacts/history/api-discovery-report/index.yml" in result.errors
+
+
+def test_create_workspace_does_not_overwrite_existing_review_or_history(tmp_path):
+    workspace = create_workspace("demo-requirement", prd_root=tmp_path / "prd")
+    review = workspace / "reviews/ui-test-draft.review.yml"
+    history = workspace / "artifacts/history/ui-test-draft/index.yml"
+    review.write_text("status: approved\ncustom: keep\n", encoding="utf-8")
+    history.write_text("artifact: custom\nversions:\n- v1\n", encoding="utf-8")
+
+    create_workspace("demo-requirement", prd_root=tmp_path / "prd")
+
+    assert "custom: keep" in review.read_text(encoding="utf-8")
+    assert "- v1" in history.read_text(encoding="utf-8")
+
+
+def test_required_workspace_files_are_derived_from_artifact_specs():
+    for spec in ARTIFACT_SPECS.values():
+        assert spec["review_path"] in REQUIRED_WORKSPACE_FILES
+        assert spec["history_index"] in REQUIRED_WORKSPACE_FILES
