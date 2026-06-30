@@ -121,9 +121,7 @@ def render_api_discovery_report(result: ApiDiscoveryResult, *, run_id: str | Non
         ]
     )
     if not result.candidates:
-        lines.append(
-            "| 未发现业务接口候选 | 0 | playwright-network-capture | " "未发现业务接口候选 |"
-        )
+        lines.append("| 未发现业务接口候选 | 0 | playwright-network-capture | 未发现业务接口候选 |")
     for candidate in result.candidates:
         lines.append(
             f"| {candidate.method} {candidate.path} | {candidate.call_count} | "
@@ -249,6 +247,16 @@ def _normalize_call(order: int, raw: dict[str, Any]) -> NetworkCall:
         request.get("postData") or raw.get("post_data") or raw.get("request_body")
     )
     response_body = _json_like(response.get("content") or raw.get("response_body"))
+    request_body_schema = (
+        raw.get("request_body_schema")
+        or request.get("body_schema")
+        or request.get("request_body_schema")
+    )
+    response_body_schema = (
+        raw.get("response_body_schema")
+        or response.get("body_schema")
+        or response.get("response_body_schema")
+    )
     return NetworkCall(
         order=order,
         method=method,
@@ -261,8 +269,8 @@ def _normalize_call(order: int, raw: dict[str, Any]) -> NetworkCall:
         duration_ms=float(duration) if isinstance(duration, int | float) else None,
         request_headers=sanitize_headers(_headers_mapping(request.get("headers"))),
         response_headers=sanitize_headers(_headers_mapping(response.get("headers"))),
-        request_body_schema=schema_summary(request_body) if request_body is not None else {},
-        response_body_schema=schema_summary(response_body) if response_body is not None else {},
+        request_body_schema=_schema_from_capture(request_body_schema, request_body),
+        response_body_schema=_schema_from_capture(response_body_schema, response_body),
     )
 
 
@@ -311,6 +319,12 @@ def _json_like(value: Any) -> Any:
         except json.JSONDecodeError:
             return sanitize_json(value)
     return None
+
+
+def _schema_from_capture(explicit_schema: Any, body: Any) -> Any:
+    if explicit_schema is not None:
+        return sanitize_json(explicit_schema)
+    return schema_summary(body) if body is not None else {}
 
 
 def _path_from_url(url: str) -> str:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+import json
 import re
 from pathlib import Path
 
@@ -44,6 +44,8 @@ SECRET_PATTERNS = [
 ]
 ENDPOINT_RE = re.compile(r"^##\s+([A-Z]{3,7})\s+([^\s]+)", re.MULTILINE)
 API_PLACEHOLDER_MARKERS = ("示例接口", "/api/example", "请替换为真实接口")
+DISCOVERY_SOURCE_LABEL = "Playwright network capture / api-discovery-report"
+Endpoint = tuple[str, str, str, str]
 
 
 def _api_doc_content(state: QAWorkflowState) -> str:
@@ -56,20 +58,32 @@ def _has_meaningful_api_doc(api_doc: str) -> bool:
     return not any(marker in api_doc for marker in API_PLACEHOLDER_MARKERS)
 
 
-def _extract_endpoints(api_doc: str) -> list[tuple[str, str, str]]:
-    endpoints: list[tuple[str, str, str]] = []
+def _extract_endpoints(api_doc: str) -> list[Endpoint]:
+    endpoints: list[Endpoint] = []
     for index, match in enumerate(ENDPOINT_RE.finditer(api_doc), start=1):
         method, url = match.group(1), match.group(2)
-        endpoints.append((f"API-{index:03d}", method, url))
+        endpoints.append((f"API-{index:03d}", method, url, "input/api.md"))
     return endpoints
 
 
-def _endpoint_rows(endpoints: list[tuple[str, str, str]], has_api_doc: bool) -> list[str]:
+def _endpoint_rows(
+    endpoints: list[Endpoint],
+    *,
+    has_api_doc: bool,
+    from_discovery: bool,
+) -> list[str]:
     if endpoints:
+        if from_discovery:
+            return [
+                f"| {name} | {method} | {url} | 抓包发现的运行时业务接口候选 | {source} | "
+                "需与 Swagger / Apifox 契约核对；待确认请求字段、响应字段、错误码、"
+                "权限、风控和幂等规则 |"
+                for name, method, url, source in endpoints
+            ]
         return [
             f"| {name} | {method} | {url} | 按接口文档覆盖对应业务流程 | input/api.md | "
             "待确认鉴权、错误码和环境域名 |"
-            for name, method, url in endpoints
+            for name, method, url, _ in endpoints
         ]
     if has_api_doc:
         return [
@@ -86,11 +100,21 @@ def _endpoint_rows(endpoints: list[tuple[str, str, str]], has_api_doc: bool) -> 
     ]
 
 
-def _matrix_rows(endpoints: list[tuple[str, str, str]], has_api_doc: bool) -> list[str]:
+def _matrix_rows(
+    endpoints: list[Endpoint],
+    *,
+    has_api_doc: bool,
+    from_discovery: bool,
+) -> list[str]:
     target = endpoints[0][0] if endpoints else "接口候选-001"
     pending = (
         "待确认错误码、业务 code、鉴权方式和幂等策略"
         if has_api_doc
+        else (
+            "待补充接口文档；需与 Swagger / Apifox 契约核对；"
+            "待确认 URL、Method、请求字段、响应字段、鉴权方式"
+        )
+        if from_discovery
         else "待补充接口文档；待确认 URL、Method、请求字段、响应字段、鉴权方式"
     )
     return [
@@ -113,22 +137,77 @@ def _matrix_rows(endpoints: list[tuple[str, str, str]], has_api_doc: bool) -> li
     ]
 
 
-def render_api_test_draft_skeleton(state: QAWorkflowState) -> str:
+def _discovery_json_candidates(repo_root: Path, state: QAWorkflowState) -> list[Path]:
+    if not state.prd_path:
+        return []
+    prd_root = resolve_prd_path(repo_root, state.prd_path)
+    runs_root = prd_root / "runs"
+    if not runs_root.is_dir():
+        return []
+
+    candidates: list[Path] = []
+    if state.run_id:
+        current_run = runs_root / state.run_id / "api_discovery_report.discovery.json"
+        if current_run.is_file():
+            candidates.append(current_run)
+    discovered = [
+        path
+        for path in runs_root.glob("*/api_discovery_report.discovery.json")
+        if path.is_file() and path not in candidates
+    ]
+    discovered.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    return candidates + discovered
+
+
+def _load_discovery_endpoints(repo_root: Path, state: QAWorkflowState) -> list[Endpoint]:
+    for json_path in _discovery_json_candidates(repo_root, state):
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        candidates = data.get("candidates") if isinstance(data, dict) else None
+        if not isinstance(candidates, list):
+            continue
+        endpoints: list[Endpoint] = []
+        for index, candidate in enumerate(candidates, start=1):
+            if not isinstance(candidate, dict):
+                continue
+            method = str(candidate.get("method") or "GET").upper()
+            path = str(candidate.get("path") or "/")
+            endpoints.append((f"API-DISC-{index:03d}", method, path, DISCOVERY_SOURCE_LABEL))
+        if endpoints:
+            return endpoints
+    return []
+
+
+def render_api_test_draft_skeleton(state: QAWorkflowState, repo_root: Path) -> str:
     api_doc = _api_doc_content(state)
     has_api_doc = _has_meaningful_api_doc(api_doc)
     endpoints = _extract_endpoints(api_doc) if has_api_doc else []
+    from_discovery = False
+    if not has_api_doc:
+        discovery_endpoints = _load_discovery_endpoints(repo_root, state)
+        if discovery_endpoints:
+            endpoints = discovery_endpoints
+            from_discovery = True
     source_lines = _render_source_files(state)
     no_api_note = (
-        "\n> 待补充接口文档：当前未发现可用 `input/api.md`，以下仅为接口候选点和草稿结构，"
-        "不得视为真实接口契约。\n"
-        if not has_api_doc
-        else ""
+        "\n> 待补充接口文档：当前未发现可用 `input/api.md`，以下接口来自 "
+        f"{DISCOVERY_SOURCE_LABEL}，只代表运行时流量，不得视为真实接口契约。\n"
+        if from_discovery
+        else (
+            "\n> 待补充接口文档：当前未发现可用 `input/api.md`，以下仅为接口候选点和草稿结构，"
+            "不得视为真实接口契约。\n"
+            if not has_api_doc
+            else ""
+        )
     )
     endpoint_comment = (
         'BASE_URL = os.getenv("AGENTIC_QA_BASE_URL")  # 待确认测试环境域名'
-        if has_api_doc
+        if has_api_doc or from_discovery
         else 'BASE_URL = os.getenv("AGENTIC_QA_BASE_URL")  # 待补充接口文档后再配置'
     )
+    endpoint_method = endpoints[0][1] if endpoints else "POST"
     endpoint_path = endpoints[0][2] if endpoints else "/待确认-url"
     return f"""---
 status: needs_human_review
@@ -143,13 +222,13 @@ generated_by: agentic-qa-runtime
 
 | 接口名称 | Method | URL | 业务用途 | 来源 | 待确认项 |
 |---|---|---|---|---|---|
-{chr(10).join(_endpoint_rows(endpoints, has_api_doc))}
+{chr(10).join(_endpoint_rows(endpoints, has_api_doc=has_api_doc, from_discovery=from_discovery))}
 
 ## 2. 接口测试点矩阵
 
 | 接口 | 场景 | 测试类型 | 优先级 | 请求数据 | 断言点 | 前置条件 | 待确认项 |
 |---|---|---|---|---|---|---|---|
-{chr(10).join(_matrix_rows(endpoints, has_api_doc))}
+{chr(10).join(_matrix_rows(endpoints, has_api_doc=has_api_doc, from_discovery=from_discovery))}
 
 ## 3. 请求示例
 
@@ -213,7 +292,7 @@ class ApiClient:
 def test_api_candidate_success(base_url, auth_headers):
     client = ApiClient(base_url, auth_headers)
     payload = {{"field": "待确认请求字段"}}
-    response = client.request("POST", "{endpoint_path}", json=payload)
+    response = client.request("{endpoint_method}", "{endpoint_path}", json=payload)
     assert response.status_code in {{200, 201}}
     body = response.json()
     assert "code" in body
@@ -256,7 +335,7 @@ def test_api_candidate_success(base_url, auth_headers):
 """
 
 
-def api_test_generation_node(state: QAWorkflowState) -> QAWorkflowState:
+def api_test_generation_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
     if state.task_type != TASK_API_TEST_DRAFT:
         return state
     state.record_node("api_test_generation_node")
@@ -273,7 +352,7 @@ def api_test_generation_node(state: QAWorkflowState) -> QAWorkflowState:
     artifact = _generate_with_optional_llm(
         state,
         prompt=prompt.prompt,
-        fallback=render_api_test_draft_skeleton(state),
+        fallback=render_api_test_draft_skeleton(state, repo_root),
     )
     state.draft_artifacts["api_test_draft"] = artifact
     state.draft_artifact = artifact
@@ -344,87 +423,3 @@ def api_test_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWo
             "接口测试草稿输出路径不符合约定: runs/<run_id>/artifact-preview.md"
         )
     return state
-
-
-def _discovery_endpoints(state: QAWorkflowState) -> list[tuple[str, str, str, dict]]:
-    """Extract endpoints from api_discovery JSON output.
-
-    Returns list of (name, method, path, candidate_dict).
-    Returns empty list if no discovery JSON found.
-    """
-    import json
-
-    discovery_path = Path.cwd() / state.prd_path / "runs" if state.prd_path else None
-    if not discovery_path or not discovery_path.is_dir():
-        return []
-    for run_dir in sorted(discovery_path.iterdir(), reverse=True):
-        json_path = run_dir / "api_discovery_report.discovery.json"
-        if json_path.is_file():
-            try:
-                data = json.loads(json_path.read_text(encoding="utf-8"))
-                candidates = data.get("candidates", [])
-                return [
-                    (
-                        f"API-{i:03d}",
-                        c.get("method", "GET"),
-                        c.get("path", "/"),
-                        c,
-                    )
-                    for i, c in enumerate(candidates, start=1)
-                ]
-            except Exception:
-                continue
-    return []
-
-
-def render_pytest_script(
-    state: QAWorkflowState,
-    endpoints: list[tuple[str, str, str, dict]],
-) -> str:
-    """Generate a pytest + requests script from discovered or documented endpoints."""
-    base_url = (
-        os.environ.get("AGENTIC_QA_BASE_URL") or os.environ.get("BASE_URL") or "http://localhost"
-    )
-    lines = [
-        '"""Auto-generated API tests from api_discovery / api.md."""',
-        "from __future__ import annotations",
-        "",
-        "import json",
-        "import os",
-        "",
-        "import pytest",
-        "import requests",
-        "",
-        f'BASE_URL = os.getenv("AGENTIC_QA_BASE_URL", "{base_url}")',
-        'HEADERS = {"Content-Type": "application/json"}',
-        "",
-        "# ── Auth ────────────────────────────────────────────────────",
-        "# TODO: set AGENTIC_QA_AUTH_TOKEN or replace with actual auth",
-        'AUTH_TOKEN = os.getenv("AGENTIC_QA_AUTH_TOKEN", "")',
-        "if AUTH_TOKEN:",
-        '    HEADERS["Authorization"] = f"Bearer {AUTH_TOKEN}"',
-        "",
-    ]
-
-    if not endpoints:
-        lines.append("# No endpoints discovered — test file is a placeholder.")
-        lines.append("def test_placeholder():")
-        lines.append('    """Replace with actual API tests when endpoints are available."""')
-        lines.append("    assert True")
-        return "\n".join(lines) + "\n"
-
-    for name, method, path, _ in endpoints:
-        safe_name = f"test_{method.lower()}_{path.strip('/').replace('/', '_').replace('-', '_')}"
-        lines.append("")
-        lines.append(f"def {safe_name}():")
-        lines.append(f'    """Auto-generated from {name}: {method} {path}"""')
-        lines.append(f'    url = f"{{BASE_URL}}{path}"')
-        lines.append(f'    resp = requests.request("{method}", url, headers=HEADERS, timeout=15)')
-        lines.append(
-            '    assert resp.status_code < 500, f"Unexpected {resp.status_code}: {resp.text}"'
-        )
-        lines.append("    data = resp.json()")
-        lines.append("    # TODO: add business assertion based on discovery schema")
-        lines.append("    assert data is not None")
-
-    return "\n".join(lines) + "\n"

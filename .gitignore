@@ -47,8 +47,13 @@ prd/*-review/metadata.yml
 prd/*-review/requirement.md
 prd/*-review/requirement.pdf
 
-# AtomCode local-scope configs (machine-specific)
-.atomcode/local/
+# Local agent / skill runtime state
+.atomcode/
+.agents/skills/
+.agents/skills-disabled/
+.agents/cache/
+.agents/logs/
+.agents/tmp/
 
 # Runtime and IDE local state
 .runtime/

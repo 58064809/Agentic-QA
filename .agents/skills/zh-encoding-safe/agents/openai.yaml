@@ -1,3 +1,0 @@
-display_name: 中文编码安全
-short_description: 处理中文文件、终端输出和脚本执行时避免乱码
-default_prompt: 检查并修复这个任务中的中文编码、PowerShell 输出或文件读写乱码问题。

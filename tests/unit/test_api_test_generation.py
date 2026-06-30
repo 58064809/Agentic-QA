@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -82,6 +83,46 @@ def test_api_test_draft_without_api_doc_marks_missing_contract(tmp_path):
     assert "待补充接口文档" in draft
     assert "待确认 URL" in draft
     assert "待确认 Method" in draft
+
+
+def test_api_test_draft_uses_discovery_json_when_api_doc_missing(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    add_api_test_context_files(repo_root)
+    (repo_root / "prd/demo-requirement/input/api.md").unlink()
+    discovery_dir = repo_root / "prd/demo-requirement/runs/run-discovery"
+    discovery_dir.mkdir(parents=True)
+    discovery_payload = {
+        "source_path": "prd/demo-requirement/input/network-capture.json",
+        "candidates": [
+            {
+                "method": "POST",
+                "path": "/api/activity/join",
+                "call_count": 1,
+                "status_codes": [200],
+                "request_schema": {"activityId": "string"},
+                "response_schema": {"code": "number", "data": {"status": "string"}},
+            }
+        ],
+    }
+    (discovery_dir / "api_discovery_report.discovery.json").write_text(
+        json.dumps(discovery_payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    result = run_api_test_draft_workflow(
+        "生成接口测试草稿",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=False,
+        use_llm=False,
+    )
+
+    assert result.success
+    draft = result.draft_artifacts["api_test_draft"]
+    assert "/api/activity/join" in draft
+    assert "Playwright network capture / api-discovery-report" in draft
+    assert "需与 Swagger / Apifox 契约核对" in draft
+    assert "待补充接口文档" in draft
 
 
 def test_api_test_draft_approve_write_only_writes_run_preview(tmp_path):
