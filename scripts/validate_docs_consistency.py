@@ -87,6 +87,8 @@ PATH_PREFIXES = (
 )
 EXCLUDED_DIRS = {
     ".git",
+    ".agents",
+    ".codex",
     ".idea",
     ".atomcode",
     ".pytest_cache",
