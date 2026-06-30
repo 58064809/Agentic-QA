@@ -252,6 +252,12 @@ Agent 完成任务后的 Chat 回复应简洁，遵循 `rules/agent-output-rules
 
 ## 常用工程命令
 
+Windows / PowerShell 环境约束：
+
+- 本仓库默认使用项目虚拟环境。执行 Python、pytest、ruff 或 Runtime CLI 时，Agent 应优先使用 `.venv\Scripts\python.exe`，不要先假设裸 `python` 在当前 Codex 会话 PATH 中可用。
+- 如需调用安装在虚拟环境中的命令，优先使用 `.venv\Scripts\python.exe -m pytest`、`.venv\Scripts\python.exe -m ruff check .`、`.venv\Scripts\python.exe -m runtime.cli ...`。
+- 读取、输出或校验中文文件时，必须按 UTF-8 处理；不要仅凭 PowerShell 终端显示判断文件乱码。必要时先设置 `[Console]::OutputEncoding`、`$OutputEncoding` 为 UTF-8，或用 Python `encoding="utf-8"` 读取字节确认。
+
 ```bash
 python scripts/create_prd_workspace.py demo-requirement
 python scripts/validate_prd_workspace.py prd/demo-requirement
