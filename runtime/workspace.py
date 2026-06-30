@@ -74,6 +74,18 @@ ARTIFACT_SPECS: dict[str, dict[str, str]] = {
         "history_index": "artifacts/history/api-test-draft/index.yml",
         "review_path": "reviews/api-test-draft.review.yml",
     },
+    "ui_test_draft": {
+        "artifact_type": "ui_test_draft",
+        "current_path": "artifacts/ui-test-draft.md",
+        "history_index": "artifacts/history/ui-test-draft/index.yml",
+        "review_path": "reviews/ui-test-draft.review.yml",
+    },
+    "api_discovery_report": {
+        "artifact_type": "api_discovery_report",
+        "current_path": "artifacts/api-discovery-report.md",
+        "history_index": "artifacts/history/api-discovery-report/index.yml",
+        "review_path": "reviews/api-discovery-report.review.yml",
+    },
     "qa_report": {
         "artifact_type": "qa_report",
         "current_path": "artifacts/qa-report.md",
@@ -186,6 +198,8 @@ def combined_artifact_preview(draft_artifacts: dict[str, str]) -> str:
         "requirement_analysis": "需求分析候选",
         "testcases": "测试用例候选",
         "api_test_draft": "接口测试草稿候选",
+        "ui_test_draft": "UI 自动化草稿候选",
+        "api_discovery_report": "接口发现报告候选",
         "qa_report": "QA 报告候选",
     }
     for key, content in draft_artifacts.items():

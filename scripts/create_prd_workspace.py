@@ -143,27 +143,13 @@ def create_workspace(
     files = {
         "input/requirement.md": requirement_placeholder(resolved_title),
         "input/api.md": api_doc_placeholder(resolved_title),
-        "artifacts/history/testcases/index.yml": yaml.safe_dump(
-            history_index("artifacts/testcases.md", "testcases"),
-            allow_unicode=True,
-            sort_keys=False,
-        ),
-        "artifacts/history/api-test-draft/index.yml": yaml.safe_dump(
-            history_index("artifacts/api-test-draft.md", "api_test_draft"),
-            allow_unicode=True,
-            sort_keys=False,
-        ),
-        "artifacts/history/requirement-analysis/index.yml": yaml.safe_dump(
-            history_index("artifacts/requirement-analysis.md", "requirement_analysis"),
-            allow_unicode=True,
-            sort_keys=False,
-        ),
-        "artifacts/history/qa-report/index.yml": yaml.safe_dump(
-            history_index("artifacts/qa-report.md", "qa_report"),
-            allow_unicode=True,
-            sort_keys=False,
-        ),
     }
+    for spec in ARTIFACT_SPECS.values():
+        files[spec["history_index"]] = yaml.safe_dump(
+            history_index(spec["current_path"], spec["artifact_type"]),
+            allow_unicode=True,
+            sort_keys=False,
+        )
     for relative_path, content in files.items():
         target = workspace / relative_path
         target.parent.mkdir(parents=True, exist_ok=True)

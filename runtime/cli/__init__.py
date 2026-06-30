@@ -27,10 +27,12 @@ from runtime.cli.promoter import (
     _run_workflow,
 )
 from runtime.graph.app import (
+    run_api_discovery_report_workflow,
     run_api_test_draft_workflow,
     run_mvp_analysis_and_testcases_workflow,
     run_mvp_testcase_generation_workflow,
     run_requirement_analysis_workflow,
+    run_ui_test_draft_workflow,
 )
 from runtime.intent import route_user_intent as _route_user_intent
 
@@ -81,8 +83,10 @@ __all__ = [
     "fetch_feishu_doc",
     "is_feishu_url",
     "main",
+    "run_api_discovery_report_workflow",
     "run_api_test_draft_workflow",
     "run_mvp_analysis_and_testcases_workflow",
     "run_mvp_testcase_generation_workflow",
     "run_requirement_analysis_workflow",
+    "run_ui_test_draft_workflow",
 ]

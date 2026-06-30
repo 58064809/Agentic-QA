@@ -4,9 +4,11 @@ from collections.abc import Callable
 
 from runtime.graph.nodes.mvp_context_loader import (
     TASK_ANALYSIS,
+    TASK_API_DISCOVERY_REPORT,
     TASK_API_TEST_DRAFT,
     TASK_MVP,
     TASK_TESTCASE_GENERATION,
+    TASK_UI_TEST_DRAFT,
 )
 from runtime.graph.state import QAWorkflowState
 
@@ -46,6 +48,14 @@ def task_is_api_test_draft(state: QAWorkflowState) -> bool:
     return no_errors(state) and state.task_type == TASK_API_TEST_DRAFT
 
 
+def task_is_ui_test_draft(state: QAWorkflowState) -> bool:
+    return no_errors(state) and state.task_type == TASK_UI_TEST_DRAFT
+
+
+def task_is_api_discovery_report(state: QAWorkflowState) -> bool:
+    return no_errors(state) and state.task_type == TASK_API_DISCOVERY_REPORT
+
+
 def task_is_mvp(state: QAWorkflowState) -> bool:
     return no_quality_errors(state) and state.task_type == TASK_MVP
 
@@ -64,9 +74,11 @@ CONDITIONS: dict[str, Condition] = {
     "ready_to_write_preview": ready_to_write_preview,
     "task_is_analysis": task_is_analysis,
     "task_is_analysis_or_mvp": task_is_analysis_or_mvp,
+    "task_is_api_discovery_report": task_is_api_discovery_report,
     "task_is_api_test_draft": task_is_api_test_draft,
     "task_is_mvp": task_is_mvp,
     "task_is_testcase_generation": task_is_testcase_generation,
+    "task_is_ui_test_draft": task_is_ui_test_draft,
 }
 
 

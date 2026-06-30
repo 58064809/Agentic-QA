@@ -16,6 +16,8 @@ SUPPORTED_INTENTS: dict[str, str] = {
     "requirement_analysis": "需求分析",
     "testcase_generation": "测试用例生成",
     "api_test_draft": "API 接口测试草稿生成",
+    "ui_test_draft": "UI 自动化测试草稿生成",
+    "api_discovery_report": "接口发现报告生成",
     "ui_test_generation": "UI 端到端测试生成",
     "test_execution": "测试执行",
     "failure_analysis": "失败分析",
@@ -130,6 +132,15 @@ def _infer_intent_fallback(user_input: str) -> str:
         return "requirement_analysis"
     if has_testcases:
         return "testcase_generation"
+    if any(
+        keyword in user_input for keyword in ("接口发现", "抓包", "network-capture", "接口调用链")
+    ):
+        return "api_discovery_report"
+    if any(
+        keyword in user_input
+        for keyword in ("UI 自动化", "Playwright", "H5 自动化", "后台页面自动化", "UI 自动化脚本")
+    ):
+        return "ui_test_draft"
     if any(
         keyword in user_input
         for keyword in (

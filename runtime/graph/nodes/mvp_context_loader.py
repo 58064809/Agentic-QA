@@ -15,6 +15,8 @@ TASK_ANALYSIS = "analysis"
 TASK_TESTCASE_GENERATION = "testcase_generation"
 TASK_MVP = "mvp_analysis_testcases"
 TASK_API_TEST_DRAFT = "api_test_draft"
+TASK_UI_TEST_DRAFT = "ui_test_draft"
+TASK_API_DISCOVERY_REPORT = "api_discovery_report"
 
 REQUIRED_PRD_FILES = ["metadata.yml", "input/requirement.md"]
 ROADMAP_CANDIDATES = [
@@ -33,7 +35,14 @@ IMAGE_IGNORED_WARNING = (
 
 def mvp_command_router_node(state: QAWorkflowState) -> QAWorkflowState:
     state.record_node("mvp_command_router_node")
-    allowed = {TASK_ANALYSIS, TASK_TESTCASE_GENERATION, TASK_MVP, TASK_API_TEST_DRAFT}
+    allowed = {
+        TASK_ANALYSIS,
+        TASK_TESTCASE_GENERATION,
+        TASK_MVP,
+        TASK_API_TEST_DRAFT,
+        TASK_UI_TEST_DRAFT,
+        TASK_API_DISCOVERY_REPORT,
+    }
     if state.task_type not in allowed:
         state.errors.append(f"不支持的 Runtime MVP 任务类型: {state.task_type}")
         return state
@@ -86,12 +95,20 @@ def _set_output_paths(state: QAWorkflowState, repo_root: Path, prd_path: Path) -
         state.output_paths["testcases"] = preview_path
     if state.task_type == TASK_API_TEST_DRAFT:
         state.output_paths["api_test_draft"] = preview_path
+    if state.task_type == TASK_UI_TEST_DRAFT:
+        state.output_paths["ui_test_draft"] = preview_path
+    if state.task_type == TASK_API_DISCOVERY_REPORT:
+        state.output_paths["api_discovery_report"] = preview_path
 
     if state.task_type == TASK_ANALYSIS:
         state.output_path = preview_path
     elif state.task_type == TASK_TESTCASE_GENERATION:
         state.output_path = preview_path
     elif state.task_type == TASK_API_TEST_DRAFT:
+        state.output_path = preview_path
+    elif state.task_type == TASK_UI_TEST_DRAFT:
+        state.output_path = preview_path
+    elif state.task_type == TASK_API_DISCOVERY_REPORT:
         state.output_path = preview_path
 
 
@@ -174,7 +191,7 @@ def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkfl
     analysis_relative_path = analysis_file.relative_to(repo_root).as_posix()
     if analysis_file.is_file():
         state.loaded_files[analysis_relative_path] = read_utf8(analysis_file)
-    elif state.task_type in {TASK_TESTCASE_GENERATION, TASK_API_TEST_DRAFT}:
+    elif state.task_type in {TASK_TESTCASE_GENERATION, TASK_API_TEST_DRAFT, TASK_UI_TEST_DRAFT}:
         state.warnings.append(
             "需求分析文件不存在，将基于 input/requirement.md 生成候选草稿: "
             f"{analysis_relative_path}"
@@ -189,6 +206,17 @@ def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkfl
             "测试用例正式产物不存在，将基于需求和接口文档生成接口测试候选点: "
             f"{testcases_relative_path}"
         )
+
+    ui_flow = prd_path / "input" / "ui-flow.md"
+    if ui_flow.is_file():
+        state.loaded_files[ui_flow.relative_to(repo_root).as_posix()] = read_utf8(ui_flow)
+
+    for capture_name in ("network-capture.har", "network-capture.json"):
+        capture_path = prd_path / "input" / capture_name
+        if capture_path.is_file():
+            state.loaded_files[capture_path.relative_to(repo_root).as_posix()] = read_utf8(
+                capture_path
+            )
 
     _set_output_paths(state, repo_root, prd_path)
     return state

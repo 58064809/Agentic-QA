@@ -61,6 +61,24 @@ API_TEST_CONTEXT_FILES = (
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
 )
+UI_TEST_CONTEXT_FILES = (
+    *BASE_CONTEXT_FILES,
+    "docs/ui-test-generation.md",
+    "workflows/runtime/ui-test-draft.workflow.yml",
+    "prompts/ui-test-generation.md",
+    "skills/ui-testing.md",
+    "rules/review-gate-rules.md",
+    "rules/artifact-path-rules.md",
+)
+API_DISCOVERY_CONTEXT_FILES = (
+    *BASE_CONTEXT_FILES,
+    "docs/api-discovery.md",
+    "workflows/runtime/api-discovery-report.workflow.yml",
+    "prompts/api-discovery.md",
+    "skills/api-discovery.md",
+    "rules/review-gate-rules.md",
+    "rules/artifact-path-rules.md",
+)
 
 
 class WorkflowRegistry:
@@ -109,6 +127,16 @@ DEFAULT_WORKFLOW_REGISTRY = WorkflowRegistry(
             workflow_id="api_test_draft",
             task_type="api_test_draft",
             context_files=API_TEST_CONTEXT_FILES,
+        ),
+        RuntimeWorkflowDefinition(
+            workflow_id="ui_test_draft",
+            task_type="ui_test_draft",
+            context_files=UI_TEST_CONTEXT_FILES,
+        ),
+        RuntimeWorkflowDefinition(
+            workflow_id="api_discovery_report",
+            task_type="api_discovery_report",
+            context_files=API_DISCOVERY_CONTEXT_FILES,
         ),
         RuntimeWorkflowDefinition(
             workflow_id="analysis_and_testcases",

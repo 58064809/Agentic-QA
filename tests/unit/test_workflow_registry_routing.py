@@ -9,15 +9,19 @@ from runtime.workflow.runner import workflow_id_for_task_type
 def test_registered_workflows_cover_runtime_task_types():
     assert DEFAULT_WORKFLOW_REGISTRY.registered_task_types() == {
         "analysis",
+        "api_discovery_report",
         "api_test_draft",
         "mvp_analysis_testcases",
         "testcase_generation",
+        "ui_test_draft",
     }
     assert DEFAULT_WORKFLOW_REGISTRY.registered_workflow_ids() == {
+        "api_discovery_report",
         "analysis_and_testcases",
         "api_test_draft",
         "requirement_analysis",
         "testcase_generation",
+        "ui_test_draft",
     }
 
 

@@ -37,6 +37,13 @@ TARGET_ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "api_test_draft": ("api_test_draft", "api-test-draft", "接口测试", "API测试", "api"),
     "ui_test_draft": ("ui_test_draft", "ui-test-draft", "UI测试", "ui"),
+    "api_discovery_report": (
+        "api_discovery_report",
+        "api-discovery-report",
+        "接口发现",
+        "抓包",
+        "network-capture",
+    ),
     "qa_report": ("qa_report", "qa-report", "QA报告", "qa report"),
 }
 
@@ -46,12 +53,15 @@ REVIEW_DECISION_PROMPT = """你是 Review Gate 语义解析器。
 只返回 JSON：
 {
   "intent": "approve|reject|revise|hold|show_diff|clarify",
-  "target_artifact": "testcases|requirement_analysis|api_test_draft|ui_test_draft|qa_report|null",
+  "target_artifact": "支持的目标产物名称或 null",
   "confidence": 0.0,
   "reason": "简短原因",
   "revision_request": null,
   "requires_confirmation": false
 }
+
+支持目标产物：testcases、requirement_analysis、api_test_draft、ui_test_draft、
+api_discovery_report、qa_report。
 """
 
 

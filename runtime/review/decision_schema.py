@@ -10,6 +10,7 @@ ArtifactTarget = Literal[
     "requirement_analysis",
     "api_test_draft",
     "ui_test_draft",
+    "api_discovery_report",
     "qa_report",
     "all",
 ]

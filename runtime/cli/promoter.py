@@ -382,6 +382,7 @@ def _run_workflow(
         "testcase_generation"
     )
     api_test_draft_use_llm = llm_enabled and app_config.workflow.use_llm_for("api_test_draft")
+    ui_test_draft_use_llm = llm_enabled and app_config.workflow.use_llm_for("ui_test_draft")
     mvp_use_llm = llm_enabled and app_config.workflow.use_llm_for("mvp_analysis_testcases")
 
     approve_write = (
@@ -430,6 +431,28 @@ def _run_workflow(
             approve_write=approve_write,
             record_run=True,
             use_llm=api_test_draft_use_llm,
+        )
+    elif intent == "ui_test_draft":
+        import runtime.cli as cli_api
+
+        return cli_api.run_ui_test_draft_workflow(
+            user_input=user_input,
+            prd_path=Path(prd_path),
+            repo_root=repo_root,
+            approve_write=approve_write,
+            record_run=True,
+            use_llm=ui_test_draft_use_llm,
+        )
+    elif intent == "api_discovery_report":
+        import runtime.cli as cli_api
+
+        return cli_api.run_api_discovery_report_workflow(
+            user_input=user_input,
+            prd_path=Path(prd_path),
+            repo_root=repo_root,
+            approve_write=approve_write,
+            record_run=True,
+            use_llm=False,
         )
     else:
         import runtime.cli as cli_api

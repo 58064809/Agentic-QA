@@ -471,11 +471,15 @@ def build_ui_test_prompt(
         f"{prd_prefix}/input/requirement.md",
         f"{prd_prefix}/input/api.md",
         f"{prd_prefix}/artifacts/testcases.md",
+        f"{prd_prefix}/artifacts/requirement-analysis.md",
+        f"{prd_prefix}/input/ui-flow.md",
+        "docs/ui-test-generation.md",
+        "skills/ui-testing.md",
+        "prompts/ui-test-generation.md",
         "rules/ui-test-rules.md",
         "rules/automation-rules.md",
         "skills/automation/playwright-ui-test-skill.md",
         "knowledge/project-rules/assertion-rules.md",
-        "prompts/ui-test-generation-prompt.md",
     ]
     injected = {}
     if rag_context:

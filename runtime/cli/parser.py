@@ -73,6 +73,22 @@ ARTIFACT_ALIASES: dict[str, tuple[str, ...]] = {
         "接口测试",
         "pytest requests",
     ),
+    "ui_test_draft": (
+        "ui_test_draft",
+        "ui-test-draft",
+        "UI 自动化草稿",
+        "Playwright 测试草稿",
+        "H5 自动化测试",
+        "后台页面自动化测试",
+    ),
+    "api_discovery_report": (
+        "api_discovery_report",
+        "api-discovery-report",
+        "接口发现报告",
+        "抓包",
+        "network-capture",
+        "接口调用链",
+    ),
     "qa_report": ("qa_report", "qa-report", "QA报告", "qa report"),
 }
 
@@ -140,6 +156,12 @@ def _explicit_artifact_keys_from_text(value: str) -> list[str]:
         keys.append("testcases")
     if is_api_test_text:
         keys.append("api_test_draft")
+    if any(
+        keyword in value for keyword in ("UI 自动化", "Playwright", "H5 自动化", "后台页面自动化")
+    ):
+        keys.append("ui_test_draft")
+    if any(keyword in value for keyword in ("接口发现", "抓包", "接口调用链", "network-capture")):
+        keys.append("api_discovery_report")
     if ("需求" in value and "分析" in value) or ("闇€姹" in value and "鍒嗘瀽" in value):
         keys.append("requirement_analysis")
     keys = list(dict.fromkeys(keys))
@@ -211,6 +233,10 @@ def _task_type_from_artifact_keys(keys: list[str]) -> str:
         return "testcase_generation"
     if normalized == {"api_test_draft"}:
         return "api_test_draft"
+    if normalized == {"ui_test_draft"}:
+        return "ui_test_draft"
+    if normalized == {"api_discovery_report"}:
+        return "api_discovery_report"
     return "mvp_analysis_testcases"
 
 

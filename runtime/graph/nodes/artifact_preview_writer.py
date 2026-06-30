@@ -8,9 +8,11 @@ import yaml
 
 from runtime.graph.nodes.mvp_context_loader import (
     TASK_ANALYSIS,
+    TASK_API_DISCOVERY_REPORT,
     TASK_API_TEST_DRAFT,
     TASK_MVP,
     TASK_TESTCASE_GENERATION,
+    TASK_UI_TEST_DRAFT,
 )
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.artifact_writer import write_new_text
@@ -32,6 +34,10 @@ def _artifact_keys_for_task(state: QAWorkflowState) -> list[str]:
         return ["testcases"]
     if state.task_type == TASK_API_TEST_DRAFT:
         return ["api_test_draft"]
+    if state.task_type == TASK_UI_TEST_DRAFT:
+        return ["ui_test_draft"]
+    if state.task_type == TASK_API_DISCOVERY_REPORT:
+        return ["api_discovery_report"]
     if state.task_type == TASK_MVP:
         return ["requirement_analysis", "testcases"]
     return []

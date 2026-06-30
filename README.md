@@ -261,6 +261,8 @@ ruff check .
 | [`docs/artifact-standards.md`](docs/artifact-standards.md) | QA 产物标准、元数据和状态定义 |
 | [`docs/testcase-standards.md`](docs/testcase-standards.md) | 测试用例结构、字段说明、优先级和质量要求 |
 | [`docs/api-test-generation.md`](docs/api-test-generation.md) | 接口测试草稿生成、输入规则、质量门和发布路径 |
+| [`docs/ui-test-generation.md`](docs/ui-test-generation.md) | UI 自动化草稿生成、Playwright 草稿和质量门 |
+| [`docs/api-discovery.md`](docs/api-discovery.md) | 基于网络抓包的接口发现报告、脱敏和离线解析规则 |
 | [`docs/rag-design.md`](docs/rag-design.md) | RAG 链路、召回追踪和上下文构建 |
 | [`docs/roadmap.md`](docs/roadmap.md) | 建设路线图 |
 

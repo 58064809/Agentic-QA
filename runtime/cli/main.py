@@ -54,6 +54,8 @@ def _print_result(result, intent: str) -> None:
         "requirement_analysis": "需求分析",
         "testcase_generation": "测试用例生成",
         "api_test_draft": "接口测试草稿生成",
+        "ui_test_draft": "UI 自动化草稿生成",
+        "api_discovery_report": "接口发现报告生成",
         "mvp": "需求分析 + 测试用例",
     }
     task_name = intent_names.get(intent, intent)
