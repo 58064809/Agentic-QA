@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from test_runtime_mvp_generation import create_mvp_repo  # noqa: E402
+from runtime_mvp_fixtures import create_mvp_repo  # noqa: E402
 
 from runtime.graph.app import run_mvp_testcase_generation_workflow  # noqa: E402
 from runtime.records.run_id import generate_run_id  # noqa: E402

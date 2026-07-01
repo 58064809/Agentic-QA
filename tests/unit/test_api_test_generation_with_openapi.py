@@ -7,8 +7,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from runtime_mvp_fixtures import create_mvp_repo  # noqa: E402
 from test_api_test_generation import add_api_test_context_files  # noqa: E402
-from test_runtime_mvp_generation import create_mvp_repo  # noqa: E402
 
 from runtime.cli.parser import _extract_api_doc_path  # noqa: E402
 from runtime.cli.promoter import _run_workflow  # noqa: E402

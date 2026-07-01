@@ -9,7 +9,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from test_runtime_mvp_generation import create_mvp_repo  # noqa: E402
+from runtime_mvp_fixtures import create_mvp_repo  # noqa: E402
 
 from runtime.cli.importer import _import_network_capture_to_workspace  # noqa: E402
 from runtime.cli.parser import (  # noqa: E402

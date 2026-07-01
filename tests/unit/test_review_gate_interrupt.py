@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from test_runtime_mvp_generation import create_mvp_repo, write_file  # noqa: E402
+from runtime_mvp_fixtures import create_mvp_repo, write_file  # noqa: E402
 
 from runtime.graph.mvp_graph import (  # noqa: E402
     promote_mvp_artifacts,
