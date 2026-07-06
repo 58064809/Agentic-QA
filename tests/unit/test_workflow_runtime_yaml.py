@@ -15,6 +15,7 @@ EXPECTED_RUNTIME_WORKFLOWS = {
     "analysis-and-testcases.workflow.yml": ("analysis_and_testcases", "mvp_analysis_testcases"),
     "api-discovery-report.workflow.yml": ("api_discovery_report", "api_discovery_report"),
     "api-test-draft.workflow.yml": ("api_test_draft", "api_test_draft"),
+    "qa-report.workflow.yml": ("qa_report", "qa_report"),
     "requirement-analysis.workflow.yml": ("requirement_analysis", "analysis"),
     "testcase-generation.workflow.yml": ("testcase_generation", "testcase_generation"),
     "ui-test-draft.workflow.yml": ("ui_test_draft", "ui_test_draft"),

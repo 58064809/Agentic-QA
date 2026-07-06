@@ -79,6 +79,15 @@ API_DISCOVERY_CONTEXT_FILES = (
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
 )
+QA_REPORT_CONTEXT_FILES = (
+    *BASE_CONTEXT_FILES,
+    "docs/qa-report-generation.md",
+    "workflows/runtime/qa-report.workflow.yml",
+    "prompts/report-generation-prompt.md",
+    "skills/reporting/qa-report-writing-skill.md",
+    "rules/review-gate-rules.md",
+    "rules/artifact-path-rules.md",
+)
 
 
 class WorkflowRegistry:
@@ -137,6 +146,11 @@ DEFAULT_WORKFLOW_REGISTRY = WorkflowRegistry(
             workflow_id="api_discovery_report",
             task_type="api_discovery_report",
             context_files=API_DISCOVERY_CONTEXT_FILES,
+        ),
+        RuntimeWorkflowDefinition(
+            workflow_id="qa_report",
+            task_type="qa_report",
+            context_files=QA_REPORT_CONTEXT_FILES,
         ),
         RuntimeWorkflowDefinition(
             workflow_id="analysis_and_testcases",

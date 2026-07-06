@@ -147,6 +147,29 @@ def run_api_discovery_report_workflow(
     )
 
 
+def run_qa_report_workflow(
+    user_input: str,
+    prd_path: Path | str,
+    *,
+    repo_root: Path | None = None,
+    approve_write: bool = False,
+    debug_approve_preview_write: bool = False,
+    record_run: bool = True,
+    use_llm: bool = True,
+) -> RuntimeResult:
+    from runtime.graph.mvp_graph import run_qa_report_workflow as run_fn
+
+    return run_fn(
+        user_input=user_input,
+        prd_path=Path(prd_path),
+        repo_root=repo_root,
+        approve_write=approve_write,
+        debug_approve_preview_write=debug_approve_preview_write,
+        record_run=record_run,
+        use_llm=use_llm,
+    )
+
+
 def resume_recorded_workflow(
     run_id: str,
     *,

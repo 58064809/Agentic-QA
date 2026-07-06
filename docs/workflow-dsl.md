@@ -60,6 +60,7 @@ edges:
 | `task_is_api_test_draft` | 当前任务为接口测试草稿生成 |
 | `task_is_ui_test_draft` | 当前任务为 UI 自动化草稿生成 |
 | `task_is_api_discovery_report` | 当前任务为接口发现报告生成 |
+| `task_is_qa_report` | 当前任务为 QA 报告生成 |
 | `default` | 条件边兜底分支 |
 
 ### 当前 Runtime workflow 文件
@@ -72,6 +73,7 @@ edges:
 | `api_test_draft` | `workflows/runtime/api-test-draft.workflow.yml` | `api_test_draft` |
 | `ui_test_draft` | `workflows/runtime/ui-test-draft.workflow.yml` | `ui_test_draft` |
 | `api_discovery_report` | `workflows/runtime/api-discovery-report.workflow.yml` | `api_discovery_report` |
+| `qa_report` | `workflows/runtime/qa-report.workflow.yml` | `qa_report` |
 
 ## 最小工作流示例
 

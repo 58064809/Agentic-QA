@@ -11,6 +11,7 @@ from runtime.graph.nodes.mvp_context_loader import (
     TASK_API_DISCOVERY_REPORT,
     TASK_API_TEST_DRAFT,
     TASK_MVP,
+    TASK_QA_REPORT,
     TASK_TESTCASE_GENERATION,
     TASK_UI_TEST_DRAFT,
 )
@@ -38,6 +39,8 @@ def _artifact_keys_for_task(state: QAWorkflowState) -> list[str]:
         return ["ui_test_draft"]
     if state.task_type == TASK_API_DISCOVERY_REPORT:
         return ["api_discovery_report"]
+    if state.task_type == TASK_QA_REPORT:
+        return ["qa_report"]
     if state.task_type == TASK_MVP:
         return ["requirement_analysis", "testcases"]
     return []

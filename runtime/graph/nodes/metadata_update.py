@@ -25,6 +25,8 @@ def _target_review_gate_names(state: QAWorkflowState) -> set[str]:
         return {"UI 自动化草稿审核"}
     if state.task_type == "api_discovery_report":
         return {"接口发现报告审核"}
+    if state.task_type == "qa_report":
+        return {"QA 报告审核"}
     if state.task_type == "mvp_analysis_testcases":
         return {"需求分析审核", "测试用例审核"}
     return set()

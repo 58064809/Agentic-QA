@@ -263,6 +263,7 @@ ruff check .
 | [`docs/api-test-generation.md`](docs/api-test-generation.md) | 接口测试草稿生成、输入规则、质量门和发布路径 |
 | [`docs/ui-test-generation.md`](docs/ui-test-generation.md) | UI 自动化草稿生成、Playwright 草稿和质量门 |
 | [`docs/api-discovery.md`](docs/api-discovery.md) | 基于网络抓包的接口发现报告、脱敏和离线解析规则 |
+| [`docs/qa-report-generation.md`](docs/qa-report-generation.md) | QA 报告草稿生成、风险披露和发布路径 |
 | [`docs/rag-design.md`](docs/rag-design.md) | RAG 链路、召回追踪和上下文构建 |
 | [`docs/roadmap.md`](docs/roadmap.md) | 建设路线图 |
 

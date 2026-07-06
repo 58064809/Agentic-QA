@@ -22,7 +22,8 @@ SUPPORTED_INTENTS: dict[str, str] = {
     "test_execution": "测试执行",
     "failure_analysis": "失败分析",
     "bug_draft": "缺陷草稿生成",
-    "report_generation": "QA 报告生成",
+    "qa_report": "QA 报告生成",
+    "report_generation": "QA 报告生成（兼容别名）",
     "archive": "归档",
     "resume": "继续上次对话",
 }
@@ -167,8 +168,6 @@ def _infer_intent_fallback(user_input: str) -> str:
         )
     ):
         return "api_test_draft"
-    if any(keyword in user_input for keyword in ("UI", "ui", "端到端", "E2E", "e2e")):
-        return "ui_test_generation"
     if any(keyword in user_input for keyword in ("执行", "跑测试", "运行测试")):
         return "test_execution"
     if any(keyword in user_input for keyword in ("失败分析", "分析失败", "failure")):
@@ -176,7 +175,9 @@ def _infer_intent_fallback(user_input: str) -> str:
     if any(keyword in user_input for keyword in ("bug", "缺陷")):
         return "bug_draft"
     if any(keyword in user_input for keyword in ("报告", "QA报告", "qa report")):
-        return "report_generation"
+        return "qa_report"
+    if any(keyword in user_input for keyword in ("UI", "ui", "端到端", "E2E", "e2e")):
+        return "ui_test_generation"
     if any(keyword in user_input for keyword in ("归档", "archive")):
         return "archive"
     if "resume" in text or "继续" in user_input:
