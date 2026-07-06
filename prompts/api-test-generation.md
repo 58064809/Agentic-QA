@@ -14,7 +14,7 @@
 
 ## 输出约束
 
-必须输出 Markdown，并包含：
+主输出必须是 Markdown，并包含：
 
 ```yaml
 ---
@@ -46,3 +46,7 @@ human_review_required: true
 - 不执行真实 HTTP 请求，不输出执行结论。
 - 不写真实 token、Cookie、密钥。
 - pytest + requests 代码只能作为草稿，配置从环境变量读取。
+- Runtime 会为同一 run 生成 `api-test-cases.yml`，YAML 用例必须使用相同接口事实来源和待确认项。
+- YAML 用例只能写相对 path，不得写完整域名；base URL 统一从 `AGENTIC_QA_BASE_URL` 读取。
+- YAML 用例中的 token、Cookie、账号等只能使用 `${ENV_NAME}` 占位，不得写真实值。
+- YAML 必须包含 `business_rules` 和每条用例的 `business_rule_refs`，用于追溯 PRD / Swagger / 业务规则来源。

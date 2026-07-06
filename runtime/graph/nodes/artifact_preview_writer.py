@@ -6,6 +6,10 @@ from pathlib import Path
 
 import yaml
 
+from runtime.graph.nodes.api_test_generation import (
+    API_CASES_YAML_DEBUG_KEY,
+    API_CASES_YAML_FILENAME,
+)
 from runtime.graph.nodes.mvp_context_loader import (
     TASK_ANALYSIS,
     TASK_API_DISCOVERY_REPORT,
@@ -58,7 +62,7 @@ def _mark_artifacts_written(state: QAWorkflowState, keys: set[str]) -> None:
 
 def _structured_payload(state: QAWorkflowState, key: str, markdown_path: str) -> dict[str, object]:
     artifact = next((item for item in state.artifacts if item.get("name") == key), {})
-    return {
+    payload: dict[str, object] = {
         "schema_version": "agentic-qa.artifact.v1",
         "name": key,
         "artifact_type": artifact.get("artifact_type", key),
@@ -71,6 +75,11 @@ def _structured_payload(state: QAWorkflowState, key: str, markdown_path: str) ->
         "quality_errors": list(state.quality_errors),
         "warnings": list(state.warnings),
     }
+    if key == "api_test_draft":
+        payload["api_test_cases_yaml_path"] = (
+            Path(markdown_path).with_name(API_CASES_YAML_FILENAME).as_posix()
+        )
+    return payload
 
 
 def _write_structured_companions(
@@ -98,6 +107,21 @@ def _write_structured_companions(
     )
 
 
+def _write_api_cases_yaml_candidate(
+    repo_root: Path,
+    state: QAWorkflowState,
+    markdown_path: str,
+) -> str | None:
+    if state.task_type != TASK_API_TEST_DRAFT:
+        return None
+    content = state.debug_artifacts.get(API_CASES_YAML_DEBUG_KEY)
+    if not content:
+        return None
+    sidecar_path = repo_root / Path(markdown_path).with_name(API_CASES_YAML_FILENAME)
+    write_new_text(sidecar_path, str(content))
+    return sidecar_path.relative_to(repo_root).as_posix()
+
+
 def _write_preview_companions(
     repo_root: Path,
     state: QAWorkflowState,
@@ -117,6 +141,10 @@ def _write_preview_companions(
         "quality_errors": list(state.quality_errors),
         "warnings": list(state.warnings),
     }
+    if len(keys) == 1 and keys[0] == "api_test_draft":
+        payload["api_test_cases_yaml_path"] = (
+            Path(markdown_path).with_name(API_CASES_YAML_FILENAME).as_posix()
+        )
     json_path = path.with_suffix(".json")
     yaml_path = path.with_suffix(".yml")
     if json_path.exists() or yaml_path.exists():
@@ -154,7 +182,7 @@ def _write_run_pointers(repo_root: Path, state: QAWorkflowState, keys: list[str]
 
     runs_dir = prd_root / RUNS_DIR_NAME
     runs_dir.mkdir(parents=True, exist_ok=True)
-    payload = {
+    payload: dict[str, object] = {
         "schema_version": "agentic-qa.run-index.v1",
         "run_id": state.run_id,
         "thread_id": state.thread_id,
@@ -166,6 +194,12 @@ def _write_run_pointers(repo_root: Path, state: QAWorkflowState, keys: list[str]
         "quality_errors": list(state.quality_errors),
         "warnings": list(state.warnings),
     }
+    if state.task_type == TASK_API_TEST_DRAFT and state.output_paths.get("api_test_draft"):
+        payload["sidecar_paths"] = {
+            "api_test_cases_yaml": Path(state.output_paths["api_test_draft"])
+            .with_name(API_CASES_YAML_FILENAME)
+            .as_posix()
+        }
 
     (runs_dir / LATEST_FILE).write_text(
         yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
@@ -277,6 +311,7 @@ def artifact_preview_writer_node(state: QAWorkflowState, repo_root: Path) -> QAW
             markdown_path = next(iter(unique_paths))
             preview = combined_artifact_preview({key: state.draft_artifacts[key] for key in keys})
             write_new_text(repo_root / Path(markdown_path), preview)
+            _write_api_cases_yaml_candidate(repo_root, state, markdown_path)
             _write_preview_companions(repo_root, state, keys, markdown_path)
         else:
             for key in keys:
@@ -284,6 +319,7 @@ def artifact_preview_writer_node(state: QAWorkflowState, repo_root: Path) -> QAW
                     repo_root / Path(state.output_paths[key]),
                     state.draft_artifacts[key],
                 )
+                _write_api_cases_yaml_candidate(repo_root, state, state.output_paths[key])
                 _write_structured_companions(repo_root, state, key)
         _write_run_pointers(repo_root, state, keys)
     except FileExistsError as exc:

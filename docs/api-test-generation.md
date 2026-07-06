@@ -1,21 +1,25 @@
 # 接口测试草稿生成
 
-`api_test_draft` 是接口测试能力建设的第一阶段产物。Runtime 只生成接口测试计划、断言策略和 pytest + requests 脚本草稿，不执行真实 HTTP 请求。
+`api_test_draft` 是接口测试能力建设的第一阶段产物。Runtime 生成接口测试计划、断言策略、pytest + requests 脚本草稿，以及同一 Review Gate 下的 YAML 接口用例草稿；生成阶段不执行真实 HTTP 请求。
 
 ## 工作流
 
 ```text
 需求 / 接口文档 / 已确认测试用例
   ↓
-生成接口测试草稿
+生成接口测试草稿和 YAML 接口用例草稿
   ↓
 质量检查
   ↓
 写入 runs/<run_id>/artifact-preview.md
+写入 runs/<run_id>/api-test-cases.yml
   ↓
 Review Gate
   ↓
 promote 到 artifacts/api-test-draft.md
+同步发布 artifacts/api-test-cases.yml
+  ↓
+pytest 在显式测试环境中读取 YAML 执行
 ```
 
 ## 输入
@@ -73,6 +77,9 @@ prd/<需求ID>/input/api.md
 - 输出包含接口清单。
 - 输出包含接口测试点矩阵。
 - 输出包含 pytest + requests 脚本草稿。
+- 同 run 目录生成 `api-test-cases.yml`，schema_version 为 `agentic-qa.api-cases.v1`。
+- YAML 用例包含 `business_rules` 和 `cases[].id/title/method/path/business_rule_refs/request/expected/pending`。
+- YAML 用例不得写完整环境域名，base URL 只能通过 `AGENTIC_QA_BASE_URL` 注入。
 - 输出包含断言策略。
 - 无可用接口文档时包含“待补充接口文档”提示。
 - 不出现“已执行 / 执行通过 / 实测通过”等执行结论。
@@ -84,10 +91,32 @@ prd/<需求ID>/input/api.md
 
 ```text
 prd/<需求ID>/runs/<run_id>/artifact-preview.md
+prd/<需求ID>/runs/<run_id>/api-test-cases.yml
 ```
+
+`api-test-cases.yml` 不是独立审核产物；它跟随 `api_test_draft` 一起进入候选、人工确认和 promote。未确认前只能位于 `runs/<run_id>/` 下，不能作为正式可执行用例来源。
 
 Review Gate 审核通过后，才允许确定性 promote 到：
 
 ```text
 prd/<需求ID>/artifacts/api-test-draft.md
+prd/<需求ID>/artifacts/api-test-cases.yml
 ```
+
+## Pytest 执行
+
+确认并发布后，可通过现有 pytest 封装执行 YAML 接口用例：
+
+```bash
+$env:AGENTIC_QA_API_CASES_FILE="prd/<需求ID>/artifacts/api-test-cases.yml"
+$env:AGENTIC_QA_BASE_URL="https://test.example.com"
+$env:AGENTIC_QA_TEST_TOKEN="仅测试环境 token"
+.venv\Scripts\python.exe scripts/run_pytest.py tests/api/test_yaml_api_cases.py
+```
+
+执行约束：
+
+- 未设置 `AGENTIC_QA_API_CASES_FILE` 时，pytest 模块跳过。
+- 未设置 `AGENTIC_QA_BASE_URL` 时，接口请求跳过。
+- YAML 中的 token、base URL、Cookie 等只能通过 `${ENV_NAME}` 占位读取环境变量。
+- 禁止默认连接生产环境、localhost 或任何隐式地址。

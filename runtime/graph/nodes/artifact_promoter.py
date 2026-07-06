@@ -7,6 +7,10 @@ from typing import Any
 
 import yaml
 
+from runtime.graph.nodes.api_test_generation import (
+    API_CASES_FORMAL_PATH,
+    API_CASES_YAML_FILENAME,
+)
 from runtime.graph.state import QAWorkflowState
 from runtime.workspace import (
     ARTIFACT_SPECS,
@@ -264,6 +268,36 @@ def _update_metadata_and_review(
     write_yaml_mapping(review_path, review)
 
 
+def _promote_api_cases_yaml_sidecar(
+    workspace: PRDWorkspace,
+    *,
+    version: str,
+    promoted_at: str,
+    run_id: str | None,
+) -> Path | None:
+    if not run_id:
+        return None
+    candidate = workspace.run_dir(run_id) / API_CASES_YAML_FILENAME
+    if not candidate.is_file():
+        return None
+    data = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"接口 YAML 用例候选不是 YAML mapping: {candidate.as_posix()}")
+    data["status"] = "confirmed"
+    data["human_review_required"] = False
+    data["source_artifact"] = ARTIFACT_SPECS["api_test_draft"]["current_path"]
+    data["promoted_from_run"] = run_id
+    data["current_version"] = version
+    data["promoted_at"] = promoted_at
+    formal = workspace.root / API_CASES_FORMAL_PATH
+    formal.parent.mkdir(parents=True, exist_ok=True)
+    formal.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    return formal
+
+
 def artifact_promoter_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
     state.record_node("artifact_promoter_node")
     if state.errors or state.quality_errors:
@@ -323,6 +357,19 @@ def artifact_promoter_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflo
                 run_id=state.run_id,
             )
             output_paths[key] = current_path.relative_to(repo_root).as_posix()
+            if key == "api_test_draft":
+                sidecar_path = _promote_api_cases_yaml_sidecar(
+                    workspace,
+                    version=version,
+                    promoted_at=promoted_at,
+                    run_id=state.run_id,
+                )
+                if sidecar_path:
+                    output_paths["api_test_cases_yaml"] = sidecar_path.relative_to(
+                        repo_root
+                    ).as_posix()
+                else:
+                    state.warnings.append("未找到接口 YAML 用例候选，已仅发布 api-test-draft.md。")
     except ValueError as exc:
         state.errors.append(str(exc))
         return state

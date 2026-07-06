@@ -2,7 +2,7 @@
 
 ## 目标
 
-将已确认需求和测试用例转化为可审核的接口测试计划、断言策略和 pytest + requests 脚本草稿。本技能只指导草稿生成，不代表可以执行真实接口请求。
+将已确认需求和测试用例转化为可审核的接口测试计划、断言策略、pytest + requests 脚本草稿和 YAML 接口用例草稿。本技能只指导草稿生成，不代表可以执行真实接口请求。
 
 ## 分析维度
 
@@ -21,6 +21,10 @@
 - 没有接口文档时，只输出接口候选点，不把推断内容写成确定事实。
 - pytest + requests 示例必须默认通过环境变量读取 base URL 和鉴权信息。
 - 脚本草稿应在环境变量缺失时 `pytest.skip`，避免误请求真实服务。
+- YAML 接口用例草稿必须跟随 `api_test_draft` 进入同一 Review Gate，未确认前只能作为候选用例。
+- YAML 用例只写相对 path，base URL 通过 `AGENTIC_QA_BASE_URL` 注入。
+- YAML 中的 token、Cookie、账号、密码等只能使用 `${ENV_NAME}` 占位。
+- YAML 必须记录 `business_rules` 和每条用例的 `business_rule_refs`，以便人审时核对 PRD / Swagger / 业务规则。
 - 不写真实 token、Cookie、密钥、生产域名或真实敏感数据。
 
 ## 断言建议

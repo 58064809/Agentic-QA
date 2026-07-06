@@ -16,7 +16,12 @@ from runtime.graph.app import (  # noqa: E402
     resume_recorded_workflow,
     run_api_test_draft_workflow,
 )
-from runtime.graph.nodes.api_test_generation import api_test_quality_check_node  # noqa: E402
+from runtime.graph.nodes.api_test_generation import (  # noqa: E402
+    API_CASES_FORMAL_PATH,
+    API_CASES_YAML_DEBUG_KEY,
+    API_CASES_YAML_FILENAME,
+    api_test_quality_check_node,
+)
 from runtime.graph.state import QAWorkflowState  # noqa: E402
 from runtime.llm.config import OpenAICompatibleConfig  # noqa: E402
 from runtime.llm.intent_router import route_intent  # noqa: E402
@@ -144,7 +149,19 @@ def test_api_test_draft_approve_write_only_writes_run_preview(tmp_path):
     assert preview.as_posix().endswith(
         f"/prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
     )
+    api_cases = preview.with_name(API_CASES_YAML_FILENAME)
+    assert api_cases.is_file()
+    payload = yaml.safe_load(api_cases.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "agentic-qa.api-cases.v1"
+    assert payload["status"] == "needs_human_review"
+    assert payload["human_review_required"] is True
+    assert payload["base_url_env"] == "AGENTIC_QA_BASE_URL"
+    assert payload["business_rules"]
+    assert payload["cases"]
+    assert payload["cases"][0]["path"] == "/api/v1/auth/login"
+    assert payload["cases"][0]["business_rule_refs"]
     assert not (repo_root / "prd/demo-requirement/artifacts/api-test-draft.md").exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/api-test-cases.yml").exists()
 
 
 def test_api_test_draft_promote_writes_formal_artifact(tmp_path):
@@ -176,6 +193,14 @@ def test_api_test_draft_promote_writes_formal_artifact(tmp_path):
     formal = repo_root / "prd/demo-requirement/artifacts/api-test-draft.md"
     assert formal.is_file()
     assert "status: confirmed" in formal.read_text(encoding="utf-8")
+    formal_yaml = repo_root / "prd/demo-requirement" / API_CASES_FORMAL_PATH
+    assert formal_yaml.is_file()
+    payload = yaml.safe_load(formal_yaml.read_text(encoding="utf-8"))
+    assert payload["status"] == "confirmed"
+    assert payload["human_review_required"] is False
+    assert payload["source_artifact"] == "artifacts/api-test-draft.md"
+    assert payload["promoted_from_run"] == result.run_id
+    assert any(path.endswith("api-test-cases.yml") for path in promoted.output_paths.values())
     review = yaml.safe_load(
         (repo_root / "prd/demo-requirement/reviews/api-test-draft.review.yml").read_text(
             encoding="utf-8"
@@ -216,6 +241,7 @@ def test_api_test_quality_rejects_missing_sections_and_execution_claims(tmp_path
         },
         output_paths={"api_test_draft": "prd/demo-requirement/runs/run-1/artifact-preview.md"},
         loaded_files={},
+        debug_artifacts={API_CASES_YAML_DEBUG_KEY: "cases: []\n"},
     )
 
     checked = api_test_quality_check_node(state, repo_root)
@@ -223,3 +249,4 @@ def test_api_test_quality_rejects_missing_sections_and_execution_claims(tmp_path
     assert any("缺少章节: 断言策略" in error for error in checked.quality_errors)
     assert any("待补充接口文档" in error for error in checked.quality_errors)
     assert any("执行结论" in error for error in checked.quality_errors)
+    assert any("schema_version" in error for error in checked.quality_errors)

@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 from runtime.graph.nodes.mvp_context_loader import TASK_API_TEST_DRAFT
 from runtime.graph.nodes.mvp_generation import (
@@ -45,6 +48,10 @@ SECRET_PATTERNS = [
 ENDPOINT_RE = re.compile(r"^##\s+([A-Z]{3,7})\s+([^\s]+)", re.MULTILINE)
 API_PLACEHOLDER_MARKERS = ("示例接口", "/api/example", "请替换为真实接口")
 DISCOVERY_SOURCE_LABEL = "Playwright network capture / api-discovery-report"
+API_CASES_YAML_DEBUG_KEY = "api_test_cases_yaml"
+API_CASES_YAML_FILENAME = "api-test-cases.yml"
+API_CASES_FORMAL_PATH = "artifacts/api-test-cases.yml"
+API_CASES_SCHEMA_VERSION = "agentic-qa.api-cases.v1"
 Endpoint = tuple[str, str, str, str]
 
 
@@ -135,6 +142,163 @@ def _matrix_rows(
         f"模拟超时、5xx 或依赖失败 | 返回可识别错误；本地状态不脏写 | "
         f"可控测试环境或 mock | {pending} |",
     ]
+
+
+def _api_cases_for_endpoints(
+    endpoints: list[Endpoint],
+    *,
+    has_api_doc: bool,
+    from_discovery: bool,
+    business_rule_refs: list[str],
+) -> list[dict[str, Any]]:
+    source_kind = (
+        "api-discovery-report"
+        if from_discovery
+        else "swagger-or-api-doc"
+        if has_api_doc
+        else "prd-business-rule-candidate"
+    )
+    if not endpoints:
+        endpoints = [("API-CAND-001", "POST", "/待确认-url", "requirement-analysis.md")]
+
+    cases: list[dict[str, Any]] = []
+    for index, (name, method, path, source) in enumerate(endpoints, start=1):
+        cases.extend(
+            [
+                {
+                    "id": f"{name}-SUCCESS",
+                    "title": f"{method} {path} 主流程成功",
+                    "source": source,
+                    "source_kind": source_kind,
+                    "priority": "P0",
+                    "method": method,
+                    "path": path,
+                    "business_rule_refs": business_rule_refs,
+                    "request": {
+                        "headers": {
+                            "Authorization": "Bearer ${AGENTIC_QA_TEST_TOKEN}",
+                            "Content-Type": "application/json",
+                        },
+                        "json": {"field": "待确认请求字段"},
+                    },
+                    "expected": {
+                        "status_code": [200, 201],
+                        "json_contains_keys": ["code", "data"],
+                    },
+                    "pending": [
+                        "需与 Swagger / Apifox 核对字段必填、响应结构、错误码、权限、风控和幂等。",
+                        "需确认测试数据准备方式和可回滚策略。",
+                    ],
+                },
+                {
+                    "id": f"{name}-VALIDATION",
+                    "title": f"{method} {path} 必填字段缺失",
+                    "source": source,
+                    "source_kind": source_kind,
+                    "priority": "P1",
+                    "method": method,
+                    "path": path,
+                    "business_rule_refs": business_rule_refs,
+                    "request": {
+                        "headers": {
+                            "Authorization": "Bearer ${AGENTIC_QA_TEST_TOKEN}",
+                            "Content-Type": "application/json",
+                        },
+                        "json": {},
+                    },
+                    "expected": {
+                        "status_code": [400, 422],
+                        "json_contains_keys": ["code", "message"],
+                    },
+                    "pending": [
+                        "待确认必填字段列表、参数错误码和错误 message。",
+                    ],
+                },
+                {
+                    "id": f"{name}-AUTH",
+                    "title": f"{method} {path} 未登录或鉴权失败",
+                    "source": source,
+                    "source_kind": source_kind,
+                    "priority": "P0",
+                    "method": method,
+                    "path": path,
+                    "business_rule_refs": business_rule_refs,
+                    "request": {
+                        "headers": {"Content-Type": "application/json"},
+                        "json": {"field": "待确认请求字段"},
+                    },
+                    "expected": {
+                        "status_code": [401, 403],
+                        "json_contains_keys": ["code", "message"],
+                    },
+                    "pending": [
+                        "待确认鉴权失败状态码、业务 code、权限边界和敏感字段屏蔽规则。",
+                    ],
+                },
+            ]
+        )
+        if index >= 5:
+            break
+    return cases
+
+
+def _business_rule_refs(state: QAWorkflowState, *, max_items: int = 8) -> list[str]:
+    candidates: list[str] = []
+    suffixes = (
+        "input/requirement.md",
+        "artifacts/requirement-analysis.md",
+        "artifacts/testcases.md",
+    )
+    for suffix in suffixes:
+        content = _path_content(state, suffix)
+        for line in content.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith(("- ", "* ")):
+                value = stripped[2:].strip()
+            elif stripped.startswith("|") and "待确认" not in stripped:
+                cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+                value = " / ".join(cell for cell in cells[:3] if cell and "---" not in cell)
+            else:
+                continue
+            if value and value not in candidates:
+                candidates.append(value)
+            if len(candidates) >= max_items:
+                return candidates
+    return candidates or ["待确认：业务规则需从 PRD、Swagger / Apifox 和人工评审结论核对。"]
+
+
+def render_api_test_cases_yaml(state: QAWorkflowState, repo_root: Path) -> str:
+    api_doc = _api_doc_content(state)
+    has_api_doc = _has_meaningful_api_doc(api_doc)
+    endpoints = _extract_endpoints(api_doc) if has_api_doc else []
+    from_discovery = False
+    if not has_api_doc:
+        discovery_endpoints = _load_discovery_endpoints(repo_root, state)
+        if discovery_endpoints:
+            endpoints = discovery_endpoints
+            from_discovery = True
+    business_rules = _business_rule_refs(state)
+    payload = {
+        "schema_version": API_CASES_SCHEMA_VERSION,
+        "status": "needs_human_review",
+        "human_review_required": True,
+        "generated_by": "agentic-qa-runtime",
+        "source_artifact": "artifacts/api-test-draft.md",
+        "prd_path": state.prd_path,
+        "run_id": state.run_id or "",
+        "base_url_env": "AGENTIC_QA_BASE_URL",
+        "auth": {"token_env": "AGENTIC_QA_TEST_TOKEN"},
+        "business_rules": business_rules,
+        "cases": _api_cases_for_endpoints(
+            endpoints,
+            has_api_doc=has_api_doc,
+            from_discovery=from_discovery,
+            business_rule_refs=business_rules,
+        ),
+    }
+    return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
 
 
 def _discovery_json_candidates(repo_root: Path, state: QAWorkflowState) -> list[Path]:
@@ -354,6 +518,10 @@ def api_test_generation_node(state: QAWorkflowState, repo_root: Path) -> QAWorkf
         prompt=prompt.prompt,
         fallback=render_api_test_draft_skeleton(state, repo_root),
     )
+    state.debug_artifacts[API_CASES_YAML_DEBUG_KEY] = render_api_test_cases_yaml(
+        state,
+        repo_root,
+    )
     state.draft_artifacts["api_test_draft"] = artifact
     state.draft_artifact = artifact
     output_path = state.output_paths.get("api_test_draft")
@@ -374,6 +542,58 @@ def _has_section(markdown: str, section: str) -> bool:
 
 def _contains_secret(markdown: str) -> bool:
     return any(pattern.search(markdown) for pattern in SECRET_PATTERNS)
+
+
+def _api_cases_yaml_errors(content: str) -> list[str]:
+    errors: list[str] = []
+    if not content.strip():
+        return ["接口 YAML 用例草稿为空。"]
+    try:
+        data = yaml.safe_load(content)
+    except yaml.YAMLError as exc:
+        return [f"接口 YAML 用例草稿不是合法 YAML: {exc}"]
+    if not isinstance(data, dict):
+        return ["接口 YAML 用例草稿必须是 YAML mapping。"]
+    if data.get("schema_version") != API_CASES_SCHEMA_VERSION:
+        errors.append("接口 YAML 用例草稿 schema_version 不正确。")
+    if data.get("status") != "needs_human_review":
+        errors.append("接口 YAML 用例草稿候选状态必须是 needs_human_review。")
+    if data.get("human_review_required") is not True:
+        errors.append("接口 YAML 用例草稿必须要求人工审核。")
+    if data.get("base_url_env") != "AGENTIC_QA_BASE_URL":
+        errors.append("接口 YAML 用例草稿必须通过 AGENTIC_QA_BASE_URL 读取环境。")
+    cases = data.get("cases")
+    if not isinstance(cases, list) or not cases:
+        errors.append("接口 YAML 用例草稿必须包含 cases。")
+        return errors
+    business_rules = data.get("business_rules")
+    if not isinstance(business_rules, list) or not business_rules:
+        errors.append("接口 YAML 用例草稿必须包含 business_rules。")
+    required_fields = {
+        "id",
+        "title",
+        "method",
+        "path",
+        "business_rule_refs",
+        "request",
+        "expected",
+        "pending",
+    }
+    for index, case in enumerate(cases, start=1):
+        if not isinstance(case, dict):
+            errors.append(f"接口 YAML 用例第 {index} 条必须是 mapping。")
+            continue
+        missing = sorted(required_fields - set(case))
+        if missing:
+            errors.append(f"接口 YAML 用例第 {index} 条缺少字段: {', '.join(missing)}")
+        if str(case.get("path") or "").startswith("http"):
+            errors.append(f"接口 YAML 用例第 {index} 条 path 不得写完整环境域名。")
+        expected = case.get("expected")
+        if not isinstance(expected, dict) or not expected.get("status_code"):
+            errors.append(f"接口 YAML 用例第 {index} 条缺少 expected.status_code。")
+    if _contains_secret(content):
+        errors.append("接口 YAML 用例草稿疑似包含真实 token / cookie / 密钥。")
+    return errors
 
 
 def api_test_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
@@ -410,6 +630,10 @@ def api_test_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWo
         )
     if _contains_secret(artifact):
         state.quality_errors.append("接口测试草稿疑似包含真实 token / cookie / 密钥。")
+
+    yaml_content = state.debug_artifacts.get(API_CASES_YAML_DEBUG_KEY, "")
+    for error in _api_cases_yaml_errors(str(yaml_content)):
+        state.quality_errors.append(error)
 
     prd_path = resolve_prd_path(repo_root, state.prd_path)
     output_path = state.output_paths.get("api_test_draft")
