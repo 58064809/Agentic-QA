@@ -28,6 +28,8 @@ status: needs_human_review
 human_review_required: true
 generated_from:
   workflow: workflows/10-rag-automation-case-generation-workflow.md
+  prompt: prompts/rag-automation-case-prompt.md
+  rag_run_record: rag/run_records/<run_id>.json
 source_refs:
   - source_type: prd
     source_path: prd/<id>/input/requirement.md
@@ -57,7 +59,7 @@ review_questions:
 
 ## 用例要求
 
-每条用例必须包含：
+有 Swagger / OpenAPI / Apifox 接口契约时，每条用例必须包含：
 
 - `id`
 - `title`
@@ -73,10 +75,13 @@ review_questions:
 - `variables`
 - `cleanup`
 
+缺少 Swagger / OpenAPI / Apifox 接口契约时，不得编造 `request.method`、`request.path`、请求字段、响应字段或错误码；只能生成待确认草稿。此时 `request` 应保留为空对象或仅写明确来自已确认来源的字段，并必须把接口契约缺口写入 `review_questions`。
+
 ## 生成规则
 
 - 每条用例必须有非空 `source_refs`。
 - 接口路径只能使用相对路径。
+- `request.method`、`request.path`、请求字段、响应字段、错误码和鉴权方式必须来自 Swagger / OpenAPI / Apifox 或已确认接口契约；缺少接口契约时不得根据 PRD 或历史经验补全接口事实。
 - 不写真实 token、Cookie、密码、手机号、身份证、银行卡或密钥。
 - 变量使用 `${ENV_NAME}`、`${case.variable}` 或 `${fixture.name}`。
 - 字段、错误码、权限、风控、幂等和状态流转不明确时，写入 `review_questions`。

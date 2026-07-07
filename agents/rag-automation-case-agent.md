@@ -16,6 +16,9 @@ RAG Automation Case Agent 负责基于 PRD、Swagger / OpenAPI、业务规则和
 ## 输出
 
 - `status: needs_human_review` 的 YAML 接口自动化用例草稿。
+- `prd/<id>/runs/<run_id>/artifact-preview.md` 人类可读预览。
+- `prd/<id>/runs/<run_id>/api-test-cases.yml` 机器可消费 YAML sidecar。
+- `prd/<id>/reviews/api-test-draft.review.yml` Review Gate 记录。
 - 每条用例的 `source_refs`。
 - RAG 运行记录。
 - 待人工确认项。
@@ -31,6 +34,7 @@ RAG Automation Case Agent 负责基于 PRD、Swagger / OpenAPI、业务规则和
 ## 生成要求
 
 - 接口路径、方法和字段必须优先来自 Swagger / OpenAPI。
+- 缺少 Swagger / OpenAPI / Apifox 接口契约时，不得编造 `request.method`、`request.path`、请求字段、响应字段或错误码，只能生成待确认草稿并写入 `review_questions`。
 - 业务预期必须来自 PRD、业务规则或已确认上下文。
 - 断言策略必须覆盖 HTTP 状态码、业务码、响应字段和关键状态。
 - 涉及金额、库存、权限、状态流转、幂等、风控和次数限制时，必须生成待确认项或对应断言建议。

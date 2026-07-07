@@ -17,11 +17,16 @@
 
 ## 输出
 
-候选 YAML 用例草稿默认写入运行目录，例如：
+RAG 自动化 YAML 草稿不绕过现有产物流转。一次生成默认产生以下候选与审核记录：
 
 ```text
-prd/<id>/runs/<run_id>/api-test-cases.yml
+prd/<id>/runs/<run_id>/artifact-preview.md      # 人类可读预览
+prd/<id>/runs/<run_id>/api-test-cases.yml       # 机器可消费 YAML 草稿
+prd/<id>/reviews/api-test-draft.review.yml      # Review Gate 记录
+prd/<id>/artifacts/api-test-cases.yml           # 审核通过并 promote 后的正式 YAML
 ```
+
+`api-test-cases.yml` 是 `api_test_draft` 同一 Review Gate 下的 sidecar 候选产物。未审核前只能位于 `runs/<run_id>/`，不得直接写入 `artifacts/` 或作为正式可执行资产。
 
 输出必须满足：
 
@@ -31,6 +36,7 @@ prd/<id>/runs/<run_id>/api-test-cases.yml
 - 接口路径只能写相对路径，不能写完整域名。
 - 账号、密码、token、Cookie、动态 ID 只能使用变量或环境占位。
 - 必须包含 `review_questions`，列出待人工确认项。
+- 缺少 Swagger / OpenAPI / Apifox 接口契约时，不得编造 `request.method`、`request.path`、请求字段、响应字段或错误码；只能生成待确认草稿，并把接口契约缺口写入 `review_questions`。
 
 ## 用例最小字段
 
@@ -42,7 +48,7 @@ prd/<id>/runs/<run_id>/api-test-cases.yml
 | `title` | 用例标题 |
 | `priority` | `P0`、`P1`、`P2`、`P3` |
 | `source_refs` | 来源引用，不能为空 |
-| `request` | method、path、headers、query、body |
+| `request` | method、path、headers、query、body；缺少接口契约时不得编造 |
 | `assertions` | HTTP、业务码、字段、状态或数据库观察点 |
 | `variables` | 前置变量、提取变量或环境变量 |
 | `review_status` | 默认 `needs_human_review` |

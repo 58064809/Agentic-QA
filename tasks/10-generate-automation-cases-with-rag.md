@@ -18,12 +18,12 @@
 2. 读取 PRD、接口文档、业务规则、数据库规则、自动化规则和历史经验。
 3. 使用 RAG 检索接口路径、字段、业务规则、断言策略和历史风险。
 4. 构建带来源映射的上下文。
-5. 调用 `prompts/rag-automation-case-prompt.md` 生成 YAML 草稿。
+5. 调用 `prompts/rag-automation-case-prompt.md` 生成人类可读预览和 YAML sidecar 草稿。
 6. 检查 YAML 顶层状态是否为 `needs_human_review`。
 7. 检查每条用例是否包含 `source_refs`。
 8. 检查是否存在真实敏感数据、完整域名或生产地址。
-9. 写入 RAG 运行记录。
-10. 输出草稿路径和 Review Gate 待确认项。
+9. 写入 RAG 运行记录，并在记录中登记 preview、yaml_cases、review 路径。
+10. 输出候选预览、YAML sidecar 和 Review Gate 待确认项。
 
 ## 输出要求
 
@@ -31,6 +31,7 @@
 - 每条用例默认 `review_status: needs_human_review`。
 - 每条用例必须包含来源引用。
 - 无法确认的字段、错误码、权限、风控、幂等和数据状态必须写入待确认项。
+- 输出路径必须遵循现有产物流转：`runs/<run_id>/artifact-preview.md` 为主候选预览，`runs/<run_id>/api-test-cases.yml` 为机器可消费 sidecar，`reviews/api-test-draft.review.yml` 为 Review Gate，审核通过后才允许 promote 到 `artifacts/api-test-cases.yml`。
 
 ## 人工确认点
 
@@ -45,3 +46,4 @@
 - 不把草稿当正式自动化资产。
 - 不写真实账号、密码、token、Cookie 或生产域名。
 - 不在信息不足时编造接口契约。
+- 缺少 Swagger / OpenAPI / Apifox 接口契约时，不得编造 `request.method`、`request.path`、请求字段和响应字段；只能生成待确认草稿并写入 `review_questions`。

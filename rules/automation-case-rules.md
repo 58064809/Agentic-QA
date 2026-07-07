@@ -39,6 +39,13 @@ YAML 顶层必须包含：
 - 动态值使用 `${ENV_NAME}`、`${case.variable}` 或 fixture 变量。
 - 没有明确授权环境和账号时，不得执行真实请求。
 
+## 接口契约规则
+
+- `request.method`、`request.path`、请求字段、响应字段、错误码和鉴权方式必须来自 Swagger / OpenAPI / Apifox 或已确认接口契约。
+- 缺少 Swagger / OpenAPI / Apifox 接口契约时，不得根据 PRD、历史经验或常识编造接口事实。
+- 接口契约缺失时只能生成 `needs_human_review` 待确认草稿，`request` 应为空对象或仅包含明确来源字段，并必须在 `review_questions` 中列出需要补充的接口契约。
+- `runs/<run_id>/api-test-cases.yml` 是 `api_test_draft` 的 sidecar 候选产物；Review Gate 通过并 promote 前不得写入或覆盖 `artifacts/api-test-cases.yml`。
+
 ## 断言规则
 
 - 至少包含 HTTP 状态码断言。
@@ -53,6 +60,7 @@ YAML 顶层必须包含：
 
 - 任一用例缺少 `source_refs`。
 - 任一接口字段没有来源且未标记待确认。
+- 缺少接口契约时仍填充了无来源的 method、path、请求字段或响应字段。
 - YAML 中出现真实敏感数据。
 - 用例只断言请求成功，不断言业务结果。
 - 草稿未包含 `review_questions`。

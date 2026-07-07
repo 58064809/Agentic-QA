@@ -13,7 +13,9 @@ rag/run_records/<run_id>.json
 如果任务绑定具体 PRD 工作区，可在对应运行记录中引用：
 
 ```text
+prd/<id>/runs/<run_id>/artifact-preview.md
 prd/<id>/runs/<run_id>/api-test-cases.yml
+prd/<id>/reviews/api-test-draft.review.yml
 ```
 
 ## 字段结构
@@ -31,6 +33,7 @@ prd/<id>/runs/<run_id>/api-test-cases.yml
 | `retrieved_chunks` | 是 | 被召回的 chunk 列表 |
 | `selected_context` | 是 | 最终进入 Prompt 的上下文 |
 | `generation` | 是 | Prompt、模型、输出路径和生成状态 |
+| `output_artifacts` | 是 | 本次生成关联的 preview、YAML sidecar 和 Review Gate 路径 |
 | `quality_checks` | 是 | source_refs、状态、安全和格式检查结果 |
 | `review_gate` | 是 | 人审状态和待确认项 |
 | `warnings` | 否 | 非阻塞风险和信息缺口 |
@@ -65,6 +68,19 @@ prd/<id>/runs/<run_id>/api-test-cases.yml
 - 是否出现真实 token、Cookie、手机号、身份证、银行卡或生产域名。
 - 是否只使用相对接口路径。
 - 是否包含待人工确认项。
+- 缺少 Swagger / OpenAPI / Apifox 接口契约时，是否避免编造 method、path、请求字段和响应字段，并把契约缺口写入 `review_questions`。
+
+## 输出产物路径
+
+RAG 自动化用例生成必须复用现有候选产物、Review Gate 和 promote 体系：
+
+| 字段 | 路径 | 说明 |
+|---|---|---|
+| `output_artifacts.preview` | `prd/<id>/runs/<run_id>/artifact-preview.md` | 人类可读候选预览 |
+| `output_artifacts.yaml_cases` | `prd/<id>/runs/<run_id>/api-test-cases.yml` | 机器可消费 YAML sidecar 草稿 |
+| `output_artifacts.review` | `prd/<id>/reviews/api-test-draft.review.yml` | Review Gate 记录 |
+
+正式 YAML 只允许在 Review Gate 通过并执行 promote 后写入 `prd/<id>/artifacts/api-test-cases.yml`。
 
 ## 模板
 

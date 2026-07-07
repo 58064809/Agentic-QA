@@ -32,16 +32,19 @@
 3. 按接口、字段、业务规则、断言策略和历史风险切分上下文。
 4. 检索与目标接口和业务规则相关的 chunk。
 5. 构建 Prompt 上下文，并保留 `source_refs` 映射。
-6. 使用 `prompts/rag-automation-case-prompt.md` 生成 YAML 草稿。
+6. 使用 `prompts/rag-automation-case-prompt.md` 生成人类可读预览和 YAML sidecar 草稿。
 7. 按 `rules/automation-case-rules.md` 和 `rules/source-reference-rules.md` 做质量检查。
 8. 写入 RAG 运行记录。
-9. 将 YAML 草稿标记为 `needs_human_review`，等待 Review Gate。
+9. 将预览和 YAML 草稿标记为 `needs_human_review`，创建或更新 `reviews/api-test-draft.review.yml`，等待 Review Gate。
 
 ## 输出
 
 | 输出 | 说明 |
 |---|---|
-| `prd/<id>/runs/<run_id>/api-test-cases.yml` | YAML 接口自动化用例草稿 |
+| `prd/<id>/runs/<run_id>/artifact-preview.md` | 人类可读候选预览，进入 Review Gate 的主产物 |
+| `prd/<id>/runs/<run_id>/api-test-cases.yml` | 机器可消费 YAML 接口自动化用例 sidecar 草稿 |
+| `prd/<id>/reviews/api-test-draft.review.yml` | Review Gate 记录，审核目标为 `api_test_draft` |
+| `prd/<id>/artifacts/api-test-cases.yml` | Review Gate 通过并由 promote 发布后的正式 YAML |
 | `rag/run_records/<run_id>.json` | RAG 运行记录 |
 | Review Gate 待确认项 | 需要人工确认的接口契约、业务规则、数据和执行风险 |
 
@@ -50,6 +53,7 @@
 - YAML 顶层必须是 `status: needs_human_review`。
 - 每条用例必须包含非空 `source_refs`。
 - 未确认字段必须进入 `review_questions`。
+- 缺少 Swagger / OpenAPI / Apifox 接口契约时，不得编造接口方法、路径、请求字段、响应字段和错误码。
 - 不得出现真实敏感数据或生产地址。
 - 不得直接执行接口请求。
 

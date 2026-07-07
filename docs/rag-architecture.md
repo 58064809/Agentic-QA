@@ -65,9 +65,15 @@ PRD / Swagger / 业务规则
   ↓
 AI 生成 YAML 接口用例草稿
   ↓
+写入 runs/<run_id>/artifact-preview.md
+  ↓
+写入 runs/<run_id>/api-test-cases.yml
+  ↓
 质量检查
   ↓
-Review Gate
+Review Gate（reviews/api-test-draft.review.yml）
+  ↓
+promote 后写入 artifacts/api-test-cases.yml
   ↓
 人工确认后交给现有 pytest 框架执行
 ```
@@ -76,6 +82,7 @@ Review Gate
 
 - PRD 和已确认业务规则用于定义业务预期。
 - Swagger / OpenAPI 用于定义接口路径、方法、请求字段、响应字段、错误码和鉴权方式。
+- 缺少 Swagger / OpenAPI / Apifox 接口契约时，不得编造接口路径、方法、请求字段、响应字段、错误码或鉴权方式；只能生成待确认草稿并写入 `review_questions`。
 - 数据库知识只作为数据一致性和状态校验依据，不反推未确认接口字段。
 - 自动化知识用于约束 YAML 格式、断言层级、变量提取和安全边界。
 - 历史经验用于补充风险场景和漏测提醒，不得替代当前需求事实。
@@ -100,3 +107,14 @@ human_review_required: true
 ```
 
 草稿可进入 Review Gate，不得直接作为正式自动化资产执行。只有人工确认执行环境、账号、数据、风险和用例内容后，才允许交给现有 pytest 执行入口。
+
+产物流转固定为：
+
+```text
+runs/<run_id>/artifact-preview.md
+runs/<run_id>/api-test-cases.yml
+reviews/api-test-draft.review.yml
+artifacts/api-test-cases.yml
+```
+
+其中 `artifacts/api-test-cases.yml` 只能由审核通过后的 promote 写入。

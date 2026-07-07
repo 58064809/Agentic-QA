@@ -29,6 +29,11 @@
     "output_path": "",
     "status": "needs_human_review"
   },
+  "output_artifacts": {
+    "preview": "prd/<id>/runs/<run_id>/artifact-preview.md",
+    "yaml_cases": "prd/<id>/runs/<run_id>/api-test-cases.yml",
+    "review": "prd/<id>/reviews/api-test-draft.review.yml"
+  },
   "quality_checks": {
     "top_level_status_is_needs_human_review": false,
     "all_cases_have_source_refs": false,
