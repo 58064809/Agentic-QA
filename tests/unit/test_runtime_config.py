@@ -249,6 +249,9 @@ input:
 runtime:
   default_entry: api
   record_runs: false
+  checkpointer: postgres
+  checkpoint_postgres_dsn_env: TEST_CHECKPOINT_DSN
+  checkpoint_postgres_setup: false
 workspace:
   prd_root: requirements
   artifacts_dir_name: outputs
@@ -276,6 +279,9 @@ profiles:
     assert config.input.max_file_chars == 12345
     assert config.runtime.default_entry == "api"
     assert config.runtime.record_runs is False
+    assert config.runtime.checkpointer == "postgres"
+    assert config.runtime.checkpoint_postgres_dsn_env == "TEST_CHECKPOINT_DSN"
+    assert config.runtime.checkpoint_postgres_setup is False
     assert config.workspace.prd_root == "requirements"
     assert config.workspace.artifacts_dir_name == "outputs"
     assert config.entries.cli_enabled is False

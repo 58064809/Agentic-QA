@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
 from runtime.config import load_app_config
@@ -13,6 +12,8 @@ from runtime.graph.state import QAWorkflowState
 from runtime.llm.config import OpenAICompatibleConfig
 from runtime.records.run_recorder import (
     append_review_event,
+    close_checkpointer,
+    create_checkpointer,
     create_run_identity,
     load_checkpointer,
     record_runtime_result,
@@ -25,19 +26,68 @@ from runtime.workflow.loader import load_workflow_spec_by_id
 
 
 def task_type_for_recorded_run(repo_root: Path, run_id: str) -> str | None:
+    result = recorded_run_result(repo_root, run_id)
+    task_type = result.get("task_type")
+    return str(task_type) if task_type else None
+
+
+def recorded_run_result(repo_root: Path, run_id: str) -> dict[str, object]:
     state_path = run_record_dir_for(repo_root, run_id) / "run-state.json"
     if not state_path.is_file():
         raise FileNotFoundError(f"未找到运行记录: {state_path.as_posix()}")
     payload = json.loads(state_path.read_text(encoding="utf-8"))
     result = payload.get("result", {})
     if not isinstance(result, dict):
-        return None
-    task_type = result.get("task_type")
-    return str(task_type) if task_type else None
+        return {}
+    return result
+
+
+def workflow_id_for_recorded_run(repo_root: Path, run_id: str) -> str:
+    result = recorded_run_result(repo_root, run_id)
+    orchestration = str(result.get("orchestration") or "")
+    prefix = "YAML WorkflowSpec: "
+    if orchestration.startswith(prefix):
+        return orchestration.removeprefix(prefix).strip()
+    intent = result.get("intent")
+    if isinstance(intent, str) and intent in DEFAULT_WORKFLOW_REGISTRY.registered_task_types():
+        return workflow_id_for_task_type(intent)
+    return workflow_id_for_task_type(str(result.get("task_type") or ""))
+
+
+def thread_id_for_recorded_run(repo_root: Path, run_id: str) -> str:
+    result = recorded_run_result(repo_root, run_id)
+    thread_id = result.get("thread_id")
+    return str(thread_id) if thread_id else run_id
 
 
 def workflow_id_for_task_type(task_type: str | None) -> str:
     return DEFAULT_WORKFLOW_REGISTRY.workflow_id_for_task_type(task_type)
+
+
+def _graph_config(thread_id: str) -> dict[str, dict[str, str]]:
+    return {"configurable": {"thread_id": thread_id}}
+
+
+def _checkpointer_kwargs(app_config) -> dict[str, object]:
+    return {
+        "storage": app_config.runtime.checkpointer,
+        "postgres_dsn_env": app_config.runtime.checkpoint_postgres_dsn_env,
+        "postgres_setup": app_config.runtime.checkpoint_postgres_setup,
+    }
+
+
+def _state_from_checkpoint_or_default(
+    graph,
+    graph_config: dict[str, dict[str, str]],
+    default_state: QAWorkflowState,
+) -> QAWorkflowState:
+    try:
+        snapshot = graph.get_state(graph_config)
+    except Exception:
+        return default_state
+    if snapshot and snapshot.values:
+        return QAWorkflowState.model_validate(snapshot.values)
+    return default_state
 
 
 def _interrupt_metadata(state: QAWorkflowState) -> list[dict]:
@@ -66,7 +116,13 @@ def _finalize_state(state: QAWorkflowState) -> QAWorkflowState:
         }
         if "human_review_node" not in state.executed_nodes:
             state.executed_nodes.append("human_review_node")
-    elif state.run_status in {"not_started", "approved", "write_approved", "dry_run"}:
+    elif state.run_status in {
+        "not_started",
+        "running",
+        "approved",
+        "write_approved",
+        "dry_run",
+    }:
         state.run_status = "completed" if state.success else "failed"
     return state
 
@@ -85,6 +141,7 @@ def run_workflow_by_id(
     root = (repo_root or default_repo_root()).resolve()
     spec = load_workflow_spec_by_id(root, workflow_id)
     run_id, thread_id = create_run_identity()
+    run_record_dir = run_record_dir_for(root, run_id) if record_run else None
     app_config = load_app_config(root)
     config = OpenAICompatibleConfig.from_app_config(app_config.llm)
     preview_write = debug_approve_preview_write or approve_write
@@ -105,20 +162,50 @@ def run_workflow_by_id(
     apply_workflow_state_defaults(initial_state, spec)
     initial_state.max_llm_calls = 2 if initial_state.task_type == TASK_MVP else 1
 
-    checkpointer = MemorySaver()
-    graph = build_graph_from_spec(spec, root, checkpointer=checkpointer)
-    graph_config = {"configurable": {"thread_id": thread_id}}
-    final_state = QAWorkflowState.model_validate(graph.invoke(initial_state, config=graph_config))
-    _finalize_state(final_state)
-    result = RuntimeResult.from_state(final_state)
-    if record_run:
-        return record_runtime_result(
-            result,
-            root,
-            graph_state=final_state.model_dump(mode="json"),
-            checkpointer=checkpointer,
+    try:
+        checkpointer = create_checkpointer(
+            run_record_dir,
+            **_checkpointer_kwargs(app_config),
         )
-    return result
+    except RuntimeError as exc:
+        initial_state.errors.append(str(exc))
+        initial_state.run_status = "failed"
+        initial_state.next_action = "retry"
+        result = RuntimeResult.from_state(initial_state)
+        if record_run:
+            return record_runtime_result(
+                result,
+                root,
+                graph_state=initial_state.model_dump(mode="json"),
+                checkpointer=None,
+            )
+        return result
+    try:
+        graph = build_graph_from_spec(spec, root, checkpointer=checkpointer)
+        graph_config = _graph_config(thread_id)
+        try:
+            final_state = QAWorkflowState.model_validate(
+                graph.invoke(initial_state, config=graph_config)
+            )
+        except Exception as exc:
+            final_state = _state_from_checkpoint_or_default(graph, graph_config, initial_state)
+            final_state.run_id = run_id if record_run else None
+            final_state.thread_id = thread_id
+            final_state.errors.append(f"Workflow 执行异常，可修复后重试: {exc}")
+            final_state.run_status = "failed"
+            final_state.next_action = "retry"
+        _finalize_state(final_state)
+        result = RuntimeResult.from_state(final_state)
+        if record_run:
+            return record_runtime_result(
+                result,
+                root,
+                graph_state=final_state.model_dump(mode="json"),
+                checkpointer=checkpointer,
+            )
+        return result
+    finally:
+        close_checkpointer(checkpointer)
 
 
 def resume_workflow_for_run(
@@ -126,18 +213,19 @@ def resume_workflow_for_run(
     *,
     action: str | None = None,
     user_input: str | None = None,
+    resume_payload: dict[str, object] | None = None,
     reviewed_by: str = "user",
     review_notes: str | None = None,
     target_artifact: str | None = None,
     repo_root: Path | None = None,
 ) -> RuntimeResult:
     root = (repo_root or default_repo_root()).resolve()
-    task_type = task_type_for_recorded_run(root, run_id)
     return resume_workflow_by_id(
-        workflow_id_for_task_type(task_type),
+        workflow_id_for_recorded_run(root, run_id),
         run_id,
         action=action,
         user_input=user_input,
+        resume_payload=resume_payload,
         reviewed_by=reviewed_by,
         review_notes=review_notes,
         target_artifact=target_artifact,
@@ -151,6 +239,7 @@ def resume_workflow_by_id(
     *,
     action: str | None = None,
     user_input: str | None = None,
+    resume_payload: dict[str, object] | None = None,
     reviewed_by: str = "user",
     review_notes: str | None = None,
     target_artifact: str | None = None,
@@ -159,60 +248,133 @@ def resume_workflow_by_id(
     root = (repo_root or default_repo_root()).resolve()
     spec = load_workflow_spec_by_id(root, workflow_id)
     run_record_dir = run_record_dir_for(root, run_id)
-    checkpointer = load_checkpointer(run_record_dir)
-    graph = build_graph_from_spec(spec, root, checkpointer=checkpointer)
-    graph_config = {"configurable": {"thread_id": run_id}}
+    app_config = load_app_config(root)
+    checkpointer = load_checkpointer(
+        run_record_dir,
+        **_checkpointer_kwargs(app_config),
+    )
+    try:
+        graph = build_graph_from_spec(spec, root, checkpointer=checkpointer)
+        thread_id = thread_id_for_recorded_run(root, run_id)
+        graph_config = _graph_config(thread_id)
 
-    if action is None and user_input is None:
-        snapshot = graph.get_state(graph_config)
-        state = QAWorkflowState.model_validate(snapshot.values)
-        state.run_id = run_id
-        state.thread_id = run_id
-        if snapshot.next:
-            state.review_status = "needs_human_review"
-            state.next_action = "wait_for_review"
-            state.run_status = "interrupted"
-            state.warnings.append("当前运行仍在人工审核暂停点，请使用 approve 或 reject。")
-        else:
-            state.run_status = "completed" if state.success else "failed"
-        result = RuntimeResult.from_state(state)
+        if action is None and user_input is None and resume_payload is None:
+            snapshot = graph.get_state(graph_config)
+            state = QAWorkflowState.model_validate(snapshot.values)
+            state.run_id = run_id
+            state.thread_id = thread_id
+            if snapshot.next:
+                state.review_status = "needs_human_review"
+                state.next_action = "wait_for_review"
+                state.run_status = "interrupted"
+                state.warnings.append("当前运行仍在人工审核暂停点，请使用 approve 或 reject。")
+            else:
+                state.run_status = "completed" if state.success else "failed"
+            result = RuntimeResult.from_state(state)
+            return record_runtime_result(
+                result,
+                root,
+                graph_state=state.model_dump(mode="json"),
+                checkpointer=checkpointer,
+            )
+
+        decision = dict(resume_payload or {})
+        decision.setdefault("action", action)
+        decision.setdefault("user_input", user_input)
+        decision.setdefault("reviewed_by", reviewed_by)
+        decision.setdefault("review_notes", review_notes)
+        decision.setdefault("target_artifact", target_artifact)
+        previous_snapshot = graph.get_state(graph_config)
+        previous_state = QAWorkflowState.model_validate(previous_snapshot.values)
+        previous_status = (
+            "needs_human_review" if previous_snapshot.next else previous_state.review_status
+        )
+        previous_run_status = "interrupted" if previous_snapshot.next else previous_state.run_status
+        final_state = QAWorkflowState.model_validate(
+            graph.invoke(Command(resume=decision), config=graph_config)
+        )
+        _finalize_state(final_state)
+        result = RuntimeResult.from_state(final_state)
+        append_review_event(
+            result,
+            root,
+            action=str(decision.get("action") or decision.get("type") or action or ""),
+            reviewed_by=str(decision.get("reviewed_by") or reviewed_by),
+            review_notes=str(decision.get("review_notes") or review_notes or ""),
+            previous_status=previous_status,
+            previous_run_status=previous_run_status,
+        )
         return record_runtime_result(
             result,
             root,
-            graph_state=state.model_dump(mode="json"),
+            graph_state=final_state.model_dump(mode="json"),
             checkpointer=checkpointer,
         )
+    finally:
+        close_checkpointer(checkpointer)
 
-    decision = {
-        "action": action,
-        "user_input": user_input,
-        "reviewed_by": reviewed_by,
-        "review_notes": review_notes,
-        "target_artifact": target_artifact,
-    }
-    previous_snapshot = graph.get_state(graph_config)
-    previous_state = QAWorkflowState.model_validate(previous_snapshot.values)
-    previous_status = (
-        "needs_human_review" if previous_snapshot.next else previous_state.review_status
+
+def retry_failed_workflow_for_run(
+    run_id: str,
+    *,
+    user_input: str | None = None,
+    repo_root: Path | None = None,
+) -> RuntimeResult:
+    """Retry a failed workflow with the same run_id/thread/checkpointer.
+
+    This is intended for fault tolerance after the user fixes missing inputs,
+    permissions, or transient environment problems. It does not bypass Review Gate.
+    """
+    root = (repo_root or default_repo_root()).resolve()
+    workflow_id = workflow_id_for_recorded_run(root, run_id)
+    spec = load_workflow_spec_by_id(root, workflow_id)
+    run_record_dir = run_record_dir_for(root, run_id)
+    app_config = load_app_config(root)
+    checkpointer = load_checkpointer(
+        run_record_dir,
+        **_checkpointer_kwargs(app_config),
     )
-    previous_run_status = "interrupted" if previous_snapshot.next else previous_state.run_status
-    final_state = QAWorkflowState.model_validate(
-        graph.invoke(Command(resume=decision), config=graph_config)
-    )
-    _finalize_state(final_state)
-    result = RuntimeResult.from_state(final_state)
-    append_review_event(
-        result,
-        root,
-        action=action,
-        reviewed_by=reviewed_by,
-        review_notes=review_notes,
-        previous_status=previous_status,
-        previous_run_status=previous_run_status,
-    )
-    return record_runtime_result(
-        result,
-        root,
-        graph_state=final_state.model_dump(mode="json"),
-        checkpointer=checkpointer,
-    )
+    try:
+        graph = build_graph_from_spec(spec, root, checkpointer=checkpointer)
+        thread_id = thread_id_for_recorded_run(root, run_id)
+        graph_config = _graph_config(thread_id)
+        previous = recorded_run_result(root, run_id)
+        state = QAWorkflowState.model_validate(previous)
+        state.run_id = run_id
+        state.thread_id = thread_id
+        if user_input:
+            state.user_input = user_input
+        state.errors = []
+        state.quality_errors = []
+        state.run_status = "running"
+        state.review_status = "not_started"
+        state.next_action = None
+        state.human_review = {
+            "status": "not_started",
+            "decision": None,
+            "reviewed_by": None,
+            "review_notes": None,
+            "interrupt": None,
+        }
+        state.warnings.append(f"从失败运行恢复重试: {run_id}")
+        apply_workflow_state_defaults(state, spec)
+
+        try:
+            final_state = QAWorkflowState.model_validate(graph.invoke(state, config=graph_config))
+        except Exception as exc:
+            final_state = _state_from_checkpoint_or_default(graph, graph_config, state)
+            final_state.run_id = run_id
+            final_state.thread_id = thread_id
+            final_state.errors.append(f"Workflow 重试仍然失败: {exc}")
+            final_state.run_status = "failed"
+            final_state.next_action = "retry"
+        _finalize_state(final_state)
+        result = RuntimeResult.from_state(final_state)
+        return record_runtime_result(
+            result,
+            root,
+            graph_state=final_state.model_dump(mode="json"),
+            checkpointer=checkpointer,
+        )
+    finally:
+        close_checkpointer(checkpointer)

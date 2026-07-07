@@ -17,7 +17,6 @@ from runtime.cli.parser import (  # noqa: E402
     _extract_prd_workspace_path,
 )
 from runtime.graph.app import (  # noqa: E402
-    promote_artifacts,
     resume_recorded_workflow,
     run_api_discovery_report_workflow,
 )
@@ -143,15 +142,9 @@ def test_api_discovery_promote_writes_formal_artifact(tmp_path):
         target_artifact="api_discovery_report",
         repo_root=repo_root,
     )
-    promoted = promote_artifacts(
-        "prd/demo-requirement",
-        result.run_id or "",
-        repo_root=repo_root,
-        task_type="api_discovery_report",
-    )
-
     assert resumed.success
-    assert promoted.success
+    assert resumed.review_status == "confirmed"
+    assert "artifact_promoter_node" in resumed.executed_nodes
     formal = repo_root / "prd/demo-requirement/artifacts/api-discovery-report.md"
     assert formal.is_file()
     review = yaml.safe_load(

@@ -265,6 +265,9 @@ class RuntimeConfig:
     record_runs: bool = True
     idempotency_enabled: bool = True
     fail_fast_required_nodes: bool = True
+    checkpointer: str = "postgres"
+    checkpoint_postgres_dsn_env: str = "AGENTIC_QA_CHECKPOINT_POSTGRES_DSN"
+    checkpoint_postgres_setup: bool = True
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | None) -> RuntimeConfig:
@@ -278,6 +281,17 @@ class RuntimeConfig:
             ),
             fail_fast_required_nodes=_bool_value(
                 data.get("fail_fast_required_nodes"),
+                default=True,
+            ),
+            checkpointer=str(data.get("checkpointer", "postgres")).strip().lower(),
+            checkpoint_postgres_dsn_env=str(
+                data.get(
+                    "checkpoint_postgres_dsn_env",
+                    "AGENTIC_QA_CHECKPOINT_POSTGRES_DSN",
+                )
+            ),
+            checkpoint_postgres_setup=_bool_value(
+                data.get("checkpoint_postgres_setup"),
                 default=True,
             ),
         )

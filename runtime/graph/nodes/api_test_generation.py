@@ -853,3 +853,59 @@ def api_test_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWo
             "接口测试草稿输出路径不符合约定: runs/<run_id>/artifact-preview.md"
         )
     return state
+
+
+def api_test_revision_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
+    if state.task_type != TASK_API_TEST_DRAFT:
+        return state
+    state.record_node("api_test_revision_node")
+    if state.errors:
+        return state
+
+    revision_items = list(state.quality_errors)
+    review_decision = state.human_review.get("decision")
+    if state.review_status == "needs_changes":
+        review_notes = str(state.human_review.get("review_notes") or "").strip()
+        if isinstance(review_decision, dict):
+            revision_request = str(review_decision.get("revision_request") or "").strip()
+            if revision_request:
+                revision_items.append(revision_request)
+        if review_notes:
+            revision_items.append(review_notes)
+        state.review_status = "needs_human_review"
+        state.run_status = "running"
+        state.next_action = "wait_for_review"
+
+    if not revision_items:
+        return state
+
+    state.debug_artifacts["api_test_revision_errors"] = "\n".join(revision_items)
+    state.quality_errors = []
+    state.wrote_file = False
+    output_path = state.output_paths.get("api_test_draft")
+    if output_path:
+        preview = repo_root / Path(output_path)
+        for candidate in (preview, preview.with_suffix(".json"), preview.with_suffix(".yml")):
+            if candidate.is_file():
+                candidate.unlink()
+        output_dir = repo_root / Path(output_path).parent
+        for filename in (API_CASES_YAML_FILENAME, "rag-run-record.json"):
+            candidate = output_dir / filename
+            if candidate.is_file():
+                candidate.unlink()
+    global_rag_record = repo_root / "rag" / "run_records" / f"{state.run_id}.json"
+    if global_rag_record.is_file():
+        global_rag_record.unlink()
+    state.warnings.append("接口测试草稿已进入 revise_generation 分支并生成待确认修订草稿。")
+
+    artifact = state.draft_artifacts.get("api_test_draft") or ""
+    if artifact.strip():
+        revision_note = "\n".join(f"- {error}" for error in revision_items)
+        state.draft_artifacts["api_test_draft"] = (
+            artifact.rstrip()
+            + "\n\n## 自动修订记录\n\n"
+            + "以下问题由校验或 Review Gate 发现，当前候选草稿需再次确认：\n\n"
+            + revision_note
+            + "\n"
+        )
+    return state

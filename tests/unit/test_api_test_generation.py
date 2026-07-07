@@ -12,7 +12,6 @@ sys.path.insert(0, str(REPO_ROOT))
 from runtime_mvp_fixtures import create_mvp_repo  # noqa: E402
 
 from runtime.graph.app import (  # noqa: E402
-    promote_artifacts,
     resume_recorded_workflow,
     run_api_test_draft_workflow,
     run_rag_automation_case_workflow,
@@ -267,15 +266,10 @@ def test_api_test_draft_promote_writes_formal_artifact(tmp_path):
         target_artifact="api_test_draft",
         repo_root=repo_root,
     )
-    promoted = promote_artifacts(
-        "prd/demo-requirement",
-        result.run_id or "",
-        repo_root=repo_root,
-        task_type="api_test_draft",
-    )
 
     assert resumed.success
-    assert promoted.success
+    assert resumed.review_status == "confirmed"
+    assert "artifact_promoter_node" in resumed.executed_nodes
     formal = repo_root / "prd/demo-requirement/artifacts/api-test-draft.md"
     assert formal.is_file()
     assert "status: confirmed" in formal.read_text(encoding="utf-8")
@@ -286,13 +280,44 @@ def test_api_test_draft_promote_writes_formal_artifact(tmp_path):
     assert payload["human_review_required"] is False
     assert payload["source_artifact"] == "artifacts/api-test-draft.md"
     assert payload["promoted_from_run"] == result.run_id
-    assert any(path.endswith("api-test-cases.yml") for path in promoted.output_paths.values())
+    assert any(path.endswith("api-test-cases.yml") for path in resumed.output_paths.values())
     review = yaml.safe_load(
         (repo_root / "prd/demo-requirement/reviews/api-test-draft.review.yml").read_text(
             encoding="utf-8"
         )
     )
     assert review["status"] == "confirmed"
+
+
+def test_api_test_draft_needs_changes_routes_to_reviser_and_interrupts_again(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    add_api_test_context_files(repo_root)
+
+    result = run_api_test_draft_workflow(
+        "生成接口测试草稿",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        use_llm=False,
+    )
+    resumed = resume_recorded_workflow(
+        result.run_id or "",
+        action="revise",
+        user_input="补充鉴权失败场景",
+        review_notes="补充鉴权失败场景",
+        target_artifact="api_test_draft",
+        repo_root=repo_root,
+    )
+
+    assert resumed.success
+    assert resumed.run_status == "interrupted"
+    assert resumed.review_status == "needs_human_review"
+    assert resumed.next_action == "wait_for_review"
+    assert "api_test_revision_node" in resumed.executed_nodes
+    assert "artifact_preview_writer_node" in resumed.executed_nodes
+    assert resumed.human_review["interrupt"]
+    preview = repo_root / f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
+    assert "自动修订记录" in preview.read_text(encoding="utf-8")
+    assert not (repo_root / "prd/demo-requirement/artifacts/api-test-draft.md").exists()
 
 
 def test_api_test_draft_artifact_spec_is_registered():

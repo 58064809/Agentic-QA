@@ -47,20 +47,20 @@ def test_interrupt_review_gate_approve_resume_writes_candidate_preview(tmp_path)
 
     assert resumed.success
     assert resumed.run_status == "completed"
-    assert resumed.review_status == "approved"
-    assert resumed.next_action == "promote"
+    assert resumed.review_status == "confirmed"
     assert resumed.wrote_file
     assert "artifact_preview_writer_node" in resumed.executed_nodes
+    assert "artifact_promoter_node" in resumed.executed_nodes
     preview_path = repo_root / resumed.output_paths["testcases"]
     assert preview_path.is_file()
-    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+    assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
     review = yaml.safe_load(
         (repo_root / "prd/demo-requirement/reviews/testcases.review.yml").read_text(
             encoding="utf-8"
         )
     )
-    assert review["status"] == "approved"
-    assert review["decision"] == "approve"
+    assert review["status"] == "confirmed"
+    assert review["decision"] == "promoted"
 
 
 def test_interrupt_review_gate_reject_resume_stops_without_formal_artifact(tmp_path):

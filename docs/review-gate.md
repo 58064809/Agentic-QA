@@ -23,9 +23,7 @@ human_review_node 调用 process_review_gate()
   ↓
 ReviewDecision / 状态机校验 / reviews/*.review.yml 更新
   ↓
-approved 时写入候选 preview 与 reviews/*.review.yml
-  ↓
-等待独立 promote_artifacts
+approved 时由 workflow 条件边进入 promote_artifacts
   ↓
 promote_artifacts 成功后写入正式 artifacts/ 并标记 confirmed
 ```
@@ -33,7 +31,10 @@ promote_artifacts 成功后写入正式 artifacts/ 并标记 confirmed
 interrupt payload 至少包含：
 
 ```yaml
+kind: review_gate
+schema_version: v1
 run_id: ""
+thread_id: ""
 prd_path: ""
 artifact_keys: []
 review_status: needs_human_review
@@ -45,9 +46,31 @@ allowed_actions:
   - show_diff
   - hold
   - clarify
+action_request:
+  action: review_artifact
+  args:
+    run_id: ""
+    prd_path: ""
+    artifact_keys: []
+    preview_path: ""
+config:
+  allow_accept: true
+  allow_ignore: true
+  allow_respond: true
+  allow_edit: false
+  allowed_decisions:
+    - approve
+    - reject
+    - revise
+    - show_diff
+    - hold
+    - clarify
+description: "Review Gate 暂停点..."
 ```
 
-resume decision 结构：
+Runtime 支持两种 resume decision 结构。
+
+内部 action 结构：
 
 ```yaml
 action: approve
@@ -56,6 +79,23 @@ reviewed_by: ""
 review_notes: ""
 target_artifact: ""
 ```
+
+HumanResponse 风格结构：
+
+```yaml
+type: accept
+reviewed_by: ""
+review_notes: "通过"
+```
+
+```yaml
+type: response
+response: "测试用例需要补充支付失败场景"
+reviewed_by: ""
+target_artifact: testcases
+```
+
+`type=accept` 会映射为 `approve`，`type=ignore` 会映射为 `hold`，`type=response/edit` 会保留原始自然语言并交给 `process_review_gate()` 解析。恢复后 `human_review_node` 会从节点开头重跑，因此中断前的产物写入必须保持在候选路径，正式发布只能由后续独立 `promote_artifacts()` 完成。
 
 多产物确认规则：
 
@@ -71,8 +111,8 @@ target_artifact: ""
 
 | 用户表达 | 识别意图 | 目标状态 | 后续动作 |
 |---|---|---|---|
-| “通过” / “确认” / “没问题” | `approve` | `approved` | `next_action=promote`，允许写候选 preview，等待确定性 promote |
-| “确认并继续” / “继续生成接口测试” | `approve` | `approved` | 先完成当前候选产物确认，再由外部入口触发下游工作流 |
+| “通过” / “确认” / “没问题” | `approve` | `confirmed` | Review Gate 后由条件边进入 promote，发布正式产物 |
+| “确认并继续” / “继续生成接口测试” | `approve` | `confirmed` | 先完成当前候选产物确认与发布，再由外部入口触发下游工作流 |
 | “需要修改” / “补充xxx” | `revise` | `needs_changes` | `next_action=revise`，进入修订工作流 |
 | “不通过” / “废弃” | `reject` | `rejected` | `next_action=stop`，停止复用当前产物 |
 | “重新生成” | `regenerate_artifact` | `draft` | 触发重新生成流程 |
@@ -104,7 +144,7 @@ run_id: ""
 - `needs_human_review` 状态下，LangGraph 必须停在 interrupt checkpoint，不允许自动进入下游正式工作流。
 - `needs_changes` 状态下，只允许进入修订工作流。
 - `rejected` 状态下，不允许复用当前产物。
-- `approved` 状态下，只表示候选产物通过 Review Gate，可以准备 promote；不能直接视为正式产物。
+- `approved` 是 Review Gate 节点内部的过渡状态，必须马上由 workflow 条件边进入 `promote_artifacts`；外部入口不应把 `approved` 当作稳定终态。
 - `confirmed` 只能由 `promote_artifacts` 成功后设置；确认语义、LLM 或普通节点不能直接写 `confirmed`。
 - `promote_artifacts` 是独立确定性函数，只能处理 `approved` review 记录，不能被 LLM 直接调用。
 - 多产物场景必须明确目标产物，除非按规则显式使用或默认记录为 `all`。
@@ -129,9 +169,9 @@ run_id: ""
 用户在 CLI 自然语言入口表达“通过并发布”时，Runtime 必须按状态拆成确定性步骤：
 
 1. 如果存在 matching PRD 的 interrupted run，先用 `Command(resume=decision)` 恢复该 run，并走 `human_review_node -> process_review_gate()`。
-2. resume 成功进入 `approved` 后，才允许调用独立 `promote_artifacts()` 发布正式产物。
-3. 如果不存在 interrupted run，但已有 `approved` review 记录，可以直接执行 `promote_artifacts()`。
-4. 如果 latest run 仍是 `needs_human_review`，必须先写入 Review Gate approve 记录，再执行 promote；不能绕过 Review Gate 直接发布。
+2. resume 成功后，workflow 条件边负责从 `review_approved` 进入 `promote_artifacts()`。
+3. 如果不存在 interrupted run，但已有 `approved` review 记录，可以直接执行 `promote_artifacts()` 作为修复性操作。
+4. 如果 latest run 仍是 `needs_human_review`，必须先恢复 Review Gate；不能绕过 Review Gate 直接发布。
 5. “通过并发布”可以在一条 CLI 命令内完成，但运行记录中必须保留 approve/resume 与 promote 两个确定性阶段的痕迹。
 
 如果自然语言发布请求没有明确目标 artifact，且当前 run 包含多个候选产物，CLI 必须进入 clarify，不得默认发布全部。提示必须包含候选产物列表，并要求用户选择“只发布测试用例”“只发布需求分析”或“全部发布”。

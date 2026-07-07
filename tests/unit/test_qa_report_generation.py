@@ -11,7 +11,6 @@ sys.path.insert(0, str(REPO_ROOT))
 from runtime_mvp_fixtures import build_valid_testcases, create_mvp_repo  # noqa: E402
 
 from runtime.graph.app import (  # noqa: E402
-    promote_artifacts,
     resume_recorded_workflow,
     run_qa_report_workflow,
 )
@@ -135,15 +134,9 @@ def test_qa_report_promote_writes_formal_artifact(tmp_path):
         target_artifact="qa_report",
         repo_root=repo_root,
     )
-    promoted = promote_artifacts(
-        "prd/demo-requirement",
-        result.run_id or "",
-        repo_root=repo_root,
-        task_type="qa_report",
-    )
-
     assert resumed.success
-    assert promoted.success
+    assert resumed.review_status == "confirmed"
+    assert "artifact_promoter_node" in resumed.executed_nodes
     formal = repo_root / "prd/demo-requirement/artifacts/qa-report.md"
     assert formal.is_file()
     assert "status: confirmed" in formal.read_text(encoding="utf-8")

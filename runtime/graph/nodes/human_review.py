@@ -39,19 +39,84 @@ def _preview_path(state: QAWorkflowState) -> str | None:
     return None
 
 
+def _review_gate_description(state: QAWorkflowState) -> str:
+    artifacts = ", ".join(_artifact_keys(state)) or "未识别候选产物"
+    preview_path = _preview_path(state) or "未生成候选预览"
+    return "\n".join(
+        [
+            "Review Gate 暂停点",
+            "",
+            f"- Run ID: {state.run_id or ''}",
+            f"- PRD: {state.prd_path}",
+            f"- 候选产物: {artifacts}",
+            f"- 预览路径: {preview_path}",
+            "- 可选动作: approve / reject / revise / show_diff / hold / clarify",
+            "- 多产物 approve/revise 必须提供 target_artifact 或 all。",
+        ]
+    )
+
+
 def _interrupt_payload(state: QAWorkflowState) -> dict[str, Any]:
+    artifact_keys = _artifact_keys(state)
+    preview_path = _preview_path(state)
     return {
+        "kind": "review_gate",
+        "schema_version": "v1",
         "run_id": state.run_id,
+        "thread_id": state.thread_id,
         "prd_path": state.prd_path,
-        "artifact_keys": _artifact_keys(state),
+        "artifact_keys": artifact_keys,
         "review_status": "needs_human_review",
-        "preview_path": _preview_path(state),
+        "preview_path": preview_path,
         "allowed_actions": list(ALLOWED_REVIEW_ACTIONS),
+        "action_request": {
+            "action": "review_artifact",
+            "args": {
+                "run_id": state.run_id,
+                "prd_path": state.prd_path,
+                "artifact_keys": artifact_keys,
+                "preview_path": preview_path,
+            },
+        },
+        "config": {
+            "allow_accept": True,
+            "allow_ignore": True,
+            "allow_respond": True,
+            "allow_edit": False,
+            "allowed_decisions": list(ALLOWED_REVIEW_ACTIONS),
+        },
+        "description": _review_gate_description(state),
     }
 
 
 def _decision_mapping(value: Any) -> dict[str, Any]:
-    return dict(value) if isinstance(value, dict) else {"action": str(value)}
+    if not isinstance(value, dict):
+        return {"action": str(value), "user_input": str(value)}
+
+    decision = dict(value)
+    response_type = str(decision.get("type") or "").lower()
+    response_args = decision.get("args")
+    response_value = decision.get("response")
+    if response_type == "accept":
+        return {
+            **decision,
+            "action": decision.get("action") or "approve",
+            "user_input": decision.get("user_input") or decision.get("review_notes") or "approve",
+        }
+    if response_type == "ignore":
+        return {
+            **decision,
+            "action": decision.get("action") or "hold",
+            "user_input": decision.get("user_input") or decision.get("review_notes") or "hold",
+        }
+    if response_type in {"response", "edit"}:
+        if isinstance(response_args, dict):
+            return {**decision, **response_args}
+        if isinstance(response_value, dict):
+            return {**decision, **response_value}
+        text = str(response_value or decision.get("user_input") or "")
+        return {**decision, "action": decision.get("action") or "", "user_input": text}
+    return decision
 
 
 def _validate_target_artifact_hint(*, target_artifact: Any, artifact_keys: list[str]) -> str | None:

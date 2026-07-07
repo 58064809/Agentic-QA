@@ -93,6 +93,9 @@ runtime:
   record_runs: true
   idempotency_enabled: true
   fail_fast_required_nodes: true
+  checkpointer: postgres
+  checkpoint_postgres_dsn_env: AGENTIC_QA_CHECKPOINT_POSTGRES_DSN
+  checkpoint_postgres_setup: true
 
 workspace:
   prd_root: prd
@@ -106,7 +109,24 @@ workspace:
 - `record_runs`：是否写入运行记录。
 - `idempotency_enabled`：是否启用幂等策略预留开关。
 - `fail_fast_required_nodes`：required 节点失败时是否阻断流程。
+- `checkpointer`：LangGraph checkpointer 存储，默认 `postgres`。
+- `checkpoint_postgres_dsn_env`：PostgreSQL 连接串环境变量名，不要把真实密码写入 YAML。
+- `checkpoint_postgres_setup`：是否在启动 checkpointer 时执行 `.setup()` 创建/迁移表。
 - `workspace.*`：统一约束 PRD 工作区和运行记录的目录命名。
+
+本地 PostgreSQL 示例：
+
+```yaml
+# configs/local.yaml 或 configs/private.yaml
+runtime:
+  checkpointer: postgres
+  checkpoint_postgres_dsn_env: AGENTIC_QA_CHECKPOINT_POSTGRES_DSN
+  checkpoint_postgres_setup: true
+```
+
+```powershell
+$env:AGENTIC_QA_CHECKPOINT_POSTGRES_DSN="postgresql://postgres:<password>@localhost:5432/postgres?sslmode=disable"
+```
 
 ## 协作入口和输出策略
 

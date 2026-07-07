@@ -198,6 +198,7 @@ def resume_recorded_workflow(
     *,
     action: str | None = None,
     user_input: str | None = None,
+    resume_payload: dict[str, object] | None = None,
     reviewed_by: str = "user",
     review_notes: str | None = None,
     target_artifact: str | None = None,
@@ -209,9 +210,25 @@ def resume_recorded_workflow(
         run_id,
         action=action,
         user_input=user_input,
+        resume_payload=resume_payload,
         reviewed_by=reviewed_by,
         review_notes=review_notes,
         target_artifact=target_artifact,
+        repo_root=repo_root,
+    )
+
+
+def retry_failed_workflow(
+    run_id: str,
+    *,
+    user_input: str | None = None,
+    repo_root: Path | None = None,
+) -> RuntimeResult:
+    from runtime.workflow.runner import retry_failed_workflow_for_run
+
+    return retry_failed_workflow_for_run(
+        run_id,
+        user_input=user_input,
         repo_root=repo_root,
     )
 

@@ -11,12 +11,13 @@ __all__ = [
     "WorkflowSpec",
     "load_workflow_spec",
     "resume_workflow_for_run",
+    "retry_failed_workflow_for_run",
     "run_workflow_by_id",
 ]
 
 
 def __getattr__(name: str) -> Any:
-    if name in {"resume_workflow_for_run", "run_workflow_by_id"}:
+    if name in {"resume_workflow_for_run", "retry_failed_workflow_for_run", "run_workflow_by_id"}:
         from runtime.workflow import runner
 
         return getattr(runner, name)

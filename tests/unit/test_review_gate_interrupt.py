@@ -59,11 +59,18 @@ def test_unreviewed_workflow_interrupts_with_review_payload(tmp_path):
     assert result.run_status == "interrupted"
     assert result.human_review["interrupt"]
     payload = result.human_review["interrupt"][0]["value"]
+    assert payload["kind"] == "review_gate"
+    assert payload["schema_version"] == "v1"
     assert payload["run_id"] == result.run_id
+    assert payload["thread_id"] == result.thread_id
     assert payload["prd_path"] == "prd/demo-requirement"
     assert payload["artifact_keys"] == ["requirement_analysis", "testcases"]
     assert payload["review_status"] == "needs_human_review"
     assert payload["preview_path"].endswith("/artifact-preview.md")
+    assert payload["action_request"]["action"] == "review_artifact"
+    assert payload["config"]["allow_accept"] is True
+    assert payload["config"]["allow_respond"] is True
+    assert "Review Gate 暂停点" in payload["description"]
     assert payload["allowed_actions"] == [
         "approve",
         "reject",
@@ -73,6 +80,33 @@ def test_unreviewed_workflow_interrupts_with_review_payload(tmp_path):
         "clarify",
     ]
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
+def test_interrupt_resume_accept_response_maps_to_approve(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    result = run_mvp_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=True,
+    )
+
+    resumed = resume_workflow_for_run(
+        result.run_id or "",
+        resume_payload={
+            "type": "accept",
+            "reviewed_by": "qa",
+            "review_notes": "通过",
+        },
+        repo_root=repo_root,
+    )
+
+    assert resumed.success
+    assert resumed.review_status == "confirmed"
+    assert resumed.run_status == "completed"
+    assert "artifact_promoter_node" in resumed.executed_nodes
+    assert resumed.human_review["decision"]["intent"] == "approve"
+    assert resumed.human_review["decision"]["target_artifact"] == "testcases"
 
 
 def test_single_artifact_approve_can_omit_target_artifact(tmp_path):
@@ -86,19 +120,20 @@ def test_single_artifact_approve_can_omit_target_artifact(tmp_path):
 
     resumed = resume_workflow_for_run(
         result.run_id or "",
-        action="approve",
-        reviewed_by="qa",
-        review_notes="通过",
+        resume_payload={
+            "type": "accept",
+            "reviewed_by": "qa",
+            "review_notes": "通过",
+        },
         repo_root=repo_root,
     )
 
     assert resumed.success
-    assert resumed.review_status == "approved"
-    assert resumed.next_action == "promote"
+    assert resumed.review_status == "confirmed"
     assert resumed.run_status == "completed"
     assert resumed.human_review["decision"]["target_artifact"] == "testcases"
-    assert read_review(repo_root, "testcases.review.yml")["status"] == "approved"
-    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+    assert read_review(repo_root, "testcases.review.yml")["status"] == "confirmed"
+    assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
 def test_interrupt_resume_calls_process_review_gate_with_original_user_input(tmp_path, monkeypatch):
@@ -127,7 +162,7 @@ def test_interrupt_resume_calls_process_review_gate_with_original_user_input(tmp
     )
 
     assert resumed.success
-    assert resumed.review_status == "approved"
+    assert resumed.review_status == "confirmed"
     assert captured["user_input"] == "测试用例通过，发布正式产物"
     assert captured["artifact_keys"] == ["testcases"]
     assert captured["reviewed_by"] == "qa"
@@ -328,22 +363,10 @@ def test_multi_artifact_approve_single_target_only_approves_that_review(tmp_path
     )
 
     assert resumed.success
-    assert resumed.review_status == "approved"
-    assert resumed.next_action == "promote"
-    assert read_review(repo_root, "testcases.review.yml")["status"] == "approved"
-    assert read_review(repo_root, "requirement-analysis.review.yml")["status"] == (
-        "needs_human_review"
-    )
-
-    promoted = promote_mvp_artifacts(
-        "prd/demo-requirement",
-        result.run_id or "",
-        repo_root=repo_root,
-    )
-
-    assert promoted.success
-    assert promoted.review_status == "confirmed"
-    assert promoted.output_paths == {"testcases": "prd/demo-requirement/artifacts/testcases.md"}
+    assert resumed.review_status == "confirmed"
+    assert read_review(repo_root, "testcases.review.yml")["status"] == "confirmed"
+    assert not (repo_root / "prd/demo-requirement/reviews/requirement-analysis.review.yml").exists()
+    assert resumed.output_paths == {"testcases": "prd/demo-requirement/artifacts/testcases.md"}
     assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").is_file()
     assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
 
@@ -366,9 +389,9 @@ def test_multi_artifact_all_target_approves_all_reviews(tmp_path):
     )
 
     assert resumed.success
-    assert resumed.review_status == "approved"
-    assert read_review(repo_root, "testcases.review.yml")["status"] == "approved"
-    assert read_review(repo_root, "requirement-analysis.review.yml")["status"] == "approved"
+    assert resumed.review_status == "confirmed"
+    assert read_review(repo_root, "testcases.review.yml")["status"] == "confirmed"
+    assert read_review(repo_root, "requirement-analysis.review.yml")["status"] == "confirmed"
 
 
 def test_reject_without_target_defaults_to_all_for_multi_artifact(tmp_path):
@@ -492,16 +515,6 @@ def test_confirmed_status_only_comes_from_promote_artifacts(tmp_path):
         repo_root=repo_root,
     )
 
-    assert resumed.review_status == "approved"
-    assert resumed.review_status != "confirmed"
-
-    promoted = promote_mvp_artifacts(
-        "prd/demo-requirement",
-        result.run_id or "",
-        repo_root=repo_root,
-        task_type="testcase_generation",
-    )
-
-    assert promoted.success
-    assert promoted.review_status == "confirmed"
-    assert promoted.run_status == "completed"
+    assert resumed.review_status == "confirmed"
+    assert resumed.run_status == "completed"
+    assert "artifact_promoter_node" in resumed.executed_nodes

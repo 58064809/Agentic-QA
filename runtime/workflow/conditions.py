@@ -33,6 +33,30 @@ def no_quality_errors(state: QAWorkflowState) -> bool:
     return not state.errors and not state.quality_errors
 
 
+def has_quality_errors(state: QAWorkflowState) -> bool:
+    return not state.errors and bool(state.quality_errors)
+
+
+def review_approved(state: QAWorkflowState) -> bool:
+    return not state.errors and state.review_status == "approved" and state.next_action == "promote"
+
+
+def review_needs_changes(state: QAWorkflowState) -> bool:
+    return not state.errors and state.review_status == "needs_changes"
+
+
+def review_rejected(state: QAWorkflowState) -> bool:
+    return not state.errors and state.review_status == "rejected"
+
+
+def review_waiting(state: QAWorkflowState) -> bool:
+    return (
+        not state.errors
+        and state.review_status == "needs_human_review"
+        and state.next_action == "wait_for_review"
+    )
+
+
 def task_is_analysis_or_mvp(state: QAWorkflowState) -> bool:
     return no_errors(state) and state.task_type in {TASK_ANALYSIS, TASK_MVP}
 
@@ -74,9 +98,14 @@ def ready_to_write_preview(state: QAWorkflowState) -> bool:
 CONDITIONS: dict[str, Condition] = {
     DEFAULT_CONDITION: default,
     "has_errors": has_errors,
+    "has_quality_errors": has_quality_errors,
     "no_errors": no_errors,
     "no_quality_errors": no_quality_errors,
     "ready_to_write_preview": ready_to_write_preview,
+    "review_approved": review_approved,
+    "review_needs_changes": review_needs_changes,
+    "review_rejected": review_rejected,
+    "review_waiting": review_waiting,
     "task_is_analysis": task_is_analysis,
     "task_is_analysis_or_mvp": task_is_analysis_or_mvp,
     "task_is_api_discovery_report": task_is_api_discovery_report,

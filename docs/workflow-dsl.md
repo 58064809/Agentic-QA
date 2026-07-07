@@ -52,6 +52,11 @@ edges:
 | `no_errors` | `errors` 为空 |
 | `has_errors` | `errors` 非空 |
 | `no_quality_errors` | `errors` 和 `quality_errors` 均为空 |
+| `has_quality_errors` | `errors` 为空且 `quality_errors` 非空 |
+| `review_approved` | Review Gate 已 approved 且 `next_action=promote` |
+| `review_needs_changes` | Review Gate 返回 needs_changes |
+| `review_rejected` | Review Gate 返回 rejected |
+| `review_waiting` | Review Gate 仍等待人工确认 |
 | `task_is_analysis` | 当前任务为需求分析 |
 | `task_is_testcase_generation` | 当前任务为测试用例生成 |
 | `task_is_analysis_or_mvp` | 当前任务为需求分析或需求分析加用例生成 |

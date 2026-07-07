@@ -5,19 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 
 from runtime.cli.parser import (
-    _approve_without_publish_requested,
     _artifact_keys_from_recorded_run,
     _artifact_keys_from_text,
     _clarify_multi_artifact_message,
     _explicit_artifact_keys_from_text,
     _extract_run_id,
-    _is_promote_request,
     _is_recorded_run_interrupted,
     _latest_run_id_for_prd,
     _read_latest_run_id,
     _task_type_from_artifact_keys,
 )
-from runtime.graph.app import promote_artifacts, resume_recorded_workflow
+from runtime.graph.app import promote_artifacts, resume_recorded_workflow, retry_failed_workflow
 from runtime.review import ReviewDecision, ReviewIntent, process_review_gate
 from runtime.schemas.runtime_result import RuntimeResult
 from runtime.workspace import PRDWorkspace, read_yaml_mapping
@@ -127,81 +125,23 @@ def _run_natural_promote_request(
     prd_rel = _extract_prd_from_natural(user_input, repo_root, fallback_prd)
     run_id = _find_run_for_promote(repo_root, prd_rel)
     artifact_keys = _resolve_artifact_keys(repo_root, run_id, user_input)
-    approve_only = _approve_without_publish_requested(user_input) and _is_promote_request(
-        user_input
-    )
     if _is_recorded_run_interrupted(repo_root, run_id):
         target_artifact = artifact_keys[0] if len(artifact_keys) == 1 else "all"
         resumed = resume_recorded_workflow(
             run_id,
-            action="approve",
-            user_input="通过" if approve_only else user_input,
-            reviewed_by="cli",
-            review_notes=user_input if approve_only else None,
-            target_artifact=target_artifact,
+            resume_payload={
+                "type": "accept",
+                "response": user_input,
+                "reviewed_by": "cli",
+                "review_notes": user_input,
+                "target_artifact": target_artifact,
+            },
             repo_root=repo_root,
         )
         if not resumed.success:
             details = "; ".join(resumed.errors) or "resume interrupted run failed"
             raise ValueError(details)
-        if approve_only:
-            return prd_rel, resumed
-    elif approve_only:
-        approved_keys = _approve_reviews_via_gate_for_promotion(
-            repo_root,
-            prd_rel,
-            run_id,
-            artifact_keys,
-            source_message=user_input,
-            natural_language=True,
-        )
-        return prd_rel, RuntimeResult(
-            success=True,
-            user_input=user_input,
-            prd_path=prd_rel,
-            task_type=_task_type_from_artifact_keys(approved_keys),
-            intent="review_approve",
-            workflow_files=[],
-            loaded_files={},
-            draft_artifact=None,
-            draft_artifacts={},
-            output_paths={key: "" for key in approved_keys},
-            artifacts=[],
-            quality_errors=[],
-            review_status="approved",
-            next_action="promote",
-            output_path=None,
-            dry_run=True,
-            approve_write=False,
-            debug_approve_preview_write=False,
-            use_llm=False,
-            max_llm_calls=0,
-            llm={},
-            requirement_normalization={},
-            prototype_notes={},
-            errors=[],
-            warnings=[],
-            executed_nodes=["process_review_gate"],
-            wrote_file=False,
-            orchestration="CLI natural review",
-            run_id=run_id,
-            thread_id=run_id,
-            run_status="approved",
-            human_review={
-                "status": "approved",
-                "decision": {
-                    "intent": "approve",
-                    "target_artifact": "all" if len(approved_keys) > 1 else approved_keys[0],
-                },
-                "reviewed_by": "cli",
-                "review_notes": user_input,
-                "interrupt": None,
-            },
-            run_record_dir=None,
-            run_summary_json=None,
-            run_summary_md=None,
-            rag_retrievals=[],
-        )
+        return prd_rel, resumed
     result = _run_promote(
         repo_root,
         prd_rel,
@@ -278,12 +218,21 @@ def _print_resume_result(result: RuntimeResult) -> None:
     print(f"   - next_action: {result.next_action or '未设置'}")
     if result.review_status == "approved":
         print("   - 下一步: 可执行 promote 发布正式产物")
+    elif result.review_status == "confirmed":
+        print("   - 下一步: 已由 workflow 条件边发布正式产物")
     elif result.review_status == "needs_human_review":
         print("   - 下一步: 仍需明确人工确认")
     elif result.review_status == "needs_changes":
         print("   - 下一步: 进入修订流程")
     elif result.review_status == "rejected":
         print("   - 下一步: 当前候选产物已拒绝")
+
+
+def _is_retry_request(message: str) -> bool:
+    lowered = message.lower()
+    return any(keyword in lowered for keyword in ("retry", "rerun")) or any(
+        keyword in message for keyword in ("重试", "重新执行", "恢复失败", "失败后恢复")
+    )
 
 
 def _run_resume_command(args: list[str], repo_root: Path) -> int:
@@ -295,39 +244,32 @@ def _run_resume_command(args: list[str], repo_root: Path) -> int:
     if not message:
         print("❌ 缺少自然语言审核意见")
         return 1
-    approve_only = _approve_without_publish_requested(message) and _is_promote_request(message)
+    if _is_retry_request(message):
+        try:
+            result = retry_failed_workflow(
+                run_id,
+                user_input=message,
+                repo_root=repo_root,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"❌ {exc}")
+            return 1
+        _print_resume_result(result)
+        return 0 if result.success else 1
     try:
         result = resume_recorded_workflow(
             run_id,
-            user_input="通过" if approve_only else message,
-            reviewed_by="cli",
-            review_notes=message if approve_only else None,
+            resume_payload={
+                "type": "response",
+                "response": message,
+                "reviewed_by": "cli",
+                "review_notes": message,
+            },
             repo_root=repo_root,
         )
     except (FileNotFoundError, ValueError) as exc:
         print(f"❌ {exc}")
         return 1
-    if result.success and result.review_status == "approved" and not approve_only:
-        review_gate = result.human_review.get("review_gate")
-        artifact_keys = (
-            review_gate.get("target_artifacts") if isinstance(review_gate, dict) else None
-        )
-        if not isinstance(artifact_keys, list) or not artifact_keys:
-            artifact_keys = _artifact_keys_from_recorded_run(repo_root, run_id)
-        try:
-            promoted = _run_promote(
-                repo_root,
-                result.prd_path,
-                run_id,
-                [str(key) for key in artifact_keys],
-                source_message=message,
-                natural_language=True,
-            )
-        except (FileNotFoundError, ValueError) as exc:
-            print(f"❌ {exc}")
-            return 1
-        _print_promote_result(promoted)
-        return 0 if promoted.success else 1
     _print_resume_result(result)
     return 0 if result.success else 1
 

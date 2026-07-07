@@ -172,7 +172,7 @@ def test_cli_natural_language_promote_all_publishes_multi_artifact(tmp_path):
     assert review["promoted_run_id"] == result.run_id
 
 
-def test_cli_natural_language_approve_without_publish_only_approves(tmp_path):
+def test_cli_natural_language_approve_runs_state_machine_to_confirmed(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
     run_mvp_testcase_generation_workflow(
         "请生成测试用例",
@@ -181,22 +181,22 @@ def test_cli_natural_language_approve_without_publish_only_approves(tmp_path):
     )
 
     prd_rel, approved = cli._run_natural_promote_request(
-        "通过但不发布",
+        "通过并发布",
         repo_root,
         fallback_prd="prd/demo-requirement",
     )
 
     assert prd_rel == "prd/demo-requirement"
     assert approved.success
-    assert approved.review_status == "approved"
-    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+    assert approved.review_status == "confirmed"
+    assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
     review = yaml.safe_load(
         (repo_root / "prd/demo-requirement/reviews/testcases.review.yml").read_text(
             encoding="utf-8"
         )
     )
-    assert review["status"] == "approved"
-    assert review["decision"] == "approve"
+    assert review["status"] == "confirmed"
+    assert review["decision"] == "promoted"
 
 
 def test_cli_natural_language_plain_approve_requires_context(tmp_path):
@@ -311,6 +311,29 @@ def test_cli_resume_command_hold_keeps_waiting_review(tmp_path):
     if review_path.exists():
         review = yaml.safe_load(review_path.read_text(encoding="utf-8")) or {}
         assert review.get("status") != "approved"
+    assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
+
+
+def test_cli_resume_command_retry_failed_run(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    requirement_path = repo_root / "prd/demo-requirement/input/requirement.md"
+    original = requirement_path.read_text(encoding="utf-8")
+    requirement_path.unlink()
+    result = run_mvp_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+    )
+    assert not result.success
+    requirement_path.write_text(original, encoding="utf-8")
+
+    exit_code = cli._run_resume_command(
+        [result.run_id or "", "重试"],
+        repo_root,
+    )
+
+    assert exit_code == 0
+    assert (repo_root / f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md").is_file()
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 

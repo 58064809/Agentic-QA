@@ -38,6 +38,10 @@ nodes:
     type: python
     handler: runtime.graph.nodes.human_review.human_review_node
 
+  - id: artifact_promoter
+    type: python
+    handler: runtime.graph.nodes.artifact_promoter.artifact_promoter_node
+
   - id: artifact_preview_writer
     type: python
     handler: runtime.graph.nodes.artifact_preview_writer.artifact_preview_writer_node
@@ -102,10 +106,34 @@ edges:
     condition: default
 
   - from: review_gate
+    to: artifact_promoter
+    condition: review_approved
+
+  - from: review_gate
+    to: end
+    condition: review_needs_changes
+
+  - from: review_gate
+    to: end
+    condition: review_rejected
+
+  - from: review_gate
+    to: end
+    condition: review_waiting
+
+  - from: review_gate
     to: metadata_update
     condition: no_errors
 
   - from: review_gate
+    to: end
+    condition: default
+
+  - from: artifact_promoter
+    to: end
+    condition: no_errors
+
+  - from: artifact_promoter
     to: end
     condition: default
 

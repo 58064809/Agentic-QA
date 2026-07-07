@@ -1,22 +1,29 @@
 from __future__ import annotations
 
 import json
+import os
 import pickle
+import threading
 from collections import defaultdict
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
+
+from langgraph.checkpoint.memory import MemorySaver
 
 from runtime.records.run_id import generate_run_id
 from runtime.schemas.runtime_result import RuntimeResult
 
 DRAFT_PREVIEW_CHARS = 300
 CHECKPOINTER_FILE = "checkpointer.pkl"
+CHECKPOINT_MANIFEST_FILE = "checkpoint-manifest.json"
 GRAPH_STATE_FILE = "graph-state.json"
 RUN_STATE_FILE = "run-state.json"
 REVIEW_EVENTS_FILE = "review-events.jsonl"
 RAG_TRACE_FILE = "rag.json"
+DEFAULT_POSTGRES_DSN_ENV = "AGENTIC_QA_CHECKPOINT_POSTGRES_DSN"
 
 
 def now_iso() -> str:
@@ -74,27 +81,183 @@ def nested_defaultdict(value: dict) -> defaultdict:
     return outer
 
 
-def save_checkpointer(checkpointer: Any, run_record_dir: Path) -> Path:
-    payload = {
+def _checkpointer_payload(checkpointer: Any) -> dict[str, Any]:
+    return {
         "storage": plain_mapping(checkpointer.storage),
         "writes": plain_mapping(checkpointer.writes),
         "blobs": dict(checkpointer.blobs),
     }
-    path = run_record_dir / CHECKPOINTER_FILE
-    path.write_bytes(pickle.dumps(payload))
-    return path
 
 
-def load_checkpointer(run_record_dir: Path) -> Any:
-    from langgraph.checkpoint.memory import MemorySaver
-
-    path = run_record_dir / CHECKPOINTER_FILE
-    payload = pickle.loads(path.read_bytes())
-    checkpointer = MemorySaver()
+def _restore_checkpointer_payload(checkpointer: MemorySaver, payload: dict[str, Any]) -> None:
     checkpointer.storage = nested_defaultdict(payload.get("storage", {}))
     checkpointer.writes = defaultdict(dict, payload.get("writes", {}))
     checkpointer.blobs = dict(payload.get("blobs", {}))
+
+
+def _checkpoint_count(checkpointer: Any) -> int:
+    storage = plain_mapping(getattr(checkpointer, "storage", {}))
+    return sum(
+        len(checkpoints)
+        for namespaces in storage.values()
+        if isinstance(namespaces, dict)
+        for checkpoints in namespaces.values()
+        if isinstance(checkpoints, dict)
+    )
+
+
+def _checkpointer_storage(checkpointer: Any) -> str:
+    storage = getattr(checkpointer, "_agentic_qa_checkpoint_storage", "")
+    if storage:
+        return str(storage)
+    if hasattr(checkpointer, "storage") and hasattr(checkpointer, "writes"):
+        return "file_pickle"
+    module = checkpointer.__class__.__module__
+    if "postgres" in module:
+        return "postgres"
+    return "unknown"
+
+
+def write_checkpoint_manifest(checkpointer: Any, run_record_dir: Path) -> Path:
+    storage = _checkpointer_storage(checkpointer)
+    manifest = {
+        "schema_version": "v1",
+        "checkpointer_type": checkpointer.__class__.__name__,
+        "storage": storage,
+        "checkpoint_file": CHECKPOINTER_FILE if storage == "file_pickle" else None,
+        "checkpoint_count": _checkpoint_count(checkpointer) if storage == "file_pickle" else None,
+        "dsn_env": getattr(checkpointer, "_agentic_qa_postgres_dsn_env", None),
+        "setup": getattr(checkpointer, "_agentic_qa_postgres_setup", None),
+        "updated_at": now_iso(),
+    }
+    path = run_record_dir / CHECKPOINT_MANIFEST_FILE
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def save_checkpointer(checkpointer: Any, run_record_dir: Path) -> Path:
+    storage = _checkpointer_storage(checkpointer)
+    if storage != "file_pickle":
+        return write_checkpoint_manifest(checkpointer, run_record_dir)
+    payload = {
+        "schema_version": "v1",
+        "payload": _checkpointer_payload(checkpointer),
+    }
+    path = run_record_dir / CHECKPOINTER_FILE
+    run_record_dir.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
+    tmp_path.write_bytes(pickle.dumps(payload))
+    tmp_path.replace(path)
+    write_checkpoint_manifest(checkpointer, run_record_dir)
+    return path
+
+
+class PersistedMemorySaver(MemorySaver):
+    """MemorySaver that mirrors checkpoints to the run record directory.
+
+    The current dependency set does not include LangGraph's sqlite checkpointer package.
+    This adapter keeps the existing MemorySaver behavior while persisting after every
+    checkpoint write so interrupted or failed runs can be resumed from disk.
+    """
+
+    def __init__(self, run_record_dir: Path) -> None:
+        super().__init__()
+        self.run_record_dir = run_record_dir
+        self._persist_lock = threading.RLock()
+        path = run_record_dir / CHECKPOINTER_FILE
+        if path.is_file():
+            payload = pickle.loads(path.read_bytes())
+            data = payload.get("payload", payload) if isinstance(payload, dict) else {}
+            if isinstance(data, dict):
+                _restore_checkpointer_payload(self, data)
+
+    def _persist(self) -> None:
+        with self._persist_lock:
+            save_checkpointer(self, self.run_record_dir)
+
+    def put(self, config, checkpoint, metadata, new_versions):
+        next_config = super().put(config, checkpoint, metadata, new_versions)
+        self._persist()
+        return next_config
+
+    def put_writes(self, config, writes, task_id, task_path="") -> None:
+        super().put_writes(config, writes, task_id, task_path)
+        self._persist()
+
+    def delete_thread(self, thread_id: str) -> None:
+        super().delete_thread(thread_id)
+        self._persist()
+
+    def delete_for_runs(self, run_ids) -> None:
+        super().delete_for_runs(run_ids)
+        self._persist()
+
+
+def _create_postgres_checkpointer(
+    *,
+    dsn_env: str = DEFAULT_POSTGRES_DSN_ENV,
+    setup: bool = True,
+) -> Any:
+    dsn = os.getenv(dsn_env, "").strip()
+    if not dsn:
+        raise RuntimeError(f"未设置 PostgreSQL checkpointer 连接串环境变量: {dsn_env}")
+    try:
+        from langgraph.checkpoint.postgres import PostgresSaver
+    except ImportError as exc:
+        raise RuntimeError(
+            "缺少 PostgreSQL checkpointer 依赖，请安装 langgraph-checkpoint-postgres "
+            "和 psycopg[binary]。"
+        ) from exc
+    context_manager = PostgresSaver.from_conn_string(dsn)
+    checkpointer = context_manager.__enter__()
+    checkpointer._agentic_qa_context_manager = context_manager
+    checkpointer._agentic_qa_checkpoint_storage = "postgres"
+    checkpointer._agentic_qa_postgres_dsn_env = dsn_env
+    checkpointer._agentic_qa_postgres_setup = setup
+    if setup:
+        checkpointer.setup()
     return checkpointer
+
+
+def create_checkpointer(
+    run_record_dir: Path | None = None,
+    *,
+    storage: str = "postgres",
+    postgres_dsn_env: str = DEFAULT_POSTGRES_DSN_ENV,
+    postgres_setup: bool = True,
+) -> Any:
+    normalized_storage = storage.strip().lower()
+    if normalized_storage in {"postgres", "postgresql"}:
+        return _create_postgres_checkpointer(
+            dsn_env=postgres_dsn_env,
+            setup=postgres_setup,
+        )
+    if run_record_dir is None:
+        return MemorySaver()
+    run_record_dir.mkdir(parents=True, exist_ok=True)
+    return PersistedMemorySaver(run_record_dir)
+
+
+def load_checkpointer(
+    run_record_dir: Path,
+    *,
+    storage: str = "postgres",
+    postgres_dsn_env: str = DEFAULT_POSTGRES_DSN_ENV,
+    postgres_setup: bool = True,
+) -> Any:
+    normalized_storage = storage.strip().lower()
+    if normalized_storage in {"postgres", "postgresql"}:
+        return _create_postgres_checkpointer(
+            dsn_env=postgres_dsn_env,
+            setup=postgres_setup,
+        )
+    return PersistedMemorySaver(run_record_dir)
+
+
+def close_checkpointer(checkpointer: Any) -> None:
+    context_manager = getattr(checkpointer, "_agentic_qa_context_manager", None)
+    if context_manager is not None:
+        context_manager.__exit__(None, None, None)
 
 
 def write_runtime_state(
@@ -137,6 +300,17 @@ def read_review_events(run_record_dir: Path) -> list[dict[str, Any]]:
         if isinstance(parsed, dict):
             events.append(parsed)
     return events
+
+
+def read_checkpoint_manifest(run_record_dir: Path) -> dict[str, Any]:
+    path = run_record_dir / CHECKPOINT_MANIFEST_FILE
+    if not path.is_file():
+        return {}
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def append_review_event(
@@ -183,6 +357,7 @@ def result_to_summary(
     created_at: str,
     *,
     review_events: list[dict[str, Any]] | None = None,
+    checkpoint: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     draft_artifact_previews = {
         name: content[:DRAFT_PREVIEW_CHARS] for name, content in result.draft_artifacts.items()
@@ -210,6 +385,7 @@ def result_to_summary(
         "next_action": result.next_action,
         "human_review": result.human_review,
         "review_events": review_events or [],
+        "checkpoint": checkpoint or {},
         "llm": result.llm,
         "requirement_normalization": result.requirement_normalization,
         "image_detection": result.prototype_notes,
@@ -312,6 +488,7 @@ def render_markdown_summary(summary: dict[str, object]) -> str:
 - next_action：{summary["next_action"] or "未设置"}
 - human_review：{json.dumps(summary["human_review"], ensure_ascii=False)}
 - review_events：{len(list(summary["review_events"]))}
+- checkpoint：{json.dumps(summary["checkpoint"], ensure_ascii=False)}
 
 ## 错误与警告
 
@@ -375,6 +552,7 @@ def record_runtime_result(
             result_with_paths,
             created_at,
             review_events=read_review_events(run_record_dir),
+            checkpoint=read_checkpoint_manifest(run_record_dir),
         )
         summary_json.write_text(
             json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
