@@ -61,6 +61,22 @@ API_TEST_CONTEXT_FILES = (
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
 )
+RAG_AUTOMATION_CASE_CONTEXT_FILES = (
+    *API_TEST_CONTEXT_FILES,
+    "docs/automation-case-generation.md",
+    "docs/rag-architecture.md",
+    "docs/rag-run-record-spec.md",
+    "workflows/10-rag-automation-case-generation-workflow.md",
+    "workflows/runtime/rag-automation-case.workflow.yml",
+    "prompts/rag-automation-case-prompt.md",
+    "rules/automation-case-rules.md",
+    "rules/rag-rules.md",
+    "rules/source-reference-rules.md",
+    "knowledge/automation/yaml-case-schema.md",
+    "knowledge/automation/assertion-rules.md",
+    "knowledge/automation/variable-extraction-rules.md",
+    "knowledge/templates/rag-run-record-template.json",
+)
 UI_TEST_CONTEXT_FILES = (
     *BASE_CONTEXT_FILES,
     "docs/ui-test-generation.md",
@@ -136,6 +152,11 @@ DEFAULT_WORKFLOW_REGISTRY = WorkflowRegistry(
             workflow_id="api_test_draft",
             task_type="api_test_draft",
             context_files=API_TEST_CONTEXT_FILES,
+        ),
+        RuntimeWorkflowDefinition(
+            workflow_id="rag_automation_case_generation",
+            task_type="rag_automation_case_generation",
+            context_files=RAG_AUTOMATION_CASE_CONTEXT_FILES,
         ),
         RuntimeWorkflowDefinition(
             workflow_id="ui_test_draft",

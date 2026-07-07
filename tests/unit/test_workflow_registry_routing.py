@@ -13,6 +13,7 @@ def test_registered_workflows_cover_runtime_task_types():
         "api_test_draft",
         "mvp_analysis_testcases",
         "qa_report",
+        "rag_automation_case_generation",
         "testcase_generation",
         "ui_test_draft",
     }
@@ -22,6 +23,7 @@ def test_registered_workflows_cover_runtime_task_types():
         "api_test_draft",
         "requirement_analysis",
         "qa_report",
+        "rag_automation_case_generation",
         "testcase_generation",
         "ui_test_draft",
     }

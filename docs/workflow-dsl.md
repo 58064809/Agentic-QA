@@ -71,6 +71,7 @@ edges:
 | `requirement_analysis` | `workflows/runtime/requirement-analysis.workflow.yml` | `analysis` |
 | `testcase_generation` | `workflows/runtime/testcase-generation.workflow.yml` | `testcase_generation` |
 | `api_test_draft` | `workflows/runtime/api-test-draft.workflow.yml` | `api_test_draft` |
+| `rag_automation_case_generation` | `workflows/runtime/rag-automation-case.workflow.yml` | `api_test_draft` |
 | `ui_test_draft` | `workflows/runtime/ui-test-draft.workflow.yml` | `ui_test_draft` |
 | `api_discovery_report` | `workflows/runtime/api-discovery-report.workflow.yml` | `api_discovery_report` |
 | `qa_report` | `workflows/runtime/qa-report.workflow.yml` | `qa_report` |

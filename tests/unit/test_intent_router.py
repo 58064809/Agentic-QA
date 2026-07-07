@@ -42,3 +42,16 @@ def test_route_intent_llm_failure_falls_back(monkeypatch):
     assert route.intent == "mvp"
     assert route.prd_path == "prd/demo-requirement"
     assert "LLM 路由调用失败" in route.summary
+
+
+def test_route_intent_rag_automation_case_without_api_key(monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+
+    route = route_intent(
+        "基于 prd/demo-requirement 用 RAG 生成 YAML 接口自动化用例",
+        OpenAICompatibleConfig.from_env(),
+    )
+
+    assert route.is_valid
+    assert route.intent == "rag_automation_case_generation"
+    assert route.prd_path == "prd/demo-requirement"

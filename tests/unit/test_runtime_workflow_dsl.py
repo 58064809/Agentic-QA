@@ -105,6 +105,13 @@ def test_graph_app_facades_use_runtime_workflow_specs(tmp_path):
         record_run=False,
         use_llm=False,
     )
+    rag_cases = graph_app.run_rag_automation_case_workflow(
+        "generate rag api yaml cases",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        record_run=False,
+        use_llm=False,
+    )
     mvp = graph_app.run_mvp_analysis_and_testcases_workflow(
         "analyze requirement and generate testcases",
         "prd/demo-requirement",
@@ -115,9 +122,12 @@ def test_graph_app_facades_use_runtime_workflow_specs(tmp_path):
 
     assert analysis.orchestration == "YAML WorkflowSpec: requirement_analysis"
     assert testcases.orchestration == "YAML WorkflowSpec: testcase_generation"
+    assert rag_cases.orchestration == "YAML WorkflowSpec: rag_automation_case_generation"
     assert mvp.orchestration == "YAML WorkflowSpec: analysis_and_testcases"
     assert analysis.task_type == "analysis"
     assert testcases.task_type == "testcase_generation"
+    assert rag_cases.task_type == "api_test_draft"
+    assert rag_cases.intent == "rag_automation_case_generation"
     assert mvp.task_type == "mvp_analysis_testcases"
 
 

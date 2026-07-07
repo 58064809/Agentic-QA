@@ -55,6 +55,7 @@ def _print_result(result, intent: str) -> None:
         "requirement_analysis": "需求分析",
         "testcase_generation": "测试用例生成",
         "api_test_draft": "接口测试草稿生成",
+        "rag_automation_case_generation": "RAG 接口自动化 YAML 用例生成",
         "ui_test_draft": "UI 自动化草稿生成",
         "api_discovery_report": "接口发现报告生成",
         "qa_report": "QA 报告生成",

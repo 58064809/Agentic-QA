@@ -16,6 +16,7 @@ SUPPORTED_INTENTS: dict[str, str] = {
     "requirement_analysis": "需求分析",
     "testcase_generation": "测试用例生成",
     "api_test_draft": "API 接口测试草稿生成",
+    "rag_automation_case_generation": "RAG 接口自动化 YAML 用例生成",
     "ui_test_draft": "UI 自动化测试草稿生成",
     "api_discovery_report": "接口发现报告生成",
     "ui_test_generation": "UI 端到端测试生成",
@@ -124,6 +125,19 @@ def _infer_intent_fallback(user_input: str) -> str:
     """LLM 路由不可用时的确定性意图兜底。"""
     text = user_input.lower()
     has_analysis = any(keyword in user_input for keyword in ("分析", "拆解", "需求分析"))
+    if any(
+        keyword in user_input
+        for keyword in (
+            "RAG 自动化用例",
+            "rag 自动化用例",
+            "RAG 接口自动化",
+            "rag 接口自动化",
+            "YAML 接口自动化用例",
+            "yaml 接口自动化用例",
+            "api-test-cases.yml",
+        )
+    ):
+        return "rag_automation_case_generation"
     has_testcases = any(
         keyword in user_input for keyword in ("测试用例", "用例", "testcase", "test case")
     )

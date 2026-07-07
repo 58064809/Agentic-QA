@@ -16,6 +16,10 @@ EXPECTED_RUNTIME_WORKFLOWS = {
     "api-discovery-report.workflow.yml": ("api_discovery_report", "api_discovery_report"),
     "api-test-draft.workflow.yml": ("api_test_draft", "api_test_draft"),
     "qa-report.workflow.yml": ("qa_report", "qa_report"),
+    "rag-automation-case.workflow.yml": (
+        "rag_automation_case_generation",
+        "api_test_draft",
+    ),
     "requirement-analysis.workflow.yml": ("requirement_analysis", "analysis"),
     "testcase-generation.workflow.yml": ("testcase_generation", "testcase_generation"),
     "ui-test-draft.workflow.yml": ("ui_test_draft", "ui_test_draft"),

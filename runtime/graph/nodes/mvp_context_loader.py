@@ -48,7 +48,7 @@ def mvp_command_router_node(state: QAWorkflowState) -> QAWorkflowState:
     if state.task_type not in allowed:
         state.errors.append(f"不支持的 Runtime MVP 任务类型: {state.task_type}")
         return state
-    state.intent = state.task_type
+    state.intent = state.intent or state.task_type
     return state
 
 
@@ -60,12 +60,17 @@ def mvp_workflow_selector_node(state: QAWorkflowState, repo_root: Path) -> QAWor
     if state.task_type is None and state.intent:
         state.task_type = state.intent
 
-    definition = DEFAULT_WORKFLOW_REGISTRY.definition_for_task_type(state.task_type)
+    context_task_type = (
+        state.intent
+        if state.intent in DEFAULT_WORKFLOW_REGISTRY.registered_task_types()
+        else state.task_type
+    )
+    definition = DEFAULT_WORKFLOW_REGISTRY.definition_for_task_type(context_task_type)
     workflow_config = load_app_config(repo_root).workflow
-    configured_files = workflow_config.intent_workflow_files.get(str(state.task_type)) or {
+    configured_files = workflow_config.intent_workflow_files.get(str(context_task_type)) or {
         TASK_ANALYSIS: workflow_config.mvp_analysis_workflow_files,
         TASK_TESTCASE_GENERATION: workflow_config.mvp_testcase_workflow_files,
-    }.get(str(state.task_type))
+    }.get(str(context_task_type))
     state.workflow_files = list(configured_files or definition.context_files)
 
     for relative_path in state.workflow_files:
@@ -164,7 +169,7 @@ def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkfl
 
     loaded, errors = read_existing_files(
         repo_root,
-        _resolve_context_files(repo_root, state.task_type),
+        state.workflow_files or _resolve_context_files(repo_root, state.task_type),
     )
     state.loaded_files.update(loaded)
     state.errors.extend(errors)

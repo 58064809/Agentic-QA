@@ -34,10 +34,47 @@ def create_mvp_repo(root: Path) -> Path:
         "workflows/runtime/testcase-generation.workflow.yml": (
             REPO_ROOT / "workflows/runtime/testcase-generation.workflow.yml"
         ).read_text(encoding="utf-8"),
+        "workflows/runtime/api-test-draft.workflow.yml": (
+            REPO_ROOT / "workflows/runtime/api-test-draft.workflow.yml"
+        ).read_text(encoding="utf-8"),
+        "workflows/runtime/rag-automation-case.workflow.yml": (
+            REPO_ROOT / "workflows/runtime/rag-automation-case.workflow.yml"
+        ).read_text(encoding="utf-8"),
         "prompts/requirement-analysis-prompt.md": "需求分析 Prompt",
         "prompts/testcase-design-prompt.md": "测试用例 Prompt",
+        "prompts/api-test-generation.md": (REPO_ROOT / "prompts/api-test-generation.md").read_text(
+            encoding="utf-8"
+        ),
+        "prompts/rag-automation-case-prompt.md": (
+            REPO_ROOT / "prompts/rag-automation-case-prompt.md"
+        ).read_text(encoding="utf-8"),
+        "docs/api-test-generation.md": (REPO_ROOT / "docs/api-test-generation.md").read_text(
+            encoding="utf-8"
+        ),
+        "docs/automation-case-generation.md": (
+            REPO_ROOT / "docs/automation-case-generation.md"
+        ).read_text(encoding="utf-8"),
+        "docs/rag-architecture.md": (REPO_ROOT / "docs/rag-architecture.md").read_text(
+            encoding="utf-8"
+        ),
+        "docs/rag-run-record-spec.md": (REPO_ROOT / "docs/rag-run-record-spec.md").read_text(
+            encoding="utf-8"
+        ),
+        "workflows/10-rag-automation-case-generation-workflow.md": (
+            REPO_ROOT / "workflows/10-rag-automation-case-generation-workflow.md"
+        ).read_text(encoding="utf-8"),
         "rules/requirement-analysis-rules.md": "需求分析规则",
         "rules/testcase-rules.md": "测试用例规则",
+        "rules/api-test-rules.md": (REPO_ROOT / "rules/api-test-rules.md").read_text(
+            encoding="utf-8"
+        ),
+        "rules/automation-case-rules.md": (REPO_ROOT / "rules/automation-case-rules.md").read_text(
+            encoding="utf-8"
+        ),
+        "rules/rag-rules.md": (REPO_ROOT / "rules/rag-rules.md").read_text(encoding="utf-8"),
+        "rules/source-reference-rules.md": (
+            REPO_ROOT / "rules/source-reference-rules.md"
+        ).read_text(encoding="utf-8"),
         "rules/review-gate-rules.md": "审核门规则",
         "rules/artifact-path-rules.md": "产物路径规则",
         "skills/registry/skills.yaml": (
@@ -75,6 +112,19 @@ def create_mvp_repo(root: Path) -> Path:
         "skills/test-design/state-transition-modeling-skill.md": "状态迁移技能",
         "skills/test-design/risk-based-testing-skill.md": "风险测试技能",
         "knowledge/templates/testcase-template.md": "测试用例模板",
+        "knowledge/automation/yaml-case-schema.md": (
+            REPO_ROOT / "knowledge/automation/yaml-case-schema.md"
+        ).read_text(encoding="utf-8"),
+        "knowledge/automation/assertion-rules.md": (
+            REPO_ROOT / "knowledge/automation/assertion-rules.md"
+        ).read_text(encoding="utf-8"),
+        "knowledge/automation/variable-extraction-rules.md": (
+            REPO_ROOT / "knowledge/automation/variable-extraction-rules.md"
+        ).read_text(encoding="utf-8"),
+        "knowledge/templates/rag-run-record-template.json": (
+            REPO_ROOT / "knowledge/templates/rag-run-record-template.json"
+        ).read_text(encoding="utf-8"),
+        "skills/api-testing.md": (REPO_ROOT / "skills/api-testing.md").read_text(encoding="utf-8"),
         "prd/demo-requirement/metadata.yml": (
             "requirement_id: demo-requirement\n"
             "title: Demo Requirement\n"

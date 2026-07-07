@@ -390,6 +390,7 @@ def _run_workflow(
         "testcase_generation"
     )
     api_test_draft_use_llm = llm_enabled and app_config.workflow.use_llm_for("api_test_draft")
+    rag_automation_case_use_llm = api_test_draft_use_llm
     ui_test_draft_use_llm = llm_enabled and app_config.workflow.use_llm_for("ui_test_draft")
     qa_report_use_llm = llm_enabled and app_config.workflow.use_llm_for("qa_report")
     mvp_use_llm = llm_enabled and app_config.workflow.use_llm_for("mvp_analysis_testcases")
@@ -440,6 +441,21 @@ def _run_workflow(
             approve_write=approve_write,
             record_run=True,
             use_llm=api_test_draft_use_llm,
+        )
+    elif intent == "rag_automation_case_generation":
+        import runtime.cli as cli_api
+        from runtime.tools.api_doc_loader import import_api_document_to_workspace
+
+        if api_doc_path:
+            import_api_document_to_workspace(repo_root, prd_path, api_doc_path)
+
+        return cli_api.run_rag_automation_case_workflow(
+            user_input=user_input,
+            prd_path=Path(prd_path),
+            repo_root=repo_root,
+            approve_write=approve_write,
+            record_run=True,
+            use_llm=rag_automation_case_use_llm,
         )
     elif intent == "ui_test_draft":
         import runtime.cli as cli_api

@@ -15,6 +15,7 @@ from runtime.graph.app import (  # noqa: E402
     promote_artifacts,
     resume_recorded_workflow,
     run_api_test_draft_workflow,
+    run_rag_automation_case_workflow,
 )
 from runtime.graph.nodes.api_test_generation import (  # noqa: E402
     API_CASES_FORMAL_PATH,
@@ -40,6 +41,43 @@ def add_api_test_context_files(repo_root: Path) -> None:
         "skills/api-testing.md": (REPO_ROOT / "skills/api-testing.md").read_text(encoding="utf-8"),
         "workflows/runtime/api-test-draft.workflow.yml": (
             REPO_ROOT / "workflows/runtime/api-test-draft.workflow.yml"
+        ).read_text(encoding="utf-8"),
+        "workflows/runtime/rag-automation-case.workflow.yml": (
+            REPO_ROOT / "workflows/runtime/rag-automation-case.workflow.yml"
+        ).read_text(encoding="utf-8"),
+        "docs/automation-case-generation.md": (
+            REPO_ROOT / "docs/automation-case-generation.md"
+        ).read_text(encoding="utf-8"),
+        "docs/rag-architecture.md": (REPO_ROOT / "docs/rag-architecture.md").read_text(
+            encoding="utf-8"
+        ),
+        "docs/rag-run-record-spec.md": (REPO_ROOT / "docs/rag-run-record-spec.md").read_text(
+            encoding="utf-8"
+        ),
+        "workflows/10-rag-automation-case-generation-workflow.md": (
+            REPO_ROOT / "workflows/10-rag-automation-case-generation-workflow.md"
+        ).read_text(encoding="utf-8"),
+        "prompts/rag-automation-case-prompt.md": (
+            REPO_ROOT / "prompts/rag-automation-case-prompt.md"
+        ).read_text(encoding="utf-8"),
+        "rules/automation-case-rules.md": (REPO_ROOT / "rules/automation-case-rules.md").read_text(
+            encoding="utf-8"
+        ),
+        "rules/rag-rules.md": (REPO_ROOT / "rules/rag-rules.md").read_text(encoding="utf-8"),
+        "rules/source-reference-rules.md": (
+            REPO_ROOT / "rules/source-reference-rules.md"
+        ).read_text(encoding="utf-8"),
+        "knowledge/automation/yaml-case-schema.md": (
+            REPO_ROOT / "knowledge/automation/yaml-case-schema.md"
+        ).read_text(encoding="utf-8"),
+        "knowledge/automation/assertion-rules.md": (
+            REPO_ROOT / "knowledge/automation/assertion-rules.md"
+        ).read_text(encoding="utf-8"),
+        "knowledge/automation/variable-extraction-rules.md": (
+            REPO_ROOT / "knowledge/automation/variable-extraction-rules.md"
+        ).read_text(encoding="utf-8"),
+        "knowledge/templates/rag-run-record-template.json": (
+            REPO_ROOT / "knowledge/templates/rag-run-record-template.json"
         ).read_text(encoding="utf-8"),
     }
     for relative_path, content in files.items():
@@ -181,6 +219,34 @@ def test_api_test_draft_approve_write_only_writes_run_preview(tmp_path):
         == global_record.relative_to(repo_root).as_posix()
     )
     assert not (repo_root / "prd/demo-requirement/artifacts/api-test-draft.md").exists()
+    assert not (repo_root / "prd/demo-requirement/artifacts/api-test-cases.yml").exists()
+
+
+def test_rag_automation_case_workflow_runs_as_stategraph_sidecar(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    add_api_test_context_files(repo_root)
+
+    result = run_rag_automation_case_workflow(
+        "基于 prd/demo-requirement 用 RAG 生成 YAML 接口自动化用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        approve_write=True,
+        use_llm=False,
+    )
+
+    assert result.success
+    assert result.orchestration == "YAML WorkflowSpec: rag_automation_case_generation"
+    assert result.task_type == "api_test_draft"
+    assert result.intent == "rag_automation_case_generation"
+    assert result.review_status == "write_approved"
+    assert "mvp_context_loader_node" in result.executed_nodes
+    assert "api_test_generation_node" in result.executed_nodes
+    assert "artifact_preview_writer_node" in result.executed_nodes
+    assert "prompts/rag-automation-case-prompt.md" in result.loaded_files
+    preview = repo_root / result.output_paths["api_test_draft"]
+    assert preview.is_file()
+    assert preview.with_name(API_CASES_YAML_FILENAME).is_file()
+    assert preview.with_name(API_RAG_RUN_RECORD_FILENAME).is_file()
     assert not (repo_root / "prd/demo-requirement/artifacts/api-test-cases.yml").exists()
 
 

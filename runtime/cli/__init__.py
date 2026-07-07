@@ -33,6 +33,7 @@ from runtime.graph.app import (
     run_mvp_analysis_and_testcases_workflow,
     run_mvp_testcase_generation_workflow,
     run_qa_report_workflow,
+    run_rag_automation_case_workflow,
     run_requirement_analysis_workflow,
     run_ui_test_draft_workflow,
 )
@@ -91,6 +92,7 @@ __all__ = [
     "run_mvp_analysis_and_testcases_workflow",
     "run_mvp_testcase_generation_workflow",
     "run_qa_report_workflow",
+    "run_rag_automation_case_workflow",
     "run_requirement_analysis_workflow",
     "run_ui_test_draft_workflow",
 ]
