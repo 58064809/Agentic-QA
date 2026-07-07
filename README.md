@@ -265,6 +265,9 @@ ruff check .
 | [`docs/api-discovery.md`](docs/api-discovery.md) | 基于网络抓包的接口发现报告、脱敏和离线解析规则 |
 | [`docs/qa-report-generation.md`](docs/qa-report-generation.md) | QA 报告草稿生成、风险披露和发布路径 |
 | [`docs/rag-design.md`](docs/rag-design.md) | RAG 链路、召回追踪和上下文构建 |
+| [`docs/rag-architecture.md`](docs/rag-architecture.md) | 公司业务知识库、RAG 检索和接口自动化用例生成骨架 |
+| [`docs/rag-run-record-spec.md`](docs/rag-run-record-spec.md) | RAG 检索、上下文选择和生成过程的运行记录规范 |
+| [`docs/automation-case-generation.md`](docs/automation-case-generation.md) | PRD / Swagger / 业务规则生成 YAML 接口自动化用例草稿 |
 | [`docs/roadmap.md`](docs/roadmap.md) | 建设路线图 |
 
 ## 建设路线图

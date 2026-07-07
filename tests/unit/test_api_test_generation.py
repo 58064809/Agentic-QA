@@ -20,6 +20,7 @@ from runtime.graph.nodes.api_test_generation import (  # noqa: E402
     API_CASES_FORMAL_PATH,
     API_CASES_YAML_DEBUG_KEY,
     API_CASES_YAML_FILENAME,
+    API_RAG_RUN_RECORD_FILENAME,
     api_test_quality_check_node,
 )
 from runtime.graph.state import QAWorkflowState  # noqa: E402
@@ -157,9 +158,28 @@ def test_api_test_draft_approve_write_only_writes_run_preview(tmp_path):
     assert payload["human_review_required"] is True
     assert payload["base_url_env"] == "AGENTIC_QA_BASE_URL"
     assert payload["business_rules"]
+    assert payload["source_refs"]
     assert payload["cases"]
     assert payload["cases"][0]["path"] == "/api/v1/auth/login"
     assert payload["cases"][0]["business_rule_refs"]
+    assert payload["cases"][0]["source_refs"]
+    assert payload["cases"][0]["review_status"] == "needs_human_review"
+    rag_record = preview.with_name(API_RAG_RUN_RECORD_FILENAME)
+    assert rag_record.is_file()
+    record = json.loads(rag_record.read_text(encoding="utf-8"))
+    assert record["task_type"] == "rag_automation_case_generation"
+    assert record["review_gate"]["status"] == "needs_human_review"
+    assert record["selected_context"]
+    global_record = repo_root / "rag/run_records" / f"{result.run_id}.json"
+    assert global_record.is_file()
+    latest = yaml.safe_load(
+        (repo_root / "prd/demo-requirement/runs/latest.yml").read_text(encoding="utf-8")
+    )
+    assert latest["sidecar_paths"]["rag_run_record"].endswith(API_RAG_RUN_RECORD_FILENAME)
+    assert (
+        latest["sidecar_paths"]["rag_run_record_global"]
+        == global_record.relative_to(repo_root).as_posix()
+    )
     assert not (repo_root / "prd/demo-requirement/artifacts/api-test-draft.md").exists()
     assert not (repo_root / "prd/demo-requirement/artifacts/api-test-cases.yml").exists()
 
@@ -250,3 +270,69 @@ def test_api_test_quality_rejects_missing_sections_and_execution_claims(tmp_path
     assert any("待补充接口文档" in error for error in checked.quality_errors)
     assert any("执行结论" in error for error in checked.quality_errors)
     assert any("schema_version" in error for error in checked.quality_errors)
+
+
+def test_api_test_quality_rejects_cases_without_source_refs(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    payload = {
+        "schema_version": "agentic-qa.api-cases.v1",
+        "status": "needs_human_review",
+        "human_review_required": True,
+        "base_url_env": "AGENTIC_QA_BASE_URL",
+        "business_rules": ["登录规则"],
+        "source_refs": [
+            {
+                "source_type": "prd",
+                "source_path": "prd/demo-requirement/input/requirement.md",
+                "chunk_id": "rule-001",
+                "locator": "登录规则",
+                "summary": "登录规则",
+                "confidence": "high",
+            }
+        ],
+        "cases": [
+            {
+                "id": "API-001",
+                "title": "登录成功",
+                "method": "POST",
+                "path": "/api/v1/auth/login",
+                "business_rule_refs": ["登录规则"],
+                "request": {},
+                "expected": {"status_code": [200]},
+                "pending": [],
+            }
+        ],
+    }
+    state = QAWorkflowState(
+        user_input="生成接口测试草稿",
+        prd_path="prd/demo-requirement",
+        task_type="api_test_draft",
+        run_id="run-1",
+        draft_artifacts={
+            "api_test_draft": "\n".join(
+                f"## {index}. {section}"
+                for index, section in enumerate(
+                    [
+                        "接口清单",
+                        "接口测试点矩阵",
+                        "请求示例",
+                        "pytest + requests 脚本草稿",
+                        "断言策略",
+                        "测试数据准备建议",
+                        "环境与鉴权待补充项",
+                        "风险与限制",
+                    ],
+                    start=1,
+                )
+            )
+            + "\n\n待补充接口文档",
+        },
+        output_paths={"api_test_draft": "prd/demo-requirement/runs/run-1/artifact-preview.md"},
+        loaded_files={},
+        debug_artifacts={API_CASES_YAML_DEBUG_KEY: yaml.safe_dump(payload, allow_unicode=True)},
+    )
+
+    checked = api_test_quality_check_node(state, repo_root)
+
+    assert any("source_refs" in error for error in checked.quality_errors)
+    assert any("review_status" in error for error in checked.quality_errors)

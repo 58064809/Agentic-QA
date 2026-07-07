@@ -9,6 +9,8 @@ import yaml
 from runtime.graph.nodes.api_test_generation import (
     API_CASES_YAML_DEBUG_KEY,
     API_CASES_YAML_FILENAME,
+    API_RAG_RUN_RECORD_DEBUG_KEY,
+    API_RAG_RUN_RECORD_FILENAME,
 )
 from runtime.graph.nodes.mvp_context_loader import (
     TASK_ANALYSIS,
@@ -79,6 +81,9 @@ def _structured_payload(state: QAWorkflowState, key: str, markdown_path: str) ->
         payload["api_test_cases_yaml_path"] = (
             Path(markdown_path).with_name(API_CASES_YAML_FILENAME).as_posix()
         )
+        payload["rag_run_record_path"] = (
+            Path(markdown_path).with_name(API_RAG_RUN_RECORD_FILENAME).as_posix()
+        )
     return payload
 
 
@@ -122,6 +127,24 @@ def _write_api_cases_yaml_candidate(
     return sidecar_path.relative_to(repo_root).as_posix()
 
 
+def _write_api_rag_run_record_candidate(
+    repo_root: Path,
+    state: QAWorkflowState,
+    markdown_path: str,
+) -> str | None:
+    if state.task_type != TASK_API_TEST_DRAFT:
+        return None
+    content = state.debug_artifacts.get(API_RAG_RUN_RECORD_DEBUG_KEY)
+    if not content:
+        return None
+    sidecar_path = repo_root / Path(markdown_path).with_name(API_RAG_RUN_RECORD_FILENAME)
+    write_new_text(sidecar_path, str(content))
+    global_record_name = f"{state.run_id or sidecar_path.stem}.json"
+    global_record_path = repo_root / "rag" / "run_records" / global_record_name
+    write_new_text(global_record_path, str(content))
+    return sidecar_path.relative_to(repo_root).as_posix()
+
+
 def _write_preview_companions(
     repo_root: Path,
     state: QAWorkflowState,
@@ -144,6 +167,9 @@ def _write_preview_companions(
     if len(keys) == 1 and keys[0] == "api_test_draft":
         payload["api_test_cases_yaml_path"] = (
             Path(markdown_path).with_name(API_CASES_YAML_FILENAME).as_posix()
+        )
+        payload["rag_run_record_path"] = (
+            Path(markdown_path).with_name(API_RAG_RUN_RECORD_FILENAME).as_posix()
         )
     json_path = path.with_suffix(".json")
     yaml_path = path.with_suffix(".yml")
@@ -198,7 +224,13 @@ def _write_run_pointers(repo_root: Path, state: QAWorkflowState, keys: list[str]
         payload["sidecar_paths"] = {
             "api_test_cases_yaml": Path(state.output_paths["api_test_draft"])
             .with_name(API_CASES_YAML_FILENAME)
-            .as_posix()
+            .as_posix(),
+            "rag_run_record": Path(state.output_paths["api_test_draft"])
+            .with_name(API_RAG_RUN_RECORD_FILENAME)
+            .as_posix(),
+            "rag_run_record_global": (
+                Path("rag") / "run_records" / f"{state.run_id or 'runtime'}.json"
+            ).as_posix(),
         }
 
     (runs_dir / LATEST_FILE).write_text(
@@ -312,6 +344,7 @@ def artifact_preview_writer_node(state: QAWorkflowState, repo_root: Path) -> QAW
             preview = combined_artifact_preview({key: state.draft_artifacts[key] for key in keys})
             write_new_text(repo_root / Path(markdown_path), preview)
             _write_api_cases_yaml_candidate(repo_root, state, markdown_path)
+            _write_api_rag_run_record_candidate(repo_root, state, markdown_path)
             _write_preview_companions(repo_root, state, keys, markdown_path)
         else:
             for key in keys:
@@ -320,6 +353,7 @@ def artifact_preview_writer_node(state: QAWorkflowState, repo_root: Path) -> QAW
                     state.draft_artifacts[key],
                 )
                 _write_api_cases_yaml_candidate(repo_root, state, state.output_paths[key])
+                _write_api_rag_run_record_candidate(repo_root, state, state.output_paths[key])
                 _write_structured_companions(repo_root, state, key)
         _write_run_pointers(repo_root, state, keys)
     except FileExistsError as exc:

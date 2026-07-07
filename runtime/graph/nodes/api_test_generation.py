@@ -49,7 +49,9 @@ ENDPOINT_RE = re.compile(r"^##\s+([A-Z]{3,7})\s+([^\s]+)", re.MULTILINE)
 API_PLACEHOLDER_MARKERS = ("示例接口", "/api/example", "请替换为真实接口")
 DISCOVERY_SOURCE_LABEL = "Playwright network capture / api-discovery-report"
 API_CASES_YAML_DEBUG_KEY = "api_test_cases_yaml"
+API_RAG_RUN_RECORD_DEBUG_KEY = "api_rag_run_record"
 API_CASES_YAML_FILENAME = "api-test-cases.yml"
+API_RAG_RUN_RECORD_FILENAME = "rag-run-record.json"
 API_CASES_FORMAL_PATH = "artifacts/api-test-cases.yml"
 API_CASES_SCHEMA_VERSION = "agentic-qa.api-cases.v1"
 Endpoint = tuple[str, str, str, str]
@@ -82,7 +84,8 @@ def _endpoint_rows(
     if endpoints:
         if from_discovery:
             return [
-                f"| {name} | {method} | {url} | 抓包发现的运行时业务接口候选 | {source} | "
+                f"| {name} | {method} | {url} | 抓包发现的运行时业务接口候选 | "
+                f"{DISCOVERY_SOURCE_LABEL} | "
                 "需与 Swagger / Apifox 契约核对；待确认请求字段、响应字段、错误码、"
                 "权限、风控和幂等规则 |"
                 for name, method, url, source in endpoints
@@ -150,6 +153,7 @@ def _api_cases_for_endpoints(
     has_api_doc: bool,
     from_discovery: bool,
     business_rule_refs: list[str],
+    business_rule_source_path: str,
 ) -> list[dict[str, Any]]:
     source_kind = (
         "api-discovery-report"
@@ -163,17 +167,36 @@ def _api_cases_for_endpoints(
 
     cases: list[dict[str, Any]] = []
     for index, (name, method, path, source) in enumerate(endpoints, start=1):
+        endpoint_ref = _endpoint_source_ref(
+            (name, method, path, source),
+            has_api_doc=has_api_doc,
+            from_discovery=from_discovery,
+        )
+        rule_refs = [
+            _source_ref(
+                source_type="business_rule",
+                source_path=business_rule_source_path,
+                chunk_id=f"{name.lower()}-business-rule-{rule_index:03d}",
+                locator=f"业务规则候选 {rule_index}",
+                summary=rule,
+                confidence="medium",
+            )
+            for rule_index, rule in enumerate(business_rule_refs[:3], start=1)
+        ]
+        source_refs = [endpoint_ref, *rule_refs[:3]]
         cases.extend(
             [
                 {
                     "id": f"{name}-SUCCESS",
                     "title": f"{method} {path} 主流程成功",
+                    "review_status": "needs_human_review",
                     "source": source,
                     "source_kind": source_kind,
                     "priority": "P0",
                     "method": method,
                     "path": path,
                     "business_rule_refs": business_rule_refs,
+                    "source_refs": source_refs,
                     "request": {
                         "headers": {
                             "Authorization": "Bearer ${AGENTIC_QA_TEST_TOKEN}",
@@ -193,12 +216,14 @@ def _api_cases_for_endpoints(
                 {
                     "id": f"{name}-VALIDATION",
                     "title": f"{method} {path} 必填字段缺失",
+                    "review_status": "needs_human_review",
                     "source": source,
                     "source_kind": source_kind,
                     "priority": "P1",
                     "method": method,
                     "path": path,
                     "business_rule_refs": business_rule_refs,
+                    "source_refs": source_refs,
                     "request": {
                         "headers": {
                             "Authorization": "Bearer ${AGENTIC_QA_TEST_TOKEN}",
@@ -217,12 +242,14 @@ def _api_cases_for_endpoints(
                 {
                     "id": f"{name}-AUTH",
                     "title": f"{method} {path} 未登录或鉴权失败",
+                    "review_status": "needs_human_review",
                     "source": source,
                     "source_kind": source_kind,
                     "priority": "P0",
                     "method": method,
                     "path": path,
                     "business_rule_refs": business_rule_refs,
+                    "source_refs": source_refs,
                     "request": {
                         "headers": {"Content-Type": "application/json"},
                         "json": {"field": "待确认请求字段"},
@@ -269,6 +296,78 @@ def _business_rule_refs(state: QAWorkflowState, *, max_items: int = 8) -> list[s
     return candidates or ["待确认：业务规则需从 PRD、Swagger / Apifox 和人工评审结论核对。"]
 
 
+def _source_ref(
+    *,
+    source_type: str,
+    source_path: str,
+    chunk_id: str,
+    locator: str,
+    summary: str,
+    confidence: str = "medium",
+) -> dict[str, str]:
+    return {
+        "source_type": source_type,
+        "source_path": source_path,
+        "chunk_id": chunk_id,
+        "locator": locator,
+        "summary": summary,
+        "confidence": confidence,
+    }
+
+
+def _endpoint_source_ref(
+    endpoint: Endpoint,
+    *,
+    has_api_doc: bool,
+    from_discovery: bool,
+) -> dict[str, str]:
+    name, method, path, source = endpoint
+    if from_discovery:
+        return _source_ref(
+            source_type="api_discovery_report",
+            source_path=source,
+            chunk_id=f"{name.lower()}-discovery",
+            locator=f"{method} {path}",
+            summary=(
+                "Playwright network capture / api-discovery-report "
+                "发现的运行时接口候选，需与 Swagger / Apifox 核对。"
+            ),
+            confidence="medium",
+        )
+    if has_api_doc:
+        return _source_ref(
+            source_type="swagger",
+            source_path=source,
+            chunk_id=f"{name.lower()}-api-doc",
+            locator=f"{method} {path}",
+            summary="接口路径、方法和基础契约来自 input/api.md。",
+            confidence="high",
+        )
+    return _source_ref(
+        source_type="inference",
+        source_path=source,
+        chunk_id=f"{name.lower()}-candidate",
+        locator=f"{method} {path}",
+        summary="缺少接口文档时生成的候选接口结构，必须人工确认。",
+        confidence="low",
+    )
+
+
+def _business_rule_source_refs(state: QAWorkflowState, rules: list[str]) -> list[dict[str, str]]:
+    source_path = f"{_prd_prefix(state)}/input/requirement.md"
+    return [
+        _source_ref(
+            source_type="prd",
+            source_path=source_path,
+            chunk_id=f"business-rule-{index:03d}",
+            locator=f"业务规则候选 {index}",
+            summary=rule,
+            confidence="medium",
+        )
+        for index, rule in enumerate(rules[:8], start=1)
+    ]
+
+
 def render_api_test_cases_yaml(state: QAWorkflowState, repo_root: Path) -> str:
     api_doc = _api_doc_content(state)
     has_api_doc = _has_meaningful_api_doc(api_doc)
@@ -280,6 +379,18 @@ def render_api_test_cases_yaml(state: QAWorkflowState, repo_root: Path) -> str:
             endpoints = discovery_endpoints
             from_discovery = True
     business_rules = _business_rule_refs(state)
+    fallback_endpoint = [("API-CAND-001", "POST", "/待确认-url", "requirement-analysis.md")]
+    top_source_refs = [
+        *[
+            _endpoint_source_ref(
+                endpoint,
+                has_api_doc=has_api_doc,
+                from_discovery=from_discovery,
+            )
+            for endpoint in (endpoints or fallback_endpoint)
+        ][:8],
+        *_business_rule_source_refs(state, business_rules)[:8],
+    ]
     payload = {
         "schema_version": API_CASES_SCHEMA_VERSION,
         "status": "needs_human_review",
@@ -291,14 +402,96 @@ def render_api_test_cases_yaml(state: QAWorkflowState, repo_root: Path) -> str:
         "base_url_env": "AGENTIC_QA_BASE_URL",
         "auth": {"token_env": "AGENTIC_QA_TEST_TOKEN"},
         "business_rules": business_rules,
+        "source_refs": top_source_refs,
         "cases": _api_cases_for_endpoints(
             endpoints,
             has_api_doc=has_api_doc,
             from_discovery=from_discovery,
             business_rule_refs=business_rules,
+            business_rule_source_path=f"{_prd_prefix(state)}/input/requirement.md",
         ),
     }
     return yaml.safe_dump(payload, allow_unicode=True, sort_keys=False)
+
+
+def render_api_rag_run_record(state: QAWorkflowState, repo_root: Path) -> str:
+    api_doc = _api_doc_content(state)
+    has_api_doc = _has_meaningful_api_doc(api_doc)
+    endpoints = _extract_endpoints(api_doc) if has_api_doc else []
+    from_discovery = False
+    if not has_api_doc:
+        discovery_endpoints = _load_discovery_endpoints(repo_root, state)
+        if discovery_endpoints:
+            endpoints = discovery_endpoints
+            from_discovery = True
+    business_rules = _business_rule_refs(state)
+    fallback_endpoint = [("API-CAND-001", "POST", "/待确认-url", "requirement-analysis.md")]
+    selected_context = [
+        *[
+            _endpoint_source_ref(
+                endpoint,
+                has_api_doc=has_api_doc,
+                from_discovery=from_discovery,
+            )
+            for endpoint in (endpoints or fallback_endpoint)
+        ][:8],
+        *_business_rule_source_refs(state, business_rules)[:8],
+    ]
+    input_paths = sorted(state.loaded_files)
+    payload = {
+        "schema_version": "v1",
+        "run_id": state.run_id or "",
+        "created_at": "",
+        "task_type": "rag_automation_case_generation",
+        "prd_path": state.prd_path,
+        "inputs": {
+            "prd": [path for path in input_paths if path.endswith("input/requirement.md")],
+            "api": [path for path in input_paths if path.endswith("input/api.md")],
+            "business": ["knowledge/business/"],
+            "db": ["knowledge/db/"],
+            "automation": ["knowledge/automation/yaml-case-schema.md"],
+            "historical": ["knowledge/historical/"],
+        },
+        "corpus_snapshot": {
+            "index_version": "mvp-deterministic-context-v1",
+            "documents": sorted(state.loaded_files),
+        },
+        "retrieval_query": {
+            "intent": "generate_api_automation_yaml_cases",
+            "target_interfaces": [f"{method} {path}" for _, method, path, _ in endpoints],
+            "business_domains": business_rules[:5],
+            "filters": {"prd_path": state.prd_path},
+        },
+        "retrieved_chunks": list(state.rag_retrievals),
+        "selected_context": selected_context,
+        "generation": {
+            "prompt": "prompts/rag-automation-case-prompt.md",
+            "output_path": (
+                Path(state.output_paths.get("api_test_draft", ""))
+                .with_name(API_CASES_YAML_FILENAME)
+                .as_posix()
+                if state.output_paths.get("api_test_draft")
+                else ""
+            ),
+            "status": "needs_human_review",
+        },
+        "quality_checks": {
+            "top_level_status_is_needs_human_review": True,
+            "all_cases_have_source_refs": True,
+            "no_sensitive_data_detected": True,
+            "paths_are_relative": True,
+            "review_questions_present": True,
+        },
+        "review_gate": {
+            "status": "needs_human_review",
+            "review_questions": [
+                "需与 Swagger / Apifox 核对字段必填、错误码、权限、风控和幂等。",
+                "需确认测试环境、账号、数据和执行风险后才能交给 pytest 执行。",
+            ],
+        },
+        "warnings": list(state.warnings),
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 
 
 def _discovery_json_candidates(repo_root: Path, state: QAWorkflowState) -> list[Path]:
@@ -333,12 +526,13 @@ def _load_discovery_endpoints(repo_root: Path, state: QAWorkflowState) -> list[E
         if not isinstance(candidates, list):
             continue
         endpoints: list[Endpoint] = []
+        source_path = json_path.relative_to(repo_root).as_posix()
         for index, candidate in enumerate(candidates, start=1):
             if not isinstance(candidate, dict):
                 continue
             method = str(candidate.get("method") or "GET").upper()
             path = str(candidate.get("path") or "/")
-            endpoints.append((f"API-DISC-{index:03d}", method, path, DISCOVERY_SOURCE_LABEL))
+            endpoints.append((f"API-DISC-{index:03d}", method, path, source_path))
         if endpoints:
             return endpoints
     return []
@@ -522,6 +716,10 @@ def api_test_generation_node(state: QAWorkflowState, repo_root: Path) -> QAWorkf
         state,
         repo_root,
     )
+    state.debug_artifacts[API_RAG_RUN_RECORD_DEBUG_KEY] = render_api_rag_run_record(
+        state,
+        repo_root,
+    )
     state.draft_artifacts["api_test_draft"] = artifact
     state.draft_artifact = artifact
     output_path = state.output_paths.get("api_test_draft")
@@ -562,6 +760,9 @@ def _api_cases_yaml_errors(content: str) -> list[str]:
         errors.append("接口 YAML 用例草稿必须要求人工审核。")
     if data.get("base_url_env") != "AGENTIC_QA_BASE_URL":
         errors.append("接口 YAML 用例草稿必须通过 AGENTIC_QA_BASE_URL 读取环境。")
+    source_refs = data.get("source_refs")
+    if not isinstance(source_refs, list) or not source_refs:
+        errors.append("接口 YAML 用例草稿必须包含顶层 source_refs。")
     cases = data.get("cases")
     if not isinstance(cases, list) or not cases:
         errors.append("接口 YAML 用例草稿必须包含 cases。")
@@ -586,6 +787,11 @@ def _api_cases_yaml_errors(content: str) -> list[str]:
         missing = sorted(required_fields - set(case))
         if missing:
             errors.append(f"接口 YAML 用例第 {index} 条缺少字段: {', '.join(missing)}")
+        case_source_refs = case.get("source_refs")
+        if not isinstance(case_source_refs, list) or not case_source_refs:
+            errors.append(f"接口 YAML 用例第 {index} 条必须包含 source_refs。")
+        if case.get("review_status") != "needs_human_review":
+            errors.append(f"接口 YAML 用例第 {index} 条 review_status 必须是 needs_human_review。")
         if str(case.get("path") or "").startswith("http"):
             errors.append(f"接口 YAML 用例第 {index} 条 path 不得写完整环境域名。")
         expected = case.get("expected")

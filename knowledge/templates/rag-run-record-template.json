@@ -1,0 +1,44 @@
+{
+  "schema_version": "v1",
+  "run_id": "",
+  "created_at": "",
+  "task_type": "rag_automation_case_generation",
+  "prd_path": "",
+  "inputs": {
+    "prd": [],
+    "api": [],
+    "business": [],
+    "db": [],
+    "automation": [],
+    "historical": []
+  },
+  "corpus_snapshot": {
+    "index_version": "",
+    "documents": []
+  },
+  "retrieval_query": {
+    "intent": "generate_api_automation_yaml_cases",
+    "target_interfaces": [],
+    "business_domains": [],
+    "filters": {}
+  },
+  "retrieved_chunks": [],
+  "selected_context": [],
+  "generation": {
+    "prompt": "prompts/rag-automation-case-prompt.md",
+    "output_path": "",
+    "status": "needs_human_review"
+  },
+  "quality_checks": {
+    "top_level_status_is_needs_human_review": false,
+    "all_cases_have_source_refs": false,
+    "no_sensitive_data_detected": false,
+    "paths_are_relative": false,
+    "review_questions_present": false
+  },
+  "review_gate": {
+    "status": "needs_human_review",
+    "review_questions": []
+  },
+  "warnings": []
+}
