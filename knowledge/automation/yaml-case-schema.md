@@ -4,6 +4,17 @@
 
 定义 RAG 生成接口自动化用例草稿的最小 YAML 结构。该结构用于人工审核和后续 pytest 执行框架消费。
 
+YAML 用例文件是 `api_test_draft` 的机器可消费 sidecar 候选产物，不是独立绕过 Review Gate 的正式资产。固定流转为：
+
+```text
+runs/<run_id>/artifact-preview.md
+runs/<run_id>/api-test-cases.yml
+reviews/api-test-draft.review.yml
+artifacts/api-test-cases.yml
+```
+
+其中 `artifacts/api-test-cases.yml` 只能在 Review Gate 通过并执行 promote 后写入。
+
 ## 顶层结构
 
 ```yaml
@@ -86,3 +97,14 @@ review_questions:
 | `assertions` | 断言列表 |
 | `variables` | 环境变量、提取变量和 fixture 变量 |
 | `cleanup` | 清理动作说明 |
+
+## 接口契约缺失约束
+
+`request.method`、`request.path`、请求字段、响应字段、错误码和鉴权方式必须来自 Swagger / OpenAPI / Apifox 或已确认接口契约。
+
+缺少接口契约时：
+
+- 不得根据 PRD、历史经验或常识编造 `request.method`、`request.path`、请求字段或响应字段。
+- 只能生成 `status: needs_human_review`、`review_status: needs_human_review` 的待确认草稿。
+- `request` 应为空对象或仅包含明确来源字段。
+- 接口契约缺口必须写入 `review_questions`。
