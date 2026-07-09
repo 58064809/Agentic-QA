@@ -82,6 +82,9 @@ promote 后写入 artifacts/api-test-cases.yml
 
 - PRD 和已确认业务规则用于定义业务预期。
 - Swagger / OpenAPI 用于定义接口路径、方法、请求字段、响应字段、错误码和鉴权方式。
+- Apifox 导出的服务级 OpenAPI JSON 按 `knowledge/api/<service>/openapi.json` 管理。RAG 不得把完整服务级 OpenAPI 直接塞进 Prompt，必须先解析为 operation chunk，再按 `prd/<id>/input/api-scope.md` 精准召回。
+- `api-scope.md` 声明 `service: product` 时，只从 `knowledge/api/product/openapi.json` 检索；明确列出 `method path` 时只召回这些接口；未列出具体 path 时可用 PRD 关键词、summary、path、tags 检索，但置信度降为 `medium`。
+- 每个 operation chunk 使用 `openapi.<service>.<METHOD>.<path_hash>` 作为 `chunk_id`，内容保留 service、method、path、summary、tags、parameters、request schema、response schema、security 和 source_path。
 - 缺少 Swagger / OpenAPI / Apifox 接口契约时，不得编造接口路径、方法、请求字段、响应字段、错误码或鉴权方式；只能生成待确认草稿并写入 `review_questions`。
 - 数据库知识只作为数据一致性和状态校验依据，不反推未确认接口字段。
 - 自动化知识用于约束 YAML 格式、断言层级、变量提取和安全边界。

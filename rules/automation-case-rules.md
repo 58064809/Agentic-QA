@@ -41,6 +41,10 @@ YAML 顶层必须包含：
 
 ## 接口契约规则
 
+- 支持 Apifox 导出的服务级 OpenAPI JSON 接口契约库，默认路径为 `knowledge/api/<service>/openapi.json`。
+- RAG 生成接口自动化 YAML 前必须先解析服务级 OpenAPI，按 operation 生成 chunk，并根据 `prd/<id>/input/api-scope.md` 精准召回；不得把完整服务级 OpenAPI 直接塞进 Prompt。
+- `api-scope.md` 指定 `service` 和具体 `method path` 时，只允许使用命中的 OpenAPI operation；指定接口未命中时必须按缺失契约处理。
+- 命中服务级 OpenAPI 时，`source_refs.source_type` 必须为 `openapi`，`source_refs.source_path` 指向对应 `knowledge/api/<service>/openapi.json`，`contract_status` 为 `confirmed`，`confidence` 可为 `high`。
 - `request.method`、`request.path`、请求字段、响应字段、错误码和鉴权方式必须来自 Swagger / OpenAPI / Apifox 或已确认接口契约。
 - 缺少 Swagger / OpenAPI / Apifox 接口契约时，不得根据 PRD、历史经验或常识编造接口事实。
 - 接口契约缺失时只能生成 `needs_human_review` 待确认草稿，`request` 应为空对象或仅包含明确来源字段，并必须在 `review_questions` 中列出需要补充的接口契约。

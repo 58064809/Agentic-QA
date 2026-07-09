@@ -21,7 +21,9 @@ from runtime.graph.nodes.api_test_generation import (  # noqa: E402
     API_CASES_YAML_DEBUG_KEY,
     API_CASES_YAML_FILENAME,
     API_RAG_RUN_RECORD_FILENAME,
+    _api_cases_yaml_errors,
     api_test_quality_check_node,
+    render_api_test_cases_yaml,
 )
 from runtime.graph.state import QAWorkflowState  # noqa: E402
 from runtime.llm.config import OpenAICompatibleConfig  # noqa: E402
@@ -128,6 +130,34 @@ def test_api_test_draft_without_api_doc_marks_missing_contract(tmp_path):
     assert "待确认 Method" in draft
 
 
+def test_api_cases_yaml_missing_contract_does_not_invent_method_path_or_request(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    state = QAWorkflowState(
+        prd_path="prd/demo-requirement",
+        task_type="api_test_draft",
+        run_id="run-missing",
+        loaded_files={
+            "prd/demo-requirement/input/requirement.md": "用户参加活动并领取奖励。",
+            "prd/demo-requirement/artifacts/requirement-analysis.md": "- 用户可参加活动",
+        },
+    )
+
+    payload = yaml.safe_load(render_api_test_cases_yaml(state, repo_root))
+    content = yaml.safe_dump(payload, allow_unicode=True)
+
+    assert "method: POST" not in content
+    assert "path: /待确认-url" not in content
+    case = payload["cases"][0]
+    assert case["contract_status"] == "missing"
+    assert "method" not in case
+    assert "path" not in case
+    assert case["request"] == {}
+    assert case["expected"] == {}
+    assert "json_contains_keys" not in yaml.safe_dump(case, allow_unicode=True)
+    assert any("Swagger / OpenAPI / Apifox" in item for item in case["review_questions"])
+    assert _api_cases_yaml_errors(yaml.safe_dump(payload, allow_unicode=True)) == []
+
+
 def test_api_test_draft_uses_discovery_json_when_api_doc_missing(tmp_path):
     repo_root = create_mvp_repo(tmp_path)
     add_api_test_context_files(repo_root)
@@ -166,6 +196,124 @@ def test_api_test_draft_uses_discovery_json_when_api_doc_missing(tmp_path):
     assert "Playwright network capture / api-discovery-report" in draft
     assert "需与 Swagger / Apifox 契约核对" in draft
     assert "待补充接口文档" in draft
+
+
+def test_api_cases_yaml_discovery_contract_pending_confirmation(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    discovery_dir = repo_root / "prd/demo-requirement/runs/run-discovery"
+    discovery_dir.mkdir(parents=True)
+    (discovery_dir / "api_discovery_report.discovery.json").write_text(
+        json.dumps(
+            {
+                "candidates": [
+                    {
+                        "method": "POST",
+                        "path": "/api/activity/join",
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    state = QAWorkflowState(
+        prd_path="prd/demo-requirement",
+        task_type="api_test_draft",
+        run_id="run-discovery",
+        loaded_files={
+            "prd/demo-requirement/input/requirement.md": "用户参加活动并领取奖励。",
+            "prd/demo-requirement/artifacts/requirement-analysis.md": "- 用户可参加活动",
+        },
+    )
+
+    payload = yaml.safe_load(render_api_test_cases_yaml(state, repo_root))
+    case = payload["cases"][0]
+
+    assert case["contract_status"] == "pending_confirmation"
+    assert case["method"] == "POST"
+    assert case["path"] == "/api/activity/join"
+    assert case["source_refs"][0]["source_type"] == "api_discovery_report"
+    assert case["source_refs"][0]["confidence"] != "high"
+    assert any("Swagger / OpenAPI / Apifox" in item for item in case["review_questions"])
+    assert _api_cases_yaml_errors(yaml.safe_dump(payload, allow_unicode=True)) == []
+
+
+def test_api_cases_yaml_validator_rejects_method_path_when_contract_missing():
+    payload = {
+        "schema_version": "agentic-qa.api-cases.v1",
+        "status": "needs_human_review",
+        "human_review_required": True,
+        "base_url_env": "AGENTIC_QA_BASE_URL",
+        "business_rules": ["用户可参加活动"],
+        "source_refs": [
+            {
+                "source_type": "prd",
+                "source_path": "prd/demo-requirement/input/requirement.md",
+                "chunk_id": "rule-001",
+                "locator": "活动规则",
+                "summary": "用户可参加活动",
+                "confidence": "medium",
+            }
+        ],
+        "cases": [
+            {
+                "id": "API-CONTRACT-MISSING-001",
+                "title": "错误的缺契约用例",
+                "review_status": "needs_human_review",
+                "contract_status": "missing",
+                "method": "POST",
+                "path": "/待确认-url",
+                "business_rule_refs": ["用户可参加活动"],
+                "source_refs": [
+                    {
+                        "source_type": "prd",
+                        "source_path": "prd/demo-requirement/input/requirement.md",
+                        "chunk_id": "rule-001",
+                        "locator": "活动规则",
+                        "summary": "用户可参加活动",
+                        "confidence": "medium",
+                    }
+                ],
+                "request": {"json": {"field": "待确认请求字段"}},
+                "expected": {"status_code": [200], "json_contains_keys": ["code"]},
+                "pending": ["补充接口契约"],
+                "review_questions": ["请补充 Swagger / OpenAPI / Apifox 接口契约。"],
+            }
+        ],
+    }
+
+    errors = _api_cases_yaml_errors(yaml.safe_dump(payload, allow_unicode=True))
+
+    assert any("contract_status=missing 时不得包含 method/path" in error for error in errors)
+    assert any("request 只能是 {}" in error for error in errors)
+    assert any("不得包含 expected.status_code/json_contains_keys" in error for error in errors)
+
+
+def test_api_cases_yaml_with_api_doc_generates_confirmed_method_path(tmp_path):
+    repo_root = create_mvp_repo(tmp_path)
+    api_doc = (repo_root / "prd/demo-requirement/input/api.md").read_text(encoding="utf-8")
+    state = QAWorkflowState(
+        prd_path="prd/demo-requirement",
+        task_type="api_test_draft",
+        run_id="run-api-doc",
+        loaded_files={
+            "prd/demo-requirement/input/api.md": api_doc,
+            "prd/demo-requirement/input/requirement.md": "用户登录。",
+            "prd/demo-requirement/artifacts/requirement-analysis.md": "- 用户可登录",
+        },
+    )
+
+    payload = yaml.safe_load(render_api_test_cases_yaml(state, repo_root))
+    case = payload["cases"][0]
+
+    assert case["contract_status"] == "confirmed"
+    assert case["method"] == "POST"
+    assert case["path"] == "/api/v1/auth/login"
+    assert case["source_refs"][0]["source_type"] == "swagger"
+    assert case["source_refs"][0]["confidence"] == "high"
+    assert case["request"]
+    assert case["expected"]["status_code"]
+    assert _api_cases_yaml_errors(yaml.safe_dump(payload, allow_unicode=True)) == []
 
 
 def test_api_test_draft_approve_write_only_writes_run_preview(tmp_path):

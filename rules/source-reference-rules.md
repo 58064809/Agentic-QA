@@ -10,7 +10,7 @@
 
 | 字段 | 说明 |
 |---|---|
-| `source_type` | `prd`、`swagger`、`business_rule`、`db_rule`、`automation_rule`、`historical_lesson`、`inference` |
+| `source_type` | `prd`、`swagger`、`openapi`、`apifox`、`api_discovery_report`、`business_rule`、`db_rule`、`automation_rule`、`historical_lesson`、`inference` |
 | `source_path` | 来源文件路径 |
 | `chunk_id` | RAG chunk 标识 |
 | `locator` | 章节、接口、字段、行号或规则编号 |
@@ -20,7 +20,8 @@
 ## 引用要求
 
 - 每条用例至少包含一个 `source_refs`。
-- 接口路径、方法和字段优先引用 Swagger / OpenAPI 来源。
+- 接口路径、方法和字段优先引用 Swagger / OpenAPI / Apifox 来源。
+- 服务级 OpenAPI 契约引用使用 `source_type: openapi`，`source_path` 指向 `knowledge/api/<service>/openapi.json`，`chunk_id` 使用 `openapi.<service>.<METHOD>.<path_hash>`。
 - 没有 Swagger / OpenAPI / Apifox 或已确认接口契约时，不得使用 `inference` 补全接口路径、方法、请求字段或响应字段；只能记录契约缺口并等待人工确认。
 - 业务预期优先引用 PRD 或业务规则来源。
 - 断言策略优先引用自动化规则或断言规则来源。

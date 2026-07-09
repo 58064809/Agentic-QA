@@ -12,6 +12,8 @@
 
 - PRD 摘要和业务规则。
 - Swagger / OpenAPI 接口契约。
+- `prd/<id>/input/api-scope.md` 指定的服务和接口范围。
+- 从 `knowledge/api/<service>/openapi.json` 解析并召回的 OpenAPI operation chunks。
 - 数据库状态、枚举和一致性规则。
 - 自动化 YAML schema、断言规则和变量提取规则。
 - 历史缺陷和漏测经验。
@@ -80,6 +82,10 @@ review_questions:
 ## 生成规则
 
 - 每条用例必须有非空 `source_refs`。
+- 不得把完整服务级 OpenAPI JSON 当作 Prompt 上下文；只能使用 Runtime 已按 `api-scope.md` 召回的 operation chunk。
+- 命中服务级 OpenAPI 契约时，`source_refs.source_type` 使用 `openapi`，`source_refs.source_path` 指向 `knowledge/api/<service>/openapi.json`，`contract_status` 使用 `confirmed`，`confidence` 可以为 `high`。
+- `api-scope.md` 未列具体 path，仅靠 PRD 关键词、summary、path、tags 检索时，`confidence` 不得高于 `medium`。
+- `api-scope.md` 指定 path/method 但未命中 OpenAPI 时，按缺少接口契约处理，不得回退编造 method/path/request/response 字段。
 - 接口路径只能使用相对路径。
 - `request.method`、`request.path`、请求字段、响应字段、错误码和鉴权方式必须来自 Swagger / OpenAPI / Apifox 或已确认接口契约；缺少接口契约时不得根据 PRD 或历史经验补全接口事实。
 - 不写真实 token、Cookie、密码、手机号、身份证、银行卡或密钥。

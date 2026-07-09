@@ -10,6 +10,8 @@
 |---|---|
 | PRD | 业务目标、流程、规则、权限和待确认项 |
 | Swagger / OpenAPI / Apifox | 接口路径、方法、字段、响应结构、错误码和鉴权 |
+| 服务级 OpenAPI 契约库 | Apifox 导出的服务级 OpenAPI JSON，默认路径为 `knowledge/api/<service>/openapi.json` |
+| PRD 接口范围 | `prd/<id>/input/api-scope.md`，用于声明服务名和本次需求涉及的接口范围 |
 | 业务规则 | 条件、动作、结果、状态流转和风控规则 |
 | 数据库知识 | 状态字段、唯一约束、枚举和数据一致性观察点 |
 | 自动化规范 | YAML schema、断言规则、变量提取和安全约束 |
@@ -37,6 +39,55 @@ prd/<id>/artifacts/api-test-cases.yml           # 审核通过并 promote 后的
 - 账号、密码、token、Cookie、动态 ID 只能使用变量或环境占位。
 - 必须包含 `review_questions`，列出待人工确认项。
 - 缺少 Swagger / OpenAPI / Apifox 接口契约时，不得编造 `request.method`、`request.path`、请求字段、响应字段或错误码；只能生成待确认草稿，并把接口契约缺口写入 `review_questions`。
+
+## 服务级 OpenAPI 召回
+
+Apifox 导出的服务级 OpenAPI JSON 应按服务沉淀到：
+
+```text
+knowledge/api/<service>/openapi.json
+```
+
+例如 product 服务：
+
+```text
+knowledge/api/product/openapi.json
+```
+
+RAG 生成接口自动化 YAML 时不得把完整服务级 OpenAPI 塞进 Prompt。必须先解析 `paths`，按 operation 建立 chunk，再结合 `prd/<id>/input/api-scope.md` 精准召回。
+
+`api-scope.md` 推荐格式：
+
+```yaml
+service: product
+paths:
+  - GET /product/shop/store/getCommodityDetail
+  - POST /product/mobile/shop/store/searchCommodities
+keywords: 商品 搜索 详情
+```
+
+召回规则：
+
+- 声明 `service: product` 时，只读取 `knowledge/api/product/openapi.json`。
+- 明确列出 `method path` 时，只召回这些接口。
+- 只列出 path 时，可召回该 path 下全部 method。
+- 未列出具体 path 时，允许基于 PRD 关键词、接口 summary、path、tags 做检索，但 `confidence` 不得高于 `medium`。
+- `api-scope.md` 指定的 path/method 未命中 OpenAPI 时，不得回退编造 method/path/request/response 字段事实，必须生成 `contract_status: missing` 草稿并写入 `review_questions`。
+
+每个 OpenAPI operation chunk 的 `chunk_id` 格式：
+
+```text
+openapi.<service>.<METHOD>.<path_hash>
+```
+
+命中 OpenAPI 契约时，YAML 来源必须满足：
+
+```yaml
+source_type: openapi
+source_path: knowledge/api/product/openapi.json
+contract_status: confirmed
+confidence: high
+```
 
 ## 用例最小字段
 
