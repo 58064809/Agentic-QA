@@ -73,7 +73,6 @@ def _review_target_artifacts(state: QAWorkflowState) -> set[str] | None:
 
 
 def metadata_update_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
-    state.record_node("metadata_update_node")
     if state.errors or state.quality_errors:
         return state
 

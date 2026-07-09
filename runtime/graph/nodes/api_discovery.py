@@ -35,7 +35,6 @@ SECRET_PATTERNS = [
 def api_discovery_report_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
     if state.task_type != TASK_API_DISCOVERY_REPORT:
         return state
-    state.record_node("api_discovery_report_node")
     if state.errors:
         return state
     capture_path = _find_capture_path(repo_root, state)
@@ -70,7 +69,6 @@ def api_discovery_report_node(state: QAWorkflowState, repo_root: Path) -> QAWork
 def api_discovery_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
     if state.task_type != TASK_API_DISCOVERY_REPORT:
         return state
-    state.record_node("api_discovery_quality_check_node")
     if state.errors:
         return state
     artifact = state.draft_artifacts.get("api_discovery_report") or ""

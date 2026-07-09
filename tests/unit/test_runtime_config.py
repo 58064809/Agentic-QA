@@ -6,16 +6,36 @@ from pathlib import Path
 import pytest
 
 import runtime.cli as cli
-from runtime.config import load_app_config
+from runtime.config import _mapping, load_app_config
 from runtime.graph.nodes.mvp_context_loader import mvp_workflow_selector_node
 from runtime.graph.state import QAWorkflowState
 from runtime.llm.config import OpenAICompatibleConfig
 from runtime.session import SessionManager
+from runtime.workflow.runner import _graph_config
 
 
 def write_file(path: Path, content: str = "placeholder") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+
+
+def test_load_app_config_without_config_yaml_uses_defaults(tmp_path: Path) -> None:
+    config = load_app_config(tmp_path)
+
+    assert config.project.name == "agentic-qa"
+    assert config.runtime.checkpointer == "postgres"
+    assert config.runtime.checkpoint_postgres_dsn_env == "AGENTIC_QA_CHECKPOINT_POSTGRES_DSN"
+    assert config.workspace.prd_root == "prd"
+    assert config.output.require_review_gate is True
+    assert config.observability.provider == "langsmith"
+    assert config.observability.enabled is False
+    assert config.observability.api_key_env == "LANGSMITH_API_KEY"
+
+
+def test_private_mapping_helper_rejects_non_mapping_values() -> None:
+    assert _mapping({"profiles": {"default": {}}}) == {"profiles": {"default": {}}}
+    assert _mapping(None) == {}
+    assert _mapping("not-a-mapping") == {}
 
 
 def test_load_app_config_merges_tracked_and_local_files(tmp_path: Path) -> None:
@@ -260,6 +280,15 @@ entries:
   api_enabled: true
 logging:
   level: debug
+observability:
+  provider: langsmith
+  enabled: true
+  endpoint: https://smith.example
+  api_key_env: CUSTOM_LANGSMITH_KEY
+  project: demo-project
+  tags:
+    - qa
+    - local
 output:
   write_artifact_preview: true
   require_review_gate: false
@@ -287,6 +316,11 @@ profiles:
     assert config.entries.cli_enabled is False
     assert config.entries.api_enabled is True
     assert config.logging.level == "DEBUG"
+    assert config.observability.enabled is True
+    assert config.observability.endpoint == "https://smith.example"
+    assert config.observability.api_key_env == "CUSTOM_LANGSMITH_KEY"
+    assert config.observability.project == "demo-project"
+    assert config.observability.tags == ["qa", "local"]
     assert config.output.require_review_gate is False
     assert config.profiles["local"]["rag"]["enabled"] is False
 
@@ -324,3 +358,40 @@ llm:
     assert llm_config.enable_chat_fallback is False
     assert llm_config.max_input_chars == 9000
     assert "api_key" not in metadata
+
+
+def test_langsmith_observability_configures_graph_metadata_without_serializing_key(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    write_file(
+        tmp_path / "configs/config.yaml",
+        """
+observability:
+  provider: langsmith
+  enabled: true
+  endpoint: https://smith.example
+  api_key_env: CUSTOM_LANGSMITH_KEY
+  project: qa-project
+  tags:
+    - qa
+""",
+    )
+    monkeypatch.setenv("CUSTOM_LANGSMITH_KEY", "secret-langsmith-key")
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
+    monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)
+
+    app_config = load_app_config(tmp_path)
+    graph_config = _graph_config(
+        "thread-1",
+        workflow_id="rag_automation_case_generation",
+        run_id="run-1",
+        app_config=app_config,
+    )
+
+    assert graph_config["run_name"] == "rag_automation_case_generation"
+    assert "qa" in graph_config["tags"]
+    assert graph_config["metadata"]["run_id"] == "run-1"
+    assert "secret-langsmith-key" not in str(graph_config)
+    assert "api_key" not in graph_config["metadata"]

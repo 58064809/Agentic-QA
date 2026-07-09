@@ -61,7 +61,7 @@ def test_run_workflow_by_id_returns_runtime_result(tmp_path):
     assert result.review_status == "needs_human_review"
     assert result.next_action == "wait_for_review"
     assert result.run_status == "interrupted"
-    assert "testcase_generation_node" in result.executed_nodes
+    assert "testcase_generator" in result.executed_nodes
     assert "testcases" in result.draft_artifacts
 
 
@@ -83,7 +83,7 @@ def test_run_requirement_analysis_workflow_by_id_returns_runtime_result(tmp_path
     assert result.review_status == "needs_human_review"
     assert result.next_action == "wait_for_review"
     assert result.run_status == "interrupted"
-    assert "requirement_analysis_generation_node" in result.executed_nodes
+    assert "requirement_analysis_generator" in result.executed_nodes
     assert "requirement_analysis" in result.draft_artifacts
     assert "testcases" not in result.draft_artifacts
 
@@ -154,7 +154,7 @@ def test_resume_workflow_for_run_uses_recorded_task_type(tmp_path):
     assert resumed.next_action == "wait_for_review"
     assert resumed.run_status == "interrupted"
     assert resumed.orchestration == "YAML WorkflowSpec: requirement_analysis"
-    assert "requirement_analysis_generation_node" in resumed.executed_nodes
+    assert "requirement_analysis_generator" in resumed.executed_nodes
 
 
 def test_resume_recorded_workflow_routes_mvp_task_type_to_runtime_dsl(tmp_path):
@@ -180,4 +180,4 @@ def test_resume_recorded_workflow_routes_mvp_task_type_to_runtime_dsl(tmp_path):
     assert resumed.next_action == "wait_for_review"
     assert resumed.run_status == "interrupted"
     assert resumed.orchestration == "YAML WorkflowSpec: testcase_generation"
-    assert "testcase_generation_node" in resumed.executed_nodes
+    assert "testcase_generator" in resumed.executed_nodes

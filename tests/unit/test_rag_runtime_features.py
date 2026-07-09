@@ -126,8 +126,8 @@ def test_build_rag_context_records_retrieval_trace(
     state = QAWorkflowState(
         user_input="analyze boundary rules",
         prd_path="prd/demo",
+        task_type="requirement_analysis",
     )
-    state.executed_nodes.append("requirement_analysis")
     state.loaded_files["prd/demo/input/requirement.md"] = (
         "# Requirement\n\n规则：input amount must cover min and max boundary values."
     )

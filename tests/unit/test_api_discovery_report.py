@@ -144,7 +144,7 @@ def test_api_discovery_promote_writes_formal_artifact(tmp_path):
     )
     assert resumed.success
     assert resumed.review_status == "confirmed"
-    assert "artifact_promoter_node" in resumed.executed_nodes
+    assert "artifact_promoter" in resumed.executed_nodes
     formal = repo_root / "prd/demo-requirement/artifacts/api-discovery-report.md"
     assert formal.is_file()
     review = yaml.safe_load(

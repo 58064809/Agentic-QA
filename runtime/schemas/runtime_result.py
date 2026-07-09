@@ -46,7 +46,12 @@ class RuntimeResult:
     rag_retrievals: list[dict[str, Any]]
 
     @classmethod
-    def from_state(cls, state: QAWorkflowState) -> RuntimeResult:
+    def from_state(
+        cls,
+        state: QAWorkflowState,
+        *,
+        executed_nodes: list[str] | None = None,
+    ) -> RuntimeResult:
         return cls(
             success=state.success,
             user_input=state.user_input,
@@ -73,7 +78,7 @@ class RuntimeResult:
             prototype_notes=dict(state.prototype_notes),
             errors=list(state.errors),
             warnings=list(state.warnings),
-            executed_nodes=list(state.executed_nodes),
+            executed_nodes=list(executed_nodes or []),
             wrote_file=state.wrote_file,
             orchestration=state.orchestration,
             run_id=state.run_id,

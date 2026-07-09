@@ -10,6 +10,7 @@ from langgraph.graph import END, START, StateGraph
 
 from runtime.graph.state import QAWorkflowState
 from runtime.workflow.conditions import DEFAULT_CONDITION, get_condition
+from runtime.workflow.loader import load_workflow_spec_by_id
 from runtime.workflow.registry import call_handler, import_handler
 from runtime.workflow.schema import EXECUTABLE_NODE_TYPES, EdgeSpec, FailurePolicy, WorkflowSpec
 
@@ -105,6 +106,8 @@ def _validate_workflow(spec: WorkflowSpec) -> None:
             raise ValueError(
                 f"Workflow {spec.id} node type unsupported: {node.type}; supported: {supported}"
             )
+        if node.type == "subgraph":
+            continue
         if not node.handler:
             raise ValueError(f"Workflow {spec.id} node 缺少 handler: {node.id}")
         import_handler(node.handler)
@@ -147,6 +150,7 @@ def build_graph_from_spec(
     spec: WorkflowSpec,
     repo_root: Path,
     checkpointer: MemorySaver | None = None,
+    _stack: tuple[str, ...] = (),
 ):
     """Build a compiled LangGraph from a ``WorkflowSpec`` (YAML DSL)."""
     _validate_workflow(spec)
@@ -154,9 +158,27 @@ def build_graph_from_spec(
     graph = StateGraph(QAWorkflowState)
 
     for node in spec.nodes:
+        if node.type == "subgraph":
+            if not node.workflow:
+                raise ValueError(f"Workflow {spec.id} subgraph node 缺少 workflow: {node.id}")
+            current_stack = (*_stack, spec.id)
+            if node.workflow in current_stack:
+                cycle = " -> ".join((*current_stack, node.workflow))
+                raise ValueError(f"Workflow subgraph 存在循环引用: {cycle}")
+            sub_spec = load_workflow_spec_by_id(root, node.workflow)
+            graph.add_node(
+                node.id,
+                build_graph_from_spec(
+                    sub_spec,
+                    root,
+                    checkpointer=False,
+                    _stack=current_stack,
+                ),
+            )
+            continue
         graph.add_node(
             node.id,
-            _wrap_handler(node.handler, root, failure_policy=node.failure_policy),
+            _wrap_handler(node.handler or "", root, failure_policy=node.failure_policy),
         )
 
     edges_by_source: dict[str, list[EdgeSpec]] = defaultdict(list)
@@ -179,7 +201,7 @@ def build_graph_from_spec(
             for edge in fixed:
                 graph.add_edge(_graph_node_name(edge.source), _graph_node_name(edge.target))
 
-    return graph.compile(checkpointer=checkpointer or MemorySaver())
+    return graph.compile(checkpointer=checkpointer if checkpointer is not None else MemorySaver())
 
 
 def apply_workflow_state_defaults(state: QAWorkflowState, spec: WorkflowSpec) -> QAWorkflowState:

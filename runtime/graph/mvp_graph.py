@@ -7,6 +7,31 @@ from runtime.graph.nodes.artifact_promoter import promote_artifacts
 from runtime.schemas.runtime_result import RuntimeResult
 
 
+def _run_workflow_entry(
+    *,
+    workflow_id: str,
+    user_input: str,
+    prd_path: Path | str,
+    repo_root: Path | None,
+    approve_write: bool,
+    debug_approve_preview_write: bool,
+    record_run: bool,
+    use_llm: bool,
+) -> RuntimeResult:
+    from runtime.workflow import run_workflow_by_id
+
+    return run_workflow_by_id(
+        workflow_id=workflow_id,
+        user_input=user_input,
+        prd_path=prd_path,
+        repo_root=repo_root,
+        approve_write=approve_write,
+        debug_approve_preview_write=debug_approve_preview_write,
+        record_run=record_run,
+        use_llm=use_llm,
+    )
+
+
 def promote_mvp_artifacts(
     prd_path: Path | str,
     run_id: str,
@@ -34,9 +59,7 @@ def run_requirement_analysis_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.workflow import run_workflow_by_id
-
-    return run_workflow_by_id(
+    return _run_workflow_entry(
         workflow_id="requirement_analysis",
         user_input=user_input,
         prd_path=prd_path,
@@ -58,9 +81,7 @@ def run_mvp_testcase_generation_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.workflow import run_workflow_by_id
-
-    return run_workflow_by_id(
+    return _run_workflow_entry(
         workflow_id="testcase_generation",
         user_input=user_input,
         prd_path=prd_path,
@@ -82,9 +103,7 @@ def run_mvp_analysis_and_testcases_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.workflow import run_workflow_by_id
-
-    return run_workflow_by_id(
+    return _run_workflow_entry(
         workflow_id="analysis_and_testcases",
         user_input=user_input,
         prd_path=prd_path,
@@ -106,9 +125,7 @@ def run_api_test_draft_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.workflow import run_workflow_by_id
-
-    return run_workflow_by_id(
+    return _run_workflow_entry(
         workflow_id="api_test_draft",
         user_input=user_input,
         prd_path=prd_path,
@@ -130,9 +147,7 @@ def run_rag_automation_case_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.workflow import run_workflow_by_id
-
-    return run_workflow_by_id(
+    return _run_workflow_entry(
         workflow_id="rag_automation_case_generation",
         user_input=user_input,
         prd_path=prd_path,
@@ -154,9 +169,7 @@ def run_ui_test_draft_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.workflow import run_workflow_by_id
-
-    return run_workflow_by_id(
+    return _run_workflow_entry(
         workflow_id="ui_test_draft",
         user_input=user_input,
         prd_path=prd_path,
@@ -178,9 +191,7 @@ def run_api_discovery_report_workflow(
     record_run: bool = True,
     use_llm: bool = False,
 ) -> RuntimeResult:
-    from runtime.workflow import run_workflow_by_id
-
-    return run_workflow_by_id(
+    return _run_workflow_entry(
         workflow_id="api_discovery_report",
         user_input=user_input,
         prd_path=prd_path,
@@ -202,9 +213,7 @@ def run_qa_report_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.workflow import run_workflow_by_id
-
-    return run_workflow_by_id(
+    return _run_workflow_entry(
         workflow_id="qa_report",
         user_input=user_input,
         prd_path=prd_path,

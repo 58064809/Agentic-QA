@@ -336,6 +336,34 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
+class ObservabilityConfig:
+    """LangSmith observability settings.
+
+    API keys are never stored in YAML. Set the configured env var locally when
+    tracing is enabled.
+    """
+
+    provider: str = "langsmith"
+    enabled: bool = False
+    endpoint: str = "https://api.smith.langchain.com"
+    api_key_env: str = "LANGSMITH_API_KEY"
+    project: str = "agentic-qa"
+    tags: list[str] = field(default_factory=lambda: ["agentic-qa"])
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None) -> ObservabilityConfig:
+        data = data or {}
+        return cls(
+            provider=str(data.get("provider", "langsmith")),
+            enabled=_bool_value(data.get("enabled"), default=False),
+            endpoint=str(data.get("endpoint", "https://api.smith.langchain.com")),
+            api_key_env=str(data.get("api_key_env", "LANGSMITH_API_KEY")),
+            project=str(data.get("project", "agentic-qa")),
+            tags=_string_list(data.get("tags")) or ["agentic-qa"],
+        )
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """统一应用配置。"""
 
@@ -349,6 +377,7 @@ class AppConfig:
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
     entries: EntryConfig = field(default_factory=EntryConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     profiles: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
@@ -373,6 +402,7 @@ class AppConfig:
             runtime=RuntimeConfig.from_dict(raw.get("runtime")),
             entries=EntryConfig.from_dict(raw.get("entries")),
             logging=LoggingConfig.from_dict(raw.get("logging")),
+            observability=ObservabilityConfig.from_dict(raw.get("observability")),
             profiles={
                 str(key): _mapping(value) for key, value in _mapping(raw.get("profiles")).items()
             },

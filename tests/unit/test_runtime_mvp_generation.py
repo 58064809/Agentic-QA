@@ -130,7 +130,7 @@ def test_mvp_dry_run_generates_two_drafts_without_writing(tmp_path):
     assert result.run_status == "interrupted"
     assert result.review_status == "needs_human_review"
     assert result.next_action == "wait_for_review"
-    assert "artifact_preview_writer_node" in result.executed_nodes
+    assert "artifact_preview_writer" in result.executed_nodes
     assert result.wrote_file
     assert (repo_root / result.output_paths["testcases"]).is_file()
     assert set(result.draft_artifacts) == {"requirement_analysis", "testcases"}

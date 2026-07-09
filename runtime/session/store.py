@@ -1,16 +1,22 @@
-"""Session 持久化管理：元数据 + LangGraph SqliteSaver"""
+"""Session persistence backed by LangGraph Store."""
 
 from __future__ import annotations
 
-import json
+import os
 import uuid
+from contextlib import AbstractContextManager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from langgraph.store.base import BaseStore
+from langgraph.store.memory import InMemoryStore
+
 SESSION_ID_DEFAULT = "default"
-SESSIONS_DIR = ".runtime/sessions"
+STORE_DSN_ENV = "AGENTIC_QA_STORE_POSTGRES_DSN"
+SESSION_NAMESPACE_ROOT = ("agentic-qa", "sessions")
+METADATA_KEY = "metadata"
 
 
 @dataclass
@@ -42,77 +48,99 @@ class SessionMetadata:
 
 
 class SessionStore:
-    """管理 session 元数据文件和 SqliteSaver 数据库文件的路径与读写。"""
+    """Manage session metadata and history through LangGraph Store."""
 
-    def __init__(self, base_dir: Path) -> None:
+    def __init__(self, base_dir: Path, store: BaseStore | None = None) -> None:
         self.base_dir = base_dir
+        self._store_context: AbstractContextManager[BaseStore] | None = None
+        self.store = store or self._default_store()
 
-    # ── 路径 ─────────────────────────────────────────────────
+    # ── LangGraph Store namespaces ────────────────────────────
 
-    def session_dir(self, session_id: str) -> Path:
-        return self.base_dir / SESSIONS_DIR / session_id
+    def metadata_namespace(self, session_id: str) -> tuple[str, ...]:
+        return (*SESSION_NAMESPACE_ROOT, session_id, "metadata")
 
-    def metadata_path(self, session_id: str) -> Path:
-        return self.session_dir(session_id) / "metadata.json"
-
-    def checkpoint_db_path(self, session_id: str) -> str:
-        """返回 SqliteSaver 使用的数据库文件路径（str）。"""
-        path = self.session_dir(session_id) / "checkpoints.db"
-        return str(path)
+    def history_namespace(self, session_id: str) -> tuple[str, ...]:
+        return (*SESSION_NAMESPACE_ROOT, session_id, "history")
 
     # ── 元数据读写 ───────────────────────────────────────────
 
     def load_metadata(self, session_id: str) -> SessionMetadata | None:
-        path = self.metadata_path(session_id)
-        if not path.is_file():
+        item = self.store.get(self.metadata_namespace(session_id), METADATA_KEY)
+        if item is None:
             return None
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            return SessionMetadata.from_dict(data)
-        except (json.JSONDecodeError, KeyError, TypeError):
+            return SessionMetadata.from_dict(dict(item.value))
+        except (KeyError, TypeError):
             return None
 
     def save_metadata(self, meta: SessionMetadata) -> None:
-        path = self.metadata_path(meta.session_id)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(meta.to_dict(), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        self.store.put(self.metadata_namespace(meta.session_id), METADATA_KEY, meta.to_dict())
 
     def delete_session(self, session_id: str) -> None:
-        sdir = self.session_dir(session_id)
-        if sdir.is_dir():
-            import shutil
-
-            shutil.rmtree(sdir)
+        self.store.delete(self.metadata_namespace(session_id), METADATA_KEY)
+        self._delete_namespace_items(self.history_namespace(session_id))
 
     def session_exists(self, session_id: str) -> bool:
-        return self.metadata_path(session_id).is_file()
+        return self.store.get(self.metadata_namespace(session_id), METADATA_KEY) is not None
 
     def append_history(self, session_id: str, role: str, content: str) -> None:
-        """追加一条历史记录到 history.jsonl。"""
-        path = self.session_dir(session_id) / "history.jsonl"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        entry = json.dumps(
-            {"role": role, "content": content, "timestamp": datetime.now(timezone.utc).isoformat()},
-            ensure_ascii=False,
+        """Append one message to the session history collection."""
+        meta = self.load_metadata(session_id)
+        sequence = (meta.history_count if meta else 0) + 1
+        timestamp = datetime.now(timezone.utc).isoformat()
+        key = f"{sequence:012d}-{uuid.uuid4().hex[:8]}"
+        self.store.put(
+            self.history_namespace(session_id),
+            key,
+            {
+                "role": role,
+                "content": content,
+                "timestamp": timestamp,
+                "sequence": sequence,
+            },
         )
-        with path.open("a", encoding="utf-8") as f:
-            f.write(entry + "\n")
 
     def load_history(self, session_id: str, max_lines: int = 50) -> list[dict[str, str]]:
-        """加载最近的历史记录。"""
-        path = self.session_dir(session_id) / "history.jsonl"
-        if not path.is_file():
-            return []
-        lines = path.read_text(encoding="utf-8").strip().split("\n")
-        history: list[dict[str, str]] = []
-        for line in lines[-max_lines:]:
-            line = line.strip()
-            if line:
-                try:
-                    history.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
-        return history
+        """Load recent session history from LangGraph Store."""
+        items = self.store.search(
+            self.history_namespace(session_id),
+            limit=max(max_lines, 1000),
+        )
+        values = [dict(item.value) for item in items]
+        values.sort(key=lambda item: int(item.get("sequence") or 0))
+        return [
+            {
+                "role": str(item.get("role") or ""),
+                "content": str(item.get("content") or ""),
+                "timestamp": str(item.get("timestamp") or ""),
+            }
+            for item in values[-max_lines:]
+        ]
+
+    def close(self) -> None:
+        if self._store_context is not None:
+            self._store_context.__exit__(None, None, None)
+            self._store_context = None
+
+    def _default_store(self) -> BaseStore:
+        dsn = os.getenv(STORE_DSN_ENV)
+        if not dsn:
+            return InMemoryStore()
+        try:
+            from langgraph.store.postgres import PostgresStore
+        except ImportError:
+            return InMemoryStore()
+        context = PostgresStore.from_conn_string(dsn)
+        store = context.__enter__()
+        store.setup()
+        self._store_context = context
+        return store
+
+    def _delete_namespace_items(self, namespace: tuple[str, ...]) -> None:
+        while True:
+            items = self.store.search(namespace, limit=100)
+            if not items:
+                return
+            for item in items:
+                self.store.delete(namespace, item.key)

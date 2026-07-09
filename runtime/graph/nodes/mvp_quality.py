@@ -221,7 +221,6 @@ def requirement_analysis_quality_check_node(
 ) -> QAWorkflowState:
     if state.task_type not in {TASK_ANALYSIS, TASK_MVP}:
         return state
-    state.record_node("requirement_analysis_quality_check_node")
     if state.errors:
         return state
     quality_error_start = len(state.quality_errors)
@@ -300,7 +299,6 @@ def requirement_analysis_quality_check_node(
 def testcase_mvp_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
     if state.task_type not in {TASK_TESTCASE_GENERATION, TASK_MVP}:
         return state
-    state.record_node("testcase_quality_check_node")
     if state.errors:
         return state
     quality_error_start = len(state.quality_errors)

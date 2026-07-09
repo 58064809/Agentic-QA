@@ -134,3 +134,23 @@ LangGraph 的 store 用于跨 thread 的长期数据；当前 QA 产物流转恢
 ## 目标态扩展
 
 后续如需把完整运行尝试、节点 attempt、错误、质量检查、prompt/output 等细粒度记录全部沉淀回 PRD 工作区，应作为单独重构处理。此类字段可以作为目标态目录结构设计，但不能描述成当前已完整实现。
+
+## LangSmith Observability
+
+复杂 LangGraph workflow 的 trace、debug、状态转移可视化、evaluate 和 runtime metrics 使用 LangSmith。Runtime 不再自研节点事件流文件；本地 `.runtime/runs/<run-id>/` 只保存恢复、审核、RAG 召回和摘要所需记录。
+
+启用方式：
+
+```yaml
+observability:
+  provider: langsmith
+  enabled: true
+  api_key_env: LANGSMITH_API_KEY
+  project: agentic-qa
+```
+
+```powershell
+$env:LANGSMITH_API_KEY="<your-langsmith-api-key>"
+```
+
+Runtime 会把 `workflow_id`、`run_id`、`thread_id`、project/env、tags 写入 LangGraph runnable config metadata，实际 trace 和 metrics 由 LangSmith 保存和展示。

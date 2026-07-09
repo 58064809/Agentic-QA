@@ -146,7 +146,7 @@ history:
   - turn: 2
     user_input: "继续..."
     ...
-checkpoint_path: ".runtime/sessions/<session_id>/"
+store_namespace: ("agentic-qa", "sessions", "<session_id>")
 status: "active | completed | expired"
 ```
 
@@ -168,39 +168,27 @@ status: "active | completed | expired"
 
 ## 四、持久化
 
-### 持久化存储结构
+### Store 与 Checkpointer 分工
 
-```
-.runtime/
-├── sessions/                          # Session 持久化
-│   ├── <session_id>/
-│   │   ├── session.yml                # Session 元数据
-│   │   ├── history.jsonl              # 对话历史（每轮一行 JSON）
-│   │   ├── context.json               # 当前上下文快照
-│   │   ├── checkpoints/               # LangGraph checkpoint
-│   │   │   ├── checkpoint_1.pkl
-│   │   │   └── checkpoint_2.pkl
-│   │   └── artifacts/                 # 本轮 session 产出的文件引用
-│   │       └── links.json
-│   └── index.yml                      # 所有 session 索引
-├── runs/                              # 运行记录（保持兼容）
-│   └── <run_id>/
-│       ├── run-summary.json
-│       ├── run-summary.md
-│       ├── run-state.json
-│       └── checkpointer.pkl
-└── config.yml                         # Runtime 全局配置（可选）
+Runtime 区分 LangGraph 的两类持久化能力：
+
+- **Store**：跨 thread 的长期数据，当前用于 session 元数据和对话历史。
+- **Checkpointer**：单个 thread 的图状态，用于中断恢复、失败恢复、human-in-the-loop 和 time travel。
+
+`runtime/session/store.py` 使用 LangGraph `BaseStore` 接口保存 session 数据：
+
+| 数据 | LangGraph Store namespace | key | 用途 |
+|------|---------------------------|-----|------|
+| Session 元数据 | `("agentic-qa", "sessions", "<id>", "metadata")` | `metadata` | thread_id、最近 PRD、最近意图、历史计数 |
+| 对话历史 | `("agentic-qa", "sessions", "<id>", "history")` | `<sequence>-<uuid>` | 每轮对话输入/输出 |
+
+本地未配置 Store DSN 时使用 `InMemoryStore`，适合单进程调试和单元测试。需要跨进程长期保存 session 时，设置：
+
+```powershell
+$env:AGENTIC_QA_STORE_POSTGRES_DSN="postgresql://postgres:<password>@localhost:5432/postgres?sslmode=disable"
 ```
 
-### Session 持久化
-
-| 数据 | 存储位置 | 格式 | 用途 |
-|------|---------|------|------|
-| Session 元数据 | `sessions/<id>/session.yml` | YAML | 创建时间、最后活跃、状态 |
-| 对话历史 | `sessions/<id>/history.jsonl` | JSONL | 每轮对话的输入/输出/路由结果 |
-| 上下文快照 | `sessions/<id>/context.json` | JSON | 当前 PRD、工作流状态、偏好 |
-| Checkpoints | `sessions/<id>/checkpoints/` | PKL | LangGraph 状态恢复 |
-| 产物引用 | `sessions/<id>/artifacts/links.json` | JSON | 此生环节点产出的文件路径列表 |
+该连接串只从环境变量读取，不写入仓库。
 
 ### 运行记录持久化
 
@@ -210,7 +198,7 @@ status: "active | completed | expired"
 .runtime/runs/<run_id>/run-summary.json
 .runtime/runs/<run_id>/run-summary.md
 .runtime/runs/<run_id>/run-state.json
-.runtime/runs/<run_id>/checkpointer.pkl
+.runtime/runs/<run_id>/checkpoint-manifest.json
 ```
 
 运行记录包含：意图、目标 PRD、LLM 调用次数、执行状态、产物路径、错误摘要。不记录密钥或敏感信息。
@@ -307,3 +295,9 @@ status: "active | completed | expired"
 4. **异步通知**：长时间运行的任务完成后推送通知
 5. **Web Dashboard**：可视化查看 session、运行记录和产物状态
 6. **Session 导出**：将完整对话历史和产物导出为可分享文档
+
+## LangSmith Observability
+
+Runtime 的 LangGraph trace、debug、状态转移可视化、evaluate 和 runtime metrics 交给 LangSmith。启用 `observability.provider=langsmith` 与 `observability.enabled=true`，并设置 `LANGSMITH_API_KEY` 后，Runner 会在 LangGraph config 中附加 `run_name`、`tags` 和 `metadata`。
+
+本地 `.runtime/runs/<run_id>/` 不保存节点事件流，只保留 run summary、run state、graph state、review events、RAG trace 和 checkpoint manifest。

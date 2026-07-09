@@ -56,7 +56,7 @@ def _build_rag_context(state: QAWorkflowState) -> str:
         retrieval = manager.retrieve(query or state.user_input)
         state.rag_retrievals.append(
             {
-                "node": state.executed_nodes[-1] if state.executed_nodes else "",
+                "node": state.task_type or state.intent or "",
                 **retrieval.to_trace(),
             }
         )
@@ -1220,7 +1220,6 @@ generated_by: Runtime MVP Review Grade Draft
 def requirement_analysis_generation_node(state: QAWorkflowState) -> QAWorkflowState:
     if state.task_type not in {TASK_ANALYSIS, TASK_MVP}:
         return state
-    state.record_node("requirement_analysis_generation_node")
     if state.errors:
         return state
 
@@ -1253,7 +1252,6 @@ def requirement_analysis_generation_node(state: QAWorkflowState) -> QAWorkflowSt
 def testcase_generation_mvp_node(state: QAWorkflowState) -> QAWorkflowState:
     if state.task_type not in {TASK_TESTCASE_GENERATION, TASK_MVP}:
         return state
-    state.record_node("testcase_generation_node")
     if state.errors:
         return state
 

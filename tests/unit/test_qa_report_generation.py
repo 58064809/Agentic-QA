@@ -136,7 +136,7 @@ def test_qa_report_promote_writes_formal_artifact(tmp_path):
     )
     assert resumed.success
     assert resumed.review_status == "confirmed"
-    assert "artifact_promoter_node" in resumed.executed_nodes
+    assert "artifact_promoter" in resumed.executed_nodes
     formal = repo_root / "prd/demo-requirement/artifacts/qa-report.md"
     assert formal.is_file()
     assert "status: confirmed" in formal.read_text(encoding="utf-8")

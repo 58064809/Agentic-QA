@@ -309,7 +309,6 @@ def _remap_existing_output_paths(
 
 
 def artifact_preview_writer_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
-    state.record_node("artifact_preview_writer_node")
     if state.errors or state.quality_errors:
         return state
     if state.review_status == "not_started":

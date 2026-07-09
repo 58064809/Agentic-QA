@@ -12,6 +12,10 @@ Runtime 通过 `runtime.config.load_app_config()` 按以下顺序加载并合并
 
 后加载的文件覆盖先加载的文件。环境变量仍由各模块作为最高优先级处理。
 
+如果新 clone 后没有 `configs/config.yaml`，Runtime 会使用代码内置默认值启动；
+`configs/config.example.yaml` 只是可复制的完整样例，不是运行必需文件。默认值必须保持
+不包含密钥，真实连接串和 token 仍只允许通过环境变量提供。
+
 ## 推荐用法
 
 复制示例后按需修改：
@@ -114,6 +118,10 @@ workspace:
 - `checkpoint_postgres_setup`：是否在启动 checkpointer 时执行 `.setup()` 创建/迁移表。
 - `workspace.*`：统一约束 PRD 工作区和运行记录的目录命名。
 
+Session 元数据和历史使用 LangGraph Store，独立于 checkpointer。需要跨进程长期保存 session 时，
+设置 `AGENTIC_QA_STORE_POSTGRES_DSN`；未设置时使用 `InMemoryStore` 作为本地调试兜底。
+Store 连接串同样只能通过环境变量提供，不能写入 YAML。
+
 本地 PostgreSQL 示例：
 
 ```yaml
@@ -197,3 +205,24 @@ agentic-qa rag search "边界值 活动玩法"
 - `status`：查看当前 RAG 配置、索引就绪状态和索引 manifest。
 - `build`：按当前配置强制重建索引。
 - `search`：按当前配置执行一次检索，并输出可审计的召回来源。
+
+## LangSmith 可观测性
+
+复杂 workflow 的 trace、debug、状态转移可视化、evaluate 和 runtime metrics 交给 LangSmith。仓库只保存非敏感配置，API key 必须来自环境变量：
+
+```yaml
+observability:
+  provider: langsmith
+  enabled: true
+  endpoint: https://api.smith.langchain.com
+  api_key_env: LANGSMITH_API_KEY
+  project: agentic-qa
+  tags:
+    - agentic-qa
+```
+
+```powershell
+$env:LANGSMITH_API_KEY="<your-langsmith-api-key>"
+```
+
+启用后 Runtime 会给 LangGraph 调用配置 `run_name`、`tags` 和 `metadata`，LangSmith 负责保存 trace、调试视图和运行指标；本地 run record 不再保存节点事件流。

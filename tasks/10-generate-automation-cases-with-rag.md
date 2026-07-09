@@ -25,6 +25,29 @@
 9. 写入 RAG 运行记录，并在记录中登记 preview、yaml_cases、review 路径。
 10. 输出候选预览、YAML sidecar 和 Review Gate 待确认项。
 
+
+## Runtime graph 拆分
+
+为避免 `rag_automation_case_generation` 父 workflow 持续膨胀，当前 Runtime 使用 LangGraph subgraphs：
+
+```text
+rag_automation_case_generation
+  -> context_pipeline: rag_automation_context_pipeline
+  -> case_generation: rag_automation_case_generation_core
+  -> artifact_preview_writer
+  -> review_gate
+  -> promote_pipeline: rag_automation_promote_pipeline
+```
+
+扩展规则：
+
+- 上下文加载、PRD 规范化、OpenAPI 范围召回相关节点放入 `rag_automation_context_pipeline`。
+- YAML 生成、质量校验、修订相关节点放入 `rag_automation_case_generation_core`。
+- 审核通过后的正式发布和 metadata 更新放入 `rag_automation_promote_pipeline`。
+- `review_gate` 保留在父图，确保 LangGraph interrupt 暂停点清晰可恢复。
+- 不要把新增阶段直接堆进父 workflow；父图只负责阶段编排和跨阶段条件路由。
+- subgraph 的 trace、debug、状态转移可视化和 runtime metrics 使用 LangSmith；本地运行记录只保存恢复、审核和产物审计所需信息。
+
 ## 输出要求
 
 - YAML 草稿默认 `status: needs_human_review`。

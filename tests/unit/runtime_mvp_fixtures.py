@@ -40,6 +40,15 @@ def create_mvp_repo(root: Path) -> Path:
         "workflows/runtime/rag-automation-case.workflow.yml": (
             REPO_ROOT / "workflows/runtime/rag-automation-case.workflow.yml"
         ).read_text(encoding="utf-8"),
+        "workflows/runtime/rag-automation-context.subgraph.workflow.yml": (
+            REPO_ROOT / "workflows/runtime/rag-automation-context.subgraph.workflow.yml"
+        ).read_text(encoding="utf-8"),
+        "workflows/runtime/rag-automation-case-generation.subgraph.workflow.yml": (
+            REPO_ROOT / "workflows/runtime/rag-automation-case-generation.subgraph.workflow.yml"
+        ).read_text(encoding="utf-8"),
+        "workflows/runtime/rag-automation-promote.subgraph.workflow.yml": (
+            REPO_ROOT / "workflows/runtime/rag-automation-promote.subgraph.workflow.yml"
+        ).read_text(encoding="utf-8"),
         "prompts/requirement-analysis-prompt.md": "需求分析 Prompt",
         "prompts/testcase-design-prompt.md": "测试用例 Prompt",
         "prompts/api-test-generation.md": (REPO_ROOT / "prompts/api-test-generation.md").read_text(

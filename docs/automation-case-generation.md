@@ -106,6 +106,17 @@ confidence: high
 
 完整格式见 `knowledge/automation/yaml-case-schema.md`。
 
+
+## Runtime workflow 结构
+
+RAG 自动化 YAML 生成使用 LangGraph subgraphs 拆分阶段，避免父 workflow 继续膨胀：
+
+- `rag_automation_context_pipeline`：命令路由、workflow 选择、需求规范化、上下文加载和 OpenAPI 范围召回。
+- `rag_automation_case_generation_core`：YAML 草稿生成、质量校验和按 Review Gate 意见修订。
+- `rag_automation_promote_pipeline`：审核通过后的正式产物发布和 metadata 更新。
+
+父图 `rag_automation_case_generation` 只保留阶段编排、`artifact_preview_writer` 和 `review_gate`，Review Gate 继续通过 LangGraph interrupt 暂停并等待人工输入。复杂 graph 的 trace、debug、状态转移可视化和 runtime metrics 使用 LangSmith，本地运行记录不再保存节点事件流。
+
 ## Review Gate
 
 AI 生成的 YAML 只表示候选草稿，不得绕过人工确认。人工至少需要确认：

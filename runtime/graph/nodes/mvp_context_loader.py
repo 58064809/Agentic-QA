@@ -35,7 +35,6 @@ IMAGE_IGNORED_WARNING = (
 
 
 def mvp_command_router_node(state: QAWorkflowState) -> QAWorkflowState:
-    state.record_node("mvp_command_router_node")
     allowed = {
         TASK_ANALYSIS,
         TASK_TESTCASE_GENERATION,
@@ -53,7 +52,6 @@ def mvp_command_router_node(state: QAWorkflowState) -> QAWorkflowState:
 
 
 def mvp_workflow_selector_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
-    state.record_node("mvp_workflow_selector_node")
     if state.errors:
         return state
 
@@ -142,7 +140,6 @@ def _detect_requirement_images(
 
 
 def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
-    state.record_node("mvp_context_loader_node")
     if state.errors:
         return state
 

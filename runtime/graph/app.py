@@ -9,6 +9,31 @@ def default_repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def _run_mvp_graph_facade(
+    function_name: str,
+    *,
+    user_input: str,
+    prd_path: Path | str,
+    repo_root: Path | None,
+    approve_write: bool,
+    debug_approve_preview_write: bool,
+    record_run: bool,
+    use_llm: bool,
+) -> RuntimeResult:
+    from runtime.graph import mvp_graph
+
+    run_fn = getattr(mvp_graph, function_name)
+    return run_fn(
+        user_input=user_input,
+        prd_path=Path(prd_path),
+        repo_root=repo_root,
+        approve_write=approve_write,
+        debug_approve_preview_write=debug_approve_preview_write,
+        record_run=record_run,
+        use_llm=use_llm,
+    )
+
+
 def run_requirement_analysis_workflow(
     user_input: str,
     prd_path: Path | str,
@@ -19,9 +44,8 @@ def run_requirement_analysis_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.graph.mvp_graph import run_requirement_analysis_workflow as run_fn
-
-    return run_fn(
+    return _run_mvp_graph_facade(
+        "run_requirement_analysis_workflow",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -42,9 +66,8 @@ def run_mvp_testcase_generation_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.graph.mvp_graph import run_mvp_testcase_generation_workflow as run_fn
-
-    return run_fn(
+    return _run_mvp_graph_facade(
+        "run_mvp_testcase_generation_workflow",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -65,9 +88,8 @@ def run_mvp_analysis_and_testcases_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.graph.mvp_graph import run_mvp_analysis_and_testcases_workflow as run_fn
-
-    return run_fn(
+    return _run_mvp_graph_facade(
+        "run_mvp_analysis_and_testcases_workflow",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -88,9 +110,8 @@ def run_api_test_draft_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.graph.mvp_graph import run_api_test_draft_workflow as run_fn
-
-    return run_fn(
+    return _run_mvp_graph_facade(
+        "run_api_test_draft_workflow",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -111,9 +132,8 @@ def run_rag_automation_case_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.graph.mvp_graph import run_rag_automation_case_workflow as run_fn
-
-    return run_fn(
+    return _run_mvp_graph_facade(
+        "run_rag_automation_case_workflow",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -134,9 +154,8 @@ def run_ui_test_draft_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.graph.mvp_graph import run_ui_test_draft_workflow as run_fn
-
-    return run_fn(
+    return _run_mvp_graph_facade(
+        "run_ui_test_draft_workflow",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -157,9 +176,8 @@ def run_api_discovery_report_workflow(
     record_run: bool = True,
     use_llm: bool = False,
 ) -> RuntimeResult:
-    from runtime.graph.mvp_graph import run_api_discovery_report_workflow as run_fn
-
-    return run_fn(
+    return _run_mvp_graph_facade(
+        "run_api_discovery_report_workflow",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -180,9 +198,8 @@ def run_qa_report_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    from runtime.graph.mvp_graph import run_qa_report_workflow as run_fn
-
-    return run_fn(
+    return _run_mvp_graph_facade(
+        "run_qa_report_workflow",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,

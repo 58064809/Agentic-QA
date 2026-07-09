@@ -49,8 +49,7 @@ def test_interrupt_review_gate_approve_resume_writes_candidate_preview(tmp_path)
     assert resumed.run_status == "completed"
     assert resumed.review_status == "confirmed"
     assert resumed.wrote_file
-    assert "artifact_preview_writer_node" in resumed.executed_nodes
-    assert "artifact_promoter_node" in resumed.executed_nodes
+    assert "artifact_promoter" in resumed.executed_nodes
     preview_path = repo_root / resumed.output_paths["testcases"]
     assert preview_path.is_file()
     assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()

@@ -9,7 +9,6 @@ from runtime.workflow.registry import call_handler, import_handler
 
 
 def passthrough_handler(state: QAWorkflowState) -> QAWorkflowState:
-    state.record_node("registry_passthrough_handler")
     return state
 
 

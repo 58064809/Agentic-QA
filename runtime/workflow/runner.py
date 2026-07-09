@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from langgraph.types import Command
 
@@ -64,8 +67,59 @@ def workflow_id_for_task_type(task_type: str | None) -> str:
     return DEFAULT_WORKFLOW_REGISTRY.workflow_id_for_task_type(task_type)
 
 
-def _graph_config(thread_id: str) -> dict[str, dict[str, str]]:
-    return {"configurable": {"thread_id": thread_id}}
+def _langsmith_enabled(app_config) -> bool:
+    observability = app_config.observability
+    if observability.provider.strip().lower() != "langsmith":
+        return False
+    if observability.enabled:
+        return True
+    return os.getenv("LANGSMITH_TRACING", "").strip().lower() in {"1", "true", "yes", "on"} or (
+        os.getenv("LANGCHAIN_TRACING_V2", "").strip().lower() in {"1", "true", "yes", "on"}
+    )
+
+
+def _configure_langsmith_environment(app_config) -> None:
+    observability = app_config.observability
+    if not _langsmith_enabled(app_config):
+        return
+    os.environ.setdefault("LANGSMITH_TRACING", "true")
+    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+    os.environ.setdefault("LANGSMITH_ENDPOINT", observability.endpoint)
+    os.environ.setdefault("LANGCHAIN_ENDPOINT", observability.endpoint)
+    os.environ.setdefault("LANGSMITH_PROJECT", observability.project)
+    os.environ.setdefault("LANGCHAIN_PROJECT", observability.project)
+    api_key = os.getenv(observability.api_key_env, "").strip()
+    if api_key:
+        os.environ.setdefault("LANGSMITH_API_KEY", api_key)
+        os.environ.setdefault("LANGCHAIN_API_KEY", api_key)
+
+
+def _graph_config(
+    thread_id: str,
+    *,
+    workflow_id: str | None = None,
+    run_id: str | None = None,
+    app_config=None,
+) -> dict[str, object]:
+    config: dict[str, object] = {"configurable": {"thread_id": thread_id}}
+    if app_config is None or not _langsmith_enabled(app_config):
+        return config
+    observability = app_config.observability
+    tags = list(dict.fromkeys([*observability.tags, workflow_id or "workflow"]))
+    config.update(
+        {
+            "run_name": workflow_id or "agentic-qa-workflow",
+            "tags": tags,
+            "metadata": {
+                "project": app_config.project.name,
+                "env": app_config.project.env,
+                "workflow_id": workflow_id,
+                "run_id": run_id,
+                "thread_id": thread_id,
+            },
+        }
+    )
+    return config
 
 
 def _checkpointer_kwargs(app_config) -> dict[str, object]:
@@ -90,10 +144,95 @@ def _state_from_checkpoint_or_default(
     return default_state
 
 
+@dataclass(frozen=True)
+class WorkflowStreamResult:
+    state: QAWorkflowState
+    executed_nodes: list[str]
+    interrupts: Any = None
+
+
+class WorkflowStreamError(RuntimeError):
+    def __init__(
+        self,
+        original: Exception,
+        *,
+        state: QAWorkflowState,
+        executed_nodes: list[str],
+        interrupts: Any = None,
+    ) -> None:
+        super().__init__(str(original))
+        self.original = original
+        self.state = state
+        self.executed_nodes = executed_nodes
+        self.interrupts = interrupts
+
+
+def _node_names_from_stream_chunk(chunk: Any) -> list[str]:
+    payload = chunk
+    if (
+        isinstance(chunk, tuple)
+        and len(chunk) == 2
+        and isinstance(chunk[0], tuple)
+        and isinstance(chunk[1], dict)
+    ):
+        payload = chunk[1]
+
+    if not isinstance(payload, dict):
+        return []
+
+    nodes = []
+    for node_name in payload:
+        node = str(node_name)
+        if not node or node.startswith("__"):
+            continue
+        nodes.append(node)
+    return nodes
+
+
+def _stream_graph_updates(
+    graph,
+    input_value: Any,
+    graph_config: dict[str, dict[str, str]],
+    default_state: QAWorkflowState,
+) -> WorkflowStreamResult:
+    executed_nodes: list[str] = []
+    interrupts: Any = None
+    try:
+        for chunk in graph.stream(
+            input_value,
+            config=graph_config,
+            stream_mode="updates",
+            subgraphs=True,
+        ):
+            payload = chunk[1] if isinstance(chunk, tuple) and len(chunk) == 2 else chunk
+            if isinstance(payload, dict) and "__interrupt__" in payload:
+                interrupts = payload["__interrupt__"]
+            executed_nodes.extend(_node_names_from_stream_chunk(chunk))
+    except Exception as exc:
+        state = _state_from_checkpoint_or_default(graph, graph_config, default_state)
+        if interrupts is not None:
+            state.model_extra["__interrupt__"] = interrupts
+        raise WorkflowStreamError(
+            exc,
+            state=state,
+            executed_nodes=executed_nodes,
+            interrupts=interrupts,
+        ) from exc
+
+    state = _state_from_checkpoint_or_default(graph, graph_config, default_state)
+    if interrupts is not None:
+        state.model_extra["__interrupt__"] = interrupts
+    return WorkflowStreamResult(
+        state=state,
+        executed_nodes=executed_nodes,
+        interrupts=interrupts,
+    )
+
+
 def _interrupt_metadata(state: QAWorkflowState) -> list[dict]:
     """Extract LangGraph interrupt info from the Pydantic model (extra field)."""
     raw = state.model_extra.get("__interrupt__") if state.model_extra else None
-    interrupts = list(raw) if isinstance(raw, list) else []
+    interrupts = list(raw) if isinstance(raw, list | tuple) else []
     return [
         {"id": str(getattr(item, "id", "")), "value": getattr(item, "value", None)}
         for item in interrupts
@@ -114,8 +253,6 @@ def _finalize_state(state: QAWorkflowState) -> QAWorkflowState:
             "review_notes": None,
             "interrupt": interrupts,
         }
-        if "human_review_node" not in state.executed_nodes:
-            state.executed_nodes.append("human_review_node")
     elif state.run_status in {
         "not_started",
         "running",
@@ -143,6 +280,7 @@ def run_workflow_by_id(
     run_id, thread_id = create_run_identity()
     run_record_dir = run_record_dir_for(root, run_id) if record_run else None
     app_config = load_app_config(root)
+    _configure_langsmith_environment(app_config)
     config = OpenAICompatibleConfig.from_app_config(app_config.llm)
     preview_write = debug_approve_preview_write or approve_write
 
@@ -182,20 +320,35 @@ def run_workflow_by_id(
         return result
     try:
         graph = build_graph_from_spec(spec, root, checkpointer=checkpointer)
-        graph_config = _graph_config(thread_id)
+        graph_config = _graph_config(
+            thread_id,
+            workflow_id=workflow_id,
+            run_id=run_id if record_run else None,
+            app_config=app_config,
+        )
         try:
-            final_state = QAWorkflowState.model_validate(
-                graph.invoke(initial_state, config=graph_config)
-            )
+            stream_result = _stream_graph_updates(graph, initial_state, graph_config, initial_state)
+            final_state = stream_result.state
+            executed_nodes = stream_result.executed_nodes
         except Exception as exc:
-            final_state = _state_from_checkpoint_or_default(graph, graph_config, initial_state)
+            if isinstance(exc, WorkflowStreamError):
+                final_state = exc.state
+                executed_nodes = exc.executed_nodes
+                original = exc.original
+            else:
+                final_state = _state_from_checkpoint_or_default(graph, graph_config, initial_state)
+                executed_nodes = []
+                original = exc
             final_state.run_id = run_id if record_run else None
             final_state.thread_id = thread_id
-            final_state.errors.append(f"Workflow 执行异常，可修复后重试: {exc}")
+            final_state.errors.append(f"Workflow 执行异常，可修复后重试: {original}")
             final_state.run_status = "failed"
             final_state.next_action = "retry"
         _finalize_state(final_state)
-        result = RuntimeResult.from_state(final_state)
+        result = RuntimeResult.from_state(
+            final_state,
+            executed_nodes=executed_nodes,
+        )
         if record_run:
             return record_runtime_result(
                 result,
@@ -249,6 +402,7 @@ def resume_workflow_by_id(
     spec = load_workflow_spec_by_id(root, workflow_id)
     run_record_dir = run_record_dir_for(root, run_id)
     app_config = load_app_config(root)
+    _configure_langsmith_environment(app_config)
     checkpointer = load_checkpointer(
         run_record_dir,
         **_checkpointer_kwargs(app_config),
@@ -256,7 +410,12 @@ def resume_workflow_by_id(
     try:
         graph = build_graph_from_spec(spec, root, checkpointer=checkpointer)
         thread_id = thread_id_for_recorded_run(root, run_id)
-        graph_config = _graph_config(thread_id)
+        graph_config = _graph_config(
+            thread_id,
+            workflow_id=workflow_id,
+            run_id=run_id,
+            app_config=app_config,
+        )
 
         if action is None and user_input is None and resume_payload is None:
             snapshot = graph.get_state(graph_config)
@@ -270,7 +429,12 @@ def resume_workflow_by_id(
                 state.warnings.append("当前运行仍在人工审核暂停点，请使用 approve 或 reject。")
             else:
                 state.run_status = "completed" if state.success else "failed"
-            result = RuntimeResult.from_state(state)
+            previous = recorded_run_result(root, run_id)
+            previous_nodes = previous.get("executed_nodes")
+            result = RuntimeResult.from_state(
+                state,
+                executed_nodes=previous_nodes if isinstance(previous_nodes, list) else [],
+            )
             return record_runtime_result(
                 result,
                 root,
@@ -290,11 +454,18 @@ def resume_workflow_by_id(
             "needs_human_review" if previous_snapshot.next else previous_state.review_status
         )
         previous_run_status = "interrupted" if previous_snapshot.next else previous_state.run_status
-        final_state = QAWorkflowState.model_validate(
-            graph.invoke(Command(resume=decision), config=graph_config)
+        stream_result = _stream_graph_updates(
+            graph,
+            Command(resume=decision),
+            graph_config,
+            previous_state,
         )
+        final_state = stream_result.state
         _finalize_state(final_state)
-        result = RuntimeResult.from_state(final_state)
+        result = RuntimeResult.from_state(
+            final_state,
+            executed_nodes=stream_result.executed_nodes,
+        )
         append_review_event(
             result,
             root,
@@ -330,6 +501,7 @@ def retry_failed_workflow_for_run(
     spec = load_workflow_spec_by_id(root, workflow_id)
     run_record_dir = run_record_dir_for(root, run_id)
     app_config = load_app_config(root)
+    _configure_langsmith_environment(app_config)
     checkpointer = load_checkpointer(
         run_record_dir,
         **_checkpointer_kwargs(app_config),
@@ -337,7 +509,12 @@ def retry_failed_workflow_for_run(
     try:
         graph = build_graph_from_spec(spec, root, checkpointer=checkpointer)
         thread_id = thread_id_for_recorded_run(root, run_id)
-        graph_config = _graph_config(thread_id)
+        graph_config = _graph_config(
+            thread_id,
+            workflow_id=workflow_id,
+            run_id=run_id,
+            app_config=app_config,
+        )
         previous = recorded_run_result(root, run_id)
         state = QAWorkflowState.model_validate(previous)
         state.run_id = run_id
@@ -360,16 +537,28 @@ def retry_failed_workflow_for_run(
         apply_workflow_state_defaults(state, spec)
 
         try:
-            final_state = QAWorkflowState.model_validate(graph.invoke(state, config=graph_config))
+            stream_result = _stream_graph_updates(graph, state, graph_config, state)
+            final_state = stream_result.state
+            executed_nodes = stream_result.executed_nodes
         except Exception as exc:
-            final_state = _state_from_checkpoint_or_default(graph, graph_config, state)
+            if isinstance(exc, WorkflowStreamError):
+                final_state = exc.state
+                executed_nodes = exc.executed_nodes
+                original = exc.original
+            else:
+                final_state = _state_from_checkpoint_or_default(graph, graph_config, state)
+                executed_nodes = []
+                original = exc
             final_state.run_id = run_id
             final_state.thread_id = thread_id
-            final_state.errors.append(f"Workflow 重试仍然失败: {exc}")
+            final_state.errors.append(f"Workflow 重试仍然失败: {original}")
             final_state.run_status = "failed"
             final_state.next_action = "retry"
         _finalize_state(final_state)
-        result = RuntimeResult.from_state(final_state)
+        result = RuntimeResult.from_state(
+            final_state,
+            executed_nodes=executed_nodes,
+        )
         return record_runtime_result(
             result,
             root,

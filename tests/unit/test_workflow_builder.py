@@ -20,17 +20,14 @@ from runtime.workflow.schema import (  # noqa: E402
 
 
 def node_a(state: QAWorkflowState) -> QAWorkflowState:
-    state.record_node("node_a")
     return state
 
 
 def node_b(state: QAWorkflowState) -> QAWorkflowState:
-    state.record_node("node_b")
     return state
 
 
 def node_c(state: QAWorkflowState) -> QAWorkflowState:
-    state.record_node("node_c")
     return state
 
 
@@ -65,6 +62,13 @@ def graph_config(thread_id: str) -> dict[str, dict[str, str]]:
     return {"configurable": {"thread_id": thread_id}}
 
 
+def streamed_nodes(graph, state: QAWorkflowState, thread_id: str) -> list[str]:
+    nodes = []
+    for chunk in graph.stream(state, config=graph_config(thread_id), stream_mode="updates"):
+        nodes.extend(str(node) for node in chunk)
+    return nodes
+
+
 def test_build_graph_rejects_unknown_handler():
     spec = workflow_spec(
         nodes=[NodeSpec(id="a", type="python", handler="test_workflow_builder.missing")]
@@ -74,7 +78,7 @@ def test_build_graph_rejects_unknown_handler():
         build_graph_from_spec(spec, REPO_ROOT)
 
 
-@pytest.mark.parametrize("node_type", sorted(EXECUTABLE_NODE_TYPES))
+@pytest.mark.parametrize("node_type", sorted(EXECUTABLE_NODE_TYPES - {"subgraph"}))
 def test_build_graph_accepts_executable_node_types(node_type):
     spec = workflow_spec(
         nodes=[
@@ -84,11 +88,38 @@ def test_build_graph_accepts_executable_node_types(node_type):
     )
 
     graph = build_graph_from_spec(spec, REPO_ROOT)
-    state = QAWorkflowState.model_validate(
-        graph.invoke(qa_state(), config=graph_config(f"type-{node_type}"))
+    assert streamed_nodes(graph, qa_state(), f"type-{node_type}") == ["a"]
+
+
+def test_build_graph_accepts_subgraph_node(tmp_path):
+    workflow_root = tmp_path / "workflows" / "runtime"
+    workflow_root.mkdir(parents=True)
+    (workflow_root / "child.workflow.yml").write_text(
+        """
+id: child
+name: Child
+version: 1
+nodes:
+  - id: a
+    type: python
+    handler: test_workflow_builder.node_a
+edges:
+  - from: start
+    to: a
+  - from: a
+    to: end
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    spec = workflow_spec(
+        nodes=[NodeSpec(id="child_pipeline", type="subgraph", workflow="child")],
+        edges=[EdgeSpec(source="start", target="child_pipeline")],
     )
 
-    assert state.executed_nodes == ["node_a"]
+    graph = build_graph_from_spec(spec, tmp_path)
+
+    assert streamed_nodes(graph, qa_state(), "subgraph-node") == ["child_pipeline"]
 
 
 def test_workflow_spec_rejects_unsupported_node_type():
@@ -163,11 +194,7 @@ def test_default_edge_runs_when_no_other_condition_matches():
     )
 
     graph = build_graph_from_spec(spec, REPO_ROOT)
-    state = QAWorkflowState.model_validate(
-        graph.invoke(qa_state(), config=graph_config("default-fallback"))
-    )
-
-    assert state.executed_nodes == ["node_a", "node_c"]
+    assert streamed_nodes(graph, qa_state(), "default-fallback") == ["a", "c"]
 
 
 def test_default_edge_is_evaluated_after_explicit_conditions():
@@ -183,8 +210,4 @@ def test_default_edge_is_evaluated_after_explicit_conditions():
 
     graph = build_graph_from_spec(spec, REPO_ROOT)
     initial_state = qa_state(errors=["boom"])
-    state = QAWorkflowState.model_validate(
-        graph.invoke(initial_state, config=graph_config("default-order"))
-    )
-
-    assert state.executed_nodes == ["node_a", "node_b"]
+    assert streamed_nodes(graph, initial_state, "default-order") == ["a", "b"]

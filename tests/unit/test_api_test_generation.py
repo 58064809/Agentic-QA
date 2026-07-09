@@ -386,9 +386,9 @@ def test_rag_automation_case_workflow_runs_as_stategraph_sidecar(tmp_path):
     assert result.task_type == "api_test_draft"
     assert result.intent == "rag_automation_case_generation"
     assert result.review_status == "write_approved"
-    assert "mvp_context_loader_node" in result.executed_nodes
-    assert "api_test_generation_node" in result.executed_nodes
-    assert "artifact_preview_writer_node" in result.executed_nodes
+    assert "context_loader" in result.executed_nodes
+    assert "api_test_generator" in result.executed_nodes
+    assert "artifact_preview_writer" in result.executed_nodes
     assert "prompts/rag-automation-case-prompt.md" in result.loaded_files
     preview = repo_root / result.output_paths["api_test_draft"]
     assert preview.is_file()
@@ -417,7 +417,7 @@ def test_api_test_draft_promote_writes_formal_artifact(tmp_path):
 
     assert resumed.success
     assert resumed.review_status == "confirmed"
-    assert "artifact_promoter_node" in resumed.executed_nodes
+    assert "artifact_promoter" in resumed.executed_nodes
     formal = repo_root / "prd/demo-requirement/artifacts/api-test-draft.md"
     assert formal.is_file()
     assert "status: confirmed" in formal.read_text(encoding="utf-8")
@@ -460,8 +460,8 @@ def test_api_test_draft_needs_changes_routes_to_reviser_and_interrupts_again(tmp
     assert resumed.run_status == "interrupted"
     assert resumed.review_status == "needs_human_review"
     assert resumed.next_action == "wait_for_review"
-    assert "api_test_revision_node" in resumed.executed_nodes
-    assert "artifact_preview_writer_node" in resumed.executed_nodes
+    assert "api_test_reviser" in resumed.executed_nodes
+    assert "artifact_preview_writer" in resumed.executed_nodes
     assert resumed.human_review["interrupt"]
     preview = repo_root / f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
     assert "自动修订记录" in preview.read_text(encoding="utf-8")

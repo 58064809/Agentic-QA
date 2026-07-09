@@ -184,7 +184,6 @@ def _decision_from_action(
 
 
 def human_review_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
-    state.record_node("human_review_node")
     if state.errors or state.quality_errors:
         return state
 

@@ -52,6 +52,15 @@ logging:
   dir: logs
   redact_secrets: true
 
+observability:
+  provider: langsmith
+  enabled: false
+  endpoint: https://api.smith.langchain.com
+  api_key_env: LANGSMITH_API_KEY
+  project: agentic-qa
+  tags:
+    - agentic-qa
+
 workflow:
   enable_human_checkpoint: true
   default_checkpoint_node: requirement_analysis

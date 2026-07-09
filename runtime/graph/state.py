@@ -59,7 +59,6 @@ class QAWorkflowState(BaseModel):
     )
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
-    executed_nodes: list[str] = Field(default_factory=list)
     wrote_file: bool = False
     orchestration: str = "LangGraph StateGraph"
     run_id: str | None = None
@@ -84,6 +83,3 @@ class QAWorkflowState(BaseModel):
     @property
     def success(self) -> bool:
         return not self.errors and not self.quality_errors
-
-    def record_node(self, name: str) -> None:
-        self.executed_nodes.append(name)

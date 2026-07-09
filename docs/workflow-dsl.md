@@ -1,4 +1,4 @@
-﻿# Workflow DSL
+# Workflow DSL
 
 本文档定义 Agentic-QA Runtime 使用的最小 Workflow DSL。工作流用于描述一个 QA 任务如何被 Runtime 执行，包括入口意图、输入契约、节点列表、节点输入输出、路由条件、产物写入、失败策略、版本策略和确认门禁。
 
@@ -36,8 +36,9 @@ edges:
 
 - `id`、`name`、`version`、`nodes`、`edges` 为必填字段。
 - `version` 必须为大于等于 1 的整数。
-- `nodes[].type` 当前支持 `python`、`rag`、`agent`、`validator`、`writer`、`review_gate`、`tool`。
-- `nodes[].handler` 必须是可动态 import 的 Python callable；非 `python` 类型先作为语义化节点类型进入 DSL，Runtime 仍通过 handler 绑定实际执行逻辑。
+- `nodes[].type` 当前支持 `python`、`rag`、`agent`、`validator`、`writer`、`review_gate`、`tool`、`subgraph`。
+- 非 `subgraph` 节点的 `nodes[].handler` 必须是可动态 import 的 Python callable；非 `python` 类型先作为语义化节点类型进入 DSL，Runtime 仍通过 handler 绑定实际执行逻辑。
+- `subgraph` 节点必须使用 `workflow` 引用另一个 WorkflowSpec，不允许配置 `handler`。Runtime 会把被引用 WorkflowSpec 编译成 LangGraph subgraph 节点。
 - `edges[].from` 可以是 `start` 或已声明 node id。
 - `edges[].to` 可以是 `end` 或已声明 node id。
 - 同一 workflow 不允许重复 `node id` 或重复 `edge`。
@@ -77,6 +78,9 @@ edges:
 | `testcase_generation` | `workflows/runtime/testcase-generation.workflow.yml` | `testcase_generation` |
 | `api_test_draft` | `workflows/runtime/api-test-draft.workflow.yml` | `api_test_draft` |
 | `rag_automation_case_generation` | `workflows/runtime/rag-automation-case.workflow.yml` | `api_test_draft` |
+| `rag_automation_context_pipeline` | `workflows/runtime/rag-automation-context.subgraph.workflow.yml` |  |
+| `rag_automation_case_generation_core` | `workflows/runtime/rag-automation-case-generation.subgraph.workflow.yml` |  |
+| `rag_automation_promote_pipeline` | `workflows/runtime/rag-automation-promote.subgraph.workflow.yml` |  |
 | `ui_test_draft` | `workflows/runtime/ui-test-draft.workflow.yml` | `ui_test_draft` |
 | `api_discovery_report` | `workflows/runtime/api-discovery-report.workflow.yml` | `api_discovery_report` |
 | `qa_report` | `workflows/runtime/qa-report.workflow.yml` | `qa_report` |
@@ -342,6 +346,7 @@ edges:
 | `agent` | LLM Agent 节点，负责需求分析、用例生成、失败分析、报告生成等任务 |
 | `validator` | 质量检查节点，负责校验产物格式、字段、状态、覆盖度和规则约束 |
 | `review_gate` | 确认门禁节点，负责读取用户确认结果并决定后续流转 |
+| `subgraph` | LangGraph subgraph 节点，用 `workflow` 引用另一个 WorkflowSpec；用于把上下文准备、生成校验、发布等阶段拆成可维护子图 |
 | `router` | 路由节点，根据状态、意图或校验结果选择下一节点 |
 | `executor` | 执行节点，例如运行 pytest、Playwright 或其他测试命令 |
 | `writer` | 产物写入节点，负责候选产物、正式产物和版本索引写入 |

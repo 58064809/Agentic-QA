@@ -129,7 +129,6 @@ generated_by: agentic-qa-runtime
 def qa_report_generation_node(state: QAWorkflowState) -> QAWorkflowState:
     if state.task_type != TASK_QA_REPORT:
         return state
-    state.record_node("qa_report_generation_node")
     if state.errors:
         return state
 
@@ -162,7 +161,6 @@ def qa_report_generation_node(state: QAWorkflowState) -> QAWorkflowState:
 def qa_report_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
     if state.task_type != TASK_QA_REPORT:
         return state
-    state.record_node("qa_report_quality_check_node")
     if state.errors:
         return state
 

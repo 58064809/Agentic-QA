@@ -12,6 +12,7 @@ EXECUTABLE_NODE_TYPES = frozenset(
         "validator",
         "writer",
         "review_gate",
+        "subgraph",
         "tool",
     }
 )
@@ -55,7 +56,8 @@ class NodeSpec(BaseModel):
 
     id: str = Field(min_length=1)
     type: str = Field(min_length=1)
-    handler: str = Field(min_length=1)
+    handler: str | None = None
+    workflow: str | None = None
     failure_policy: FailurePolicy | None = None
 
     @field_validator("type")
@@ -66,6 +68,20 @@ class NodeSpec(BaseModel):
             supported = ", ".join(sorted(EXECUTABLE_NODE_TYPES))
             raise ValueError(f"unsupported node type: {normalized}; supported: {supported}")
         return normalized
+
+    @model_validator(mode="after")
+    def validate_execution_target(self) -> NodeSpec:
+        if self.type == "subgraph":
+            if not self.workflow:
+                raise ValueError(f"subgraph node 缂哄皯 workflow: {self.id}")
+            if self.handler:
+                raise ValueError(f"subgraph node 涓嶅簲璁剧疆 handler: {self.id}")
+            return self
+        if not self.handler:
+            raise ValueError(f"Workflow node 缂哄皯 handler: {self.id}")
+        if self.workflow:
+            raise ValueError(f"闈?subgraph node 涓嶅簲璁剧疆 workflow: {self.id}")
+        return self
 
 
 class EdgeSpec(BaseModel):

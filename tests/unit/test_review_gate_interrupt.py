@@ -104,7 +104,7 @@ def test_interrupt_resume_accept_response_maps_to_approve(tmp_path):
     assert resumed.success
     assert resumed.review_status == "confirmed"
     assert resumed.run_status == "completed"
-    assert "artifact_promoter_node" in resumed.executed_nodes
+    assert "artifact_promoter" in resumed.executed_nodes
     assert resumed.human_review["decision"]["intent"] == "approve"
     assert resumed.human_review["decision"]["target_artifact"] == "testcases"
 
@@ -517,4 +517,4 @@ def test_confirmed_status_only_comes_from_promote_artifacts(tmp_path):
 
     assert resumed.review_status == "confirmed"
     assert resumed.run_status == "completed"
-    assert "artifact_promoter_node" in resumed.executed_nodes
+    assert "artifact_promoter" in resumed.executed_nodes

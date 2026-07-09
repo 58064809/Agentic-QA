@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from langgraph.store.base import BaseStore
+
 from runtime.session.store import (
     SESSION_ID_DEFAULT,
     SessionMetadata,
@@ -27,10 +29,6 @@ class Session:
     @property
     def thread_id(self) -> str:
         return self.meta.thread_id
-
-    @property
-    def checkpoint_db_path(self) -> str:
-        return self.store.checkpoint_db_path(self.session_id)
 
     @property
     def has_history(self) -> bool:
@@ -60,14 +58,15 @@ class Session:
         self.store.delete_session(self.session_id)
         self.meta = SessionMetadata.new(self.session_id)
         self._history = None
+        self.store.save_metadata(self.meta)
 
 
 class SessionManager:
     """外部接口：get_or_create / reset / get"""
 
-    def __init__(self, repo_root: Path | None = None) -> None:
+    def __init__(self, repo_root: Path | None = None, store: BaseStore | None = None) -> None:
         root = repo_root or Path.cwd()
-        self.store = SessionStore(root)
+        self.store = SessionStore(root, store=store)
 
     def get_or_create(self, session_id: str = SESSION_ID_DEFAULT) -> Session:
         meta = self.store.load_metadata(session_id)

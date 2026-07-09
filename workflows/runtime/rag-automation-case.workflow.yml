@@ -1,4 +1,4 @@
-﻿id: rag_automation_case_generation
+id: rag_automation_case_generation
 name: RAG 接口自动化 YAML 用例生成
 version: 1
 
@@ -13,33 +13,13 @@ state:
   task_type: api_test_draft
 
 nodes:
-  - id: command_router
-    type: python
-    handler: runtime.graph.nodes.mvp_context_loader.mvp_command_router_node
+  - id: context_pipeline
+    type: subgraph
+    workflow: rag_automation_context_pipeline
 
-  - id: workflow_selector
-    type: python
-    handler: runtime.graph.nodes.mvp_context_loader.mvp_workflow_selector_node
-
-  - id: requirement_normalizer
-    type: python
-    handler: runtime.graph.nodes.requirement_normalizer.normalize_requirement_document
-
-  - id: context_loader
-    type: python
-    handler: runtime.graph.nodes.mvp_context_loader.mvp_context_loader_node
-
-  - id: api_test_generator
-    type: python
-    handler: runtime.graph.nodes.api_test_generation.api_test_generation_node
-
-  - id: api_test_quality
-    type: python
-    handler: runtime.graph.nodes.api_test_generation.api_test_quality_check_node
-
-  - id: api_test_reviser
-    type: python
-    handler: runtime.graph.nodes.api_test_generation.api_test_revision_node
+  - id: case_generation
+    type: subgraph
+    workflow: rag_automation_case_generation_core
 
   - id: artifact_preview_writer
     type: python
@@ -49,70 +29,27 @@ nodes:
     type: python
     handler: runtime.graph.nodes.human_review.human_review_node
 
-  - id: artifact_promoter
-    type: python
-    handler: runtime.graph.nodes.artifact_promoter.artifact_promoter_node
-
-  - id: metadata_update
-    type: python
-    handler: runtime.graph.nodes.metadata_update.metadata_update_node
+  - id: promote_pipeline
+    type: subgraph
+    workflow: rag_automation_promote_pipeline
 
 edges:
   - from: start
-    to: command_router
+    to: context_pipeline
 
-  - from: command_router
-    to: workflow_selector
+  - from: context_pipeline
+    to: case_generation
     condition: no_errors
 
-  - from: command_router
+  - from: context_pipeline
     to: end
     condition: default
 
-  - from: workflow_selector
-    to: requirement_normalizer
-    condition: no_errors
-
-  - from: workflow_selector
-    to: end
-    condition: default
-
-  - from: requirement_normalizer
-    to: context_loader
-    condition: no_errors
-
-  - from: requirement_normalizer
-    to: end
-    condition: default
-
-  - from: context_loader
-    to: api_test_generator
-    condition: task_is_api_test_draft
-
-  - from: context_loader
-    to: end
-    condition: default
-
-  - from: api_test_generator
-    to: api_test_quality
-
-  - from: api_test_quality
-    to: api_test_reviser
-    condition: has_quality_errors
-
-  - from: api_test_quality
+  - from: case_generation
     to: artifact_preview_writer
     condition: no_quality_errors
 
-  - from: api_test_quality
-    to: end
-    condition: default
-
-  - from: api_test_reviser
-    to: artifact_preview_writer
-    condition: no_quality_errors
-
-  - from: api_test_reviser
+  - from: case_generation
     to: end
     condition: default
 
@@ -125,11 +62,11 @@ edges:
     condition: default
 
   - from: review_gate
-    to: artifact_promoter
+    to: promote_pipeline
     condition: review_approved
 
   - from: review_gate
-    to: api_test_reviser
+    to: case_generation
     condition: review_needs_changes
 
   - from: review_gate
@@ -141,20 +78,8 @@ edges:
     condition: review_waiting
 
   - from: review_gate
-    to: metadata_update
-    condition: no_errors
-
-  - from: review_gate
     to: end
     condition: default
 
-  - from: artifact_promoter
-    to: end
-    condition: no_errors
-
-  - from: artifact_promoter
-    to: end
-    condition: default
-
-  - from: metadata_update
+  - from: promote_pipeline
     to: end

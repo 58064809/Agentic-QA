@@ -299,7 +299,6 @@ def _promote_api_cases_yaml_sidecar(
 
 
 def artifact_promoter_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
-    state.record_node("artifact_promoter_node")
     if state.errors or state.quality_errors:
         return state
 

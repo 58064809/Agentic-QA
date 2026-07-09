@@ -55,6 +55,7 @@ def test_dry_run_generates_run_record_by_default(tmp_path):
     assert (repo_root / result.run_summary_md).is_file()
     assert (repo_root / result.run_record_dir / "checkpoint-manifest.json").is_file()
     assert not (repo_root / result.run_record_dir / "checkpointer.pkl").exists()
+    assert not (repo_root / result.run_record_dir / "workflow-events.jsonl").exists()
     assert (repo_root / result.run_record_dir / "graph-state.json").is_file()
     assert (repo_root / result.run_record_dir / "run-state.json").is_file()
     preview_path = repo_root / f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
@@ -94,6 +95,7 @@ def test_run_record_json_contains_runtime_summary(tmp_path):
     assert summary["next_action"] == "wait_for_review"
     assert summary["orchestration"] == "YAML WorkflowSpec: testcase_generation"
     assert summary["executed_nodes"]
+    assert "workflow_events" not in summary
     assert summary["loaded_files"]
     assert summary["wrote_file"] is True
     assert summary["human_review"]["status"] == "needs_human_review"
@@ -114,8 +116,8 @@ def test_run_record_markdown_contains_nodes_and_review_status(tmp_path):
     assert result.run_summary_md is not None
     content = (repo_root / result.run_summary_md).read_text(encoding="utf-8")
     assert "## 节点轨迹" in content
-    assert "mvp_command_router_node" in content
-    assert "testcase_generation_node" in content
+    assert "command_router" in content
+    assert "testcase_generator" in content
     assert "review_status：needs_human_review" in content
 
 
@@ -133,9 +135,9 @@ def test_failed_runtime_flow_still_generates_run_record(tmp_path):
     assert not result.success
     assert summary["success"] is False
     assert summary["errors"]
-    assert "requirement_normalizer_node" in summary["executed_nodes"]
-    assert "mvp_context_loader_node" not in summary["executed_nodes"]
-    assert "testcase_generation_node" not in summary["executed_nodes"]
+    assert "requirement_normalizer" in summary["executed_nodes"]
+    assert "context_loader" not in summary["executed_nodes"]
+    assert "testcase_generator" not in summary["executed_nodes"]
 
 
 def test_postgres_checkpointer_missing_dsn_generates_failed_run_record(tmp_path, monkeypatch):
@@ -195,7 +197,7 @@ def test_failed_runtime_flow_can_retry_same_thread_after_input_fix(tmp_path):
     assert retried.run_status == "interrupted"
     assert retried.review_status == "needs_human_review"
     assert retried.next_action == "wait_for_review"
-    assert "testcase_generation_node" in retried.executed_nodes
+    assert "testcase_generator" in retried.executed_nodes
     summary = read_summary_json(retried, repo_root)
     assert summary["checkpoint"]["storage"] == "postgres"
 

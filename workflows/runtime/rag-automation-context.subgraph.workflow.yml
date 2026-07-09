@@ -1,0 +1,60 @@
+id: rag_automation_context_pipeline
+name: RAG 自动化用例上下文准备子图
+version: 1
+
+input:
+  prd_path: required
+  user_input: required
+
+nodes:
+  - id: command_router
+    type: python
+    handler: runtime.graph.nodes.mvp_context_loader.mvp_command_router_node
+
+  - id: workflow_selector
+    type: python
+    handler: runtime.graph.nodes.mvp_context_loader.mvp_workflow_selector_node
+
+  - id: requirement_normalizer
+    type: python
+    handler: runtime.graph.nodes.requirement_normalizer.normalize_requirement_document
+
+  - id: context_loader
+    type: python
+    handler: runtime.graph.nodes.mvp_context_loader.mvp_context_loader_node
+
+edges:
+  - from: start
+    to: command_router
+
+  - from: command_router
+    to: workflow_selector
+    condition: no_errors
+
+  - from: command_router
+    to: end
+    condition: default
+
+  - from: workflow_selector
+    to: requirement_normalizer
+    condition: no_errors
+
+  - from: workflow_selector
+    to: end
+    condition: default
+
+  - from: requirement_normalizer
+    to: context_loader
+    condition: no_errors
+
+  - from: requirement_normalizer
+    to: end
+    condition: default
+
+  - from: context_loader
+    to: end
+    condition: task_is_api_test_draft
+
+  - from: context_loader
+    to: end
+    condition: default

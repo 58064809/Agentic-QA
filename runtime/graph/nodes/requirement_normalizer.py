@@ -66,7 +66,6 @@ def normalize_requirement_document(
     state: QAWorkflowState,
     repo_root: Path,
 ) -> QAWorkflowState:
-    state.record_node("requirement_normalizer_node")
     if state.errors:
         return state
 

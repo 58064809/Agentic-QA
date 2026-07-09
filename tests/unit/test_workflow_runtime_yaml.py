@@ -20,6 +20,18 @@ EXPECTED_RUNTIME_WORKFLOWS = {
         "rag_automation_case_generation",
         "api_test_draft",
     ),
+    "rag-automation-case-generation.subgraph.workflow.yml": (
+        "rag_automation_case_generation_core",
+        None,
+    ),
+    "rag-automation-context.subgraph.workflow.yml": (
+        "rag_automation_context_pipeline",
+        None,
+    ),
+    "rag-automation-promote.subgraph.workflow.yml": (
+        "rag_automation_promote_pipeline",
+        None,
+    ),
     "requirement-analysis.workflow.yml": ("requirement_analysis", "analysis"),
     "testcase-generation.workflow.yml": ("testcase_generation", "testcase_generation"),
     "ui-test-draft.workflow.yml": ("ui_test_draft", "ui_test_draft"),

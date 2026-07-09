@@ -314,7 +314,6 @@ def test_android_main_flow(driver):
 def ui_test_generation_node(state: QAWorkflowState) -> QAWorkflowState:
     if state.task_type != TASK_UI_TEST_DRAFT:
         return state
-    state.record_node("ui_test_generation_node")
     if state.errors:
         return state
     prompt = build_ui_test_prompt(
@@ -346,7 +345,6 @@ def ui_test_generation_node(state: QAWorkflowState) -> QAWorkflowState:
 def ui_test_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
     if state.task_type != TASK_UI_TEST_DRAFT:
         return state
-    state.record_node("ui_test_quality_check_node")
     if state.errors:
         return state
     artifact = state.draft_artifacts.get("ui_test_draft") or ""
