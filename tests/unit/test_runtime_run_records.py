@@ -54,7 +54,7 @@ def test_dry_run_generates_run_record_by_default(tmp_path):
     assert (repo_root / result.run_summary_json).is_file()
     assert (repo_root / result.run_summary_md).is_file()
     assert (repo_root / result.run_record_dir / "checkpoint-manifest.json").is_file()
-    assert not (repo_root / result.run_record_dir / "checkpointer.pkl").exists()
+    assert (repo_root / result.run_record_dir / "checkpointer.pkl").is_file()
     assert not (repo_root / result.run_record_dir / "workflow-events.jsonl").exists()
     assert (repo_root / result.run_record_dir / "graph-state.json").is_file()
     assert (repo_root / result.run_record_dir / "run-state.json").is_file()
@@ -99,9 +99,9 @@ def test_run_record_json_contains_runtime_summary(tmp_path):
     assert summary["loaded_files"]
     assert summary["wrote_file"] is True
     assert summary["human_review"]["status"] == "needs_human_review"
-    assert summary["checkpoint"]["storage"] == "postgres"
-    assert summary["checkpoint"]["checkpoint_file"] is None
-    assert summary["checkpoint"]["dsn_env"] == "AGENTIC_QA_CHECKPOINT_POSTGRES_DSN"
+    assert summary["checkpoint"]["storage"] == "file_pickle"
+    assert summary["checkpoint"]["checkpoint_file"] == "checkpointer.pkl"
+    assert summary["checkpoint"]["dsn_env"] is None
 
 
 def test_run_record_markdown_contains_nodes_and_review_status(tmp_path):
@@ -199,7 +199,7 @@ def test_failed_runtime_flow_can_retry_same_thread_after_input_fix(tmp_path):
     assert retried.next_action == "wait_for_review"
     assert "testcase_generator" in retried.executed_nodes
     summary = read_summary_json(retried, repo_root)
-    assert summary["checkpoint"]["storage"] == "postgres"
+    assert summary["checkpoint"]["storage"] == "file_pickle"
 
 
 def test_run_record_does_not_store_full_draft_artifact(tmp_path):

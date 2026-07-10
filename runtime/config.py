@@ -265,7 +265,7 @@ class RuntimeConfig:
     record_runs: bool = True
     idempotency_enabled: bool = True
     fail_fast_required_nodes: bool = True
-    checkpointer: str = "postgres"
+    checkpointer: str = "file"
     checkpoint_postgres_dsn_env: str = "AGENTIC_QA_CHECKPOINT_POSTGRES_DSN"
     checkpoint_postgres_setup: bool = True
 
@@ -283,7 +283,7 @@ class RuntimeConfig:
                 data.get("fail_fast_required_nodes"),
                 default=True,
             ),
-            checkpointer=str(data.get("checkpointer", "postgres")).strip().lower(),
+            checkpointer=str(data.get("checkpointer", "file")).strip().lower(),
             checkpoint_postgres_dsn_env=str(
                 data.get(
                     "checkpoint_postgres_dsn_env",

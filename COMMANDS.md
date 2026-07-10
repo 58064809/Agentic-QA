@@ -244,13 +244,13 @@ python -m runtime.cli rag search "查询内容"
   -> RAG 检索
   -> QA Agent 生成内容
   -> 质量检查
+  -> artifact_preview_writer_node
+  -> runs/<run_id>/artifact-preview.md
   -> human_review_node interrupt
   -> run_status = interrupted
   -> 用户自然语言 resume
   -> reviews/*.review.yml = approved
-  -> artifact_preview_writer_node
-  -> runs/<run_id>/artifact-preview.md
-  -> 用户执行 promote
+  -> promote_artifacts
   -> artifacts/<artifact>.md
   -> artifacts/history/<artifact>/index.yml
 ```

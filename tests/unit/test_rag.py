@@ -33,7 +33,7 @@ class TestRagConfig:
         assert c.chunk_overlap == 50
         assert c.embedding_model == "text-embedding-3-small"
         assert c.embedding_dim == 1536
-        assert c.vector_store == "faiss"
+        assert c.vector_store == "memory"
         assert c.embedding_provider == "auto"
         assert c.use_llm_api_key is True
         assert c.knowledge_paths == ["knowledge/"]

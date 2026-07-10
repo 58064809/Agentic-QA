@@ -182,13 +182,24 @@ Runtime 内部执行记录当前保存到 `.runtime/runs/<run-id>/`：
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 PowerShell 也可以使用：
 
 ```bash
 .venv\Scripts\Activate.ps1
+```
+
+默认安装包含 CLI、LangGraph、LLM 适配器和内存 RAG，可直接运行，不要求 PostgreSQL
+或 FAISS。需要额外能力时按需安装：
+
+```bash
+pip install -e ".[rag]"        # FAISS 向量索引
+pip install -e ".[postgres]"   # PostgreSQL checkpoint / store
+pip install -e ".[documents]"  # DOCX/PDF/PPTX/XLS/XLSX 转 Markdown
+pip install -e ".[feishu]"     # 飞书文档导入
+pip install -e ".[full,dev]"   # 全部运行能力和开发工具
 ```
 
 创建需求工作区：

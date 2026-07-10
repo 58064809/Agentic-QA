@@ -23,7 +23,7 @@ def test_load_app_config_without_config_yaml_uses_defaults(tmp_path: Path) -> No
     config = load_app_config(tmp_path)
 
     assert config.project.name == "agentic-qa"
-    assert config.runtime.checkpointer == "postgres"
+    assert config.runtime.checkpointer == "file"
     assert config.runtime.checkpoint_postgres_dsn_env == "AGENTIC_QA_CHECKPOINT_POSTGRES_DSN"
     assert config.workspace.prd_root == "prd"
     assert config.output.require_review_gate is True
