@@ -45,6 +45,34 @@ def test_load_api_cases_from_yaml(tmp_path):
     assert cases[0].method == "POST"
 
 
+def test_load_api_cases_v11_from_nested_contract(tmp_path):
+    path = tmp_path / "api-test-cases-v11.yml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "agentic-qa.api-cases.v1.1",
+                "cases": [
+                    {
+                        "id": "API-002",
+                        "title": "查询详情",
+                        "request": {"method": "GET", "path": "/api/detail"},
+                        "assertions": [{"type": "status_code", "expected": [200]}],
+                    }
+                ],
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    cases = load_api_cases(path)
+
+    assert cases[0].method == "GET"
+    assert cases[0].path == "/api/detail"
+    assert cases[0].assertions == [{"type": "status_code", "expected": [200]}]
+
+
 def test_execute_api_case_resolves_env_placeholders_and_asserts_response():
     calls = []
 
@@ -55,13 +83,17 @@ def test_execute_api_case_resolves_env_placeholders_and_asserts_response():
     case = ApiCase(
         id="API-001",
         title="登录成功",
-        method="POST",
-        path="/api/login",
         request={
+            "method": "POST",
+            "path": "/api/login",
             "headers": {"Authorization": "Bearer ${AGENTIC_QA_TEST_TOKEN}"},
-            "json": {"phone": "13800138000"},
+            "body": {"phone": "13800138000"},
         },
-        expected={"status_code": [200], "json_contains_keys": ["code", "data"]},
+        assertions=[
+            {"type": "status_code", "expected": [200]},
+            {"type": "json_field_exists", "path": "$.code"},
+            {"type": "json_field_exists", "path": "$.data"},
+        ],
     )
 
     result = execute_api_case(
@@ -90,10 +122,8 @@ def test_execute_api_case_rejects_absolute_url():
     case = ApiCase(
         id="API-001",
         title="禁止完整域名",
-        method="GET",
-        path="https://prod.example.com/api/login",
-        request={},
-        expected={"status_code": [200]},
+        request={"method": "GET", "path": "https://prod.example.com/api/login"},
+        assertions=[{"type": "status_code", "expected": [200]}],
     )
 
     with pytest.raises(ValueError, match="完整环境域名"):

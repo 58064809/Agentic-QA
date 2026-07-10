@@ -32,6 +32,8 @@ prd/<id>/artifacts/api-test-cases.yml           # 审核通过并 promote 后的
 
 输出必须满足：
 
+- `schema_version: agentic-qa.api-cases.v1.1`。
+- `artifact_type: api_automation_cases`。
 - 顶层 `status: needs_human_review`。
 - 顶层 `human_review_required: true`。
 - 每条用例必须包含 `source_refs`。
@@ -39,6 +41,7 @@ prd/<id>/artifacts/api-test-cases.yml           # 审核通过并 promote 后的
 - 账号、密码、token、Cookie、动态 ID 只能使用变量或环境占位。
 - 必须包含 `review_questions`，列出待人工确认项。
 - 缺少 Swagger / OpenAPI / Apifox 接口契约时，不得编造 `request.method`、`request.path`、请求字段、响应字段或错误码；只能生成待确认草稿，并把接口契约缺口写入 `review_questions`。
+- 普通接口文档仅能确认部分契约时使用 `contract_status: partial`；禁止生成无来源的默认 200/201、400/422、401/403 或 `code/data/message` 字段断言。
 
 ## 服务级 OpenAPI 召回
 

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import yaml
 
+from runtime.schemas.api_test_cases import API_CASES_SCHEMA_VERSION
 from runtime.workflow.conditions import CONDITIONS
 from runtime.workflow.loader import load_workflow_spec
 
@@ -120,6 +121,14 @@ TARGET_STATE_PATH_TOKENS = {
     "integrations/",
 }
 RUNTIME_WORKFLOW_GLOB = "*.workflow.yml"
+API_CONTRACT_DOCS = (
+    "docs/api-test-generation.md",
+    "docs/automation-case-generation.md",
+    "knowledge/automation/yaml-case-schema.md",
+    "prompts/api-test-generation.md",
+    "prompts/rag-automation-case-prompt.md",
+    "rules/automation-case-rules.md",
+)
 
 
 def read_text(path: Path) -> str:
@@ -231,6 +240,23 @@ def validate_runtime_workflow_docs(repo_root: Path) -> list[str]:
     return errors
 
 
+def validate_api_contract_docs(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    existing = [repo_root / path for path in API_CONTRACT_DOCS if (repo_root / path).is_file()]
+    if not existing:
+        return errors
+    for path in existing:
+        if API_CASES_SCHEMA_VERSION not in read_text(path):
+            relative = path.relative_to(repo_root).as_posix()
+            errors.append(
+                f"{relative} 未声明当前 API Cases Schema: {API_CASES_SCHEMA_VERSION}"
+            )
+    legacy_prompt = repo_root / "prompts/api-test-generation-prompt.md"
+    if legacy_prompt.exists():
+        errors.append("存在重复 API Prompt: prompts/api-test-generation-prompt.md")
+    return errors
+
+
 def validate_docs_consistency(repo_root: Path) -> list[str]:
     repo_root = repo_root.resolve()
     errors: list[str] = []
@@ -252,6 +278,7 @@ def validate_docs_consistency(repo_root: Path) -> list[str]:
     )
     errors.extend(find_broken_markdown_path_refs(repo_root))
     errors.extend(validate_runtime_workflow_docs(repo_root))
+    errors.extend(validate_api_contract_docs(repo_root))
     return errors
 
 

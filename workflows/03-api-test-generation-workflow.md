@@ -19,7 +19,7 @@ Testcase Design Agent 提供用例解释，Test Execution Agent 提供执行约�
 
 ## 必须读取
 
-- `prompts/api-test-generation-prompt.md`
+- `prompts/api-test-generation.md`
 - `rules/api-test-rules.md`
 - `rules/automation-rules.md`
 - `skills/automation/api-contract-analysis-skill.md`

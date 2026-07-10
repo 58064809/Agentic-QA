@@ -45,7 +45,7 @@ prd/<id>/reviews/api-test-draft.review.yml
 | 字段 | 说明 |
 |---|---|
 | `chunk_id` | 稳定 chunk 标识 |
-| `source_type` | `prd`、`swagger`、`business_rule`、`db_rule`、`automation_rule`、`historical_lesson` |
+| `source_type` | `prd`、`api_document`、`swagger`、`openapi`、`apifox`、`business_rule`、`db_rule`、`automation_rule`、`historical_lesson` |
 | `source_path` | 原始文件路径 |
 | `locator` | 章节、接口路径、字段名或行号范围 |
 | `score` | 检索分数或排序依据 |

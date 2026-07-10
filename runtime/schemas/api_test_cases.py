@@ -1,47 +1,69 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-API_CASES_SCHEMA_VERSION = "agentic-qa.api-cases.v1"
+API_CASES_SCHEMA_VERSION = "agentic-qa.api-cases.v1.1"
+LEGACY_API_CASES_SCHEMA_VERSION = "agentic-qa.api-cases.v1"
 
 
 class SourceRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_type: str = Field(min_length=1)
+    source_path: str = Field(min_length=1)
+    chunk_id: str = Field(min_length=1)
+    locator: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    confidence: Literal["low", "medium", "high"]
+
+
+class ApiRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    source_type: str | None = None
-    source_path: str | None = None
-    chunk_id: str | None = None
-    locator: str | None = None
-    summary: str | None = None
-    confidence: str | None = None
+    method: str | None = None
+    path: str | None = None
+    headers: dict[str, Any] = Field(default_factory=dict)
+    query: Any = Field(default_factory=dict)
+    body: Any = Field(default_factory=dict)
+
+
+class ApiAssertion(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(min_length=1)
+    expected: Any | None = None
+    path: str | None = None
 
 
 class ApiTestCase(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
-    id: str | None = None
-    title: str | None = None
-    contract_status: str | None = None
-    business_rule_refs: list[Any] | None = None
-    review_status: str | None = None
-    review_questions: list[Any] | None = None
-    source_refs: list[SourceRef] | None = None
-    pending: list[Any] | None = None
-    method: str | None = None
-    path: str | None = None
-    request: dict[str, Any] | None = None
-    expected: dict[str, Any] | None = None
+    id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    priority: Literal["P0", "P1", "P2", "P3"]
+    contract_status: Literal["missing", "pending_confirmation", "partial", "confirmed"]
+    business_rule_refs: list[str]
+    review_status: Literal["needs_human_review"]
+    review_questions: list[str]
+    source_refs: list[SourceRef] = Field(min_length=1)
+    pending: list[str]
+    request: ApiRequest | dict[str, Any]
+    assertions: list[ApiAssertion]
+    variables: dict[str, Any]
+    cleanup: list[Any]
 
 
 class ApiTestCasesDraft(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    schema_version: str | None = None
-    status: str | None = None
-    human_review_required: bool | None = None
-    base_url_env: str | None = None
-    business_rules: list[Any] | None = None
-    source_refs: list[SourceRef] | None = None
-    cases: list[ApiTestCase] | None = None
+    schema_version: Literal[API_CASES_SCHEMA_VERSION]
+    artifact_type: Literal["api_automation_cases"]
+    status: Literal["needs_human_review"]
+    human_review_required: Literal[True]
+    base_url_env: Literal["AGENTIC_QA_BASE_URL"]
+    business_rules: list[Any] = Field(min_length=1)
+    source_refs: list[SourceRef] = Field(min_length=1)
+    cases: list[ApiTestCase] = Field(min_length=1)
+    review_questions: list[str] = Field(min_length=1)

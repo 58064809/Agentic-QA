@@ -6,10 +6,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from runtime.schemas.api_test_cases import (
-    API_CASES_SCHEMA_VERSION,
-    ApiTestCasesDraft,
-)
+from runtime.schemas.api_test_cases import API_CASES_SCHEMA_VERSION, ApiTestCasesDraft
 
 SECRET_PATTERNS = [
     re.compile(r"Bearer\s+[A-Za-z0-9._~+/=-]{16,}", re.IGNORECASE),
@@ -35,12 +32,34 @@ def _structure_errors(data: dict[str, Any]) -> list[str]:
     return []
 
 
+def _request_method_path(case: dict[str, Any]) -> tuple[str, str]:
+    request = case.get("request")
+    if not isinstance(request, dict):
+        return "", ""
+    return str(request.get("method") or ""), str(request.get("path") or "")
+
+
+def _has_status_assertion(assertions: Any) -> bool:
+    return isinstance(assertions, list) and any(
+        isinstance(item, dict)
+        and item.get("type") == "status_code"
+        and (
+            isinstance(item.get("expected"), int)
+            or (
+                isinstance(item.get("expected"), list)
+                and bool(item.get("expected"))
+                and all(isinstance(value, int) for value in item["expected"])
+            )
+        )
+        for item in assertions
+    )
+
+
 def validate_api_test_cases_yaml(
     content: str,
     *,
     schema_version: str = API_CASES_SCHEMA_VERSION,
 ) -> list[str]:
-    errors: list[str] = []
     if not content.strip():
         return ["接口 YAML 用例草稿为空。"]
     try:
@@ -50,77 +69,33 @@ def validate_api_test_cases_yaml(
     if not isinstance(data, dict):
         return ["接口 YAML 用例草稿必须是 YAML mapping。"]
 
-    errors.extend(_structure_errors(data))
+    errors = _structure_errors(data)
     if data.get("schema_version") != schema_version:
         errors.append("接口 YAML 用例草稿 schema_version 不正确。")
-    if data.get("status") != "needs_human_review":
-        errors.append("接口 YAML 用例草稿候选状态必须是 needs_human_review。")
-    if data.get("human_review_required") is not True:
-        errors.append("接口 YAML 用例草稿必须要求人工审核。")
-    if data.get("base_url_env") != "AGENTIC_QA_BASE_URL":
-        errors.append("接口 YAML 用例草稿必须通过 AGENTIC_QA_BASE_URL 读取环境。")
-    source_refs = data.get("source_refs")
-    if not isinstance(source_refs, list) or not source_refs:
-        errors.append("接口 YAML 用例草稿必须包含顶层 source_refs。")
     cases = data.get("cases")
     if not isinstance(cases, list) or not cases:
-        errors.append("接口 YAML 用例草稿必须包含 cases。")
-        return errors
-    business_rules = data.get("business_rules")
-    if not isinstance(business_rules, list) or not business_rules:
-        errors.append("接口 YAML 用例草稿必须包含 business_rules。")
-    required_fields = {
-        "id",
-        "title",
-        "contract_status",
-        "business_rule_refs",
-        "review_status",
-        "review_questions",
-        "source_refs",
-        "pending",
-    }
+        return [*errors, "接口 YAML 用例草稿必须包含 cases。"]
+
     for index, case in enumerate(cases, start=1):
         if not isinstance(case, dict):
-            errors.append(f"接口 YAML 用例第 {index} 条必须是 mapping。")
             continue
-        missing = sorted(required_fields - set(case))
-        if missing:
-            errors.append(f"接口 YAML 用例第 {index} 条缺少字段: {', '.join(missing)}")
-        case_source_refs = case.get("source_refs")
-        if not isinstance(case_source_refs, list) or not case_source_refs:
-            errors.append(f"接口 YAML 用例第 {index} 条必须包含 source_refs。")
-            case_source_refs = []
-        if case.get("review_status") != "needs_human_review":
-            errors.append(f"接口 YAML 用例第 {index} 条 review_status 必须是 needs_human_review。")
         contract_status = str(case.get("contract_status") or "")
+        request = case.get("request")
+        assertions = case.get("assertions")
+        method, path = _request_method_path(case)
+        refs = case.get("source_refs")
         source_types = {
-            str(ref.get("source_type") or "") for ref in case_source_refs if isinstance(ref, dict)
+            str(ref.get("source_type") or "") for ref in refs or [] if isinstance(ref, dict)
         }
-        review_questions = case.get("review_questions")
-        if not isinstance(review_questions, list) or not review_questions:
-            errors.append(f"接口 YAML 用例第 {index} 条必须包含 review_questions。")
-        if contract_status not in {"missing", "pending_confirmation", "confirmed"}:
-            errors.append(
-                f"接口 YAML 用例第 {index} 条 contract_status 必须是 "
-                "missing/pending_confirmation/confirmed。"
-            )
+
         if contract_status == "missing":
-            if "method" in case or "path" in case:
-                errors.append(
-                    f"接口 YAML 用例第 {index} 条 contract_status=missing 时不得包含 method/path。"
-                )
-            request = case.get("request", {})
             if request != {}:
                 errors.append(
                     f"接口 YAML 用例第 {index} 条 contract_status=missing 时 request 只能是 {{}}。"
                 )
-            expected = case.get("expected", {})
-            if isinstance(expected, dict) and (
-                "status_code" in expected or "json_contains_keys" in expected
-            ):
+            if assertions != []:
                 errors.append(
-                    f"接口 YAML 用例第 {index} 条 contract_status=missing 时不得包含 "
-                    "expected.status_code/json_contains_keys。"
+                    f"接口 YAML 用例第 {index} 条 contract_status=missing 时 assertions 只能是 []。"
                 )
         elif contract_status == "pending_confirmation":
             if "api_discovery_report" not in source_types:
@@ -128,28 +103,57 @@ def validate_api_test_cases_yaml(
                     f"接口 YAML 用例第 {index} 条 contract_status=pending_confirmation "
                     "必须包含 api_discovery_report 来源。"
                 )
-            for ref in case_source_refs:
-                if isinstance(ref, dict) and str(ref.get("confidence") or "") == "high":
+            if not method or not path:
+                errors.append(
+                    f"接口 YAML 用例第 {index} 条运行时接口候选必须包含 request.method/path。"
+                )
+            if assertions != []:
+                errors.append(
+                    f"接口 YAML 用例第 {index} 条待确认接口不得包含确定性 assertions。"
+                )
+            for ref in refs or []:
+                if isinstance(ref, dict) and ref.get("confidence") == "high":
                     errors.append(
                         f"接口 YAML 用例第 {index} 条 contract_status=pending_confirmation "
                         "confidence 不得为 high。"
                     )
+        elif contract_status == "partial":
+            if not ({"api_document", "swagger", "openapi", "apifox"} & source_types):
+                errors.append(
+                    f"接口 YAML 用例第 {index} 条 contract_status=partial 必须包含接口文档来源。"
+                )
+            if not method or not path:
+                errors.append(
+                    f"接口 YAML 用例第 {index} 条 partial 契约必须包含 request.method/path。"
+                )
         elif contract_status == "confirmed":
             if not ({"swagger", "openapi", "apifox"} & source_types):
                 errors.append(
                     f"接口 YAML 用例第 {index} 条 contract_status=confirmed "
                     "必须包含 swagger/openapi/apifox 来源。"
                 )
-            for field in ("method", "path", "request", "expected"):
-                if field not in case:
-                    errors.append(
-                        f"接口 YAML 用例第 {index} 条 contract_status=confirmed 缺少字段: {field}"
-                    )
-            expected = case.get("expected")
-            if not isinstance(expected, dict) or not expected.get("status_code"):
-                errors.append(f"接口 YAML 用例第 {index} 条缺少 expected.status_code。")
-        if str(case.get("path") or "").startswith("http"):
-            errors.append(f"接口 YAML 用例第 {index} 条 path 不得写完整环境域名。")
+            if not method or not path:
+                errors.append(
+                    f"接口 YAML 用例第 {index} 条 confirmed 契约缺少 request.method/path。"
+                )
+            if not _has_status_assertion(assertions):
+                errors.append(f"接口 YAML 用例第 {index} 条缺少 status_code assertion。")
+        if path.startswith(("http://", "https://")):
+            errors.append(f"接口 YAML 用例第 {index} 条 request.path 不得写完整环境域名。")
+        elif path and not path.startswith("/"):
+            errors.append(f"接口 YAML 用例第 {index} 条 request.path 必须是以 / 开头的相对路径。")
+        if method and method.upper() not in {
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "HEAD",
+            "OPTIONS",
+            "TRACE",
+        }:
+            errors.append(f"接口 YAML 用例第 {index} 条 request.method 不是受支持的 HTTP 方法。")
+
     if _contains_secret(content):
         errors.append("接口 YAML 用例草稿疑似包含真实 token / cookie / 密钥。")
     return errors

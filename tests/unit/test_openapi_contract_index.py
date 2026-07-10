@@ -233,12 +233,12 @@ def test_api_scope_openapi_hit_generates_confirmed_yaml(tmp_path):
     case = payload["cases"][0]
 
     assert case["contract_status"] == "confirmed"
-    assert case["method"] == "GET"
-    assert case["path"] == "/product/shop/store/getCommodityDetail"
+    assert case["request"]["method"] == "GET"
+    assert case["request"]["path"] == "/product/shop/store/getCommodityDetail"
     assert case["source_refs"][0]["source_type"] == "openapi"
     assert case["source_refs"][0]["source_path"] == "knowledge/api/product/openapi.json"
     assert case["source_refs"][0]["confidence"] == "high"
     assert case["request"]["query"][0]["name"] == "commodityId"
-    assert case["expected"]["status_code"] == [200]
-    assert "json_contains_keys" in case["expected"]
+    assert {"type": "status_code", "expected": [200]} in case["assertions"]
+    assert any(item.get("type") == "json_field_exists" for item in case["assertions"])
     assert _api_cases_yaml_errors(yaml.safe_dump(payload, allow_unicode=True)) == []

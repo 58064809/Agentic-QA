@@ -18,8 +18,11 @@ from runtime.graph.nodes.mvp_generation import (
 )
 from runtime.graph.state import QAWorkflowState
 from runtime.llm.prompt_builder import build_api_test_prompt
+from runtime.schemas.api_test_cases import API_CASES_SCHEMA_VERSION
+from runtime.tools.api_doc_loader import API_DOC_FILENAMES, load_api_document
 from runtime.tools.openapi_contract_index import (
     OpenApiOperationChunk,
+    build_openapi_operation_chunks,
     load_api_scope,
     retrieve_openapi_chunks_for_prd,
 )
@@ -59,7 +62,6 @@ API_RAG_RUN_RECORD_DEBUG_KEY = "api_rag_run_record"
 API_CASES_YAML_FILENAME = "api-test-cases.yml"
 API_RAG_RUN_RECORD_FILENAME = "rag-run-record.json"
 API_CASES_FORMAL_PATH = "artifacts/api-test-cases.yml"
-API_CASES_SCHEMA_VERSION = "agentic-qa.api-cases.v1"
 Endpoint = tuple[str, str, str, str]
 OpenApiChunkMap = dict[tuple[str, str], OpenApiOperationChunk]
 
@@ -98,6 +100,30 @@ def _load_openapi_scope_chunks(
         requirement_text=_requirement_text(state),
     )
     return chunks, warnings, True
+
+
+def _load_workspace_openapi_chunks(
+    repo_root: Path, state: QAWorkflowState
+) -> tuple[list[OpenApiOperationChunk], list[str]]:
+    workspace = resolve_prd_path(repo_root, state.prd_path)
+    for filename in API_DOC_FILENAMES:
+        source = workspace / "input" / filename
+        if not source.is_file():
+            continue
+        try:
+            loaded = load_api_document(source)
+            source_path = source.relative_to(repo_root).as_posix()
+            return (
+                build_openapi_operation_chunks(
+                    loaded.raw_payload,
+                    service="workspace",
+                    source_path=source_path,
+                ),
+                list(loaded.warnings),
+            )
+        except (OSError, ValueError, json.JSONDecodeError, yaml.YAMLError) as exc:
+            return [], [f"工作区 OpenAPI 解析失败: {exc}"]
+    return [], []
 
 
 def _endpoints_from_openapi_chunks(chunks: list[OpenApiOperationChunk]) -> list[Endpoint]:
@@ -205,17 +231,10 @@ def _api_cases_for_endpoints(
         "pending_confirmation"
         if from_discovery
         else "confirmed"
-        if has_api_doc or from_openapi
-        else "missing"
-    )
-    source_kind = (
-        "api-discovery-report"
-        if from_discovery
-        else "openapi-service-contract"
         if from_openapi
-        else "swagger-or-api-doc"
+        else "partial"
         if has_api_doc
-        else "missing-contract"
+        else "missing"
     )
     if not endpoints and contract_status == "missing":
         return [
@@ -223,8 +242,6 @@ def _api_cases_for_endpoints(
                 "id": "API-CONTRACT-MISSING-001",
                 "title": "待补充接口契约后生成可执行接口自动化用例",
                 "review_status": "needs_human_review",
-                "source": business_rule_source_path,
-                "source_kind": source_kind,
                 "contract_status": "missing",
                 "priority": "P0",
                 "business_rule_refs": business_rule_refs,
@@ -242,7 +259,9 @@ def _api_cases_for_endpoints(
                     )
                 ],
                 "request": {},
-                "expected": {},
+                "assertions": [],
+                "variables": {},
+                "cleanup": [],
                 "pending": [
                     "补充 Swagger / OpenAPI / Apifox 后再生成可执行接口自动化用例。",
                 ],
@@ -278,13 +297,11 @@ def _api_cases_for_endpoints(
         source_refs = [endpoint_ref, *rule_refs[:3]]
         base_case = {
             "review_status": "needs_human_review",
-            "source": source,
-            "source_kind": source_kind,
             "contract_status": contract_status,
-            "method": method,
-            "path": path,
             "business_rule_refs": business_rule_refs,
             "source_refs": source_refs,
+            "variables": {},
+            "cleanup": [],
         }
         if contract_status == "pending_confirmation":
             cases.append(
@@ -293,8 +310,8 @@ def _api_cases_for_endpoints(
                     "id": f"{name}-CONTRACT-CANDIDATE",
                     "title": f"{method} {path} 接口候选待契约核对",
                     "priority": "P0",
-                    "request": {},
-                    "expected": {},
+                    "request": {"method": method, "path": path},
+                    "assertions": [],
                     "pending": [
                         "该 method/path 来自 api-discovery-report，仅为运行时流量候选。",
                     ],
@@ -304,87 +321,58 @@ def _api_cases_for_endpoints(
                     ],
                 }
             )
+        elif contract_status == "partial":
+            cases.append(
+                {
+                    **base_case,
+                    "id": f"{name}-PARTIAL-CONTRACT",
+                    "title": f"{method} {path} 接口文档待补全契约",
+                    "priority": "P0",
+                    "request": {"method": method, "path": path},
+                    "assertions": [],
+                    "pending": [
+                        "当前 input/api.md 仅确认 method/path，未解析出字段与响应状态码。",
+                    ],
+                    "review_questions": [
+                        "请补充或导入 Swagger / OpenAPI / Apifox 原始契约。",
+                        "请确认请求字段、响应字段、状态码、错误码和鉴权方式。",
+                    ],
+                }
+            )
         else:
-            request = (
-                _request_from_openapi_chunk(operation_chunk)
-                if operation_chunk
-                else {
-                    "headers": {
-                        "Authorization": "Bearer ${AGENTIC_QA_TEST_TOKEN}",
-                        "Content-Type": "application/json",
-                    },
-                    "json": {"field": "待确认请求字段"},
-                }
-            )
-            expected = (
-                _expected_from_openapi_chunk(operation_chunk)
-                if operation_chunk
-                else {
-                    "status_code": [200, 201],
-                    "json_contains_keys": ["code", "data"],
-                }
-            )
-            cases.extend(
-                [
+            assertions = _assertions_from_openapi_chunk(operation_chunk)
+            if not assertions:
+                cases.append(
                     {
                         **base_case,
-                        "id": f"{name}-SUCCESS",
-                        "title": f"{method} {path} 主流程成功",
+                        "contract_status": "partial",
+                        "id": f"{name}-PARTIAL-CONTRACT",
+                        "title": f"{method} {path} OpenAPI 响应契约待补全",
                         "priority": "P0",
-                        "request": request,
-                        "expected": expected,
-                        "pending": [
-                            "需确认测试数据准备方式和可回滚策略。",
-                        ],
-                        "review_questions": [
-                            "请确认请求字段、响应字段、错误码、权限、风控和幂等规则。",
-                        ],
-                    },
+                        "request": _request_from_openapi_chunk(operation_chunk),
+                        "assertions": [],
+                        "variables": _variables_from_openapi_chunk(operation_chunk),
+                        "pending": ["OpenAPI 未声明可执行的响应状态码。"],
+                        "review_questions": ["请补充响应状态码与响应 schema。"],
+                    }
+                )
+            else:
+                cases.append(
                     {
                         **base_case,
-                        "id": f"{name}-VALIDATION",
-                        "title": f"{method} {path} 必填字段缺失",
-                        "priority": "P1",
-                        "request": {
-                            "headers": {
-                                "Authorization": "Bearer ${AGENTIC_QA_TEST_TOKEN}",
-                                "Content-Type": "application/json",
-                            },
-                            "json": {},
-                        },
-                        "expected": {
-                            "status_code": [400, 422],
-                            "json_contains_keys": ["code", "message"],
-                        },
-                        "pending": [
-                            "待确认必填字段列表、参数错误码和错误 message。",
-                        ],
-                        "review_questions": [
-                            "请确认必填字段列表、参数错误码和错误 message。",
-                        ],
-                    },
-                    {
-                        **base_case,
-                        "id": f"{name}-AUTH",
-                        "title": f"{method} {path} 未登录或鉴权失败",
+                        "id": f"{name}-CONTRACT",
+                        "title": f"{method} {path} OpenAPI 契约场景",
                         "priority": "P0",
-                        "request": {
-                            "headers": {"Content-Type": "application/json"},
-                            "json": {},
-                        },
-                        "expected": {
-                            "status_code": [401, 403],
-                            "json_contains_keys": ["code", "message"],
-                        },
-                        "pending": [
-                            "待确认鉴权失败状态码、业务 code、权限边界和敏感字段屏蔽规则。",
-                        ],
+                        "request": _request_from_openapi_chunk(operation_chunk),
+                        "assertions": assertions,
+                        "variables": _variables_from_openapi_chunk(operation_chunk),
+                        "pending": ["需确认测试数据、业务预期和可回滚策略。"],
                         "review_questions": [
-                            "请确认鉴权失败状态码、业务 code、权限边界和敏感字段屏蔽规则。",
+                            "请确认哪些已声明状态码对应本次业务场景。",
+                            "请确认字段值、权限、风控和幂等业务断言。",
                         ],
-                    },
-                ]
-            )
+                    }
+                )
         if index >= 5:
             break
     return cases
@@ -394,11 +382,12 @@ def _request_from_openapi_chunk(chunk: OpenApiOperationChunk | None) -> dict[str
     if chunk is None:
         return {}
     request: dict[str, Any] = {
-        "headers": {
-            "Authorization": "Bearer ${AGENTIC_QA_TEST_TOKEN}",
-            "Content-Type": "application/json",
-        }
+        "method": chunk.method,
+        "path": chunk.path,
+        "headers": {"Content-Type": "application/json"},
     }
+    if chunk.security:
+        request["headers"]["Authorization"] = "Bearer ${AGENTIC_QA_TEST_TOKEN}"
     query_fields = [
         _parameter_contract(parameter)
         for parameter in chunk.parameters
@@ -422,7 +411,7 @@ def _request_from_openapi_chunk(chunk: OpenApiOperationChunk | None) -> dict[str
         request["header_contract"] = header_fields
     body_fields = _schema_fields(chunk.request_schema)
     if body_fields:
-        request["json_schema"] = {
+        request["body_schema"] = {
             "type": _schema_type_name(chunk.request_schema),
             "required": _schema_required(chunk.request_schema),
             "fields": body_fields,
@@ -430,21 +419,24 @@ def _request_from_openapi_chunk(chunk: OpenApiOperationChunk | None) -> dict[str
     return request
 
 
-def _expected_from_openapi_chunk(chunk: OpenApiOperationChunk | None) -> dict[str, Any]:
+def _assertions_from_openapi_chunk(chunk: OpenApiOperationChunk | None) -> list[dict[str, Any]]:
     if chunk is None:
-        return {}
+        return []
     status_codes = [int(code) for code in chunk.response_status_codes if str(code).isdigit()]
-    expected: dict[str, Any] = {"status_code": status_codes or [200]}
+    if not status_codes:
+        return []
+    assertions: list[dict[str, Any]] = [
+        {"type": "status_code", "expected": status_codes}
+    ]
     keys = _schema_field_names(chunk.response_schema)
-    if keys:
-        expected["json_contains_keys"] = keys[:8]
-    response_fields = _schema_fields(chunk.response_schema)
-    if response_fields:
-        expected["json_schema"] = {
-            "type": _schema_type_name(chunk.response_schema),
-            "fields": response_fields,
-        }
-    return expected
+    assertions.extend({"type": "json_field_exists", "path": f"$.{key}"} for key in keys[:8])
+    return assertions
+
+
+def _variables_from_openapi_chunk(chunk: OpenApiOperationChunk | None) -> dict[str, Any]:
+    if chunk and chunk.security:
+        return {"env": ["AGENTIC_QA_TEST_TOKEN"]}
+    return {}
 
 
 def _parameter_contract(parameter: dict[str, Any]) -> dict[str, Any]:
@@ -582,12 +574,12 @@ def _endpoint_source_ref(
         )
     if has_api_doc:
         return _source_ref(
-            source_type="swagger",
+            source_type="api_document",
             source_path=source,
             chunk_id=f"{name.lower()}-api-doc",
             locator=f"{method} {path}",
-            summary="接口路径、方法和基础契约来自 input/api.md。",
-            confidence="high",
+            summary="接口路径和方法来自 input/api.md；字段与响应契约仍需补充。",
+            confidence="medium",
         )
     return _source_ref(
         source_type="inference",
@@ -617,22 +609,26 @@ def _business_rule_source_refs(state: QAWorkflowState, rules: list[str]) -> list
 def render_api_test_cases_yaml(state: QAWorkflowState, repo_root: Path) -> str:
     api_doc = _api_doc_content(state)
     has_api_doc = _has_meaningful_api_doc(api_doc)
-    endpoints = _extract_endpoints(api_doc) if has_api_doc else []
+    endpoints: list[Endpoint] = []
     from_discovery = False
     from_openapi = False
     openapi_warnings: list[str] = []
     openapi_chunks: list[OpenApiOperationChunk] = []
     api_scope_declared = False
-    if not has_api_doc:
-        openapi_chunks, openapi_warnings, api_scope_declared = _load_openapi_scope_chunks(
-            repo_root, state
-        )
-        if openapi_chunks:
-            endpoints = _endpoints_from_openapi_chunks(openapi_chunks)
-            from_openapi = True
-            state.rag_retrievals.extend(chunk.as_context() for chunk in openapi_chunks)
-        elif openapi_warnings:
-            state.warnings.extend(openapi_warnings)
+    openapi_chunks, openapi_warnings, api_scope_declared = _load_openapi_scope_chunks(
+        repo_root, state
+    )
+    if not openapi_chunks and not api_scope_declared:
+        openapi_chunks, workspace_warnings = _load_workspace_openapi_chunks(repo_root, state)
+        openapi_warnings.extend(workspace_warnings)
+    if openapi_chunks:
+        endpoints = _endpoints_from_openapi_chunks(openapi_chunks)
+        from_openapi = True
+        state.rag_retrievals.extend(chunk.as_context() for chunk in openapi_chunks)
+    elif has_api_doc:
+        endpoints = _extract_endpoints(api_doc)
+    elif openapi_warnings:
+        state.warnings.extend(openapi_warnings)
     if not has_api_doc and not from_openapi and not api_scope_declared:
         discovery_endpoints = _load_discovery_endpoints(repo_root, state)
         if discovery_endpoints:
@@ -660,9 +656,22 @@ def render_api_test_cases_yaml(state: QAWorkflowState, repo_root: Path) -> str:
     ]
     payload = {
         "schema_version": API_CASES_SCHEMA_VERSION,
+        "artifact_type": "api_automation_cases",
         "status": "needs_human_review",
         "human_review_required": True,
-        "generated_by": "agentic-qa-runtime",
+        "generated_from": {
+            "workflow": (
+                "workflows/10-rag-automation-case-generation-workflow.md"
+                if state.intent == "rag_automation_case_generation"
+                else "workflows/runtime/api-test-draft.workflow.yml"
+            ),
+            "prompt": (
+                "prompts/rag-automation-case-prompt.md"
+                if state.intent == "rag_automation_case_generation"
+                else "prompts/api-test-generation.md"
+            ),
+            "rag_run_record": f"rag/run_records/{state.run_id or '<run_id>'}.json",
+        },
         "source_artifact": "artifacts/api-test-draft.md",
         "prd_path": state.prd_path,
         "run_id": state.run_id or "",
@@ -679,6 +688,9 @@ def render_api_test_cases_yaml(state: QAWorkflowState, repo_root: Path) -> str:
             business_rule_refs=business_rules,
             business_rule_source_path=f"{_prd_prefix(state)}/input/requirement.md",
         ),
+        "review_questions": [
+            "请确认接口契约、业务预期、测试数据、环境和执行风险。",
+        ],
     }
     if openapi_warnings and not endpoint_source_refs:
         payload["review_questions"] = [
@@ -696,21 +708,25 @@ def render_api_test_cases_yaml(state: QAWorkflowState, repo_root: Path) -> str:
 def render_api_rag_run_record(state: QAWorkflowState, repo_root: Path) -> str:
     api_doc = _api_doc_content(state)
     has_api_doc = _has_meaningful_api_doc(api_doc)
-    endpoints = _extract_endpoints(api_doc) if has_api_doc else []
+    endpoints: list[Endpoint] = []
     from_discovery = False
     from_openapi = False
     openapi_warnings: list[str] = []
     openapi_chunks: list[OpenApiOperationChunk] = []
     api_scope_declared = False
-    if not has_api_doc:
-        openapi_chunks, openapi_warnings, api_scope_declared = _load_openapi_scope_chunks(
-            repo_root, state
-        )
-        if openapi_chunks:
-            endpoints = _endpoints_from_openapi_chunks(openapi_chunks)
-            from_openapi = True
-        elif openapi_warnings:
-            state.warnings.extend(openapi_warnings)
+    openapi_chunks, openapi_warnings, api_scope_declared = _load_openapi_scope_chunks(
+        repo_root, state
+    )
+    if not openapi_chunks and not api_scope_declared:
+        openapi_chunks, workspace_warnings = _load_workspace_openapi_chunks(repo_root, state)
+        openapi_warnings.extend(workspace_warnings)
+    if openapi_chunks:
+        endpoints = _endpoints_from_openapi_chunks(openapi_chunks)
+        from_openapi = True
+    elif has_api_doc:
+        endpoints = _extract_endpoints(api_doc)
+    elif openapi_warnings:
+        state.warnings.extend(openapi_warnings)
     if not has_api_doc and not from_openapi and not api_scope_declared:
         discovery_endpoints = _load_discovery_endpoints(repo_root, state)
         if discovery_endpoints:

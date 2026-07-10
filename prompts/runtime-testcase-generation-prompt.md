@@ -194,7 +194,7 @@ run_id: <current_run_id>
 |--------|--------------------|---------|------|
 | 测试用例草稿 | `testcase_quality_check_node`（Runtime）| `prd/<id>/artifacts/testcases.md` | 质量检查节点的输入 |
 | 测试用例草稿 | 人工审核 | `prd/<id>/artifacts/testcases.md` | 供人工审核的测试用例 |
-| 测试用例草稿 | `api-test-generation-prompt` / `ui-test-generation-prompt` | `prd/<id>/artifacts/testcases.md` | 自动化脚本生成基线 |
+| 测试用例草稿 | `api-test-generation` / `ui-test-generation-prompt` | `prd/<id>/artifacts/testcases.md` | 自动化脚本生成基线 |
 
 ### 关键约束
 - 输出必须通过 `testcase_quality_check_node` 的质量检查

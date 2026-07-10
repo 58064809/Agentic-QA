@@ -87,6 +87,15 @@ def test_validate_docs_consistency_reports_missing_core_file(tmp_path):
     assert any("缺少核心文件:" in error and error.endswith("README.md") for error in errors)
 
 
+def test_validate_docs_consistency_reports_api_contract_version_drift(tmp_path):
+    repo_root = create_minimal_docs_repo(tmp_path)
+    write_file(repo_root / "prompts/api-test-generation.md", "旧契约")
+
+    errors = validate_docs_consistency(repo_root)
+
+    assert any("agentic-qa.api-cases.v1.1" in error for error in errors)
+
+
 def test_validate_docs_consistency_reports_missing_ci_workflow(tmp_path):
     repo_root = create_minimal_docs_repo(tmp_path)
     (repo_root / ".github/workflows/ci.yml").unlink()

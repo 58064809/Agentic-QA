@@ -33,7 +33,7 @@ API 测试生成 Agent，负责基于接口文档和已审核用例生成 pytest
 ## 必须读取的资料
 
 - `workflows/03-api-test-generation-workflow.md`
-- `prompts/api-test-generation-prompt.md`
+- `prompts/api-test-generation.md`
 - `rules/api-test-rules.md`
 - `rules/automation-rules.md`
 - `skills/automation/api-contract-analysis-skill.md`

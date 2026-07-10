@@ -77,8 +77,9 @@ prd/<需求ID>/input/api.md
 - 输出包含接口清单。
 - 输出包含接口测试点矩阵。
 - 输出包含 pytest + requests 脚本草稿。
-- 同 run 目录生成 `api-test-cases.yml`，schema_version 为 `agentic-qa.api-cases.v1`。
-- YAML 用例包含 `business_rules` 和 `cases[].id/title/method/path/business_rule_refs/request/expected/pending`。
+- 同 run 目录生成 `api-test-cases.yml`，schema_version 为 `agentic-qa.api-cases.v1.1`。
+- YAML 用例包含 `business_rules` 和 `cases[].id/title/priority/contract_status/business_rule_refs/request/assertions/variables/cleanup/pending`。
+- 新用例只允许使用嵌套 `request.method/path` 和类型化 `assertions`；旧 v1 仅保留读取兼容。
 - YAML 用例不得写完整环境域名，base URL 只能通过 `AGENTIC_QA_BASE_URL` 注入。
 - 输出包含断言策略。
 - 无可用接口文档时包含“待补充接口文档”提示。

@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
@@ -13,6 +15,8 @@ from test_api_test_generation import add_api_test_context_files  # noqa: E402
 from runtime.cli.parser import _extract_api_doc_path  # noqa: E402
 from runtime.cli.promoter import _run_workflow  # noqa: E402
 from runtime.graph.app import run_api_test_draft_workflow  # noqa: E402
+from runtime.graph.nodes.api_test_generation import render_api_test_cases_yaml  # noqa: E402
+from runtime.graph.state import QAWorkflowState  # noqa: E402
 from runtime.llm.config import OpenAICompatibleConfig  # noqa: E402
 from runtime.llm.intent_router import route_intent  # noqa: E402
 
@@ -70,6 +74,19 @@ def test_api_test_draft_uses_workspace_openapi_normalized_api_doc(tmp_path):
     assert "/api/activity/join" in draft
     assert "必填字段缺失" in draft
     assert "未登录或鉴权失败" in draft
+    state = QAWorkflowState(
+        prd_path="prd/demo-requirement",
+        loaded_files={
+            "prd/demo-requirement/input/api.md": api_md.read_text(encoding="utf-8"),
+            "prd/demo-requirement/input/requirement.md": "用户参加活动。",
+        },
+    )
+    payload = yaml.safe_load(render_api_test_cases_yaml(state, repo_root))
+    case = payload["cases"][0]
+    assert case["contract_status"] == "confirmed"
+    assert case["request"]["method"] == "POST"
+    assert case["request"]["path"] == "/api/activity/join"
+    assert {"type": "status_code", "expected": [200]} in case["assertions"]
 
 
 def test_cli_workflow_imports_external_openapi_before_api_test_draft(tmp_path):

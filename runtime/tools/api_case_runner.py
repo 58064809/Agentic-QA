@@ -9,6 +9,11 @@ from typing import Any
 
 import yaml
 
+from runtime.schemas.api_test_cases import (
+    API_CASES_SCHEMA_VERSION,
+    LEGACY_API_CASES_SCHEMA_VERSION,
+)
+
 ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)}")
 
 
@@ -16,10 +21,16 @@ ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)}")
 class ApiCase:
     id: str
     title: str
-    method: str
-    path: str
     request: dict[str, Any]
-    expected: dict[str, Any]
+    assertions: list[dict[str, Any]]
+
+    @property
+    def method(self) -> str:
+        return str(self.request.get("method") or "GET").upper()
+
+    @property
+    def path(self) -> str:
+        return str(self.request.get("path") or "/")
 
 
 @dataclass(frozen=True)
@@ -30,11 +41,46 @@ class ApiCaseResult:
     passed: bool
 
 
+def _legacy_assertions(expected: Any) -> list[dict[str, Any]]:
+    if not isinstance(expected, dict):
+        return []
+    assertions: list[dict[str, Any]] = []
+    if "status_code" in expected:
+        assertions.append({"type": "status_code", "expected": expected["status_code"]})
+    for key in expected.get("json_contains_keys") or []:
+        assertions.append({"type": "json_field_exists", "path": f"$.{key}"})
+    return assertions
+
+
+def _normalize_case(item: dict[str, Any], schema_version: str, index: int) -> ApiCase:
+    if schema_version == LEGACY_API_CASES_SCHEMA_VERSION:
+        request = dict(item.get("request") or {})
+        request["method"] = str(item.get("method") or "GET").upper()
+        request["path"] = str(item.get("path") or "/")
+        if "body" not in request and "json" in request:
+            request["body"] = request.pop("json")
+        assertions = _legacy_assertions(item.get("expected"))
+    elif schema_version == API_CASES_SCHEMA_VERSION:
+        request = dict(item.get("request") or {})
+        assertions = [
+            dict(value) for value in item.get("assertions") or [] if isinstance(value, dict)
+        ]
+    else:
+        raise ValueError(f"不支持的接口 YAML schema_version: {schema_version}")
+    return ApiCase(
+        id=str(item.get("id") or f"API-{index:03d}"),
+        title=str(item.get("title") or item.get("id") or f"API case {index}"),
+        request=request,
+        assertions=assertions,
+    )
+
+
 def load_api_cases(path: Path | str) -> list[ApiCase]:
     source = Path(path)
     data = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
     if not isinstance(data, dict):
         raise ValueError(f"接口 YAML 用例必须是 mapping: {source.as_posix()}")
+    schema_version = str(data.get("schema_version") or "")
     cases = data.get("cases")
     if not isinstance(cases, list) or not cases:
         raise ValueError(f"接口 YAML 用例缺少 cases: {source.as_posix()}")
@@ -42,16 +88,7 @@ def load_api_cases(path: Path | str) -> list[ApiCase]:
     for index, item in enumerate(cases, start=1):
         if not isinstance(item, dict):
             raise ValueError(f"接口 YAML 用例第 {index} 条必须是 mapping")
-        parsed.append(
-            ApiCase(
-                id=str(item.get("id") or f"API-{index:03d}"),
-                title=str(item.get("title") or item.get("id") or f"API case {index}"),
-                method=str(item.get("method") or "GET").upper(),
-                path=str(item.get("path") or "/"),
-                request=dict(item.get("request") or {}),
-                expected=dict(item.get("expected") or {}),
-            )
-        )
+        parsed.append(_normalize_case(item, schema_version, index))
     return parsed
 
 
@@ -65,13 +102,27 @@ def _resolve_env_placeholders(value: Any, env: Mapping[str, str]) -> Any:
     return value
 
 
-def _expected_status_codes(expected: Mapping[str, Any]) -> set[int]:
-    raw = expected.get("status_code", [])
-    if isinstance(raw, int):
-        return {raw}
-    if isinstance(raw, list):
-        return {int(item) for item in raw}
+def _status_codes(assertions: list[dict[str, Any]]) -> set[int]:
+    for assertion in assertions:
+        if assertion.get("type") != "status_code":
+            continue
+        expected = assertion.get("expected")
+        if isinstance(expected, int):
+            return {expected}
+        if isinstance(expected, list):
+            return {int(value) for value in expected}
     return set()
+
+
+def _json_path_exists(body: Any, path: str) -> bool:
+    if not path.startswith("$."):
+        return False
+    current = body
+    for part in path[2:].split("."):
+        if not isinstance(current, dict) or part not in current:
+            return False
+        current = current[part]
+    return True
 
 
 def execute_api_case(
@@ -83,13 +134,13 @@ def execute_api_case(
 ) -> ApiCaseResult:
     if not base_url:
         raise ValueError("base_url 不能为空")
-    if case.path.startswith("http://") or case.path.startswith("https://"):
+    if case.path.startswith(("http://", "https://")):
         raise ValueError("接口 YAML 用例 path 不得包含完整环境域名")
     env = env or os.environ
     request = _resolve_env_placeholders(case.request, env)
     headers = dict(request.get("headers") or {})
-    params = request.get("params")
-    json_body = request.get("json")
+    params = request.get("query", request.get("params"))
+    json_body = request.get("body", request.get("json"))
     if request_func is None:
         import requests
 
@@ -102,16 +153,20 @@ def execute_api_case(
         json=json_body,
         timeout=int(request.get("timeout") or 10),
     )
-    expected_codes = _expected_status_codes(case.expected)
+    expected_codes = _status_codes(case.assertions)
+    if not expected_codes:
+        raise ValueError(f"{case.id} 缺少 status_code assertion，不能执行")
     assert response.status_code in expected_codes, (
         f"{case.id} HTTP 状态码不符合预期: actual={response.status_code}, "
         f"expected={sorted(expected_codes)}"
     )
-    expected_keys = case.expected.get("json_contains_keys")
-    if expected_keys:
-        body = response.json()
-        missing = [key for key in expected_keys if key not in body]
-        assert not missing, f"{case.id} 响应 JSON 缺少字段: {missing}"
+    body: Any | None = None
+    for assertion in case.assertions:
+        if assertion.get("type") != "json_field_exists":
+            continue
+        body = response.json() if body is None else body
+        path = str(assertion.get("path") or "")
+        assert _json_path_exists(body, path), f"{case.id} 响应 JSON 缺少字段: {path}"
     return ApiCaseResult(
         case_id=case.id,
         title=case.title,

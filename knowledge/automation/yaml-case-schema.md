@@ -18,10 +18,11 @@ artifacts/api-test-cases.yml
 ## 顶层结构
 
 ```yaml
-schema_version: v1
+schema_version: agentic-qa.api-cases.v1.1
 artifact_type: api_automation_cases
 status: needs_human_review
 human_review_required: true
+base_url_env: AGENTIC_QA_BASE_URL
 generated_from:
   workflow: workflows/10-rag-automation-case-generation-workflow.md
   prompt: prompts/rag-automation-case-prompt.md
@@ -77,7 +78,7 @@ review_questions:
 
 | 字段 | 说明 |
 |---|---|
-| `schema_version` | Schema 版本，第一版为 `v1` |
+| `schema_version` | 当前 Schema 版本固定为 `agentic-qa.api-cases.v1.1` |
 | `artifact_type` | 固定为 `api_automation_cases` |
 | `status` | 默认 `needs_human_review` |
 | `source_refs` | 顶层来源汇总 |
@@ -97,6 +98,18 @@ review_questions:
 | `assertions` | 断言列表 |
 | `variables` | 环境变量、提取变量和 fixture 变量 |
 | `cleanup` | 清理动作说明 |
+
+禁止继续生成旧 v1 的顶层 `method`、`path` 和 `expected`。执行器仅为历史资产保留
+`agentic-qa.api-cases.v1` 读取兼容；所有新候选必须通过 v1.1 质量门。
+
+## contract_status
+
+| 状态 | 允许的接口事实 |
+|---|---|
+| `missing` | `request: {}`、`assertions: []`，只记录契约缺口 |
+| `pending_confirmation` | 仅记录抓包发现的 `request.method/path`，不得写确定性断言 |
+| `partial` | 记录接口文档明确给出的 method/path/字段；未知字段和状态码不得补全 |
+| `confirmed` | 来自 OpenAPI/Swagger/Apifox operation，且至少有可追溯的状态码断言 |
 
 ## 接口契约缺失约束
 
