@@ -61,3 +61,6 @@ prd/*-review/requirement.pdf
 
 # Local generated PRD workspace
 prd/5月活动玩法/
+
+# MkDocs build output
+site/
