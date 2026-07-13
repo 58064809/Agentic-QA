@@ -45,16 +45,25 @@ def _ensure_prd_workspace(
     """确保 PRD 工作区存在，返回相对路径字符串。"""
     candidate = Path(prd_path_str)
 
-    # 情况 1: 已经是 prd/<name> 相对路径
+    # 情况 1: 相对路径指向已有源文件，先导入源文件。
+    #
+    # 这一步必须早于“创建工作区目录”。否则类似
+    # `prd/城市开局计划 H5 规则.md` 的仓库内需求文件会被误当作工作区目录，
+    # 导致 FileExistsError 或生成同名错误目录。
     if not candidate.is_absolute():
-        if not prd_path_str.startswith("prd/"):
-            prd_path_str = f"prd/{prd_path_str}"
-        full = repo_root / prd_path_str
+        source_file = repo_root / candidate
+        if source_file.is_file():
+            return _import_source_file(repo_root, source_file.resolve())
+
+        normalized_prd_path = candidate.as_posix()
+        if not normalized_prd_path.startswith("prd/"):
+            normalized_prd_path = f"prd/{normalized_prd_path}"
+        full = repo_root / normalized_prd_path
         if full.is_dir():
-            return prd_path_str
+            return normalized_prd_path
         full.mkdir(parents=True, exist_ok=True)
         _init_workspace_metadata(full, candidate.name)
-        return prd_path_str
+        return normalized_prd_path
 
     # 情况 2: 绝对路径，已经是目录
     if candidate.is_dir():

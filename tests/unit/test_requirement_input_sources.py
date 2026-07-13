@@ -38,6 +38,20 @@ def test_import_feishu_url_normalizes_to_requirement_markdown(tmp_path, monkeypa
     assert metadata["source_url"] == "https://example.feishu.cn/docx/abc123"
 
 
+def test_ensure_prd_workspace_imports_relative_markdown_file(tmp_path):
+    prd_root = tmp_path / "prd"
+    prd_root.mkdir()
+    source = prd_root / "城市开局计划 H5 规则.md"
+    source.write_text("# 城市开局计划 H5 规则\n\n## 范围\n\n- H5 展示规则", encoding="utf-8")
+
+    prd_rel = cli._ensure_prd_workspace(tmp_path, "prd/城市开局计划 H5 规则.md")
+
+    assert prd_rel == "prd/城市开局计划H5规则"
+    assert not (tmp_path / "prd/城市开局计划 H5 规则.md").is_dir()
+    workspace = tmp_path / prd_rel
+    assert "H5 展示规则" in (workspace / "input/requirement.md").read_text(encoding="utf-8")
+
+
 def test_inline_markdown_detection():
     assert cli._looks_like_markdown_requirement("# Title\n\n## Scope\n\n- item")
     assert not cli._looks_like_markdown_requirement("analyze prd/demo")
