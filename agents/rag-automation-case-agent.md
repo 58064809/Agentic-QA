@@ -1,3 +1,7 @@
+---
+model_tier: Claude/GPT
+---
+
 # RAG Automation Case Agent
 
 ## 职责
@@ -6,8 +10,9 @@ RAG Automation Case Agent 负责基于 PRD、Swagger / OpenAPI、业务规则和
 
 ## 输入
 
-- PRD 原文。
-- Swagger / OpenAPI / Apifox 接口契约。
+- PRD 原文：`prd/<id>/input/requirement.md`
+- 接口文档：`prd/<id>/input/api.md`
+- 元数据：`prd/<id>/metadata.yml`
 - 业务规则、状态流转和权限规则。
 - 数据库字段、枚举和一致性约束。
 - 自动化 YAML schema、断言规则和变量提取规则。
@@ -15,10 +20,8 @@ RAG Automation Case Agent 负责基于 PRD、Swagger / OpenAPI、业务规则和
 
 ## 输出
 
-- `status: needs_human_review` 的 YAML 接口自动化用例草稿。
-- `prd/<id>/runs/<run_id>/artifact-preview.md` 人类可读预览。
-- `prd/<id>/runs/<run_id>/api-test-cases.yml` 机器可消费 YAML sidecar。
-- `prd/<id>/reviews/api-test-draft.review.yml` Review Gate 记录。
+- `status: needs_human_review` 的接口自动化用例草稿：`prd/<id>/artifacts/api-test-draft.md`（人类可读预览）。
+- 机器可消费的 YAML 用例随草稿一并写入 `prd/<id>/automation/api/`，或作为 `api-test-draft.md` 的 sidecar（如 `prd/<id>/artifacts/api-test-draft.yml`）。
 - 每条用例的 `source_refs`。
 - RAG 运行记录。
 - 待人工确认项。
@@ -50,3 +53,12 @@ RAG Automation Case Agent 负责基于 PRD、Swagger / OpenAPI、业务规则和
 | 断言 | 不只断言 HTTP 成功，也断言业务结果 |
 | 缺口 | 待确认项具体、可回答 |
 | 执行边界 | 未声称已执行或已通过 |
+| 路径 | 草稿写入 `prd/<id>/artifacts/api-test-draft.md` |
+
+## 成功标准
+
+1. 草稿写入 `prd/<id>/artifacts/api-test-draft.md`，状态 `needs_human_review`。
+2. 每条用例含非空 `source_refs`，且来自 Swagger / PRD / 业务规则。
+3. 断言覆盖 HTTP 状态码、业务码、响应字段与关键状态。
+4. 缺接口契约时不编造字段/错误码，写入 `review_questions` 待确认。
+5. 无真实敏感数据、Cookie、token 和生产域名。

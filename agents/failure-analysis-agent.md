@@ -1,3 +1,7 @@
+---
+model_tier: Claude/GPT
+---
+
 # Failure Analysis Agent
 
 ## Agent 角色
@@ -18,14 +22,14 @@
 
 ## 输入
 
-- `prd/<id>/execution/runs/`
-- `prd/<id>/cases/test-cases.md`
+- `prd/<id>/artifacts/execution-report.md`
+- `prd/<id>/artifacts/testcases.md`
 - `prd/<id>/input/requirement.md`
 - `prd/<id>/input/api.md`
 
 ## 输出
 
-- `prd/<id>/defects/failure-analysis.md`
+- `prd/<id>/artifacts/failure-analysis.md`
 
 ## 必须读取的资料
 
@@ -64,3 +68,10 @@
 - 使用固定失败分类。
 - 每个失败项包含证据、分类依据和下一步建议。
 - 没有真实失败日志时明确写“暂无真实失败日志”。
+
+## 成功标准
+
+1. 产物位于 `prd/<id>/artifacts/failure-analysis.md`，含 `status: needs_human_review`。
+2. 每个失败项含证据、分类依据和下一步建议。
+3. 证据不足时标注“暂无法判断”，不臆断。
+4. 无真实失败日志时明确写“暂无真实失败日志”，不伪造缺陷。

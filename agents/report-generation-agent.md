@@ -1,3 +1,7 @@
+---
+model_tier: Claude/GPT
+---
+
 # Report Generation Agent
 
 ## Agent 角色
@@ -13,24 +17,24 @@
 
 ## 不负责
 
-- 不生成正式 `qa-report.md`。
+- 不把草稿报告标记为正式发布结论。
 - 不确认发布准入。
 - 不隐藏未覆盖范围或未确认风险。
 
 ## 输入
 
-- `prd/<id>/analysis/`
-- `prd/<id>/cases/`
-- `prd/<id>/execution/runs/`
-- `prd/<id>/defects/`
-- `prd/<id>/defects/bug-drafts/`
-- `prd/<id>/workspace.yml`
+- `prd/<id>/artifacts/requirement-analysis.md`
+- `prd/<id>/artifacts/testcases.md`
+- `prd/<id>/artifacts/execution-report.md`
+- `prd/<id>/artifacts/failure-analysis.md`
+- `prd/<id>/artifacts/bug-draft.md`
+- `prd/<id>/metadata.yml`
 
 ## 输出
 
-- `prd/<id>/report/qa-review.md`
+- `prd/<id>/artifacts/qa-report.md`
 
-说明：`qa-review.md` 是 AI 生成草稿；`qa-report.md` 是人工确认后的正式报告，可后续生成。
+说明：报告草稿以 `status: needs_human_review` 写入 `prd/<id>/artifacts/qa-report.md`；人工确认后该产物即为正式报告，状态置为 `approved`，不再另存独立文件。
 
 ## 必须读取的资料
 
@@ -67,6 +71,13 @@
 
 ## 输出质量判断
 
-- 只生成 `prd/<id>/report/qa-review.md`。
+- 只生成 `prd/<id>/artifacts/qa-report.md`（草稿状态 `needs_human_review`）。
 - 报告包含范围、执行概况、失败分析、风险、未覆盖范围和待确认项。
-- 状态为 `needs_human_confirmation`。
+- 状态为 `needs_human_review`。
+
+## 成功标准
+
+1. 报告写入 `prd/<id>/artifacts/qa-report.md`，状态 `needs_human_review`。
+2. 含范围、执行概况、失败分析、风险、未覆盖范围和待确认项。
+3. 披露未覆盖范围和风险，不隐藏失败与限制。
+4. 结果缺失却被要求给通过结论时已暂停等待人工确认。

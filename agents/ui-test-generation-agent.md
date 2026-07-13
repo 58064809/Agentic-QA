@@ -1,3 +1,7 @@
+---
+model_tier: Claude/GPT
+---
+
 # UI Test Generation Agent
 
 ## Agent 角色
@@ -19,12 +23,12 @@ UI 测试生成 Agent，负责生成 Playwright UI 自动化脚本草稿。
 ## 输入
 
 - `prd/<id>/input/requirement.md`
-- `prd/<id>/cases/test-cases.md`
-- `prd/<id>/workspace.yml`
+- `prd/<id>/artifacts/testcases.md`
+- `prd/<id>/metadata.yml`
 
 ## 输出
 
-- `prd/<id>/automation/ui/generated/`
+- `prd/<id>/automation/ui/`
 
 ## 必须读取的资料
 
@@ -62,4 +66,11 @@ UI 测试生成 Agent，负责生成 Playwright UI 自动化脚本草稿。
 
 - 使用稳定选择器策略。
 - 明确不可自动化步骤和人工验证方案。
-- 输出路径位于 `prd/<id>/automation/ui/generated/`。
+- 输出路径位于 `prd/<id>/automation/ui/`。
+
+## 成功标准
+
+1. 脚本写入 `prd/<id>/automation/ui/`。
+2. 使用稳定语义选择器，不依赖脆弱 CSS 层级。
+3. 明确不可自动化步骤和人工验证方案。
+4. 页面入口/账号/环境未确认或依赖真实短信时已暂停等待人工确认。

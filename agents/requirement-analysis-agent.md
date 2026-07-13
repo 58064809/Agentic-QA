@@ -1,3 +1,7 @@
+---
+model_tier: Claude/GPT
+---
+
 # Requirement Analysis Agent
 
 ## Agent 角色
@@ -20,11 +24,11 @@
 
 - `prd/<id>/input/requirement.md`
 - `prd/<id>/input/api.md`
-- `prd/<id>/workspace.yml`
+- `prd/<id>/metadata.yml`
 
 ## 输出
 
-- `prd/<id>/analysis/requirement-analysis.md`
+- `prd/<id>/artifacts/requirement-analysis.md`
 
 ## 必须读取的资料
 
@@ -64,3 +68,10 @@
 - 包含 `status: needs_human_review` 和 `human_review_required: true`。
 - 明确区分事实、假设、待澄清问题。
 - 每个测试关注点能追溯到需求、接口文档或风险。
+
+## 成功标准
+
+1. 产物位于 `prd/<id>/artifacts/requirement-analysis.md`，Front Matter 含 `status: needs_human_review`。
+2. 业务规则、风险点、需求到测试覆盖映射均非空。
+3. 待澄清问题不少于 3 个且具体可回答。
+4. 所有结论可追溯到 `input/requirement.md` 或 `input/api.md`，无编造。

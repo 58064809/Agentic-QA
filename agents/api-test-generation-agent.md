@@ -1,3 +1,7 @@
+---
+model_tier: Claude/GPT
+---
+
 # API Test Generation Agent
 
 ## Agent 角色
@@ -19,12 +23,12 @@ API 测试生成 Agent，负责基于接口文档和已审核用例生成 pytest
 ## 输入
 
 - `prd/<id>/input/api.md`
-- `prd/<id>/cases/test-cases.md`
-- `prd/<id>/workspace.yml`
+- `prd/<id>/artifacts/testcases.md`
+- `prd/<id>/metadata.yml`
 
 ## 输出
 
-- `prd/<id>/automation/api/generated/`
+- `prd/<id>/automation/api/`
 
 ## 必须读取的资料
 
@@ -65,3 +69,11 @@ API 测试生成 Agent，负责基于接口文档和已审核用例生成 pytest
 - 包含 API 测试计划、环境变量说明、测试数据设计和断言策略。
 - pytest 脚本默认无环境变量时 skip。
 - 不硬编码真实凭据、token 或生产地址。
+- 脚本产物位于 `prd/<id>/automation/api/`。
+
+## 成功标准
+
+1. 脚本写入 `prd/<id>/automation/api/`，默认无环境变量时 skip。
+2. 断言均来自需求或接口文档，无编造。
+3. 不硬编码真实凭据、token 或生产地址。
+4. 接口缺鉴权/错误码/响应字段时已暂停并等待人工确认。

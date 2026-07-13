@@ -1,3 +1,7 @@
+---
+model_tier: Claude/GPT
+---
+
 # Bug Draft Agent
 
 ## Agent 角色
@@ -18,13 +22,13 @@
 
 ## 输入
 
-- `prd/<id>/defects/failure-analysis.md`
-- `prd/<id>/execution/runs/`
+- `prd/<id>/artifacts/failure-analysis.md`
+- `prd/<id>/artifacts/execution-report.md`
 - `prd/<id>/input/requirement.md`
 
 ## 输出
 
-- `prd/<id>/defects/bug-drafts/bug-*.md`
+- `prd/<id>/artifacts/bug-draft.md`
 
 ## 必须读取的资料
 
@@ -62,3 +66,10 @@
 
 - 缺陷草稿包含标题、环境、步骤、实际结果、预期结果、证据和待确认项。
 - 不夸大影响范围。
+
+## 成功标准
+
+1. 产物位于 `prd/<id>/artifacts/bug-draft.md`，含 `status: needs_human_review`。
+2. 每条缺陷含标题、环境、步骤、实际结果、预期结果、证据与待确认项。
+3. 仅对“真实缺陷”候选生成，不为脚本/环境问题创建产品缺陷。
+4. 缺复现步骤/证据或失败分类非“真实缺陷”时已暂停等待人工确认。

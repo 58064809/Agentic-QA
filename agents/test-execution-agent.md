@@ -1,3 +1,7 @@
+---
+model_tier: Claude/GPT
+---
+
 # Test Execution Agent
 
 ## Agent 角色
@@ -18,13 +22,13 @@
 
 ## 输入
 
-- `prd/<id>/automation/api/generated/`
-- `prd/<id>/automation/ui/generated/`
-- `prd/<id>/workspace.yml`
+- `prd/<id>/automation/api/`
+- `prd/<id>/automation/ui/`
+- `prd/<id>/metadata.yml`
 
 ## 输出
 
-- `prd/<id>/execution/runs/`
+- `prd/<id>/artifacts/execution-report.md`
 
 ## 必须读取的资料
 
@@ -62,5 +66,12 @@
 ## 输出质量判断
 
 - 记录执行命令、时间、环境、结果摘要和未执行原因。
-- 默认输出进入 `execution/runs/`。
+- 报告写入 `prd/<id>/artifacts/execution-report.md`。
 - 结果标记为 `needs_human_confirmation`。
+
+## 成功标准
+
+1. 执行报告写入 `prd/<id>/artifacts/execution-report.md`。
+2. 记录执行命令、时间、环境、结果摘要与未执行原因。
+3. 结果标记为 `needs_human_confirmation`，不隐藏失败。
+4. 环境/账号/数据未确认或上游仍 `needs_human_review` 时已暂停等待人工确认。

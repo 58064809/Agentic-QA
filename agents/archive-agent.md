@@ -1,3 +1,7 @@
+---
+model_tier: Claude/GPT
+---
+
 # Archive Agent
 
 ## Agent 角色
@@ -18,14 +22,13 @@
 
 ## 输入
 
-- `prd/<id>/workspace.yml`
-- `prd/<id>/report/qa-report.md`，人工确认后的正式报告。
-- `prd/<id>/report/qa-review.md`，如正式报告尚未生成，则必须作为待确认草稿处理。
-- 所有关联 QA 产物
+- `prd/<id>/metadata.yml`
+- `prd/<id>/artifacts/qa-report.md`，人工确认后的正式报告（状态应为 `approved`）。
+- 所有关联 QA 产物（`prd/<id>/artifacts/` 下）。
 
 ## 输出
 
-- `prd/<id>/archive/index.md`
+- `prd/<id>/artifacts/archive-index.md`
 
 ## 必须读取的资料
 
@@ -56,10 +59,18 @@
 ## 必须暂停并等待人工确认
 
 - metadata 中存在阻塞状态。
-- 只有 `qa-review.md`，没有人工确认的 `qa-report.md`。
+- `qa-report.md` 状态仍为 `needs_human_review`（未经人工确认）。
 - 关键产物缺失或路径不一致。
 
 ## 输出质量判断
 
+- 归档索引写入 `prd/<id>/artifacts/archive-index.md`。
 - 归档索引列出关键产物路径。
 - 归档前后 metadata 状态可追溯。
+
+## 成功标准
+
+1. 归档索引写入 `prd/<id>/artifacts/archive-index.md`。
+2. 归档前校验所有产物状态，存在 `needs_human_review`/`needs_human_confirmation` 时拒绝归档。
+3. `qa-report.md` 状态为 `approved` 才允许归档，否则暂停等待人工确认。
+4. 不删除任何历史产物，metadata 状态流转合法可追溯。
