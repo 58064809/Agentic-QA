@@ -47,7 +47,7 @@ QA Agent 执行
   ↓
 质量检查
   ↓
-写入候选产物 artifact-preview
+写入候选产物 preview 文件
   ↓
 确认门禁 Review Gate
   ↓
@@ -130,9 +130,12 @@ prd/<需求ID>/
 │   ├── latest.yml
 │   ├── index.jsonl
 │   └── <run-id>/
-│       ├── artifact-preview.md
+│       ├── artifact-preview.md              # 候选产物索引
 │       ├── artifact-preview.json
-│       └── artifact-preview.yml
+│       ├── artifact-preview.yml
+│       ├── requirement-analysis.preview.md
+│       ├── testcases.preview.md
+│       └── <artifact>.preview.yml/json
 └── metadata.yml
 ```
 
@@ -264,6 +267,7 @@ ruff check .
 | [`docs/ui-test-generation.md`](docs/ui-test-generation.md) | UI 自动化草稿生成、Playwright 草稿和质量门 |
 | [`docs/api-discovery.md`](docs/api-discovery.md) | 基于网络抓包的接口发现报告、脱敏和离线解析规则 |
 | [`docs/qa-report-generation.md`](docs/qa-report-generation.md) | QA 报告草稿生成、风险披露和发布路径 |
+| [`docs/prompt-engineering.md`](docs/prompt-engineering.md) | Prompt 结构、路径契约、版本策略和治理规范 |
 | [`docs/rag-design.md`](docs/rag-design.md) | RAG 链路、召回追踪和上下文构建 |
 | [`docs/rag-architecture.md`](docs/rag-architecture.md) | 公司业务知识库、RAG 检索和接口自动化用例生成骨架 |
 | [`docs/rag-run-record-spec.md`](docs/rag-run-record-spec.md) | RAG 检索、上下文选择和生成过程的运行记录规范 |

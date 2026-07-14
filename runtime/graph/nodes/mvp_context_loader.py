@@ -92,33 +92,56 @@ def _resolve_context_files(repo_root: Path, task_type: str | None) -> list[str]:
 
 def _set_output_paths(state: QAWorkflowState, repo_root: Path, prd_path: Path) -> None:
     workspace = PRDWorkspace(prd_path)
-    preview_path = workspace.artifact_preview_path(state.run_id).relative_to(repo_root).as_posix()
 
     if state.task_type in {TASK_ANALYSIS, TASK_MVP}:
-        state.output_paths["requirement_analysis"] = preview_path
+        state.output_paths["requirement_analysis"] = (
+            workspace.artifact_candidate_path(state.run_id, "requirement_analysis")
+            .relative_to(repo_root)
+            .as_posix()
+        )
     if state.task_type in {TASK_TESTCASE_GENERATION, TASK_MVP}:
-        state.output_paths["testcases"] = preview_path
+        state.output_paths["testcases"] = (
+            workspace.artifact_candidate_path(state.run_id, "testcases")
+            .relative_to(repo_root)
+            .as_posix()
+        )
     if state.task_type == TASK_API_TEST_DRAFT:
-        state.output_paths["api_test_draft"] = preview_path
+        state.output_paths["api_test_draft"] = (
+            workspace.artifact_candidate_path(state.run_id, "api_test_draft")
+            .relative_to(repo_root)
+            .as_posix()
+        )
     if state.task_type == TASK_UI_TEST_DRAFT:
-        state.output_paths["ui_test_draft"] = preview_path
+        state.output_paths["ui_test_draft"] = (
+            workspace.artifact_candidate_path(state.run_id, "ui_test_draft")
+            .relative_to(repo_root)
+            .as_posix()
+        )
     if state.task_type == TASK_API_DISCOVERY_REPORT:
-        state.output_paths["api_discovery_report"] = preview_path
+        state.output_paths["api_discovery_report"] = (
+            workspace.artifact_candidate_path(state.run_id, "api_discovery_report")
+            .relative_to(repo_root)
+            .as_posix()
+        )
     if state.task_type == TASK_QA_REPORT:
-        state.output_paths["qa_report"] = preview_path
+        state.output_paths["qa_report"] = (
+            workspace.artifact_candidate_path(state.run_id, "qa_report")
+            .relative_to(repo_root)
+            .as_posix()
+        )
 
     if state.task_type == TASK_ANALYSIS:
-        state.output_path = preview_path
+        state.output_path = state.output_paths["requirement_analysis"]
     elif state.task_type == TASK_TESTCASE_GENERATION:
-        state.output_path = preview_path
+        state.output_path = state.output_paths["testcases"]
     elif state.task_type == TASK_API_TEST_DRAFT:
-        state.output_path = preview_path
+        state.output_path = state.output_paths["api_test_draft"]
     elif state.task_type == TASK_UI_TEST_DRAFT:
-        state.output_path = preview_path
+        state.output_path = state.output_paths["ui_test_draft"]
     elif state.task_type == TASK_API_DISCOVERY_REPORT:
-        state.output_path = preview_path
+        state.output_path = state.output_paths["api_discovery_report"]
     elif state.task_type == TASK_QA_REPORT:
-        state.output_path = preview_path
+        state.output_path = state.output_paths["qa_report"]
 
 
 def _detect_requirement_images(

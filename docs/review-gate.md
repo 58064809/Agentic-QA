@@ -154,7 +154,7 @@ run_id: ""
 
 ## Debug Preview Write
 
-`debug_approve_preview_write` 仅允许用于本地 debug / test 场景，用来跳过 interrupt 并写入 `runs/<run-id>/artifact-preview.md` 候选预览。
+`debug_approve_preview_write` 仅允许用于本地 debug / test 场景，用来跳过 interrupt 并写入 `runs/<run-id>/<artifact>.preview.md` 候选预览和 `runs/<run-id>/artifact-preview.md` 候选索引。
 
 该开关不得作为生产 Review Gate 替代路径：
 

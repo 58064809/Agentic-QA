@@ -3,7 +3,8 @@
 测试用例产物分为候选产物和正式产物：
 
 ```text
-候选产物：prd/<需求ID>/runs/<run-id>/artifact-preview.md
+候选产物：prd/<需求ID>/runs/<run-id>/testcases.preview.md
+候选索引：prd/<需求ID>/runs/<run-id>/artifact-preview.md
 正式产物：prd/<需求ID>/artifacts/testcases.md
 ```
 

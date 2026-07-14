@@ -96,6 +96,14 @@ REQUIRED_WORKSPACE_FILES = [
 METADATA_FILE = "metadata.yml"
 RUNS_DIR = "runs"
 ARTIFACT_PREVIEW_FILE = "artifact-preview.md"
+ARTIFACT_PREVIEW_FILES: dict[str, str] = {
+    "requirement_analysis": "requirement-analysis.preview.md",
+    "testcases": "testcases.preview.md",
+    "api_test_draft": "api-test-draft.preview.md",
+    "ui_test_draft": "ui-test-draft.preview.md",
+    "api_discovery_report": "api-discovery-report.preview.md",
+    "qa_report": "qa-report.preview.md",
+}
 DIFF_FILE = "diff.md"
 QUALITY_CHECK_FILE = "quality-check.json"
 
@@ -108,6 +116,24 @@ def resolve_prd_path(repo_root: Path, prd_path: str) -> Path:
 
 def now_iso() -> str:
     return datetime.now(tz=UTC).replace(microsecond=0).isoformat()
+
+
+def is_run_candidate_markdown_path(
+    output_path: str | Path,
+    *,
+    run_id: str | None,
+    artifact_key: str,
+) -> bool:
+    filename = ARTIFACT_PREVIEW_FILES.get(artifact_key)
+    if filename is None:
+        return False
+    parts = Path(output_path).as_posix().split("/")
+    return (
+        len(parts) >= 4
+        and parts[-3] == RUNS_DIR
+        and parts[-2] == (run_id or "runtime")
+        and parts[-1] in {filename, ARTIFACT_PREVIEW_FILE}
+    )
 
 
 def read_yaml_mapping(path: Path) -> dict[str, Any]:
@@ -238,6 +264,12 @@ class PRDWorkspace:
 
     def artifact_preview_path(self, run_id: str | None) -> Path:
         return self.run_dir(run_id) / ARTIFACT_PREVIEW_FILE
+
+    def artifact_candidate_path(self, run_id: str | None, artifact_key: str) -> Path:
+        filename = ARTIFACT_PREVIEW_FILES.get(artifact_key)
+        if filename is None:
+            raise KeyError(f"未知产物类型: {artifact_key}")
+        return self.run_dir(run_id) / filename
 
     def diff_path(self, run_id: str | None) -> Path:
         return self.run_dir(run_id) / DIFF_FILE

@@ -118,6 +118,9 @@ def test_api_discovery_report_generates_preview_and_sanitizes(tmp_path):
 
     assert result.success
     preview = repo_root / result.output_paths["api_discovery_report"]
+    assert preview.as_posix().endswith(
+        f"/prd/demo-requirement/runs/{result.run_id}/api-discovery-report.preview.md"
+    )
     assert preview.is_file()
     content = preview.read_text(encoding="utf-8")
     assert "/api/activity/join" in content

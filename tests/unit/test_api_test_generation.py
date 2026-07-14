@@ -333,7 +333,7 @@ def test_api_test_draft_approve_write_only_writes_run_preview(tmp_path):
     preview = repo_root / result.output_paths["api_test_draft"]
     assert preview.is_file()
     assert preview.as_posix().endswith(
-        f"/prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
+        f"/prd/demo-requirement/runs/{result.run_id}/api-test-draft.preview.md"
     )
     api_cases = preview.with_name(API_CASES_YAML_FILENAME)
     assert api_cases.is_file()

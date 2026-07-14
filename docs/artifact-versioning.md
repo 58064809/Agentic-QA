@@ -10,11 +10,13 @@ artifacts/history/testcases/testcases.v1.md
 artifacts/history/testcases/testcases.v2.md
 artifacts/history/testcases/index.yml
 runs/<run-id>/artifact-preview.md
+runs/<run-id>/testcases.preview.md
+runs/<run-id>/requirement-analysis.preview.md
 runs/<run-id>/diff.md
 runs/<run-id>/quality-check.json
 ```
 
-`artifacts/testcases.md` 始终代表当前生效版本。`runs/<run-id>/artifact-preview.md` 是候选版本，确认通过前不得覆盖正式产物。
+`artifacts/testcases.md` 始终代表当前生效版本。`runs/<run-id>/<artifact>.preview.md` 是候选正文，`runs/<run-id>/artifact-preview.md` 只作为本次 run 的候选索引；确认通过前不得覆盖正式产物。
 
 ## 发布流程
 
@@ -25,7 +27,7 @@ runs/<run-id>/quality-check.json
   ↓
 读取当前正式产物
   ↓
-生成 artifact-preview.md 与 diff.md
+生成 <artifact>.preview.md、artifact-preview.md 索引与 diff.md
   ↓
 质量检查
   ↓
@@ -38,7 +40,7 @@ runs/<run-id>/quality-check.json
 
 ```text
 artifacts/testcases.md -> 归档为 artifacts/history/testcases/testcases.vN.md
-runs/<run-id>/artifact-preview.md -> 提升为 artifacts/testcases.md
+runs/<run-id>/testcases.preview.md -> 提升为 artifacts/testcases.md
 artifacts/history/testcases/index.yml -> 追加版本记录
 reviews/testcases.review.yml -> 更新状态
 metadata.yml -> 更新 current_versions

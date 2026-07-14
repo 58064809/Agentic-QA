@@ -10,7 +10,7 @@ from runtime.graph.nodes.mvp_context_loader import (
 )
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.artifact_writer import ensure_within_directory
-from runtime.workspace import resolve_prd_path
+from runtime.workspace import is_run_candidate_markdown_path, resolve_prd_path
 
 REQUIRED_ANALYSIS_SECTIONS = [
     "需求背景与目标",
@@ -206,14 +206,10 @@ def _check_output_path(
     absolute_output = repo_root / output_path
     if not ensure_within_directory(absolute_output, prd_path):
         state.quality_errors.append(f"{label}输出路径必须位于目标 PRD 工作区内。")
-    output_parts = Path(output_path).as_posix().split("/")
-    uses_preview_layout = (
-        len(output_parts) >= 4
-        and output_parts[-3] == "runs"
-        and output_parts[-1] == "artifact-preview.md"
-    )
-    if not uses_preview_layout:
-        state.quality_errors.append(f"{label}输出路径不符合约定: runs/<run_id>/artifact-preview.md")
+    if not is_run_candidate_markdown_path(output_path, run_id=state.run_id, artifact_key=key):
+        state.quality_errors.append(
+            f"{label}输出路径不符合约定: runs/<run_id>/<artifact>.preview.md"
+        )
 
 
 def requirement_analysis_quality_check_node(

@@ -14,7 +14,7 @@ from runtime.graph.nodes.mvp_generation import (
 )
 from runtime.graph.state import QAWorkflowState
 from runtime.llm.prompt_builder import build_report_prompt
-from runtime.workspace import resolve_prd_path
+from runtime.workspace import is_run_candidate_markdown_path, resolve_prd_path
 
 REQUIRED_QA_REPORT_SECTIONS = [
     "基本信息",
@@ -288,6 +288,7 @@ def _check_output_path(state: QAWorkflowState, repo_root: Path) -> None:
     prd_path = resolve_prd_path(repo_root, state.prd_path)
     if not (repo_root / Path(output_path)).resolve().is_relative_to(prd_path.resolve()):
         state.quality_errors.append("QA 报告输出路径必须位于目标 PRD 工作区内。")
-    expected_suffix = "/runs/" + (state.run_id or "runtime") + "/artifact-preview.md"
-    if not Path(output_path).as_posix().endswith(expected_suffix):
-        state.quality_errors.append("QA 报告输出路径不符合约定: runs/<run_id>/artifact-preview.md")
+    if not is_run_candidate_markdown_path(
+        output_path, run_id=state.run_id, artifact_key="qa_report"
+    ):
+        state.quality_errors.append("QA 报告输出路径不符合约定: runs/<run_id>/qa-report.preview.md")

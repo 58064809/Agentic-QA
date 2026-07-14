@@ -52,6 +52,41 @@ def _read_yaml_if_exists(path: Path) -> dict[str, Any]:
     return read_yaml_mapping(path)
 
 
+def _latest_run_output_paths(workspace: PRDWorkspace, run_id: str | None) -> dict[str, str]:
+    latest = _read_yaml_if_exists(workspace.runs_dir / "latest.yml")
+    if run_id and latest.get("run_id") not in {None, "", run_id}:
+        return {}
+    output_paths = latest.get("output_paths")
+    if not isinstance(output_paths, dict):
+        return {}
+    return {str(key): str(value) for key, value in output_paths.items()}
+
+
+def _candidate_preview_path(
+    workspace: PRDWorkspace,
+    repo_root: Path,
+    *,
+    key: str,
+    run_id: str | None,
+    output_paths: dict[str, str],
+) -> Path:
+    recorded = output_paths.get(key)
+    if recorded:
+        recorded_path = Path(recorded)
+        candidate = recorded_path if recorded_path.is_absolute() else repo_root / recorded_path
+        if candidate.is_file():
+            return candidate
+
+    candidate = workspace.artifact_candidate_path(run_id, key)
+    if candidate.is_file():
+        return candidate
+
+    legacy_preview = workspace.artifact_preview_path(run_id)
+    if legacy_preview.is_file():
+        return legacy_preview
+    raise FileNotFoundError(candidate.as_posix())
+
+
 def _approved_artifact_keys(workspace: PRDWorkspace, run_id: str | None) -> list[str]:
     keys: list[str] = []
     for key in ARTIFACT_SPECS:
@@ -246,7 +281,7 @@ def _update_metadata_and_review(
     entry["history_index"] = spec["history_index"]
     entry["latest_run_id"] = run_id or ""
     entry["latest_preview_path"] = (
-        workspace.artifact_preview_path(run_id).relative_to(workspace.root).as_posix()
+        workspace.artifact_candidate_path(run_id, key).relative_to(workspace.root).as_posix()
         if run_id
         else ""
     )
@@ -303,11 +338,6 @@ def artifact_promoter_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflo
         return state
 
     workspace = PRDWorkspace(repo_root / Path(state.prd_path))
-    preview_path = workspace.artifact_preview_path(state.run_id)
-    if not preview_path.is_file():
-        state.errors.append(f"未找到候选产物预览: {preview_path.as_posix()}")
-        return state
-
     task_keys = _artifact_keys_for_task(state)
     approved_keys = _approved_artifact_keys(workspace, state.run_id)
     target_keys = [key for key in task_keys if key in approved_keys]
@@ -315,14 +345,27 @@ def artifact_promoter_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflo
         state.errors.append("没有已 approved 的 review 记录，拒绝晋升正式产物。")
         return state
 
-    preview = preview_path.read_text(encoding="utf-8")
+    latest_output_paths = _latest_run_output_paths(workspace, state.run_id)
+    latest_output_paths.update(state.output_paths)
     promoted_at = now_iso()
     version = _version_id(state.run_id)
     output_paths: dict[str, str] = {}
 
     try:
         for key in target_keys:
-            content = _preview_content_for_key(preview, key, task_keys)
+            preview_path = _candidate_preview_path(
+                workspace,
+                repo_root,
+                key=key,
+                run_id=state.run_id,
+                output_paths=latest_output_paths,
+            )
+            preview = preview_path.read_text(encoding="utf-8")
+            if preview_path == workspace.artifact_preview_path(state.run_id):
+                content_keys = task_keys
+            else:
+                content_keys = [key]
+            content = _preview_content_for_key(preview, key, content_keys)
             content = _promoted_front_matter(
                 content,
                 key=key,
@@ -369,7 +412,7 @@ def artifact_promoter_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflo
                     ).as_posix()
                 else:
                     state.warnings.append("未找到接口 YAML 用例候选，已仅发布 api-test-draft.md。")
-    except ValueError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         state.errors.append(str(exc))
         return state
 

@@ -77,7 +77,7 @@ def test_ui_test_draft_approve_write_only_writes_run_preview(tmp_path):
     preview = repo_root / result.output_paths["ui_test_draft"]
     assert preview.is_file()
     assert preview.as_posix().endswith(
-        f"/prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
+        f"/prd/demo-requirement/runs/{result.run_id}/ui-test-draft.preview.md"
     )
     assert not (repo_root / "prd/demo-requirement/artifacts/ui-test-draft.md").exists()
 

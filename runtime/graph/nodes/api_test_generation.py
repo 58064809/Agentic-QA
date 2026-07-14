@@ -24,7 +24,7 @@ from runtime.tools.openapi_contract_index import (
     retrieve_openapi_chunks_for_prd,
 )
 from runtime.validators.api_case_contract_rules import validate_api_test_cases_yaml
-from runtime.workspace import resolve_prd_path
+from runtime.workspace import is_run_candidate_markdown_path, resolve_prd_path
 
 REQUIRED_API_TEST_SECTIONS = [
     "接口清单",
@@ -1121,10 +1121,11 @@ def api_test_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWo
         state.quality_errors.append("缺少接口测试草稿输出路径。")
     elif not (repo_root / Path(output_path)).resolve().is_relative_to(prd_path.resolve()):
         state.quality_errors.append("接口测试草稿输出路径必须位于目标 PRD 工作区内。")
-    expected_suffix = "/runs/" + (state.run_id or "runtime") + "/artifact-preview.md"
-    if output_path and not Path(output_path).as_posix().endswith(expected_suffix):
+    if output_path and not is_run_candidate_markdown_path(
+        output_path, run_id=state.run_id, artifact_key="api_test_draft"
+    ):
         state.quality_errors.append(
-            "接口测试草稿输出路径不符合约定: runs/<run_id>/artifact-preview.md"
+            "接口测试草稿输出路径不符合约定: runs/<run_id>/api-test-draft.preview.md"
         )
     return state
 

@@ -106,7 +106,7 @@ def test_qa_report_fallback_writes_reviewable_preview(tmp_path):
     assert result.success
     assert result.quality_errors == []
     assert result.output_paths == {
-        "qa_report": f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
+        "qa_report": f"prd/demo-requirement/runs/{result.run_id}/qa-report.preview.md"
     }
     preview = (repo_root / result.output_paths["qa_report"]).read_text(encoding="utf-8")
     assert "artifact_type: qa_report" in preview

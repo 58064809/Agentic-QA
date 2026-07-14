@@ -51,7 +51,7 @@ def test_analyze_approve_write_creates_analysis_draft(tmp_path):
     assert result.success
     assert output_path.exists()
     assert output_path.as_posix().endswith(
-        f"/prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
+        f"/prd/demo-requirement/runs/{result.run_id}/requirement-analysis.preview.md"
     )
     structured_json = output_path.with_suffix(".json")
     structured_yaml = output_path.with_suffix(".yml")
@@ -107,7 +107,7 @@ def test_generate_testcases_approve_write_creates_testcase_draft(tmp_path):
     assert result.wrote_file
     assert result.review_status == "write_approved"
     assert output_path.as_posix().endswith(
-        f"/prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
+        f"/prd/demo-requirement/runs/{result.run_id}/testcases.preview.md"
     )
     assert "artifact_type: testcase_draft" in output_path.read_text(encoding="utf-8")
     assert result.run_id in (repo_root / "prd/demo-requirement/runs/latest.yml").read_text(
@@ -154,11 +154,15 @@ def test_mvp_approve_write_creates_analysis_and_testcases(tmp_path):
     assert result.review_status == "write_approved"
     analysis_path = repo_root / result.output_paths["requirement_analysis"]
     testcases_path = repo_root / result.output_paths["testcases"]
-    assert analysis_path == testcases_path
     assert analysis_path.is_file()
+    assert testcases_path.is_file()
     assert analysis_path.as_posix().endswith(
-        f"/prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
+        f"/prd/demo-requirement/runs/{result.run_id}/requirement-analysis.preview.md"
     )
+    assert testcases_path.as_posix().endswith(
+        f"/prd/demo-requirement/runs/{result.run_id}/testcases.preview.md"
+    )
+    assert (repo_root / f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md").is_file()
     assert (repo_root / "prd/demo-requirement/runs/latest.yml").is_file()
     assert (repo_root / "prd/demo-requirement/runs/index.jsonl").is_file()
     assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
@@ -231,10 +235,12 @@ def test_mvp_approve_write_writes_run_candidates_when_defaults_exist(tmp_path):
     assert candidate_analysis.with_suffix(".json").exists()
     assert candidate_analysis.with_suffix(".yml").exists()
     assert candidate_analysis.as_posix().endswith(
-        f"/prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
+        f"/prd/demo-requirement/runs/{result.run_id}/requirement-analysis.preview.md"
     )
-    assert candidate_testcases == candidate_analysis
     assert candidate_testcases.exists()
+    assert candidate_testcases.as_posix().endswith(
+        f"/prd/demo-requirement/runs/{result.run_id}/testcases.preview.md"
+    )
     latest = repo_root / "prd/demo-requirement/runs/latest.yml"
     index = repo_root / "prd/demo-requirement/runs/index.jsonl"
     assert latest.is_file()

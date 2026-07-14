@@ -121,7 +121,7 @@ artifact_policy:
   on_failure: keep_current_artifact
   versioning: true
   history_dir: artifacts/history
-  preview_path: runs/<run-id>/artifact-preview.md
+  preview_path: runs/<run-id>/<artifact>.preview.md
   diff_path: runs/<run-id>/diff.md
   on_promote:
     archive_previous: true

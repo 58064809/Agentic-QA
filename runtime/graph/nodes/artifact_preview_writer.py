@@ -87,6 +87,45 @@ def _structured_payload(state: QAWorkflowState, key: str, markdown_path: str) ->
     return payload
 
 
+def _artifact_title(key: str) -> str:
+    return {
+        "requirement_analysis": "需求分析候选",
+        "testcases": "测试用例候选",
+        "api_test_draft": "接口测试草稿候选",
+        "ui_test_draft": "UI 自动化草稿候选",
+        "api_discovery_report": "接口发现报告候选",
+        "qa_report": "QA 报告候选",
+    }.get(key, key)
+
+
+def _preview_index_markdown(state: QAWorkflowState, keys: list[str]) -> str:
+    lines = [
+        "---",
+        "artifact_type: artifact_preview_index",
+        f"status: {state.review_status}",
+        "human_review_required: true",
+        "generated_by: agentic-qa-runtime",
+        "---",
+        "",
+        "# 候选产物索引",
+        "",
+        "| 产物 | 候选文件 | 状态 |",
+        "|---|---|---|",
+    ]
+    for key in keys:
+        lines.append(
+            f"| {_artifact_title(key)} | `{state.output_paths[key]}` | {state.review_status} |"
+        )
+    lines.extend(
+        [
+            "",
+            "> 候选内容已按产物类型拆分；正式发布仍需 Review Gate 确认后再 promote。",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _write_structured_companions(
     repo_root: Path,
     state: QAWorkflowState,
@@ -159,17 +198,22 @@ def _write_preview_companions(
         "prd_path": state.prd_path,
         "task_type": state.task_type,
         "markdown_path": markdown_path,
-        "artifacts": [_structured_payload(state, key, markdown_path) for key in keys],
+        "artifacts": [
+            _structured_payload(state, key, state.output_paths.get(key, markdown_path))
+            for key in keys
+        ],
         "source_files": sorted(state.loaded_files.keys()),
         "quality_errors": list(state.quality_errors),
         "warnings": list(state.warnings),
     }
     if len(keys) == 1 and keys[0] == "api_test_draft":
         payload["api_test_cases_yaml_path"] = (
-            Path(markdown_path).with_name(API_CASES_YAML_FILENAME).as_posix()
+            Path(state.output_paths["api_test_draft"]).with_name(API_CASES_YAML_FILENAME).as_posix()
         )
         payload["rag_run_record_path"] = (
-            Path(markdown_path).with_name(API_RAG_RUN_RECORD_FILENAME).as_posix()
+            Path(state.output_paths["api_test_draft"])
+            .with_name(API_RAG_RUN_RECORD_FILENAME)
+            .as_posix()
         )
     json_path = path.with_suffix(".json")
     yaml_path = path.with_suffix(".yml")
@@ -216,6 +260,11 @@ def _write_run_pointers(repo_root: Path, state: QAWorkflowState, keys: list[str]
         "prd_path": state.prd_path,
         "updated_at": _now_iso(),
         "output_paths": {key: state.output_paths[key] for key in keys},
+        "preview_index_path": (
+            prd_root / RUNS_DIR_NAME / (state.run_id or "runtime") / "artifact-preview.md"
+        )
+        .relative_to(repo_root)
+        .as_posix(),
         "review_status": state.review_status,
         "quality_errors": list(state.quality_errors),
         "warnings": list(state.warnings),
@@ -354,6 +403,11 @@ def artifact_preview_writer_node(state: QAWorkflowState, repo_root: Path) -> QAW
                 _write_api_cases_yaml_candidate(repo_root, state, state.output_paths[key])
                 _write_api_rag_run_record_candidate(repo_root, state, state.output_paths[key])
                 _write_structured_companions(repo_root, state, key)
+            first_output = repo_root / Path(state.output_paths[keys[0]])
+            index_path = first_output.parent / "artifact-preview.md"
+            relative_index_path = index_path.relative_to(repo_root).as_posix()
+            write_new_text(index_path, _preview_index_markdown(state, keys))
+            _write_preview_companions(repo_root, state, keys, relative_index_path)
         _write_run_pointers(repo_root, state, keys)
     except FileExistsError as exc:
         state.errors.append(str(exc))

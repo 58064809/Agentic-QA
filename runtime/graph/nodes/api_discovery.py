@@ -11,7 +11,7 @@ from runtime.tools.api_discovery_normalizer import (
     render_api_discovery_report,
     save_discovery_json,
 )
-from runtime.workspace import resolve_prd_path
+from runtime.workspace import is_run_candidate_markdown_path, resolve_prd_path
 
 REQUIRED_DISCOVERY_SECTIONS = [
     "采集来源",
@@ -116,8 +116,9 @@ def _check_output_path(state: QAWorkflowState, repo_root: Path) -> None:
     prd_path = resolve_prd_path(repo_root, state.prd_path)
     if not (repo_root / Path(output_path)).resolve().is_relative_to(prd_path.resolve()):
         state.quality_errors.append("接口发现报告输出路径必须位于目标 PRD 工作区内。")
-    expected_suffix = "/runs/" + (state.run_id or "runtime") + "/artifact-preview.md"
-    if not Path(output_path).as_posix().endswith(expected_suffix):
+    if not is_run_candidate_markdown_path(
+        output_path, run_id=state.run_id, artifact_key="api_discovery_report"
+    ):
         state.quality_errors.append(
-            "接口发现报告输出路径不符合约定: runs/<run_id>/artifact-preview.md"
+            "接口发现报告输出路径不符合约定: runs/<run_id>/api-discovery-report.preview.md"
         )

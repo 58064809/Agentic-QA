@@ -1,0 +1,50 @@
+requirement_id: 城市开局计划H5规则
+title: 城市开局计划H5规则
+status: draft
+created_by: agentic-qa
+created_at: '2026-07-13T09:47:30+00:00'
+updated_at: '2026-07-13T09:47:30+00:00'
+artifacts:
+  requirement_analysis:
+    current_path: artifacts/requirement-analysis.md
+    current_version: ''
+    history_index: artifacts/history/requirement-analysis/index.yml
+    latest_run_id: ''
+    status: draft
+  testcases:
+    current_path: artifacts/testcases.md
+    current_version: ''
+    history_index: artifacts/history/testcases/index.yml
+    latest_run_id: ''
+    status: draft
+  api_test_draft:
+    current_path: artifacts/api-test-draft.md
+    current_version: ''
+    history_index: artifacts/history/api-test-draft/index.yml
+    latest_run_id: ''
+    status: draft
+  ui_test_draft:
+    current_path: artifacts/ui-test-draft.md
+    current_version: ''
+    history_index: artifacts/history/ui-test-draft/index.yml
+    latest_run_id: ''
+    status: draft
+  api_discovery_report:
+    current_path: artifacts/api-discovery-report.md
+    current_version: ''
+    history_index: artifacts/history/api-discovery-report/index.yml
+    latest_run_id: ''
+    status: draft
+  qa_report:
+    current_path: artifacts/qa-report.md
+    current_version: ''
+    history_index: artifacts/history/qa-report/index.yml
+    latest_run_id: ''
+    status: draft
+reviews:
+  requirement_analysis: reviews/requirement-analysis.review.yml
+  testcases: reviews/testcases.review.yml
+  api_test_draft: reviews/api-test-draft.review.yml
+  ui_test_draft: reviews/ui-test-draft.review.yml
+  api_discovery_report: reviews/api-discovery-report.review.yml
+  qa_report: reviews/qa-report.review.yml
