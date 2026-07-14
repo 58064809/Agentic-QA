@@ -2,30 +2,46 @@ from __future__ import annotations
 
 import argparse
 import re
+import time
 from pathlib import Path
 
 import yaml
 
+from runtime.workflow.catalog import (
+    ANALYSIS_CONTEXT_FILES,
+    API_DISCOVERY_CONTEXT_FILES,
+    API_TEST_CONTEXT_FILES,
+    BASE_CONTEXT_FILES,
+    QA_REPORT_CONTEXT_FILES,
+    RAG_AUTOMATION_CASE_CONTEXT_FILES,
+    TESTCASE_CONTEXT_FILES,
+    UI_TEST_CONTEXT_FILES,
+)
 from runtime.workflow.conditions import CONDITIONS
 from runtime.workflow.loader import load_workflow_spec
+from runtime.workspace import ARTIFACT_PREVIEW_FILES, ARTIFACT_SPECS
 
 CORE_FILES = [
     "README.md",
     "AGENTS.md",
     "COMMANDS.md",
     "rules/agent-output-rules.md",
+    "rules/artifact-path-rules.md",
     "knowledge/templates/agent-completion-summary-template.md",
     ".github/workflows/ci.yml",
+    "docs/architecture.md",
     "docs/workflow-dsl.md",
     "docs/runtime-reliability.md",
     "docs/artifact-versioning.md",
     "docs/review-gate.md",
     "docs/artifact-standards.md",
     "docs/testcase-standards.md",
+    "docs/prompt-engineering.md",
     "docs/rag-design.md",
     "docs/roadmap.md",
-    "workflows/10-runtime-testcase-generation-workflow.md",
     "runtime/README.md",
+    "runtime/workspace.py",
+    "runtime/workflow/catalog.py",
     "skills/registry/skills.yaml",
 ]
 
@@ -34,6 +50,7 @@ CORE_DIRS = [
     ".github/workflows",
     "docs",
     "workflows",
+    "workflows/runtime",
     "agents",
     "prompts",
     "rules",
@@ -72,6 +89,7 @@ COMPLETION_TEMPLATE_REQUIRED_TERMS = [
     "下一步建议",
     "未执行命令必须说明原因",
 ]
+
 PATH_PREFIXES = (
     "workflows/",
     "agents/",
@@ -94,6 +112,7 @@ EXCLUDED_DIRS = {
     ".pytest_cache",
     ".ruff_cache",
     ".deepeval",
+    ".runtime",
     "agentic_qa.egg-info",
     "__pycache__",
 }
@@ -120,6 +139,58 @@ TARGET_STATE_PATH_TOKENS = {
     "integrations/",
 }
 RUNTIME_WORKFLOW_GLOB = "*.workflow.yml"
+LEGACY_WORKFLOW_RE = re.compile(r"^workflows/\d{2}-.+-workflow\.md$")
+LEGACY_CONTRACT_TOKENS = {
+    "workspace.yml": "metadata.yml",
+    "/analysis/": "artifacts/requirement-analysis.md",
+    "/cases/": "artifacts/testcases.md",
+    "/execution/": "artifacts/ 或 .runtime/runs/",
+    "/defects/": "artifacts/",
+    "/report/": "artifacts/qa-report.md",
+    "test-cases.md": "testcases.md",
+    "qa-review.md": "qa-report.preview.md",
+}
+NEGATIVE_REFERENCE_MARKERS = (
+    "禁止",
+    "废弃",
+    "旧路径",
+    "旧目录",
+    "旧文件",
+    "不支持",
+    "不保留",
+    "不得继续",
+    "不得使用",
+    "删除",
+    "移除",
+)
+CONTRACT_SCAN_ROOTS = (
+    "README.md",
+    "AGENTS.md",
+    "COMMANDS.md",
+    "docs",
+    "rules",
+    "prompts",
+    "agents",
+    "skills",
+    "workflows",
+    "configs",
+    "runtime/workflow/catalog.py",
+)
+CONTRACT_SCAN_SUFFIXES = {".md", ".yml", ".yaml", ".py", ".toml"}
+PROMPT_CANONICALS = {
+    "prompts/api-test-generation-prompt.md": ("prompts/api-test-generation.md",),
+    "prompts/ui-test-generation-prompt.md": ("prompts/ui-test-generation.md",),
+}
+RUNTIME_CONTEXT_GROUPS = (
+    BASE_CONTEXT_FILES,
+    ANALYSIS_CONTEXT_FILES,
+    TESTCASE_CONTEXT_FILES,
+    API_TEST_CONTEXT_FILES,
+    RAG_AUTOMATION_CASE_CONTEXT_FILES,
+    UI_TEST_CONTEXT_FILES,
+    API_DISCOVERY_CONTEXT_FILES,
+    QA_REPORT_CONTEXT_FILES,
+)
 
 
 def read_text(path: Path) -> str:
@@ -177,6 +248,23 @@ def iter_markdown_files(repo_root: Path):
         yield path
 
 
+def iter_contract_files(repo_root: Path):
+    seen: set[Path] = set()
+    for entry in CONTRACT_SCAN_ROOTS:
+        path = repo_root / entry
+        candidates = [path] if path.is_file() else path.rglob("*") if path.is_dir() else []
+        for candidate in candidates:
+            if not candidate.is_file() or candidate.suffix.lower() not in CONTRACT_SCAN_SUFFIXES:
+                continue
+            relative_parts = candidate.relative_to(repo_root).parts
+            if any(part in EXCLUDED_DIRS or part == "prd" for part in relative_parts):
+                continue
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            yield candidate
+
+
 def find_broken_markdown_path_refs(repo_root: Path) -> list[str]:
     errors: list[str] = []
     for markdown_path in iter_markdown_files(repo_root):
@@ -196,6 +284,78 @@ def find_broken_markdown_path_refs(repo_root: Path) -> list[str]:
                     continue
                 if not (repo_root / token).exists():
                     errors.append(f"{source}:{line_number} 引用了不存在的路径: {token}")
+    return errors
+
+
+def find_legacy_workflow_docs(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    workflow_dir = repo_root / "workflows"
+    if not workflow_dir.is_dir():
+        return errors
+    for path in sorted(workflow_dir.glob("*.md")):
+        relative = path.relative_to(repo_root).as_posix()
+        if LEGACY_WORKFLOW_RE.fullmatch(relative):
+            errors.append(f"存在旧 Workflow Markdown，必须删除并使用 workflows/runtime/*.workflow.yml: {relative}")
+    return errors
+
+
+def find_legacy_contract_refs(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    for path in iter_contract_files(repo_root):
+        source = path.relative_to(repo_root).as_posix()
+        for line_number, line in enumerate(read_text(path).splitlines(), start=1):
+            if any(marker in line for marker in NEGATIVE_REFERENCE_MARKERS):
+                continue
+            for token, replacement in LEGACY_CONTRACT_TOKENS.items():
+                if token in line:
+                    errors.append(
+                        f"{source}:{line_number} 仍引用旧契约 {token!r}，应改为 {replacement}"
+                    )
+            for match in re.finditer(r"workflows/\d{2}-[^\s`'\"]+-workflow\.md", line):
+                errors.append(
+                    f"{source}:{line_number} 仍引用旧 Workflow 文档: {match.group(0)}"
+                )
+    return errors
+
+
+def validate_prompt_uniqueness(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    for canonical, duplicates in PROMPT_CANONICALS.items():
+        if not (repo_root / canonical).is_file():
+            errors.append(f"缺少当前 Prompt 权威文件: {canonical}")
+        for duplicate in duplicates:
+            if (repo_root / duplicate).exists():
+                errors.append(f"存在重复 Prompt 正文: {duplicate}；权威文件为 {canonical}")
+    return errors
+
+
+def validate_runtime_context_files(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    context_files = sorted({path for group in RUNTIME_CONTEXT_GROUPS for path in group})
+    for relative in context_files:
+        if LEGACY_WORKFLOW_RE.fullmatch(relative):
+            errors.append(f"Runtime 上下文仍加载旧 Workflow 文档: {relative}")
+        if not (repo_root / relative).is_file():
+            errors.append(f"Runtime 上下文引用不存在的文件: {relative}")
+    return errors
+
+
+def validate_workspace_contract_docs(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    rules_path = repo_root / "rules/artifact-path-rules.md"
+    if not rules_path.is_file():
+        return errors
+    content = read_text(rules_path)
+    for artifact_key, spec in ARTIFACT_SPECS.items():
+        expected = {
+            spec["current_path"],
+            spec["review_path"],
+            spec["history_index"],
+            f"runs/<run-id>/{ARTIFACT_PREVIEW_FILES[artifact_key]}",
+        }
+        for token in expected:
+            if token not in content:
+                errors.append(f"rules/artifact-path-rules.md 未覆盖 Runtime 路径契约: {token}")
     return errors
 
 
@@ -220,14 +380,13 @@ def validate_runtime_workflow_docs(repo_root: Path) -> list[str]:
             if token and f"`{token}`" not in docs_content:
                 errors.append(f"docs/workflow-dsl.md 未列出 Runtime workflow 信息: {token}")
 
-        raw = yaml.safe_load(workflow_path.read_text(encoding="utf-8")) or {}
+        raw = yaml.safe_load(workflow_path.read_text(encoding="utf-8-sig")) or {}
         for edge in raw.get("edges") or []:
             condition = edge.get("condition") if isinstance(edge, dict) else None
             if condition and condition not in CONDITIONS:
                 errors.append(f"{relative_path} 使用了未注册 condition: {condition}")
             if condition and f"`{condition}`" not in docs_content:
                 errors.append(f"docs/workflow-dsl.md 未列出 condition: {condition}")
-
     return errors
 
 
@@ -251,22 +410,42 @@ def validate_docs_consistency(repo_root: Path) -> list[str]:
         errors,
     )
     errors.extend(find_broken_markdown_path_refs(repo_root))
+    errors.extend(find_legacy_workflow_docs(repo_root))
+    errors.extend(find_legacy_contract_refs(repo_root))
+    errors.extend(validate_prompt_uniqueness(repo_root))
+    errors.extend(validate_runtime_context_files(repo_root))
+    errors.extend(validate_workspace_contract_docs(repo_root))
     errors.extend(validate_runtime_workflow_docs(repo_root))
     return errors
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="校验仓库文档结构和关键引用一致性")
-    parser.add_argument("--repo-root", default=Path(__file__).resolve().parents[1], type=Path)
-    args = parser.parse_args()
-    errors = validate_docs_consistency(args.repo_root)
+def print_result(errors: list[str]) -> int:
     if not errors:
-        print("文档一致性检查通过。")
+        print("文档与契约一致性检查通过。")
         return 0
-    print("文档一致性检查未通过:")
+    print("文档与契约一致性检查未通过:")
     for error in errors:
         print(f"- {error}")
     return 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="校验仓库文档、Workflow、Prompt 与 Runtime 契约一致性")
+    parser.add_argument("--repo-root", default=Path(__file__).resolve().parents[1], type=Path)
+    parser.add_argument("--watch", action="store_true", help="循环检查，文件修复后自动重新验证")
+    parser.add_argument("--interval", type=float, default=2.0, help="watch 模式检查间隔，单位秒")
+    args = parser.parse_args()
+
+    if not args.watch:
+        return print_result(validate_docs_consistency(args.repo_root))
+
+    try:
+        while True:
+            print_result(validate_docs_consistency(args.repo_root))
+            time.sleep(max(args.interval, 0.2))
+    except KeyboardInterrupt:
+        print("已停止循环检查。")
+        return 0
 
 
 if __name__ == "__main__":
