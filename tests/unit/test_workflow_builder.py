@@ -182,6 +182,19 @@ def test_build_graph_rejects_multiple_default_edges_from_same_source():
         build_graph_from_spec(spec, REPO_ROOT)
 
 
+def test_build_graph_rejects_conditional_source_without_default_edge():
+    spec = workflow_spec(
+        edges=[
+            EdgeSpec(source="start", target="a"),
+            EdgeSpec(source="a", target="b", condition="has_errors"),
+            EdgeSpec(source="b", target="end"),
+        ]
+    )
+
+    with pytest.raises(ValueError, match="必须且只能有一个 default edge"):
+        build_graph_from_spec(spec, REPO_ROOT)
+
+
 def test_default_edge_runs_when_no_other_condition_matches():
     spec = workflow_spec(
         edges=[
