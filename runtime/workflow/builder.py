@@ -81,8 +81,8 @@ def _wrap_handler(
 ) -> Callable[[QAWorkflowState], QAWorkflowState]:
     """Wrap a Python handler for use as a LangGraph node.
 
-    The handler receives the full ``QAWorkflowState`` directly (no more
-    TypedDict conversion).  Handlers mutate state in-place and return it.
+    The handler receives the full ``QAWorkflowState`` directly. Handlers mutate
+    state in-place and return it.
     """
     handler = import_handler(handler_path)
 
@@ -121,17 +121,15 @@ def _validate_workflow(spec: WorkflowSpec) -> None:
 
 
 def _conditional_router(edges: list[EdgeSpec]) -> Callable[[QAWorkflowState], str]:
-    """Build a router function that evaluates conditions in order."""
-    default_edges = [edge for edge in edges if edge.condition == DEFAULT_CONDITION]
+    """Build a router that evaluates explicit conditions in YAML order."""
+    default_edge = next(edge for edge in edges if edge.condition == DEFAULT_CONDITION)
     conditional_edges = [edge for edge in edges if edge.condition != DEFAULT_CONDITION]
 
     def route(state: QAWorkflowState) -> str:
         for edge in conditional_edges:
             if edge.condition and get_condition(edge.condition)(state):
                 return edge.target
-        if default_edges:
-            return default_edges[0].target
-        return "end"
+        return default_edge.target
 
     return route
 
@@ -141,9 +139,14 @@ def _validate_source_edges(spec: WorkflowSpec, source: str, edges: list[EdgeSpec
     fixed = [edge for edge in edges if not edge.condition]
     if conditional and fixed:
         raise ValueError(f"Workflow {spec.id} 不支持同一 source 混合固定边和条件边: {source}")
+    if not conditional:
+        return
+
     default_edges = [edge for edge in conditional if edge.condition == DEFAULT_CONDITION]
-    if len(default_edges) > 1:
-        raise ValueError(f"Workflow {spec.id} 同一 source 只能有一个 default edge: {source}")
+    if len(default_edges) != 1:
+        raise ValueError(
+            f"Workflow {spec.id} 条件路由必须且只能有一个 default edge: {source}"
+        )
 
 
 def build_graph_from_spec(
@@ -152,7 +155,7 @@ def build_graph_from_spec(
     checkpointer: MemorySaver | None = None,
     _stack: tuple[str, ...] = (),
 ):
-    """Build a compiled LangGraph from a ``WorkflowSpec`` (YAML DSL)."""
+    """Build a compiled LangGraph from a ``WorkflowSpec`` YAML definition."""
     _validate_workflow(spec)
     root = repo_root.resolve()
     graph = StateGraph(QAWorkflowState)
