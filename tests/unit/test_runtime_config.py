@@ -11,6 +11,7 @@ from runtime.graph.nodes.mvp_context_loader import mvp_workflow_selector_node
 from runtime.graph.state import QAWorkflowState
 from runtime.llm.config import OpenAICompatibleConfig
 from runtime.session import SessionManager
+from runtime.workflow.catalog import DEFAULT_WORKFLOW_REGISTRY
 from runtime.workflow.runner import _graph_config
 
 
@@ -43,8 +44,8 @@ def test_load_app_config_merges_tracked_and_local_files(tmp_path: Path) -> None:
         tmp_path / "configs/config.yaml",
         """
 workflow:
-  default_workflow_files:
-    - workflows/default.md
+  use_llm:
+    testcase_generation: false
 rag:
   enabled: false
   top_k: 3
@@ -61,7 +62,7 @@ rag:
 
     config = load_app_config(tmp_path)
 
-    assert config.workflow.default_workflow_files == ["workflows/default.md"]
+    assert config.workflow.use_llm_for("testcase_generation") is False
     assert config.llm.enabled is True
     assert config.rag["enabled"] is True
     assert config.rag["top_k"] == 3
@@ -99,17 +100,11 @@ def test_load_app_config_rejects_non_mapping_yaml(tmp_path: Path) -> None:
         load_app_config(tmp_path)
 
 
-def test_workflow_selector_uses_configured_workflow_files(tmp_path: Path) -> None:
-    write_file(
-        tmp_path / "configs/config.yaml",
-        """
-workflow:
-  intent_workflow_files:
-    testcase_generation:
-      - workflows/custom-testcase.md
-""",
-    )
-    write_file(tmp_path / "workflows/custom-testcase.md")
+def test_workflow_selector_uses_registry_context_files(tmp_path: Path) -> None:
+    definition = DEFAULT_WORKFLOW_REGISTRY.definition_for_task_type("testcase_generation")
+    for relative_path in definition.context_files:
+        write_file(tmp_path / relative_path)
+
     state = QAWorkflowState(
         user_input="请生成测试用例",
         prd_path="prd/demo",
@@ -118,8 +113,27 @@ workflow:
 
     mvp_workflow_selector_node(state, tmp_path)
 
-    assert state.workflow_files == ["workflows/custom-testcase.md"]
+    assert state.workflow_files == list(definition.context_files)
     assert not state.errors
+
+
+def test_legacy_workflow_override_keys_are_not_part_of_typed_config(tmp_path: Path) -> None:
+    write_file(
+        tmp_path / "configs/config.yaml",
+        """
+workflow:
+  default_workflow_files:
+    - workflows/legacy.md
+  intent_workflow_files:
+    testcase_generation:
+      - workflows/legacy.md
+""",
+    )
+
+    config = load_app_config(tmp_path)
+
+    assert not hasattr(config.workflow, "default_workflow_files")
+    assert not hasattr(config.workflow, "intent_workflow_files")
 
 
 def test_cli_run_workflow_uses_configured_llm_switches(tmp_path: Path, monkeypatch) -> None:
