@@ -48,15 +48,13 @@ def create_runtime_repo(root: Path) -> Path:
         ).read_text(encoding="utf-8"),
         "prompts/requirement-analysis-prompt.md": "需求分析 Prompt",
         "prompts/testcase-design-prompt.md": "测试用例 Prompt",
-        "prompts/api-test-generation.md": (
-            REPO_ROOT / "prompts/api-test-generation.md"
-        ).read_text(encoding="utf-8"),
-        "docs/api-test-generation.md": (
-            REPO_ROOT / "docs/api-test-generation.md"
-        ).read_text(encoding="utf-8"),
-        "docs/rag-design.md": (REPO_ROOT / "docs/rag-design.md").read_text(
+        "prompts/api-test-generation.md": (REPO_ROOT / "prompts/api-test-generation.md").read_text(
             encoding="utf-8"
         ),
+        "docs/api-test-generation.md": (REPO_ROOT / "docs/api-test-generation.md").read_text(
+            encoding="utf-8"
+        ),
+        "docs/rag-design.md": (REPO_ROOT / "docs/rag-design.md").read_text(encoding="utf-8"),
         "docs/rag-run-record-spec.md": (REPO_ROOT / "docs/rag-run-record-spec.md").read_text(
             encoding="utf-8"
         ),
@@ -256,7 +254,7 @@ def build_valid_testcases(row_count: int = 15, *, priority: str = "P1") -> str:
     lines = [
         "---",
         "status: needs_human_review",
-        "artifact_type: testcase_draft",
+        "artifact_type: testcases",
         "human_review_required: true",
         "---",
         "",

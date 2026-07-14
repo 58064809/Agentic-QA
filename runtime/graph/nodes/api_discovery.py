@@ -11,6 +11,7 @@ from runtime.tools.api_discovery_normalizer import (
     render_api_discovery_report,
     save_discovery_json,
 )
+from runtime.validators.artifact_front_matter import validate_candidate_front_matter
 from runtime.workspace import is_run_candidate_markdown_path, resolve_prd_path
 
 REQUIRED_DISCOVERY_SECTIONS = [
@@ -75,6 +76,13 @@ def api_discovery_quality_check_node(state: QAWorkflowState, repo_root: Path) ->
     if not artifact.strip():
         state.quality_errors.append("接口发现报告为空。")
         return state
+    state.quality_errors.extend(
+        validate_candidate_front_matter(
+            artifact,
+            expected_artifact_type="api_discovery_report",
+            label="接口发现报告",
+        )
+    )
     for section in REQUIRED_DISCOVERY_SECTIONS:
         if not _has_section(artifact, section):
             state.quality_errors.append(f"接口发现报告缺少章节: {section}")

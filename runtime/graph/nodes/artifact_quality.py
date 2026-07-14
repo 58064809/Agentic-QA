@@ -10,6 +10,7 @@ from runtime.graph.nodes.workflow_context import (
 )
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.artifact_writer import ensure_within_directory
+from runtime.validators.artifact_front_matter import validate_candidate_front_matter
 from runtime.workspace import is_run_candidate_markdown_path, resolve_prd_path
 
 REQUIRED_ANALYSIS_SECTIONS = [
@@ -225,8 +226,13 @@ def requirement_analysis_quality_check_node(
         state.quality_errors.append("需求分析草稿为空。")
         return state
 
-    if "needs_human_review" not in artifact:
-        state.quality_errors.append("需求分析草稿缺少 needs_human_review 状态。")
+    state.quality_errors.extend(
+        validate_candidate_front_matter(
+            artifact,
+            expected_artifact_type="requirement_analysis",
+            label="需求分析草稿",
+        )
+    )
     for section in REQUIRED_ANALYSIS_SECTIONS:
         if not _has_section(artifact, section):
             state.quality_errors.append(f"需求分析草稿缺少章节: {section}")
@@ -303,8 +309,13 @@ def testcase_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWo
         state.quality_errors.append("测试用例草稿为空。")
         return state
 
-    if "needs_human_review" not in artifact:
-        state.quality_errors.append("测试用例草稿缺少 needs_human_review 状态。")
+    state.quality_errors.extend(
+        validate_candidate_front_matter(
+            artifact,
+            expected_artifact_type="testcases",
+            label="测试用例草稿",
+        )
+    )
     rows, header = _testcase_rows(artifact)
     if not header:
         state.quality_errors.append("测试用例草稿缺少固定表头。")

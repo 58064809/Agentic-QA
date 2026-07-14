@@ -1180,7 +1180,7 @@ def render_testcase_skeleton(state: QAWorkflowState) -> str:
     ]
     return f"""---
 status: needs_human_review
-artifact_type: testcase_draft
+artifact_type: testcases
 human_review_required: true
 generated_by: Runtime Review Grade Draft
 ---
@@ -1282,7 +1282,7 @@ def testcase_generation_node(state: QAWorkflowState) -> QAWorkflowState:
         _upsert_artifact(
             state,
             name="testcases",
-            artifact_type="testcase_draft",
+            artifact_type="testcases",
             output_path=output_path,
         )
     return state

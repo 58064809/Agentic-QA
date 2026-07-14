@@ -27,6 +27,7 @@ from runtime.tools.openapi_contract_index import (
     retrieve_openapi_chunks_for_prd,
 )
 from runtime.validators.api_case_contract_rules import validate_api_test_cases_yaml
+from runtime.validators.artifact_front_matter import validate_candidate_front_matter
 from runtime.workspace import is_run_candidate_markdown_path, resolve_prd_path
 
 REQUIRED_API_TEST_SECTIONS = [
@@ -425,9 +426,7 @@ def _assertions_from_openapi_chunk(chunk: OpenApiOperationChunk | None) -> list[
     status_codes = [int(code) for code in chunk.response_status_codes if str(code).isdigit()]
     if not status_codes:
         return []
-    assertions: list[dict[str, Any]] = [
-        {"type": "status_code", "expected": status_codes}
-    ]
+    assertions: list[dict[str, Any]] = [{"type": "status_code", "expected": status_codes}]
     keys = _schema_field_names(chunk.response_schema)
     assertions.extend({"type": "json_field_exists", "path": f"$.{key}"} for key in keys[:8])
     return assertions
@@ -1092,6 +1091,14 @@ def api_test_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWo
     if not artifact.strip():
         state.quality_errors.append("接口测试草稿为空。")
         return state
+
+    state.quality_errors.extend(
+        validate_candidate_front_matter(
+            artifact,
+            expected_artifact_type="api_test_draft",
+            label="接口测试草稿",
+        )
+    )
 
     for section in REQUIRED_API_TEST_SECTIONS:
         if not _has_section(artifact, section):

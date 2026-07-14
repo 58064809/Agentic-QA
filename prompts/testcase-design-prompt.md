@@ -9,7 +9,7 @@
 ```yaml
 ---
 status: needs_human_review
-artifact_type: testcase_draft
+artifact_type: testcases
 human_review_required: true
 ---
 ```

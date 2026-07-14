@@ -108,7 +108,7 @@ def test_generate_testcases_approve_write_creates_testcase_draft(tmp_path):
     assert output_path.as_posix().endswith(
         f"/prd/demo-requirement/runs/{result.run_id}/testcases.preview.md"
     )
-    assert "artifact_type: testcase_draft" in output_path.read_text(encoding="utf-8")
+    assert "artifact_type: testcases" in output_path.read_text(encoding="utf-8")
     assert result.run_id in (repo_root / "prd/demo-requirement/runs/latest.yml").read_text(
         encoding="utf-8"
     )

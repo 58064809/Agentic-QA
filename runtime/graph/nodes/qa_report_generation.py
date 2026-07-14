@@ -14,6 +14,7 @@ from runtime.graph.nodes.artifact_generation import (
 from runtime.graph.nodes.workflow_context import TASK_QA_REPORT
 from runtime.graph.state import QAWorkflowState
 from runtime.llm.prompt_builder import build_report_prompt
+from runtime.validators.artifact_front_matter import validate_candidate_front_matter
 from runtime.workspace import is_run_candidate_markdown_path, resolve_prd_path
 
 REQUIRED_QA_REPORT_SECTIONS = [
@@ -168,6 +169,13 @@ def qa_report_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAW
     if not artifact.strip():
         state.quality_errors.append("QA 报告草稿为空。")
         return state
+    state.quality_errors.extend(
+        validate_candidate_front_matter(
+            artifact,
+            expected_artifact_type="qa_report",
+            label="QA 报告草稿",
+        )
+    )
     for section in REQUIRED_QA_REPORT_SECTIONS:
         if not _has_section(artifact, section):
             state.quality_errors.append(f"QA 报告草稿缺少章节: {section}")

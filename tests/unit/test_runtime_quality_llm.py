@@ -120,7 +120,7 @@ def test_review_grade_testcase_quality_rejects_short_placeholder_table(tmp_path,
         lambda state: (
             """---
 status: needs_human_review
-artifact_type: testcase_draft
+artifact_type: testcases
 human_review_required: true
 ---
 
@@ -305,7 +305,7 @@ def test_llm_invalid_testcases_fallback_to_skeleton(tmp_path, monkeypatch):
         lambda self, prompt: (
             """---
 status: needs_human_review
-artifact_type: testcase_draft
+artifact_type: testcases
 human_review_required: true
 ---
 

@@ -14,6 +14,7 @@ from runtime.graph.nodes.artifact_generation import (
 from runtime.graph.nodes.workflow_context import TASK_UI_TEST_DRAFT
 from runtime.graph.state import QAWorkflowState
 from runtime.llm.prompt_builder import build_ui_test_prompt
+from runtime.validators.artifact_front_matter import validate_candidate_front_matter
 from runtime.workspace import is_run_candidate_markdown_path, resolve_prd_path
 
 REQUIRED_UI_SECTIONS = [
@@ -351,6 +352,13 @@ def ui_test_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWor
     if not artifact.strip():
         state.quality_errors.append("UI 自动化草稿为空。")
         return state
+    state.quality_errors.extend(
+        validate_candidate_front_matter(
+            artifact,
+            expected_artifact_type="ui_test_draft",
+            label="UI 自动化草稿",
+        )
+    )
     for section in REQUIRED_UI_SECTIONS:
         if not _has_section(artifact, section):
             state.quality_errors.append(f"UI 自动化草稿缺少章节: {section}")
