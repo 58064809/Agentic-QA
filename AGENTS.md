@@ -1,78 +1,77 @@
 # Agent 协作与执行规范
 
-本文件是 Agentic-QA 仓库的根级 Agent 指令，面向自动化代理、AI 编程助手、Runtime 执行器和集成入口适配器使用。
-
-执行本仓库任务时，应先读取本文件，再按任务类型读取 `README.md`、`docs/`、`rules/`、`workflows/`、`prompts/`、`skills/`、`knowledge/` 和目标 `prd/<需求ID>/` 工作区。
+本文件是 Agentic-QA 仓库的根级 Agent 指令。执行仓库任务时先读取本文件，再按任务读取对应代码、Workflow DSL、Prompt、Rule、Skill、Knowledge 和目标 PRD 工作区。
 
 ## 项目定位
 
-Agentic-QA 是面向测试工程师的 Agentic QA Engineering 项目。用户通过 AI Chat、Bot、CLI 或 API 输入自然语言任务，Runtime 统一完成意图识别、工作流选择、上下文构建、Agent 执行、质量检查、确认门禁、产物写入和运行记录。
-
-入口形态可以不同，但执行语义必须统一：
+Agentic-QA 通过统一 Runtime 把自然语言任务转换为可追踪、可审核、可恢复的 QA 工程工作流：
 
 ```text
 自然语言输入
-  ↓
-意图识别
-  ↓
-工作流选择
-  ↓
-上下文构建
-  ↓
-QA Agent 执行
-  ↓
-质量检查
-  ↓
-候选产物
-  ↓
-Review Gate
-  ↓
-正式发布 / 修订 / 等待确认
+  -> 意图识别
+  -> Workflow DSL 选择
+  -> 上下文与 RAG
+  -> QA Agent 生成
+  -> 质量检查
+  -> 候选产物
+  -> Review Gate
+  -> 确定性 promote / 修订 / 驳回
 ```
 
-CLI 只是自然语言入口之一，主要用于本地调试、脚本化执行和最小 Runtime 验证，不代表项目以 CLI 为中心。
+CLI、Chat、Bot 和 API 只是不同入口，不得实现不同产物流转。
+
+## 事实源优先级
+
+发生冲突时按以下顺序裁决：
+
+1. 当前运行代码与测试。
+2. `workflows/runtime/*.workflow.yml` 可执行 Workflow DSL。
+3. `runtime/workspace.py` 的 artifact、review、history 和 preview 路径定义。
+4. `runtime/schemas/`、`runtime/graph/state.py` 等结构化 Schema。
+5. `rules/` 强约束。
+6. `prompts/`、`skills/`、`knowledge/`。
+7. `docs/`、`README.md`、`COMMANDS.md` 的解释性内容。
+
+文档与代码不一致时，不能为了保留文档而增加兼容逻辑；应修正文档、Prompt、Rule 或删除旧文件。
 
 ## 最高优先级规则
 
-1. 不跳过人工确认门禁。
+1. 不跳过 Review Gate。
 2. 不把未经确认的 AI 输出当作正式 QA 资产。
-3. 不直接覆盖正式产物。修订必须先生成候选版本，再经过质量检查和 Review Gate。
-4. 不伪造需求、接口、业务规则、测试数据、执行结果或缺陷结论。
-5. 不在需求工作区之外散落 QA 产物。
-6. 不把密钥、Token、Cookie、真实敏感数据写入仓库、Prompt、日志、运行记录或产物。
-7. 不把目标态能力描述为当前已完整实现，除非已有代码和测试验证。
-8. 不把长篇内部执行契约塞回根 README；应拆入 `docs/`、`rules/`、`workflows/` 等目录。
+3. 不直接覆盖正式产物。
+4. 不伪造需求、接口、规则、测试数据、执行结果或缺陷结论。
+5. 不把密钥、Token、Cookie 或真实敏感数据写入仓库、Prompt、日志或产物。
+6. 不把目标态描述成当前已实现能力。
+7. 不保留旧路径、旧命令、旧 Workflow 文档或旧状态的兼容层。
+8. 不在多个 Markdown 中重复维护同一份契约。
 
 ## 文档边界
 
-| 文件或目录 | 用途 |
+| 文件或目录 | 唯一职责 |
 |---|---|
-| `README.md` | 面向人类用户的项目入口、主链路、快速开始和文档索引 |
-| `AGENTS.md` | 面向 Agent 的协作规范、执行约束和仓库边界 |
-| `docs/workflow-dsl.md` | Workflow DSL、节点类型、契约和路由条件 |
-| `docs/runtime-reliability.md` | 失败处理、部分成功、原子写入、幂等和运行尝试 |
-| `docs/artifact-versioning.md` | 候选版本、正式版本、历史索引和发布策略 |
-| `docs/review-gate.md` | 自然语言确认机制和 Review Gate Workflow |
-| `docs/artifact-standards.md` | QA 产物类型、Front Matter 和状态定义 |
-| `docs/testcase-standards.md` | 测试用例结构、字段、优先级和质量要求 |
-| `docs/rag-design.md` | RAG 链路、召回来源、上下文构建和追踪 |
-| `docs/roadmap.md` | 当前建设路线图 |
-| `rules/` | 路径、输出、确认门禁、版本策略和质量强约束 |
-| `workflows/` | QA 工作流定义、流程配置和执行策略 |
-| `prompts/` | Prompt 模板 |
-| `skills/` | 可复用 QA 技能和测试方法 |
-| `knowledge/` | RAG 知识库、模板和历史经验 |
-| `runtime/` | Runtime 主体代码 |
-| `scripts/` | 校验、创建工作区、报告和归档辅助脚本 |
+| `README.md` | 面向用户的项目入口、当前能力、快速开始和文档导航 |
+| `AGENTS.md` | Agent 执行顺序、事实源优先级和仓库级边界 |
+| `COMMANDS.md` | 自然语言任务与稳定 CLI 入口 |
+| `docs/architecture.md` | 当前架构与层级职责 |
+| `docs/workflow-dsl.md` | 当前可执行 Workflow DSL 契约 |
+| `docs/prompt-engineering.md` | Prompt 结构、版本和治理规则 |
+| `docs/runtime-reliability.md` | 失败、恢复、幂等、checkpoint 和运行记录 |
+| `docs/artifact-versioning.md` | 候选、正式、历史版本与 promote |
+| `docs/review-gate.md` | ReviewDecision、interrupt 和状态裁决 |
+| `docs/artifact-standards.md` | QA 产物类型与 Front Matter |
+| `docs/testcase-standards.md` | 测试用例列、优先级和质量门 |
+| `rules/` | 可执行或可校验的强约束 |
+| `workflows/runtime/` | 唯一可执行 Workflow 定义 |
+| `prompts/` | 每个任务唯一 Prompt 正文 |
+| `skills/` | 可复用 QA 方法与操作能力 |
+| `knowledge/` | RAG 知识、模板和业务资产 |
 
-历史遗留文档如与当前 README 和 `docs/` 体系冲突，应优先删除重建或改造成当前设计文档，不应继续引用过时路径或过时运行模式。
+同一契约只能有一个权威文件。其他文件通过链接引用，不复制全文。
 
-## 当前需求工作区规范
-
-每个需求使用独立工作区：
+## 当前工作区契约
 
 ```text
-prd/<需求ID>/
+prd/<id>/
 ├── input/
 │   ├── requirement.md
 │   ├── api.md
@@ -82,144 +81,87 @@ prd/<需求ID>/
 │   ├── testcases.md
 │   ├── api-test-draft.md
 │   ├── ui-test-draft.md
-│   ├── execution-report.md
-│   ├── failure-analysis.md
-│   ├── bug-draft.md
+│   ├── api-discovery-report.md
 │   ├── qa-report.md
-│   ├── archive-index.md
-│   └── history/
+│   └── history/<artifact>/
 ├── reviews/
+│   └── <artifact>.review.yml
 ├── runs/
+│   ├── latest.yml
+│   ├── index.jsonl
+│   └── <run-id>/
+│       ├── artifact-preview.md
+│       ├── <artifact>.preview.md
+│       └── <artifact>.preview.yml/json
 └── metadata.yml
 ```
 
-关键约束：
+`.runtime/runs/<run-id>/` 保存 Runtime 内部摘要、graph state、RAG trace、review events 和 checkpoint 元数据，不作为正式 QA 产物目录。
 
-- `input/` 保存需求原文、接口文档和附件。
-- `prd/<需求ID>/runs/` 保存候选产物、latest 指针和需求级运行索引。
-- `.runtime/runs/` 保存 Runtime 内部执行记录、graph state、RAG trace、review events 和恢复数据。
-- `artifacts/` 只保存当前正式产物。
-- `artifacts/history/` 保存历史版本和版本索引。
-- `reviews/` 保存结构化确认记录。
-- `metadata.yml` 保存需求级元数据、当前版本、最新运行和产物状态。
-
-## 产物发布规则
-
-正式产物不得由 Agent 直接覆盖。正确链路是：
+## 产物流转
 
 ```text
-生成输出
-  ↓
-写入 runs/<run-id>/artifact-preview.md
-  ↓
-生成 runs/<run-id>/diff.md
-  ↓
-质量检查
-  ↓
-创建或更新 reviews/*.review.yml
-  ↓
-等待用户自然语言确认
-  ↓
-approved / confirmed
-  ↓
-promote_artifacts
-  ↓
-写入 artifacts/ 当前正式产物
-  ↓
-旧版本进入 artifacts/history/
-  ↓
-更新 history/index.yml 与 metadata.yml
+生成内容
+  -> 质量检查
+  -> 写入 runs/<run-id>/<artifact>.preview.md
+  -> 写入 artifact-preview.md 索引和 runs/latest.yml
+  -> Review Gate interrupt
+  -> approved / needs_changes / rejected
+  -> approved 后调用 promote
+  -> 写入 artifacts/<artifact>.md
+  -> 归档旧版本
+  -> 更新 review、history index 和 metadata.yml
+  -> confirmed
 ```
 
-`needs_human_review` 必须停在 LangGraph interrupt checkpoint，不能进入 `end` 或正式发布。只有 `approved` 的候选产物才允许进入独立确定性 `promote_artifacts`；`confirmed` 只能由 promote 成功后产生。
+`artifact-preview.md` 只表示候选索引。多产物 run 的正文必须拆分为独立 `<artifact>.preview.md`。
 
-## 产物状态
-
-统一使用以下状态：
+## 统一状态
 
 | 状态 | 含义 |
 |---|---|
-| `draft` | 草稿生成中或尚未进入确认 |
-| `partial` | 只生成部分内容，不能作为正式产物 |
-| `needs_human_review` | 等待用户通过 Chat / Bot / CLI / API 确认 |
-| `approved` | 已确认通过，可进入下一步 |
-| `needs_changes` | 需要修订后重新确认 |
-| `rejected` | 当前产物不可用，需要重新生成或废弃 |
-| `confirmed` | 已完成最终确认，可作为正式测试资产 |
+| `draft` | 草稿生成中 |
+| `partial` | 只完成部分内容，不能发布 |
+| `needs_human_review` | 等待 Review Gate 输入 |
+| `approved` | 候选已批准，可 promote |
+| `needs_changes` | 必须修订并生成新候选 |
+| `rejected` | 当前候选不可用 |
+| `confirmed` | promote 成功后的正式产物 |
 | `archived` | 已归档 |
-| `failed` | 生成失败，仅保留错误上下文和中间结果 |
-| `superseded` | 已被新版本产物替代 |
+| `failed` | 运行失败 |
+| `superseded` | 已被新版本替代 |
 
-## Agent 职责边界
+不得创建语义重复的状态别名。
 
-| Agent | 职责 | 默认候选输出 |
+## Agent 职责
+
+| Agent | 职责 | 候选输出 |
 |---|---|---|
-| Intent Router | 识别自然语言意图、需求来源和目标产物 | 路由结果、结构化任务 |
-| Workflow Orchestrator | 选择并执行工作流、维护状态和路由 | `.runtime/runs/<run-id>/run-state.json` |
-| Requirement Analysis Agent | 拆解需求、识别业务规则、风险和测试范围 | `runs/<run-id>/artifact-preview.md` 中的需求分析部分 |
-| Testcase Design Agent | 生成结构化测试用例、覆盖主链路、异常、边界和风险 | `runs/<run-id>/artifact-preview.md` 中的测试用例部分 |
-| API Test Generation Agent | 生成接口测试计划、断言点和脚本草稿 | `artifacts/api-test-draft.md` 候选内容 |
-| UI Test Generation Agent | 生成 UI 测试路径、页面对象和脚本草稿 | `artifacts/ui-test-draft.md` 候选内容 |
-| Test Execution Agent | 执行测试命令并收集结果 | `artifacts/execution-report.md` 候选内容 |
-| Failure Analysis Agent | 分析失败证据、区分环境、数据、脚本、产品问题 | `artifacts/failure-analysis.md` 候选内容 |
-| Bug Draft Agent | 生成可复制到缺陷系统的 Bug 草稿 | `artifacts/bug-draft.md` 候选内容 |
-| Report Generation Agent | 汇总 QA 报告、风险和上线建议 | `artifacts/qa-report.md` 候选内容 |
-| Review Gate Agent | 解析用户确认、修改、驳回、继续执行等自然语言反馈 | `reviews/*.review.yml` |
-| Archive Agent | 归档前校验确认状态、版本和索引 | `artifacts/archive-index.md` |
+| Intent Router | 识别意图、PRD、artifact 和 run | 结构化任务 |
+| Workflow Orchestrator | 选择 WorkflowSpec、维护状态和 checkpoint | Runtime 运行记录 |
+| Requirement Analysis Agent | 提取范围、规则、风险和待确认项 | `requirement-analysis.preview.md` |
+| Testcase Design Agent | 设计可追踪、可执行、可断言的测试用例 | `testcases.preview.md` |
+| API Test Generation Agent | 生成 API 测试计划、断言和脚本草稿 | `api-test-draft.preview.md` |
+| UI Test Generation Agent | 生成 UI 自动化路径和脚本草稿 | `ui-test-draft.preview.md` |
+| API Discovery Agent | 从脱敏网络证据生成接口发现报告 | `api-discovery-report.preview.md` |
+| Report Generation Agent | 汇总已确认产物和真实执行证据 | `qa-report.preview.md` |
+| Review Gate | 将用户反馈解析为 `ReviewDecision` | `reviews/*.review.yml` |
+| Artifact Promoter | 确定性发布、归档和更新元数据 | `artifacts/` 与 history |
 
-## Runtime 执行约束
+Agent 不能越权执行其他角色的确定性写操作。
 
-- Runtime 应读取 `workflows/`、`prompts/`、`rules/`、`skills/`、`knowledge/`，而不是替代这些目录。
-- RAG 召回结果必须可追踪，至少保留来源、chunk 标识、命中依据或分数、参与生成的上下文和不足告警。
-- RAG 不应使用 `partial`、`failed` 或未确认候选产物作为正式上下文。
-- 节点失败必须按照 `failure_policy` 处理，不得静默吞掉关键节点失败。
-- `required: true` 节点失败后不得跳过。
-- `required: false` 节点可以降级、跳过或兜底，但必须记录事件。
-- 部分成功必须保留在运行记录或候选产物路径中，不得写入正式产物。
-- 相同输入、相同工作流、相同 `idempotency_key` 已成功时，应复用已有运行结果或明确记录重复执行原因。
+## Runtime 与 RAG 约束
 
-## 人工确认规则
+- Runtime 只加载当前 Workflow、Prompt、Rule、Skill 和 Knowledge 文件。
+- RAG 结果必须记录来源、chunk 标识、分数或命中依据、最终使用上下文和不足告警。
+- `partial`、`failed`、`needs_changes`、`rejected` 或未确认候选不得作为正式知识资产。
+- required 节点失败后不得静默跳过。
+- 失败、重试、降级和恢复必须进入运行记录。
+- 相同幂等键已成功时应复用结果或明确记录重新执行原因。
 
-用户可以通过自然语言表达确认动作，例如：
+## 测试用例输出
 
-```text
-testcases.md 通过，可以继续生成接口测试。
-```
-
-```text
-测试用例不通过，补充支付失败、库存不足和优惠券异常场景。
-```
-
-Agent 必须把自然语言确认转换为结构化记录：
-
-```yaml
-artifact: artifacts/testcases.md
-artifact_type: testcases
-status: needs_human_review
-reviewer: ""
-reviewed_at: null
-decision: ""
-comments: []
-required_changes: []
-approved_sections: []
-rejected_sections: []
-next_action: ""
-source_message: ""
-run_id: ""
-```
-
-确认规则：
-
-- 不要求用户手动编辑 `reviews/*.review.yml`。
-- `needs_human_review` 状态下，必须通过 LangGraph interrupt 暂停，不允许自动进入下游正式工作流。
-- `needs_changes` 状态下，只允许进入修订工作流。
-- `rejected` 状态下，不允许复用当前产物。
-- `approved` 状态下，可以进入下一步生成流程。
-- `confirmed` 状态下，可以归档，或作为正式知识资产进入 RAG。
-
-## 测试用例输出要求
-
-测试用例默认输出为 Markdown 大表，字段固定：
+测试用例主表固定为：
 
 ```text
 用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | 测试步骤 | 预期结果 | 断言/证据 | 待确认项
@@ -228,52 +170,30 @@ run_id: ""
 质量要求：
 
 - 每条用例只验证一个清晰目标。
-- 前置条件必须说明角色、数据、环境或业务状态。
-- 测试步骤必须可执行。
-- 预期结果必须可观察、可断言。
-- 涉及接口、数据库、消息、缓存或任务时，应说明关键校验点。
-- 涉及金额、库存、权限、状态流转时，必须覆盖正常、异常和边界场景。
-- 信息不足时必须写入待确认问题，不得编造业务规则。
-- 用例必须能反向追踪到需求点、风险点或接口字段。
-
-## 默认回复格式
-
-Agent 完成任务后的 Chat 回复应简洁，遵循 `rules/agent-output-rules.md` 的完成回执要求。默认包含：
-
-```text
-变更摘要
-修改文件
-验收结果
-待人工确认
-下一步建议
-```
-
-不得把完整文件内容粘贴到 Chat 中代替路径、摘要和验收结果。
-
-## 常用工程命令
-
-Windows / PowerShell 环境约束：
-
-- 本仓库默认使用项目虚拟环境。执行 Python、pytest、ruff 或 Runtime CLI 时，Agent 应优先使用 `.venv\Scripts\python.exe`，不要先假设裸 `python` 在当前 Codex 会话 PATH 中可用。
-- 如需调用安装在虚拟环境中的命令，优先使用 `.venv\Scripts\python.exe -m pytest`、`.venv\Scripts\python.exe -m ruff check .`、`.venv\Scripts\python.exe -m runtime.cli ...`。
-- 读取、输出或校验中文文件时，必须按 UTF-8 处理；不要仅凭 PowerShell 终端显示判断文件乱码。必要时先设置 `[Console]::OutputEncoding`、`$OutputEncoding` 为 UTF-8，或用 Python `encoding="utf-8"` 读取字节确认。
-
-```bash
-python scripts/create_prd_workspace.py demo-requirement
-python scripts/validate_prd_workspace.py prd/demo-requirement
-python scripts/validate_docs_consistency.py
-python -m runtime.cli "分析 prd/demo-requirement 并生成测试用例"
-pytest
-ruff check .
-```
+- 步骤可执行，预期可观察、可断言。
+- 用例可追踪到需求、规则、风险或接口字段。
+- 金额、库存、权限、状态、幂等和并发场景必须覆盖相应异常与边界。
+- 信息不足时写待确认项，禁止编造强断言。
 
 ## 修改项目时的执行顺序
 
-1. 读取 `AGENTS.md`。
-2. 读取 `README.md` 理解项目入口和当前主链路。
-3. 按任务读取对应 `docs/*.md`。
-4. 检查相关 `rules/`、`workflows/`、`prompts/`、`skills/`、`knowledge/`。
-5. 修改代码或文档。
-6. 同步更新测试、校验脚本和文档索引。
-7. 能运行则运行相关测试；不能运行必须说明原因。
-8. 回复时只给摘要、文件路径、验证结果和待确认项。
+1. 读取 `AGENTS.md`、`README.md` 和任务相关代码。
+2. 定位程序事实源和当前 Workflow DSL。
+3. 搜索所有引用点，区分权威文件、解释文件和历史产物。
+4. 删除旧契约，不增加兼容分支。
+5. 修改代码、测试、Rule、Prompt 和必要文档。
+6. 运行 `python scripts/validate_docs_consistency.py`。
+7. 运行相关 pytest、完整 pytest 和 `ruff check .`。
+8. 检查 diff 中是否仍出现旧路径、重复规范或目标态冒充当前态。
+
+Windows 环境优先使用：
+
+```powershell
+.venv\Scripts\python.exe scripts\validate_docs_consistency.py
+.venv\Scripts\python.exe -m pytest
+.venv\Scripts\python.exe -m ruff check .
+```
+
+## 完成回执
+
+Chat 回复遵守 `rules/agent-output-rules.md`，只给变更摘要、修改文件、验收结果、待人工确认和下一步建议。未执行的命令必须说明原因，不得用完整文件或完整 diff 代替验收结论。

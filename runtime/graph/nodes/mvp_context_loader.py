@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from runtime.config import load_app_config
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.api_doc_loader import API_DOC_FILENAMES, normalize_workspace_api_docs
 from runtime.tools.artifact_writer import ensure_within_directory
@@ -64,16 +63,11 @@ def mvp_workflow_selector_node(state: QAWorkflowState, repo_root: Path) -> QAWor
         else state.task_type
     )
     definition = DEFAULT_WORKFLOW_REGISTRY.definition_for_task_type(context_task_type)
-    workflow_config = load_app_config(repo_root).workflow
-    configured_files = workflow_config.intent_workflow_files.get(str(context_task_type)) or {
-        TASK_ANALYSIS: workflow_config.mvp_analysis_workflow_files,
-        TASK_TESTCASE_GENERATION: workflow_config.mvp_testcase_workflow_files,
-    }.get(str(context_task_type))
-    state.workflow_files = list(configured_files or definition.context_files)
+    state.workflow_files = list(definition.context_files)
 
     for relative_path in state.workflow_files:
         if not (repo_root / relative_path).is_file():
-            state.errors.append(f"缺少 Runtime 工作流文件: {relative_path}")
+            state.errors.append(f"缺少 Runtime 上下文文件: {relative_path}")
     return state
 
 

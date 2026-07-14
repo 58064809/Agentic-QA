@@ -1,14 +1,25 @@
 # Workflow DSL
 
-本文档定义 Agentic-QA Runtime 使用的最小 Workflow DSL。工作流用于描述一个 QA 任务如何被 Runtime 执行，包括入口意图、输入契约、节点列表、节点输入输出、路由条件、产物写入、失败策略、版本策略和确认门禁。
+Agentic-QA Runtime 只执行 `workflows/runtime/*.workflow.yml`。编号式 Workflow Markdown 已删除，不参与路由、上下文或文档兼容。
 
-## 当前可执行 DSL
+## 权威实现
 
-Runtime 当前实际读取 `workflows/runtime/*.workflow.yml`，并支持以下最小字段：
+| 责任 | 程序事实源 |
+|---|---|
+| Workflow Schema | `runtime/workflow/schema.py` |
+| YAML 加载 | `runtime/workflow/loader.py` |
+| 图构建与路由 | `runtime/workflow/builder.py` |
+| condition 注册 | `runtime/workflow/conditions.py` |
+| workflow 选择与上下文 | `runtime/workflow/catalog.py` |
+| workflow 文件 | `workflows/runtime/*.workflow.yml` |
+
+修改 Workflow 行为时必须修改以上实现或当前 YAML，不得新建解释性 Workflow Markdown 作为第二事实源。
+
+## 最小结构
 
 ```yaml
-id: analysis_and_testcases
-name: 需求分析与测试用例生成
+id: testcase_generation
+name: 测试用例生成
 version: 1
 
 input:
@@ -16,7 +27,7 @@ input:
   user_input: required
 
 state:
-  task_type: mvp_analysis_testcases
+  task_type: testcase_generation
 
 nodes:
   - id: command_router
@@ -26,50 +37,101 @@ nodes:
 edges:
   - from: start
     to: command_router
-
   - from: command_router
     to: end
-    condition: default
 ```
 
-当前 Runtime 约束：
+必填字段：
 
-- `id`、`name`、`version`、`nodes`、`edges` 为必填字段。
-- `version` 必须为大于等于 1 的整数。
-- `nodes[].type` 当前支持 `python`、`rag`、`agent`、`validator`、`writer`、`review_gate`、`tool`、`subgraph`。
-- 非 `subgraph` 节点的 `nodes[].handler` 必须是可动态 import 的 Python callable；非 `python` 类型先作为语义化节点类型进入 DSL，Runtime 仍通过 handler 绑定实际执行逻辑。
-- `subgraph` 节点必须使用 `workflow` 引用另一个 WorkflowSpec，不允许配置 `handler`。Runtime 会把被引用 WorkflowSpec 编译成 LangGraph subgraph 节点。
-- `edges[].from` 可以是 `start` 或已声明 node id。
-- `edges[].to` 可以是 `end` 或已声明 node id。
-- 同一 workflow 不允许重复 `node id` 或重复 `edge`。
-- 同一 `from` 不允许混合无条件固定边和条件边。
-- 同一 `from` 最多只能有一条 `condition: default` 边。
-- 条件边先按 YAML 顺序评估普通 condition，全部不命中时才走 `default`。没有显式 `default` 时，为兼容旧 MVP DSL，Runtime 会隐式路由到 `end`。
+- `id`
+- `name`
+- `version`
+- `nodes`
+- `edges`
 
-### 当前内置 condition
+`version` 必须是大于等于 1 的整数。
+
+## 节点
+
+当前支持的 node type：
+
+- `python`
+- `rag`
+- `agent`
+- `validator`
+- `writer`
+- `review_gate`
+- `tool`
+- `subgraph`
+
+除 `subgraph` 外，节点必须提供可动态 import 的 `handler`。`subgraph` 必须提供 `workflow`，引用另一个当前 WorkflowSpec，且不得形成循环依赖。
+
+```yaml
+nodes:
+  - id: context_pipeline
+    type: subgraph
+    workflow: rag_automation_context_pipeline
+```
+
+节点类型用于表达职责，实际执行仍由当前 handler 或 subgraph 绑定完成。
+
+## 边与条件路由
+
+固定边：
+
+```yaml
+- from: start
+  to: command_router
+```
+
+条件边：
+
+```yaml
+- from: testcase_quality
+  to: artifact_preview_writer
+  condition: no_quality_errors
+
+- from: testcase_quality
+  to: end
+  condition: default
+```
+
+约束：
+
+1. `from` 必须是 `start` 或已声明 node id。
+2. `to` 必须是 `end` 或已声明 node id。
+3. 同一 source 不得混合固定边和条件边。
+4. 同一条件路由 source 必须且只能有一条 `condition: default`。
+5. 普通 condition 按 YAML 顺序评估，均不命中时走显式 default。
+6. 不存在隐式路由到 `end` 的兼容行为。
+7. 重复 node id、重复 edge、未知 condition、未知 handler 或循环 subgraph 必须在构图阶段失败。
+
+## 当前 condition
 
 | condition | 含义 |
 |---|---|
 | `no_errors` | `errors` 为空 |
 | `has_errors` | `errors` 非空 |
-| `no_quality_errors` | `errors` 和 `quality_errors` 均为空 |
-| `has_quality_errors` | `errors` 为空且 `quality_errors` 非空 |
-| `review_approved` | Review Gate 已 approved 且 `next_action=promote` |
-| `review_needs_changes` | Review Gate 返回 needs_changes |
-| `review_rejected` | Review Gate 返回 rejected |
-| `review_waiting` | Review Gate 仍等待人工确认 |
+| `no_quality_errors` | `errors` 与 `quality_errors` 均为空 |
+| `has_quality_errors` | 无运行错误但存在质量错误 |
+| `review_approved` | Review Gate 已批准且下一动作允许 promote |
+| `review_needs_changes` | Review Gate 要求修订 |
+| `review_rejected` | Review Gate 驳回候选 |
+| `review_waiting` | 等待人工确认 |
 | `task_is_analysis` | 当前任务为需求分析 |
 | `task_is_testcase_generation` | 当前任务为测试用例生成 |
-| `task_is_analysis_or_mvp` | 当前任务为需求分析或需求分析加用例生成 |
-| `task_is_mvp` | 当前任务为需求分析加用例生成，且无质量错误 |
-| `ready_to_write_preview` | `approved/write_approved` 且 `next_action=promote` 时允许写入候选产物 |
-| `task_is_api_test_draft` | 当前任务为接口测试草稿生成 |
-| `task_is_ui_test_draft` | 当前任务为 UI 自动化草稿生成 |
-| `task_is_api_discovery_report` | 当前任务为接口发现报告生成 |
-| `task_is_qa_report` | 当前任务为 QA 报告生成 |
-| `default` | 条件边兜底分支 |
+| `task_is_analysis_or_mvp` | 当前任务为需求分析或分析加用例 |
+| `task_is_mvp` | 当前任务为分析加用例，且满足前置质量条件 |
+| `ready_to_write_preview` | 当前状态允许写候选文件 |
+| `task_is_api_test_draft` | 当前任务为 API 测试草稿 |
+| `task_is_ui_test_draft` | 当前任务为 UI 自动化草稿 |
+| `task_is_api_discovery_report` | 当前任务为接口发现报告 |
+| `task_is_qa_report` | 当前任务为 QA 报告 |
+| `default` | 条件路由显式兜底 |
 
-### 当前 Runtime workflow 文件
+condition 必须先注册到 `runtime/workflow/conditions.py`，再用于 YAML。
+
+## 当前 Runtime Workflow
 
 | workflow_id | 文件 | task_type |
 |---|---|---|
@@ -78,292 +140,53 @@ edges:
 | `testcase_generation` | `workflows/runtime/testcase-generation.workflow.yml` | `testcase_generation` |
 | `api_test_draft` | `workflows/runtime/api-test-draft.workflow.yml` | `api_test_draft` |
 | `rag_automation_case_generation` | `workflows/runtime/rag-automation-case.workflow.yml` | `api_test_draft` |
-| `rag_automation_context_pipeline` | `workflows/runtime/rag-automation-context.subgraph.workflow.yml` |  |
-| `rag_automation_case_generation_core` | `workflows/runtime/rag-automation-case-generation.subgraph.workflow.yml` |  |
-| `rag_automation_promote_pipeline` | `workflows/runtime/rag-automation-promote.subgraph.workflow.yml` |  |
+| `rag_automation_context_pipeline` | `workflows/runtime/rag-automation-context.subgraph.workflow.yml` | 无顶层 task_type |
+| `rag_automation_case_generation_core` | `workflows/runtime/rag-automation-case-generation.subgraph.workflow.yml` | 无顶层 task_type |
+| `rag_automation_promote_pipeline` | `workflows/runtime/rag-automation-promote.subgraph.workflow.yml` | 无顶层 task_type |
 | `ui_test_draft` | `workflows/runtime/ui-test-draft.workflow.yml` | `ui_test_draft` |
 | `api_discovery_report` | `workflows/runtime/api-discovery-report.workflow.yml` | `api_discovery_report` |
 | `qa_report` | `workflows/runtime/qa-report.workflow.yml` | `qa_report` |
 
-## 最小工作流示例
+## 候选与 Review Gate 顺序
 
-```yaml
-id: requirement_to_testcases
-name: 需求分析与测试用例生成
-version: 1.0.0
-description: 根据需求文档生成需求分析和测试用例，并进入确认门禁。
-
-trigger:
-  intents:
-    - analyze_requirement
-    - generate_testcases
-    - analyze_and_generate_testcases
-  entrypoints:
-    - ai_chat
-    - feishu_bot
-    - wechat_bot
-    - dingtalk_bot
-    - cli
-    - api
-
-execution_policy:
-  idempotency: true
-  resume_from_checkpoint: true
-  atomic_artifact_write: true
-  persist_partial_output: true
-  default_timeout_seconds: 300
-  default_max_attempts: 1
-
-artifact_policy:
-  write_mode: versioned_atomic
-  on_partial: persist_to_run
-  on_success: promote_preview_to_current
-  on_failure: keep_current_artifact
-  versioning: true
-  history_dir: artifacts/history
-  preview_path: runs/<run-id>/<artifact>.preview.md
-  diff_path: runs/<run-id>/diff.md
-  on_promote:
-    archive_previous: true
-    mark_previous_as: superseded
-    update_history_index: true
-    update_metadata: true
-
-input_contract:
-  required:
-    prd_path:
-      type: string
-      description: 需求工作区路径，例如 prd/demo-requirement
-    user_message:
-      type: string
-      description: 用户原始输入
-  optional:
-    profile:
-      type: string
-      default: local
-
-output_contract:
-  artifacts:
-    - path: artifacts/requirement-analysis.md
-      type: requirement_analysis
-      review_required: true
-    - path: artifacts/testcases.md
-      type: testcases
-      review_required: true
-  run_record:
-    path: runs/<run-id>/state.json
-  review_records:
-    - reviews/requirement-analysis.review.yml
-    - reviews/testcases.review.yml
-
-state_schema:
-  prd_path: string
-  user_message: string
-  intent: string
-  normalized_requirement: object
-  retrieved_context: array
-  requirement_analysis: object
-  testcases: object
-  quality_result: object
-  review_status: string
-  artifacts: array
-  errors: array
-
-nodes:
-  - id: load_requirement
-    type: tool
-    required: true
-    tool: workspace.load_requirement
-    failure_policy:
-      on_error: fail_workflow
-      timeout_seconds: 60
-    input:
-      prd_path: "{{ state.prd_path }}"
-      requirement_path: input/requirement.md
-      api_path: input/api.md
-    output:
-      normalized_requirement: "{{ result.normalized_requirement }}"
-
-  - id: retrieve_context
-    type: rag
-    required: false
-    failure_policy:
-      on_error: fallback
-      fallback_node: build_context_from_requirement_only
-      max_attempts: 2
-      retry_backoff_seconds: 2
-    input:
-      query: "{{ state.user_message }}"
-      prd_path: "{{ state.prd_path }}"
-      sources:
-        - rules
-        - skills
-        - prompts
-        - workflows
-        - knowledge
-        - "{{ state.prd_path }}/input"
-      top_k: 8
-    output:
-      retrieved_context: "{{ result.chunks }}"
-
-  - id: generate_requirement_analysis
-    type: agent
-    required: true
-    agent: requirement_analysis_agent
-    failure_policy:
-      on_error: retry
-      max_attempts: 2
-      retry_backoff_seconds: 3
-      timeout_seconds: 180
-      fallback: wait_for_user
-    input:
-      requirement: "{{ state.normalized_requirement }}"
-      context: "{{ state.retrieved_context }}"
-    output:
-      requirement_analysis: "{{ result.analysis }}"
-
-  - id: generate_testcases
-    type: agent
-    required: true
-    agent: testcase_design_agent
-    failure_policy:
-      on_error: retry
-      max_attempts: 2
-      retry_backoff_seconds: 3
-      timeout_seconds: 180
-      fallback: wait_for_user
-    input:
-      requirement: "{{ state.normalized_requirement }}"
-      analysis: "{{ state.requirement_analysis }}"
-      context: "{{ state.retrieved_context }}"
-    output:
-      testcases: "{{ result.testcases }}"
-
-  - id: quality_check
-    type: validator
-    required: true
-    validator: artifact_quality_validator
-    failure_policy:
-      on_error: fail_workflow
-    input:
-      artifacts:
-        - "{{ state.requirement_analysis }}"
-        - "{{ state.testcases }}"
-      rules:
-        - rules/artifact-standards.md
-        - rules/testcase-standards.md
-    output:
-      quality_result: "{{ result }}"
-
-  - id: write_artifact_preview
-    type: writer
-    required: true
-    tool: workspace.write_artifact_preview
-    input:
-      prd_path: "{{ state.prd_path }}"
-      preview_path: runs/<run-id>/artifact-preview.md
-      artifacts:
-        - path: artifacts/requirement-analysis.md
-          content: "{{ state.requirement_analysis }}"
-        - path: artifacts/testcases.md
-          content: "{{ state.testcases }}"
-    output:
-      preview_path: "{{ result.preview_path }}"
-
-  - id: create_review_records
-    type: tool
-    required: true
-    tool: workspace.create_review_records
-    input:
-      prd_path: "{{ state.prd_path }}"
-      artifacts:
-        - artifacts/requirement-analysis.md
-        - artifacts/testcases.md
-      status: needs_human_review
-    output:
-      review_status: needs_human_review
-
-  - id: wait_for_confirmation
-    type: review_gate
-    required: true
-    input:
-      prd_path: "{{ state.prd_path }}"
-      artifacts:
-        - artifacts/requirement-analysis.md
-        - artifacts/testcases.md
-    output:
-      review_status: "{{ result.status }}"
-      next_action: "{{ result.next_action }}"
-
-  - id: promote_artifacts
-    type: writer
-    required: true
-    tool: workspace.promote_artifacts
-    input:
-      prd_path: "{{ state.prd_path }}"
-      preview_path: runs/<run-id>/artifact-preview.md
-      write_mode: versioned_atomic
-    output:
-      artifacts: "{{ result.artifacts }}"
-
-edges:
-  - from: start
-    to: load_requirement
-  - from: load_requirement
-    to: retrieve_context
-  - from: retrieve_context
-    to: generate_requirement_analysis
-  - from: generate_requirement_analysis
-    to: generate_testcases
-  - from: generate_testcases
-    to: quality_check
-  - from: quality_check
-    to: review_gate
-    condition: "{{ state.quality_result.passed == true }}"
-  - from: quality_check
-    to: failed
-    condition: "{{ state.quality_result.passed == false }}"
-  - from: review_gate
-    to: write_artifact_preview
-    condition: "{{ state.review_status == 'approved' and state.next_action == 'promote' }}"
-  - from: review_gate
-    to: generate_testcases
-    condition: "{{ state.next_action == 'revise' }}"
-  - from: review_gate
-    to: failed
-    condition: "{{ state.next_action == 'stop' }}"
-  - from: write_artifact_preview
-    to: end
-```
-
-## 节点类型
-
-| 节点类型 | 说明 |
-|---|---|
-| `python` | 直接绑定 Python callable 的通用节点，兼容当前 MVP Runtime 节点实现 |
-| `tool` | 确定性工具节点，例如读取文件、创建确认记录、执行测试 |
-| `rag` | RAG 检索节点，负责文档加载、检索、筛选和上下文构建 |
-| `agent` | LLM Agent 节点，负责需求分析、用例生成、失败分析、报告生成等任务 |
-| `validator` | 质量检查节点，负责校验产物格式、字段、状态、覆盖度和规则约束 |
-| `review_gate` | 确认门禁节点，负责读取用户确认结果并决定后续流转 |
-| `subgraph` | LangGraph subgraph 节点，用 `workflow` 引用另一个 WorkflowSpec；用于把上下文准备、生成校验、发布等阶段拆成可维护子图 |
-| `router` | 路由节点，根据状态、意图或校验结果选择下一节点 |
-| `executor` | 执行节点，例如运行 pytest、Playwright 或其他测试命令 |
-| `writer` | 产物写入节点，负责候选产物、正式产物和版本索引写入 |
-| `terminator` | 结束节点，用于标记成功、失败、中断或等待确认 |
-
-## 路由原则
-
-`needs_human_review` 必须由 `review_gate` 调用 LangGraph interrupt 暂停，不能进入 `end`。`approved` 只允许写入候选 preview 并准备独立 promote；`confirmed` 只能由 `promote_artifacts` 成功后设置。多产物 `approve/revise` 必须明确 `target_artifact` 或 `all`，避免默认把多个候选产物全部通过。
-
-正式产物发布必须经过以下顺序：
+当前生成型 Workflow 的基本顺序是：
 
 ```text
-write_artifact_preview
-  ↓
-create_review_records
-  ↓
-promote_artifacts
-  ↓
-confirmed
+生成
+  -> 质量检查
+  -> artifact_preview_writer
+  -> Review Gate interrupt
+  -> approved 后 artifact_promoter
 ```
+
+候选正文写入 `runs/<run-id>/<artifact>.preview.md`，`artifact-preview.md` 只保存候选索引。Review Gate 不直接写正式产物。
+
+## 失败策略
+
+节点可声明 `failure_policy`：
+
+```yaml
+failure_policy:
+  on_error: retry
+  max_attempts: 2
+  retry_backoff_seconds: 2
+```
+
+支持的行为由 `runtime/workflow/schema.py` 和 `runtime/workflow/builder.py` 决定。required 节点失败不得静默跳过；失败、重试和降级必须写入运行状态。
+
+## 新增 Workflow
+
+1. 在 `workflows/runtime/` 创建唯一 YAML。
+2. 使用已注册 handler、condition 和 state 字段。
+3. 在 `runtime/workflow/catalog.py` 注册顶层任务及 context files。
+4. 在本文件的当前 Workflow 表中登记。
+5. 增加真实 YAML 加载和构图测试。
+6. 运行：
+
+```bash
+python scripts/validate_docs_consistency.py
+pytest tests/unit/test_workflow_builder.py tests/unit/test_workflow_runtime_yaml.py
+ruff check .
+```
+
+禁止为新 Workflow 同时创建编号式 Markdown 流程副本。

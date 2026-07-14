@@ -1,92 +1,70 @@
 # 状态规则
 
-## 推荐合法状态
+状态枚举以 `runtime/workspace.py.ALLOWED_ARTIFACT_STATUSES` 为程序事实源。Runtime、Review Gate、产物 Front Matter、review 记录和 `metadata.yml` 必须使用同一套状态，不保留旧状态别名。
 
-新生成或修订的 QA 产物默认使用以下状态。状态可以写入 `workspace.yml`，也可以写入产物 front matter。
+## 当前状态
 
-| 状态 | 含义 |
-|---|---|
-| `needs_human_review` | AI 已生成或修改，等待人工评审，不得作为最终结论 |
-| `reviewed` | 人工已打开并阅读，评审完成，但可能仍有待处理意见 |
-| `needs_revision` | 人工评审后要求修改，自动化代理应按评审意见增量修订 |
-| `approved` | 人工确认通过，可作为后续任务输入 |
-| `rejected` | 人工否决，需要重新生成、重做或废弃 |
-| `archived` | 已归档，不再作为普通草稿覆盖 |
+| 状态 | 含义 | 是否可作为正式资产 |
+|---|---|---|
+| `draft` | 生成中或尚未进入审核 | 否 |
+| `partial` | 仅完成部分内容 | 否 |
+| `needs_human_review` | 候选等待人工确认 | 否 |
+| `approved` | 候选已批准，可执行 promote | 否，尚未 promote |
+| `needs_changes` | 候选需要修订 | 否 |
+| `rejected` | 候选被驳回 | 否 |
+| `confirmed` | promote 成功后的当前正式版本 | 是 |
+| `archived` | 已归档，不再是当前版本 | 否 |
+| `failed` | 生成或处理失败 | 否 |
+| `superseded` | 已被新版本替代 | 否 |
 
-`draft` 只用于本地临时草稿或尚未进入仓库状态管理的内容；AI 写入 PRD 工作区的重要产物应直接进入 `needs_human_review`。
-
-## 什么算评审或确认
-
-以下情况才算人工评审或确认：
-
-- 人工打开并阅读了对应产物。
-- 用户在 Chat 中明确说“这版通过”“已评审”“按评审意见修改完成”“确认可以作为后续输入”。
-- 产物 front matter 或 `workspace.yml` 中写入了状态、reviewer 和 review 时间。
-
-以下情况不算人工评审或确认：
-
-- 只是 AI 生成了文件。
-- 只是说“看一下”“先放着”“感觉可以”，但没有明确通过或评审结论。
-- 评审会上仍有待处理问题，且没有明确说明可作为后续输入。
-
-建议 front matter：
-
-```yaml
----
-status: reviewed
-artifact_type: requirement_analysis
-human_review_required: false
-reviewed_by: user
-reviewed_at: 2026-05-22
-review_notes: 已完成产品评审，待补充 xxx 规则
----
-```
-
-## 覆盖、增量和版本化
-
-| 当前状态 | 允许动作 |
-|---|---|
-| `needs_human_review` | 允许覆盖草稿，但应说明覆盖原因 |
-| `needs_revision` | 允许按评审意见增量修订，不建议整份重写 |
-| `reviewed` | 默认只做增量修订，必须保留评审意见 |
-| `approved` | 禁止直接覆盖，只能追加补充或新建版本 |
-| `rejected` | 可重新生成新草稿，但应保留被拒绝原因 |
-| `archived` | 禁止普通任务覆盖，需新版本或新 PRD 工作区 |
-
-重新生成对比版时，使用 `*-v2.md`，或复制新的 PRD 工作区。
+## 状态流转
 
 ```text
-评审前：可以覆盖草稿
-评审后：优先增量修订
-确认通过后：禁止覆盖，只能新版本或补充文件
+draft
+  -> partial / failed
+  -> needs_human_review
+  -> approved / needs_changes / rejected
+  -> approved + promote success
+  -> confirmed
+  -> superseded / archived
 ```
 
-## 推荐状态流转
+关键约束：
 
-```text
-needs_human_review -> reviewed -> approved
-needs_human_review -> reviewed -> needs_revision -> needs_human_review
-needs_human_review -> rejected
-approved -> archived
-```
+1. 生成完成只能进入 `needs_human_review`，不能直接进入 `approved` 或 `confirmed`。
+2. `approved` 仅表示候选通过 Review Gate，正式文件尚未发布。
+3. `confirmed` 只能由确定性 promote 成功后产生。
+4. `needs_changes` 必须生成新候选或新 run，不能直接修改正式产物。
+5. `rejected`、`partial`、`failed` 不得作为正式 RAG 知识输入。
+6. 正式版本被替换后进入 `superseded` 或历史归档。
 
-执行结果、失败分析、缺陷草稿和 QA 报告也先进入 `needs_human_review`。人工确认事实成立并允许进入后续任务时，再标记为 `approved`。
+## 状态记录位置
 
-## 兼容旧状态
+- 候选 Front Matter：`runs/<run-id>/<artifact>.preview.md`
+- 审核状态：`reviews/<artifact>.review.yml`
+- 当前正式状态：`artifacts/<artifact>.md`
+- 需求级汇总：`metadata.yml`
+- 运行状态：PRD run pointer 与 `.runtime/runs/<run-id>/`
 
-旧产物或旧脚本中可能仍出现以下状态：
+同一 artifact 的 review、metadata、候选和正式文件必须指向一致的 run_id、版本和状态。
 
-| 旧状态 | 新口径 |
-|---|---|
-| `needs_changes` | `needs_revision` |
-| `needs_human_confirmation` | `needs_human_review` |
-| `confirmed` | `approved` |
+## 人工确认
 
-自动化代理处理旧状态时应按新口径解释，但不得擅自把旧状态批量改为通过状态。归档前必须确认工作区不存在待审、待确认、待修订或被拒绝状态。
+只有明确表达“通过、批准、发布正式产物”等确认语义，且 ReviewDecision 校验通过，才能把候选更新为 `approved`。
 
-## 确认权限
+以下表达不能直接批准：
 
-- 产品负责人确认需求理解、业务规则和待澄清问题。
-- QA 负责人确认测试用例、执行范围、失败分类和报告结论。
-- 开发或接口负责人确认接口契约、错误码和缺陷可复现性。
-- 自动化代理只能建议状态，不能把审核门从待审改为通过，除非用户明确给出人工确认。
+- “先看看”
+- “感觉还行”
+- “先不要发布”
+- “暂时放着”
+- 含义冲突或低置信度的反馈
+
+LLM 只解析用户反馈，程序状态机负责裁决和写入。
+
+## 禁止项
+
+- 禁止 `reviewed`、`needs_revision`、`needs_human_confirmation` 等旧状态。
+- 禁止把 `confirmed` 解释为 `approved` 的别名。
+- 禁止用手工 `*-v2.md` 代替 history index。
+- 禁止为旧状态增加兼容映射、fallback 或批量转换。

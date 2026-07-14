@@ -13,7 +13,9 @@ class RuntimeWorkflowDefinition:
 BASE_CONTEXT_FILES = (
     "AGENTS.md",
     "COMMANDS.md",
-    "docs/roadmap.md",
+    "docs/architecture.md",
+    "docs/workflow-dsl.md",
+    "docs/prompt-engineering.md",
     "skills/registry/skills.yaml",
     "skills/core/requirement-understanding-skill.md",
     "skills/core/context-building-skill.md",
@@ -22,9 +24,10 @@ BASE_CONTEXT_FILES = (
     "skills/analysis/risk-identification-skill.md",
     "skills/core/output-formatting-skill.md",
 )
+
 ANALYSIS_CONTEXT_FILES = (
     *BASE_CONTEXT_FILES,
-    "workflows/01-requirement-analysis-workflow.md",
+    "workflows/runtime/requirement-analysis.workflow.yml",
     "prompts/requirement-analysis-prompt.md",
     "rules/requirement-analysis-rules.md",
     "rules/review-gate-rules.md",
@@ -33,17 +36,17 @@ ANALYSIS_CONTEXT_FILES = (
     "skills/analysis/business-rule-extraction-skill.md",
     "knowledge/templates/requirement-analysis-template.md",
 )
+
 TESTCASE_CONTEXT_FILES = (
     *BASE_CONTEXT_FILES,
-    "skills/test-design/test-method-selection-skill.md",
-    "skills/test-design/testcase-generation-skill.md",
-    "skills/test-design/testcase-review-skill.md",
-    "workflows/10-runtime-testcase-generation-workflow.md",
-    "workflows/02-testcase-generation-workflow.md",
+    "workflows/runtime/testcase-generation.workflow.yml",
     "prompts/testcase-design-prompt.md",
     "rules/testcase-rules.md",
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
+    "skills/test-design/test-method-selection-skill.md",
+    "skills/test-design/testcase-generation-skill.md",
+    "skills/test-design/testcase-review-skill.md",
     "skills/test-design/test-design-skill.md",
     "skills/test-design/equivalence-partitioning-skill.md",
     "skills/test-design/boundary-value-analysis-skill.md",
@@ -52,21 +55,23 @@ TESTCASE_CONTEXT_FILES = (
     "skills/test-design/risk-based-testing-skill.md",
     "knowledge/templates/testcase-template.md",
 )
+
 API_TEST_CONTEXT_FILES = (
     *BASE_CONTEXT_FILES,
     "docs/api-test-generation.md",
     "workflows/runtime/api-test-draft.workflow.yml",
-    "prompts/api-test-generation.md",
+    "prompts/api-test-generation-prompt.md",
     "skills/api-testing.md",
+    "rules/api-test-rules.md",
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
 )
+
 RAG_AUTOMATION_CASE_CONTEXT_FILES = (
     *API_TEST_CONTEXT_FILES,
     "docs/automation-case-generation.md",
     "docs/rag-architecture.md",
     "docs/rag-run-record-spec.md",
-    "workflows/10-rag-automation-case-generation-workflow.md",
     "workflows/runtime/rag-automation-case.workflow.yml",
     "prompts/rag-automation-case-prompt.md",
     "rules/automation-case-rules.md",
@@ -77,15 +82,17 @@ RAG_AUTOMATION_CASE_CONTEXT_FILES = (
     "knowledge/automation/variable-extraction-rules.md",
     "knowledge/templates/rag-run-record-template.json",
 )
+
 UI_TEST_CONTEXT_FILES = (
     *BASE_CONTEXT_FILES,
     "docs/ui-test-generation.md",
     "workflows/runtime/ui-test-draft.workflow.yml",
-    "prompts/ui-test-generation.md",
+    "prompts/ui-test-generation-prompt.md",
     "skills/ui-testing.md",
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
 )
+
 API_DISCOVERY_CONTEXT_FILES = (
     *BASE_CONTEXT_FILES,
     "docs/api-discovery.md",
@@ -95,6 +102,7 @@ API_DISCOVERY_CONTEXT_FILES = (
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
 )
+
 QA_REPORT_CONTEXT_FILES = (
     *BASE_CONTEXT_FILES,
     "docs/qa-report-generation.md",

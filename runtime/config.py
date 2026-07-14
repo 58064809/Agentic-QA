@@ -1,6 +1,6 @@
 """Runtime 统一配置层。
 
-配置文件只承载可提交或本地私有的运行参数；密钥仍只从环境变量读取。
+配置文件只承载可提交或本地私有的运行参数；密钥只从环境变量读取。
 加载顺序为 defaults -> configs/config.yaml -> configs/local.yaml -> configs/private.yaml。
 """
 
@@ -157,49 +157,22 @@ class LLMConfig:
 
 @dataclass(frozen=True)
 class WorkflowConfig:
-    """工作流和上下文文件配置。"""
+    """工作流运行开关。
 
-    enable_human_checkpoint: bool = True
-    default_checkpoint_node: str = "requirement_analysis"
-    intent_workflow_files: dict[str, list[str]] = field(default_factory=dict)
-    default_workflow_files: list[str] = field(default_factory=list)
-    intent_context_files: dict[str, list[str]] = field(default_factory=dict)
-    default_context_files: list[str] = field(default_factory=list)
-    mvp_analysis_workflow_files: list[str] = field(default_factory=list)
-    mvp_testcase_workflow_files: list[str] = field(default_factory=list)
+    Workflow 文件和上下文清单不允许从配置覆盖，统一由
+    ``runtime.workflow.catalog.DEFAULT_WORKFLOW_REGISTRY`` 管理。
+    """
+
     use_llm: dict[str, bool] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | None) -> WorkflowConfig:
         data = data or {}
-        intent_workflow_files = {
-            str(key): _string_list(value)
-            for key, value in dict(data.get("intent_workflow_files") or {}).items()
-        }
-        intent_context_files = {
-            str(key): _string_list(value)
-            for key, value in dict(data.get("intent_context_files") or {}).items()
-        }
         use_llm = {
             str(key): _bool_value(value, default=True)
             for key, value in dict(data.get("use_llm") or {}).items()
         }
-        return cls(
-            enable_human_checkpoint=_bool_value(
-                data.get("enable_human_checkpoint"),
-                default=True,
-            ),
-            default_checkpoint_node=str(
-                data.get("default_checkpoint_node", "requirement_analysis")
-            ),
-            intent_workflow_files=intent_workflow_files,
-            default_workflow_files=_string_list(data.get("default_workflow_files")),
-            intent_context_files=intent_context_files,
-            default_context_files=_string_list(data.get("default_context_files")),
-            mvp_analysis_workflow_files=_string_list(data.get("mvp_analysis_workflow_files")),
-            mvp_testcase_workflow_files=_string_list(data.get("mvp_testcase_workflow_files")),
-            use_llm=use_llm,
-        )
+        return cls(use_llm=use_llm)
 
     def use_llm_for(self, task_name: str, *, default: bool = True) -> bool:
         return self.use_llm.get(task_name, default)
@@ -416,7 +389,7 @@ def load_app_config(
 ) -> AppConfig:
     """加载统一配置。
 
-    `configs/config.yaml` 不提交真实密钥；密钥引用只通过 `*_api_key_env`
+    ``configs/config.yaml`` 不提交真实密钥；密钥引用只通过 ``*_api_key_env``
     或现有环境变量完成。
     """
     root = (repo_root or Path.cwd()).resolve()
