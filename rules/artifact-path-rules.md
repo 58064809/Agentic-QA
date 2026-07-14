@@ -1,61 +1,74 @@
 # 产物路径规则
 
-所有 QA 产物必须写入对应 PRD 工作区，路径以 `prd/<requirement_id>/` 为根。
+本文件定义 Agentic-QA 当前唯一有效的 PRD 工作区路径契约。Runtime、Workflow、Prompt、Agent、Skill、脚本和文档必须使用同一套路径；不保留旧目录兼容、别名映射或双写逻辑。
 
-## 固定路径
+## 权威来源
 
-| 产物 | 路径 |
+路径定义以 `runtime/workspace.py` 的 `ARTIFACT_SPECS`、`ARTIFACT_PREVIEW_FILES`、`WORKSPACE_DIRS` 和 `REQUIRED_WORKSPACE_FILES` 为程序事实源。本文件只解释约束，不得定义与代码不同的第二套结构。
+
+## 输入与元数据
+
+| 数据 | 当前路径 |
 |---|---|
 | 原始需求 | `prd/<id>/input/requirement.md` |
 | 接口文档 | `prd/<id>/input/api.md` |
-| 元数据 | `prd/<id>/workspace.yml` |
-| 需求分析 | `prd/<id>/runs/<run_id>/analysis/requirement-analysis.md` |
-| 测试用例 | `prd/<id>/runs/<run_id>/cases/test-cases.md` |
-| API 测试计划 | `prd/<id>/automation/api/test-plan.md` |
-| API 测试脚本 | `prd/<id>/automation/api/generated/` |
-| UI 测试脚本 | `prd/<id>/automation/ui/generated/` |
-| QA 产物最新指针 | `prd/<id>/runs/latest.yml` |
-| QA 产物历史索引 | `prd/<id>/runs/index.jsonl` |
-| 执行结果 | `prd/<id>/execution/runs/` |
-| 执行报告 | `prd/<id>/execution/runs/latest/summary.md` |
-| 失败分析 | `prd/<id>/defects/failure-analysis.md` |
-| 缺陷草稿 | `prd/<id>/defects/bug-drafts/` |
-| AI 生成 QA 报告草稿 | `prd/<id>/report/qa-review.md` |
-| 人工确认正式 QA 报告 | `prd/<id>/report/qa-report.md` |
-| 对外评审导出 | `prd/<id>/exports/` |
-| 归档索引 | `prd/<id>/archive/index.md` |
+| 附件 | `prd/<id>/input/attachments/` |
+| 需求级元数据 | `prd/<id>/metadata.yml` |
 
-## 规则
+## 候选产物与运行指针
 
-- 不允许把同一需求的产物散落在仓库根目录。
-- Runtime 每轮分析/用例产物必须写入 `prd/<id>/runs/<run_id>/`，不得继续堆放在 `analysis/` 或 `cases/` 根目录。
-- `prd/<id>/runs/latest.yml` 指向最新一轮，`prd/<id>/runs/index.jsonl` 追加记录历史轮次。
-- 不允许覆盖人工已确认产物；需要修改时生成修订记录、补充文件或新版本。
-- 自动化脚本必须放入 `generated/`，人工维护脚本可另建 `manual/`。
-- AI 只能生成 `qa-review.md`；`qa-report.md` 是人工确认后的正式报告，可后续生成。
-- 内部主产物路径保持英文固定命名，便于脚本、路由和校验。
-- 对外评审文件可以使用中文命名，但只能放入 `prd/<id>/exports/`，不得替代内部主文件。
+| 数据 | 当前路径 |
+|---|---|
+| 候选索引 | `prd/<id>/runs/<run-id>/artifact-preview.md` |
+| 需求分析候选正文 | `prd/<id>/runs/<run-id>/requirement-analysis.preview.md` |
+| 测试用例候选正文 | `prd/<id>/runs/<run-id>/testcases.preview.md` |
+| API 测试草稿候选正文 | `prd/<id>/runs/<run-id>/api-test-draft.preview.md` |
+| UI 测试草稿候选正文 | `prd/<id>/runs/<run-id>/ui-test-draft.preview.md` |
+| 接口发现报告候选正文 | `prd/<id>/runs/<run-id>/api-discovery-report.preview.md` |
+| QA 报告候选正文 | `prd/<id>/runs/<run-id>/qa-report.preview.md` |
+| 最新运行指针 | `prd/<id>/runs/latest.yml` |
+| 运行索引 | `prd/<id>/runs/index.jsonl` |
 
-## 覆盖、增量和版本
+`artifact-preview.md` 只保存候选文件索引，不承载多产物正文。正式发布必须从 `runs/latest.yml.output_paths` 或指定 run 的具体 `<artifact>.preview.md` 读取候选正文。
 
-- `needs_human_review`：允许覆盖草稿，但应说明覆盖原因。
-- `needs_revision`：允许按评审意见增量修订，不建议整份重写。
-- `reviewed`：默认只做增量修订，必须保留评审意见。
-- `approved`：禁止直接覆盖，只能追加补充或新建版本。
-- 重新生成对比版时，使用 `*-v2.md`，或复制新的 PRD 工作区。
+## 正式产物、审核与历史版本
 
-## Markdown 清洗产物
+| 产物 | 正式路径 | 审核记录 | 历史索引 |
+|---|---|---|---|
+| 需求分析 | `artifacts/requirement-analysis.md` | `reviews/requirement-analysis.review.yml` | `artifacts/history/requirement-analysis/index.yml` |
+| 测试用例 | `artifacts/testcases.md` | `reviews/testcases.review.yml` | `artifacts/history/testcases/index.yml` |
+| API 测试草稿 | `artifacts/api-test-draft.md` | `reviews/api-test-draft.review.yml` | `artifacts/history/api-test-draft/index.yml` |
+| UI 测试草稿 | `artifacts/ui-test-draft.md` | `reviews/ui-test-draft.review.yml` | `artifacts/history/ui-test-draft/index.yml` |
+| 接口发现报告 | `artifacts/api-discovery-report.md` | `reviews/api-discovery-report.review.yml` | `artifacts/history/api-discovery-report/index.yml` |
+| QA 报告 | `artifacts/qa-report.md` | `reviews/qa-report.review.yml` | `artifacts/history/qa-report/index.yml` |
 
-- 文档转换后的主输入仍是 `prd/<id>/input/requirement.md`。
-- 轻量清洗输出使用 `prd/<id>/input/requirement.cleaned.md`。
-- 清洗默认不得覆盖 `input/requirement.md`；覆盖必须由用户显式确认。
-- 清洗只能处理控制字符、分页符、异常空行和连续异常空格，不得修改业务语义。
-- 不处理图片，不做 OCR，不分析原型图。
+以上路径均相对 `prd/<id>/`。
 
-## 中文导出示例
+## Runtime 内部记录
 
-```text
-prd/<id>/exports/<需求标题>-需求分析.md
-prd/<id>/exports/<需求标题>-测试用例.md
-prd/<id>/exports/<需求标题>-QA评审摘要.md
-```
+Runtime 的图状态、恢复数据和运行摘要写入 `.runtime/runs/<run-id>/`。该目录不是 PRD 正式产物目录，不能被 Prompt 当作业务输入路径。
+
+## 写入规则
+
+1. 生成节点只写 `runs/<run-id>/<artifact>.preview.md` 及伴随结构化文件。
+2. Review Gate 只更新 `reviews/*.review.yml` 和运行状态，不直接覆盖正式产物。
+3. 只有 `approved` 候选允许由确定性 promote 逻辑写入 `artifacts/`。
+4. promote 成功后正式状态才可变为 `confirmed`，旧正式版本进入 `artifacts/history/<artifact>/`。
+5. 正式产物、审核记录、历史索引和 `metadata.yml` 必须保持同一 artifact key、run_id 和版本信息。
+6. 所有写入默认禁止覆盖已有候选文件；重复执行必须生成新的 run 或明确的新候选文件名。
+
+## 禁止项
+
+以下路径和命名已废弃，仓库规范文件和运行时代码中不得继续引用：
+
+- `prd/<id>/workspace.yml`
+- `prd/<id>/analysis/`
+- `prd/<id>/cases/`
+- `prd/<id>/execution/`
+- `prd/<id>/defects/`
+- `prd/<id>/report/`
+- `test-cases.md`
+- `qa-review.md`
+- 把 `artifact-preview.md` 当作多产物候选正文
+
+发现旧路径时直接修复或删除引用，不增加兼容读取、兼容写入、fallback 或迁移分支。
