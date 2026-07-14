@@ -97,7 +97,7 @@ API_DISCOVERY_CONTEXT_FILES = (
     *BASE_CONTEXT_FILES,
     "docs/api-discovery.md",
     "workflows/runtime/api-discovery-report.workflow.yml",
-    "prompts/api-discovery-prompt.md",
+    "prompts/api-discovery.md",
     "skills/api-discovery.md",
     "rules/review-gate-rules.md",
     "rules/artifact-path-rules.md",
