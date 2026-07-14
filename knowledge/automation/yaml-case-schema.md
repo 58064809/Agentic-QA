@@ -1,31 +1,30 @@
 # YAML 接口用例 Schema
 
-## 目标
+本文件定义 RAG 接口自动化 YAML 的当前机器契约。Validator 实现位于 `runtime/validators/api_case_contract_rules.py`，字段定义不得与其漂移。
 
-定义 RAG 生成接口自动化用例草稿的最小 YAML 结构。该结构用于人工审核和后续 pytest 执行框架消费。
-
-YAML 用例文件是 `api_test_draft` 的机器可消费 sidecar 候选产物，不是独立绕过 Review Gate 的正式资产。固定流转为：
+## 流转
 
 ```text
-runs/<run_id>/artifact-preview.md
-runs/<run_id>/api-test-cases.yml
+runs/<run-id>/api-test-draft.preview.md
+runs/<run-id>/api-test-cases.yml
 reviews/api-test-draft.review.yml
+artifacts/api-test-draft.md
 artifacts/api-test-cases.yml
 ```
 
-其中 `artifacts/api-test-cases.yml` 只能在 Review Gate 通过并执行 promote 后写入。
+YAML 是 `api_test_draft` 的机器可消费 sidecar。候选必须与 Markdown 草稿共用同一 run 和 Review Gate；`artifacts/api-test-cases.yml` 只能由 promote 写入。
 
 ## 顶层结构
 
 ```yaml
-schema_version: v1
+schema_version: agentic-qa.api-cases.v1
 artifact_type: api_automation_cases
 status: needs_human_review
 human_review_required: true
 generated_from:
-  workflow: workflows/10-rag-automation-case-generation-workflow.md
+  workflow: workflows/runtime/rag-automation-case.workflow.yml
   prompt: prompts/rag-automation-case-prompt.md
-  rag_run_record: rag/run_records/<run_id>.json
+  rag_run_record: rag/run_records/<run-id>.json
 source_refs:
   - source_type: prd
     source_path: prd/<id>/input/requirement.md
@@ -39,9 +38,9 @@ cases:
     priority: P0
     review_status: needs_human_review
     source_refs:
-      - source_type: swagger
-        source_path: knowledge/api/auth-openapi.yaml
-        chunk_id: swagger-post-login
+      - source_type: openapi
+        source_path: knowledge/api/auth/openapi.json
+        chunk_id: openapi-post-login
         locator: POST /api/auth/login
         summary: 登录接口请求和响应结构
         confidence: high
@@ -59,9 +58,6 @@ cases:
         expected: 200
       - type: json_field_exists
         path: $.data.access_token
-      - type: json_field_type
-        path: $.data.access_token
-        expected: string
     variables:
       extract:
         access_token: $.data.access_token
@@ -70,41 +66,49 @@ cases:
         - TEST_LOGIN_PASSWORD
     cleanup: []
 review_questions:
-  - 登录失败错误码需与 Swagger / Apifox 核对。
+  - 登录失败错误码需与已确认接口契约核对。
 ```
 
-## 字段说明
+## 字段约束
 
-| 字段 | 说明 |
+| 字段 | 约束 |
 |---|---|
-| `schema_version` | Schema 版本，第一版为 `v1` |
+| `schema_version` | 固定为 `agentic-qa.api-cases.v1` |
 | `artifact_type` | 固定为 `api_automation_cases` |
-| `status` | 默认 `needs_human_review` |
+| `status` | 候选固定为 `needs_human_review` |
+| `human_review_required` | 候选固定为 `true` |
+| `generated_from.workflow` | 当前 Runtime Workflow YAML |
 | `source_refs` | 顶层来源汇总 |
 | `cases` | 用例列表 |
-| `review_questions` | 待人工确认项 |
+| `review_questions` | 所有契约缺口和人工判断项 |
 
-## 用例字段说明
+每条 case 至少包含：
 
-| 字段 | 说明 |
-|---|---|
-| `id` | 用例 ID |
-| `title` | 明确描述业务行为和预期 |
-| `priority` | `P0`、`P1`、`P2`、`P3` |
-| `review_status` | 默认 `needs_human_review` |
-| `source_refs` | 用例级来源引用，不能为空 |
-| `request` | 请求定义 |
-| `assertions` | 断言列表 |
-| `variables` | 环境变量、提取变量和 fixture 变量 |
-| `cleanup` | 清理动作说明 |
+- `id`
+- `title`
+- `priority`
+- `review_status`
+- 非空 `source_refs`
+- `request`
+- `assertions`
+- `variables`
+- `cleanup`
 
-## 接口契约缺失约束
+## 来源与置信度
 
-`request.method`、`request.path`、请求字段、响应字段、错误码和鉴权方式必须来自 Swagger / OpenAPI / Apifox 或已确认接口契约。
+- 已确认 OpenAPI operation 明确命中 method + path 时可使用 `high`。
+- 仅依赖需求关键词、summary、tags 或模糊检索时不得高于 `medium`。
+- 历史经验只能作为风险来源，不得作为接口契约来源。
 
-缺少接口契约时：
+## 契约缺失
 
-- 不得根据 PRD、历史经验或常识编造 `request.method`、`request.path`、请求字段或响应字段。
-- 只能生成 `status: needs_human_review`、`review_status: needs_human_review` 的待确认草稿。
-- `request` 应为空对象或仅包含明确来源字段。
-- 接口契约缺口必须写入 `review_questions`。
+缺少已确认接口契约时：
+
+- 不得根据需求、历史经验或常识编造 method、path、请求字段、响应字段、错误码或鉴权方式。
+- `request` 保持空对象，或只包含明确有来源的字段。
+- 所有缺口写入 `review_questions`。
+- 不得为了满足覆盖数量生成虚假断言。
+
+## 安全
+
+YAML 不得包含真实 Token、Cookie、密码、手机号、身份证、银行卡、密钥或完整生产域名。敏感值只能使用环境变量、fixture 或 case 变量引用。
