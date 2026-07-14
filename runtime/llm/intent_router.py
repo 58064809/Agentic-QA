@@ -1,15 +1,14 @@
-"""LLM 语义路由：从自然语言提取意图和文档来源"""
+"""LLM 语义路由：从自然语言提取当前 Runtime 支持的意图和文档来源。"""
 
 from __future__ import annotations
 
 import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from runtime.llm.config import OpenAICompatibleConfig
 from runtime.llm.openai_compatible import OpenAICompatibleAdapter
-
-# ── 支持的所有意图 ────────────────────────────────────────────
 
 SUPPORTED_INTENTS: dict[str, str] = {
     "mvp": "需求分析 + 测试用例生成",
@@ -19,41 +18,11 @@ SUPPORTED_INTENTS: dict[str, str] = {
     "rag_automation_case_generation": "RAG 接口自动化 YAML 用例生成",
     "ui_test_draft": "UI 自动化测试草稿生成",
     "api_discovery_report": "接口发现报告生成",
-    "ui_test_generation": "UI 端到端测试生成",
-    "test_execution": "测试执行",
-    "failure_analysis": "失败分析",
-    "bug_draft": "缺陷草稿生成",
     "qa_report": "QA 报告生成",
-    "report_generation": "QA 报告生成（兼容别名）",
-    "archive": "归档",
-    "resume": "继续上次对话",
+    "resume": "继续当前会话",
 }
-
-INTENT_DESCRIPTIONS = "\n".join(f"   - {k}: {v}" for k, v in SUPPORTED_INTENTS.items())
-
-INTENT_ROUTER_SYSTEM_PROMPT = f"""你是一个 QA 工作流路由助手。
-从用户输入中提取以下信息，只返回 JSON 格式：
-
-{{
-  "intent": "意图名称",
-  "prd_path": null 或本地绝对路径,
-  "url": null 或飞书链接,
-  "summary": "简短任务摘要"
-}}
-
-意图选项：
-{INTENT_DESCRIPTIONS}
-
-规则：
-- 如果用户提到本地文件路径（.md/.pdf/.docx 等），提取完整绝对路径到 prd_path。
-- 如果用户提到飞书链接（feishu.cn 或 lark 开头的 URL），提取到 url。
-- 如果没有明确意图，设为 "resume" 表示继续上次对话。
-- 如果用户说"重新开始""重置""从头开始"，intent 设为 "reset"。
-- 只输出 JSON，不要额外文字。
-"""
-
-
-# ── 本地文件路径检测（LLM 不可用时的后备） ─────────────────────
+CONTROL_INTENTS = {"reset"}
+ROUTER_PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "semantic-router-prompt.md"
 
 LOCAL_PATH_RE = re.compile(
     r"""
@@ -63,7 +32,6 @@ LOCAL_PATH_RE = re.compile(
     """,
     re.IGNORECASE | re.VERBOSE,
 )
-
 PRD_WORKSPACE_RE = re.compile(
     r"""
     (?:
@@ -74,12 +42,10 @@ PRD_WORKSPACE_RE = re.compile(
     """,
     re.IGNORECASE | re.VERBOSE,
 )
-
 URL_RE = re.compile(
     r"https?://[^\s\"'<>]+(?:feishu|lark|feishu\.cn)[^\s\"'<>]*",
     re.IGNORECASE,
 )
-
 RESET_KEYWORDS = ("重新开始", "重置", "从头开始", "new session", "reset", "新会话")
 
 
@@ -101,30 +67,40 @@ class IntentRouteResult:
         return self.intent == "reset"
 
 
-def _extract_paths_fallback(user_input: str) -> tuple[str | None, str | None]:
-    """关键词匹配提取路径和 URL（LLM 不可用时的后备）。"""
-    prd_path = None
-    url = None
+def _router_system_prompt() -> str:
+    try:
+        template = ROUTER_PROMPT_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(f"无法读取语义路由 Prompt: {ROUTER_PROMPT_PATH}") from exc
+    intent_lines = "\n".join(f"- `{name}`：{description}" for name, description in SUPPORTED_INTENTS.items())
+    return template.replace("{{SUPPORTED_INTENTS}}", intent_lines)
 
+
+def _extract_paths_fallback(user_input: str) -> tuple[str | None, str | None]:
+    """确定性提取 PRD/本地文件路径和飞书 URL。"""
     from runtime.cli.parser import _extract_prd_workspace_path
 
     prd_path = _extract_prd_workspace_path(user_input)
     if not prd_path:
-        m = LOCAL_PATH_RE.search(user_input)
-        if m:
-            prd_path = m.group(0).strip()
+        match = LOCAL_PATH_RE.search(user_input)
+        if match:
+            prd_path = match.group(0).strip()
 
-    m = URL_RE.search(user_input)
-    if m:
-        url = m.group(0).strip().rstrip(".)>")
-
+    url = None
+    match = URL_RE.search(user_input)
+    if match:
+        url = match.group(0).strip().rstrip(".)>")
     return prd_path, url
 
 
 def _infer_intent_fallback(user_input: str) -> str:
-    """LLM 路由不可用时的确定性意图兜底。"""
-    text = user_input.lower()
+    """LLM 不可用时，只路由到当前 Registry 支持的意图。"""
+    lowered = user_input.lower()
     has_analysis = any(keyword in user_input for keyword in ("分析", "拆解", "需求分析"))
+    has_testcases = any(
+        keyword in user_input for keyword in ("测试用例", "用例", "testcase", "test case")
+    )
+
     if any(
         keyword in user_input
         for keyword in (
@@ -138,9 +114,6 @@ def _infer_intent_fallback(user_input: str) -> str:
         )
     ):
         return "rag_automation_case_generation"
-    has_testcases = any(
-        keyword in user_input for keyword in ("测试用例", "用例", "testcase", "test case")
-    )
     if has_analysis and has_testcases:
         return "mvp"
     if has_analysis:
@@ -148,7 +121,8 @@ def _infer_intent_fallback(user_input: str) -> str:
     if has_testcases:
         return "testcase_generation"
     if any(
-        keyword in user_input for keyword in ("接口发现", "抓包", "network-capture", "接口调用链")
+        keyword in user_input
+        for keyword in ("接口发现", "抓包", "network-capture", "接口调用链", "HAR")
     ):
         return "api_discovery_report"
     if any(
@@ -182,104 +156,85 @@ def _infer_intent_fallback(user_input: str) -> str:
         )
     ):
         return "api_test_draft"
-    if any(keyword in user_input for keyword in ("执行", "跑测试", "运行测试")):
-        return "test_execution"
-    if any(keyword in user_input for keyword in ("失败分析", "分析失败", "failure")):
-        return "failure_analysis"
-    if any(keyword in user_input for keyword in ("bug", "缺陷")):
-        return "bug_draft"
-    if any(keyword in user_input for keyword in ("报告", "QA报告", "qa report")):
+    if any(keyword in user_input for keyword in ("QA报告", "QA 报告", "qa report", "质量报告")):
         return "qa_report"
-    if any(keyword in user_input for keyword in ("UI", "ui", "端到端", "E2E", "e2e")):
-        return "ui_test_generation"
-    if any(keyword in user_input for keyword in ("归档", "archive")):
-        return "archive"
-    if "resume" in text or "继续" in user_input:
+    if "resume" in lowered or "继续" in user_input:
         return "resume"
     return "resume"
 
 
 def route_intent_fallback(user_input: str, *, reason: str = "") -> IntentRouteResult:
-    """确定性兜底路由：保留自然语言入口，不因 LLM 不可用中断。"""
-    result = IntentRouteResult()
+    """确定性路由：不因 LLM 不可用而中断自然语言入口。"""
     if _is_reset_request(user_input):
-        result.intent = "reset"
-        result.summary = "重置会话"
-        return result
+        return IntentRouteResult(intent="reset", summary="重置会话")
+
     prd_path, url = _extract_paths_fallback(user_input)
-    result.intent = _infer_intent_fallback(user_input)
-    result.prd_path = prd_path
-    result.url = url
-    result.summary = reason or "LLM 路由不可用，已使用确定性兜底路由"
-    return result
+    intent = _infer_intent_fallback(user_input)
+    summary = reason or "已使用确定性意图路由"
+    if intent == "resume" and not any(keyword in user_input for keyword in ("继续", "resume")):
+        summary = f"{summary}；未识别到新的受支持任务，保持当前会话"
+    return IntentRouteResult(intent=intent, prd_path=prd_path, url=url, summary=summary)
 
 
 def _is_reset_request(user_input: str) -> bool:
     lowered = user_input.lower().strip()
-    for kw in RESET_KEYWORDS:
-        if kw in lowered or kw in user_input:
-            return True
-    return False
+    return any(keyword in lowered or keyword in user_input for keyword in RESET_KEYWORDS)
+
+
+def _parse_json_response(response_text: str) -> dict[str, object]:
+    json_text = response_text.strip()
+    if json_text.startswith("```"):
+        lines = json_text.splitlines()
+        start = 1 if lines and lines[0].startswith("```") else 0
+        end = -1 if lines and lines[-1].strip() == "```" else len(lines)
+        json_text = "\n".join(lines[start:end])
+    data = json.loads(json_text)
+    if not isinstance(data, dict):
+        raise ValueError("语义路由响应必须是 JSON object")
+    return data
 
 
 def route_intent(user_input: str, config: OpenAICompatibleConfig) -> IntentRouteResult:
-    """用 LLM 从用户输入中提取意图和文档来源。
-
-    如果 LLM 不可用或调用失败，降级为确定性路由。
-    """
-    result = IntentRouteResult()
-
-    # 先检查重置意图
+    """使用外部 Prompt 和 LLM 路由；失败时降级到当前确定性路由。"""
     if _is_reset_request(user_input):
-        result.intent = "reset"
-        result.summary = "重置会话"
-        return result
+        return IntentRouteResult(intent="reset", summary="重置会话")
 
-    # 检查 LLM 是否可用
     if not config.has_api_key:
         return route_intent_fallback(
             user_input,
-            reason="缺少 DEEPSEEK_API_KEY，LLM 语义路由已降级为确定性路由",
+            reason="缺少 LLM API Key，语义路由已降级",
         )
 
-    # 调用 LLM 路由
     try:
         adapter = OpenAICompatibleAdapter(config)
-        prompt = f"用户输入: {user_input}"
-        response_text = adapter.generate_text(f"{INTENT_ROUTER_SYSTEM_PROMPT}\n\n{prompt}")
-    except Exception as e:
+        response_text = adapter.generate_text(
+            f"{_router_system_prompt()}\n\n用户输入：{user_input}"
+        )
+    except Exception as exc:  # noqa: BLE001
         return route_intent_fallback(
             user_input,
-            reason=f"LLM 路由调用失败，已降级为确定性路由: {e}",
+            reason=f"LLM 路由调用失败，已降级: {exc}",
         )
 
-    # 解析 JSON
-    result.raw_response = response_text
     try:
-        # 从响应中提取 JSON（处理可能的 markdown 包裹）
-        json_str = response_text.strip()
-        if json_str.startswith("```"):
-            # 去掉 ```json ... ``` 包裹
-            lines = json_str.split("\n")
-            start = 1 if lines[0].startswith("```") else 0
-            end = -1 if lines[-1].strip() == "```" else len(lines)
-            json_str = "\n".join(lines[start:end])
-        data = json.loads(json_str)
-    except json.JSONDecodeError:
+        data = _parse_json_response(response_text)
+    except (json.JSONDecodeError, ValueError) as exc:
         return route_intent_fallback(
             user_input,
-            reason=f"LLM 返回非 JSON 格式，已降级为确定性路由: {response_text[:200]}",
+            reason=f"LLM 路由响应无效，已降级: {exc}",
         )
 
-    intent = data.get("intent", "")
-    if intent not in SUPPORTED_INTENTS and intent != "reset":
+    result = IntentRouteResult(raw_response=response_text)
+    intent = str(data.get("intent") or "")
+    if intent not in SUPPORTED_INTENTS and intent not in CONTROL_INTENTS:
         result.errors.append(
-            f"LLM 返回未知意图「{intent}」，支持: {', '.join(SUPPORTED_INTENTS.keys())}"
+            f"LLM 返回未知意图「{intent}」，支持: "
+            + ", ".join((*SUPPORTED_INTENTS.keys(), *sorted(CONTROL_INTENTS)))
         )
         return result
 
     result.intent = intent
-    result.prd_path = data.get("prd_path") or None
-    result.url = data.get("url") or None
-    result.summary = data.get("summary", "")
+    result.prd_path = str(data["prd_path"]) if data.get("prd_path") else None
+    result.url = str(data["url"]) if data.get("url") else None
+    result.summary = str(data.get("summary") or "")
     return result
