@@ -25,7 +25,7 @@
   "retrieved_chunks": [],
   "selected_context": [],
   "generation": {
-    "prompt": "prompts/rag-automation-case-prompt.md",
+    "prompt": "prompts/api-test-generation.md",
     "output_path": "",
     "status": "needs_human_review"
   },

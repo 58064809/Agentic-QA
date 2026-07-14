@@ -12,7 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from rag.config import RagConfig  # noqa: E402
 from rag.manager import RagManager  # noqa: E402
 from runtime.cli.rag_cmds import run_rag_command  # noqa: E402
-from runtime.graph.nodes.mvp_generation import (  # noqa: E402
+from runtime.graph.nodes.artifact_generation import (  # noqa: E402
     _build_rag_context,
     _build_rag_query,
 )

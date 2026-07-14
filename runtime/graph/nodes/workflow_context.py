@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from runtime.config import load_app_config
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.api_doc_loader import API_DOC_FILENAMES, normalize_workspace_api_docs
 from runtime.tools.artifact_writer import ensure_within_directory
@@ -13,7 +12,7 @@ from runtime.workspace import PRDWorkspace, resolve_prd_path
 
 TASK_ANALYSIS = "analysis"
 TASK_TESTCASE_GENERATION = "testcase_generation"
-TASK_MVP = "mvp_analysis_testcases"
+TASK_ANALYSIS_AND_TESTCASES = "analysis_and_testcases"
 TASK_API_TEST_DRAFT = "api_test_draft"
 TASK_UI_TEST_DRAFT = "ui_test_draft"
 TASK_API_DISCOVERY_REPORT = "api_discovery_report"
@@ -34,24 +33,24 @@ IMAGE_IGNORED_WARNING = (
 )
 
 
-def mvp_command_router_node(state: QAWorkflowState) -> QAWorkflowState:
+def workflow_command_router_node(state: QAWorkflowState) -> QAWorkflowState:
     allowed = {
         TASK_ANALYSIS,
         TASK_TESTCASE_GENERATION,
-        TASK_MVP,
+        TASK_ANALYSIS_AND_TESTCASES,
         TASK_API_TEST_DRAFT,
         TASK_UI_TEST_DRAFT,
         TASK_API_DISCOVERY_REPORT,
         TASK_QA_REPORT,
     }
     if state.task_type not in allowed:
-        state.errors.append(f"不支持的 Runtime MVP 任务类型: {state.task_type}")
+        state.errors.append(f"不支持的 Runtime 任务类型: {state.task_type}")
         return state
     state.intent = state.intent or state.task_type
     return state
 
 
-def mvp_workflow_selector_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
+def workflow_context_selector_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
     if state.errors:
         return state
 
@@ -64,12 +63,7 @@ def mvp_workflow_selector_node(state: QAWorkflowState, repo_root: Path) -> QAWor
         else state.task_type
     )
     definition = DEFAULT_WORKFLOW_REGISTRY.definition_for_task_type(context_task_type)
-    workflow_config = load_app_config(repo_root).workflow
-    configured_files = workflow_config.intent_workflow_files.get(str(context_task_type)) or {
-        TASK_ANALYSIS: workflow_config.mvp_analysis_workflow_files,
-        TASK_TESTCASE_GENERATION: workflow_config.mvp_testcase_workflow_files,
-    }.get(str(context_task_type))
-    state.workflow_files = list(configured_files or definition.context_files)
+    state.workflow_files = list(definition.context_files)
 
     for relative_path in state.workflow_files:
         if not (repo_root / relative_path).is_file():
@@ -93,13 +87,13 @@ def _resolve_context_files(repo_root: Path, task_type: str | None) -> list[str]:
 def _set_output_paths(state: QAWorkflowState, repo_root: Path, prd_path: Path) -> None:
     workspace = PRDWorkspace(prd_path)
 
-    if state.task_type in {TASK_ANALYSIS, TASK_MVP}:
+    if state.task_type in {TASK_ANALYSIS, TASK_ANALYSIS_AND_TESTCASES}:
         state.output_paths["requirement_analysis"] = (
             workspace.artifact_candidate_path(state.run_id, "requirement_analysis")
             .relative_to(repo_root)
             .as_posix()
         )
-    if state.task_type in {TASK_TESTCASE_GENERATION, TASK_MVP}:
+    if state.task_type in {TASK_TESTCASE_GENERATION, TASK_ANALYSIS_AND_TESTCASES}:
         state.output_paths["testcases"] = (
             workspace.artifact_candidate_path(state.run_id, "testcases")
             .relative_to(repo_root)
@@ -134,6 +128,8 @@ def _set_output_paths(state: QAWorkflowState, repo_root: Path, prd_path: Path) -
         state.output_path = state.output_paths["requirement_analysis"]
     elif state.task_type == TASK_TESTCASE_GENERATION:
         state.output_path = state.output_paths["testcases"]
+    elif state.task_type == TASK_ANALYSIS_AND_TESTCASES:
+        state.output_path = state.output_paths["requirement_analysis"]
     elif state.task_type == TASK_API_TEST_DRAFT:
         state.output_path = state.output_paths["api_test_draft"]
     elif state.task_type == TASK_UI_TEST_DRAFT:
@@ -162,7 +158,7 @@ def _detect_requirement_images(
     )
 
 
-def mvp_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
+def workflow_context_loader_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
     if state.errors:
         return state
 

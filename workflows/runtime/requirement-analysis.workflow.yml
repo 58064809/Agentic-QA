@@ -12,11 +12,11 @@ state:
 nodes:
   - id: command_router
     type: python
-    handler: runtime.graph.nodes.mvp_context_loader.mvp_command_router_node
+    handler: runtime.graph.nodes.workflow_context.workflow_command_router_node
 
   - id: workflow_selector
     type: python
-    handler: runtime.graph.nodes.mvp_context_loader.mvp_workflow_selector_node
+    handler: runtime.graph.nodes.workflow_context.workflow_context_selector_node
 
   - id: requirement_normalizer
     type: python
@@ -24,15 +24,15 @@ nodes:
 
   - id: context_loader
     type: python
-    handler: runtime.graph.nodes.mvp_context_loader.mvp_context_loader_node
+    handler: runtime.graph.nodes.workflow_context.workflow_context_loader_node
 
   - id: requirement_analysis_generator
     type: python
-    handler: runtime.graph.nodes.mvp_generation.requirement_analysis_generation_node
+    handler: runtime.graph.nodes.artifact_generation.requirement_analysis_generation_node
 
   - id: requirement_analysis_quality
     type: python
-    handler: runtime.graph.nodes.mvp_quality.requirement_analysis_quality_check_node
+    handler: runtime.graph.nodes.artifact_quality.requirement_analysis_quality_check_node
 
   - id: review_gate
     type: python
@@ -98,7 +98,7 @@ edges:
     condition: default
 
   - from: artifact_preview_writer
-    to: review_gate
+    to: metadata_update
     condition: no_errors
 
   - from: artifact_preview_writer
@@ -122,10 +122,6 @@ edges:
     condition: review_waiting
 
   - from: review_gate
-    to: metadata_update
-    condition: no_errors
-
-  - from: review_gate
     to: end
     condition: default
 
@@ -138,4 +134,9 @@ edges:
     condition: default
 
   - from: metadata_update
+    to: review_gate
+    condition: no_errors
+
+  - from: metadata_update
     to: end
+    condition: default

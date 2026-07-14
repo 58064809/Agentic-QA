@@ -74,19 +74,19 @@ llm:
 优先级为：环境变量 > YAML。比如设置了 `DEEPSEEK_MODEL` 时，会覆盖
 `llm.model`；设置了 `DEEPSEEK_BASE_URL` 时，会覆盖 `llm.base_url`。
 
-需求分析、用例生成和 MVP 联合流程可单独控制：
+需求分析、用例生成和分析 + 用例联合流程可单独控制：
 
 ```yaml
 workflow:
   use_llm:
     requirement_analysis: true
     testcase_generation: true
-    mvp_analysis_testcases: true
+    analysis_and_testcases: true
 ```
 
 - `requirement_analysis: false`：需求分析生成不用 LLM。
 - `testcase_generation: false`：测试用例生成不用 LLM。
-- `mvp_analysis_testcases: false`：需求分析 + 测试用例联合流程不用 LLM。
+- `analysis_and_testcases: false`：需求分析 + 测试用例联合流程不用 LLM。
 
 `llm.enabled=false` 优先级更高；即使 `workflow.use_llm.*=true`，也不会调用 LLM。
 
@@ -160,19 +160,7 @@ output:
 - `write_artifact_preview`：生成结果先进入候选产物。
 - `require_review_gate`：候选产物进入正式产物前必须经过 Review Gate。
 
-### Workflow 文件选择
-
-`workflow.intent_workflow_files` 可以覆盖某个 intent 需要加载的 workflow 文件：
-
-```yaml
-workflow:
-  intent_workflow_files:
-    testcase_generation:
-      - workflows/10-runtime-testcase-generation-workflow.md
-      - workflows/02-testcase-generation-workflow.md
-```
-
-`workflow.mvp_analysis_workflow_files` 和 `workflow.mvp_testcase_workflow_files` 用于当前 MVP Graph。
+Workflow 定义固定来自 `workflows/runtime/*.workflow.yml`，上下文清单固定由 `runtime/workflow/catalog.py` 管理，不再允许通过配置文件覆盖另一套流程路径。
 
 ## RAG 密钥策略
 

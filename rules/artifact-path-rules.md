@@ -8,7 +8,7 @@
 |---|---|
 | 原始需求 | `prd/<id>/input/requirement.md` |
 | 接口文档 | `prd/<id>/input/api.md` |
-| 元数据 | `prd/<id>/workspace.yml` |
+| 元数据 | `prd/<id>/metadata.yml` |
 | 需求分析 | `prd/<id>/runs/<run_id>/analysis/requirement-analysis.md` |
 | 测试用例 | `prd/<id>/runs/<run_id>/cases/test-cases.md` |
 | API 测试计划 | `prd/<id>/automation/api/test-plan.md` |

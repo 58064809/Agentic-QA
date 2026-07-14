@@ -157,29 +157,15 @@ class LLMConfig:
 
 @dataclass(frozen=True)
 class WorkflowConfig:
-    """工作流和上下文文件配置。"""
+    """WorkflowSpec 执行开关。流程和上下文文件只由 workflow registry 定义。"""
 
     enable_human_checkpoint: bool = True
     default_checkpoint_node: str = "requirement_analysis"
-    intent_workflow_files: dict[str, list[str]] = field(default_factory=dict)
-    default_workflow_files: list[str] = field(default_factory=list)
-    intent_context_files: dict[str, list[str]] = field(default_factory=dict)
-    default_context_files: list[str] = field(default_factory=list)
-    mvp_analysis_workflow_files: list[str] = field(default_factory=list)
-    mvp_testcase_workflow_files: list[str] = field(default_factory=list)
     use_llm: dict[str, bool] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | None) -> WorkflowConfig:
         data = data or {}
-        intent_workflow_files = {
-            str(key): _string_list(value)
-            for key, value in dict(data.get("intent_workflow_files") or {}).items()
-        }
-        intent_context_files = {
-            str(key): _string_list(value)
-            for key, value in dict(data.get("intent_context_files") or {}).items()
-        }
         use_llm = {
             str(key): _bool_value(value, default=True)
             for key, value in dict(data.get("use_llm") or {}).items()
@@ -192,12 +178,6 @@ class WorkflowConfig:
             default_checkpoint_node=str(
                 data.get("default_checkpoint_node", "requirement_analysis")
             ),
-            intent_workflow_files=intent_workflow_files,
-            default_workflow_files=_string_list(data.get("default_workflow_files")),
-            intent_context_files=intent_context_files,
-            default_context_files=_string_list(data.get("default_context_files")),
-            mvp_analysis_workflow_files=_string_list(data.get("mvp_analysis_workflow_files")),
-            mvp_testcase_workflow_files=_string_list(data.get("mvp_testcase_workflow_files")),
             use_llm=use_llm,
         )
 

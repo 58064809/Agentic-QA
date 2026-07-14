@@ -8,7 +8,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from runtime_mvp_fixtures import build_valid_testcases, create_mvp_repo  # noqa: E402
+from runtime_fixtures import build_valid_testcases, create_runtime_repo  # noqa: E402
 
 from runtime.graph.app import (  # noqa: E402
     resume_recorded_workflow,
@@ -91,7 +91,7 @@ def test_intent_routes_qa_report_without_llm(monkeypatch):
 
 
 def test_qa_report_fallback_writes_reviewable_preview(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_qa_report_context_files(repo_root)
     seed_formal_qa_inputs(repo_root)
 
@@ -117,7 +117,7 @@ def test_qa_report_fallback_writes_reviewable_preview(tmp_path):
 
 
 def test_qa_report_promote_writes_formal_artifact(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_qa_report_context_files(repo_root)
     seed_formal_qa_inputs(repo_root)
 
@@ -149,7 +149,7 @@ def test_qa_report_promote_writes_formal_artifact(tmp_path):
 
 
 def test_qa_report_quality_rejects_fake_execution_conclusion(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     artifact = """---
 status: needs_human_review
 artifact_type: qa_report

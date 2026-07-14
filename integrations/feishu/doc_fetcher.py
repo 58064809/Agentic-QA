@@ -1,14 +1,12 @@
 """使用 lark-oapi SDK 获取飞书文档内容。
 
-提供类型安全的 SDK 封装，替代原 feishu_fetcher.py 中手写 HTTP 的
-_get_tenant_token / _api_get / _get_wiki_node_info / _get_docx_content 等函数。
+提供类型安全的 SDK 封装，用于读取 docx 文档和 Wiki 节点。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from lark_oapi.api.docs.v1.model import GetDocumentContentRequest
 from lark_oapi.api.docx.v1.model import (
     GetDocumentRequest,
     RawContentDocumentRequest,
@@ -83,21 +81,6 @@ def fetch_wiki_node(wiki_token: str) -> dict[str, Any]:
         "space_id": node.space_id or "",
         "title": node.title or "",
     }
-
-
-# ── 旧版文档（doc） ──────────────────────────────────────────────────────
-
-
-def fetch_doc_content(doc_token: str) -> tuple[str, str]:
-    """获取旧版文档内容（doc 格式）。返回 (title, content)。"""
-    client = get_feishu_client()
-    req = GetDocumentContentRequest.builder().doc_token(doc_token).build()
-    resp = client.docs.v1.document_content.get(req)
-    if not resp.success():
-        _raise_sdk_error("获取旧版文档内容失败", resp.code, resp.msg)
-    content = resp.data.content or ""
-    title = resp.data.title or "未命名文档"
-    return title, content
 
 
 # ── 公共 ─────────────────────────────────────────────────────────────────

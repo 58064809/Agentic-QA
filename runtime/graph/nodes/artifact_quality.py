@@ -3,9 +3,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from runtime.graph.nodes.mvp_context_loader import (
+from runtime.graph.nodes.workflow_context import (
     TASK_ANALYSIS,
-    TASK_MVP,
+    TASK_ANALYSIS_AND_TESTCASES,
     TASK_TESTCASE_GENERATION,
 )
 from runtime.graph.state import QAWorkflowState
@@ -43,7 +43,6 @@ ALLOWED_PRIORITIES = {"P0", "P1", "P2", "P3"}
 PLACEHOLDER_PATTERNS = [
     "待接入 LangChain",
     "待接入 LangChain 后生成",
-    "Runtime MVP Skeleton",
     "主流程验证",
     "异常输入验证",
     "待补充：基于需求主流程生成",
@@ -215,7 +214,7 @@ def _check_output_path(
 def requirement_analysis_quality_check_node(
     state: QAWorkflowState, repo_root: Path
 ) -> QAWorkflowState:
-    if state.task_type not in {TASK_ANALYSIS, TASK_MVP}:
+    if state.task_type not in {TASK_ANALYSIS, TASK_ANALYSIS_AND_TESTCASES}:
         return state
     if state.errors:
         return state
@@ -271,7 +270,7 @@ def requirement_analysis_quality_check_node(
         and state.llm.get("used") is True
         and not state.llm.get("requirement_analysis_quality_fallback_used")
     ):
-        from runtime.graph.nodes.mvp_generation import render_requirement_analysis_skeleton
+        from runtime.graph.nodes.artifact_generation import render_requirement_analysis_skeleton
 
         state.llm["requirement_analysis_quality_fallback_used"] = True
         state.warnings.append("LLM 需求分析草稿未通过质量门，已降级为确定性 Skeleton 重新生成。")
@@ -292,8 +291,8 @@ def requirement_analysis_quality_check_node(
     return state
 
 
-def testcase_mvp_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
-    if state.task_type not in {TASK_TESTCASE_GENERATION, TASK_MVP}:
+def testcase_quality_check_node(state: QAWorkflowState, repo_root: Path) -> QAWorkflowState:
+    if state.task_type not in {TASK_TESTCASE_GENERATION, TASK_ANALYSIS_AND_TESTCASES}:
         return state
     if state.errors:
         return state
@@ -403,6 +402,11 @@ def testcase_mvp_quality_check_node(state: QAWorkflowState, repo_root: Path) -> 
         if all(len(row) > pending_index and row[pending_index].strip() == "无" for row in rows):
             state.warnings.append("测试用例草稿富表格待确认项全部为“无”，需人工补充。")
 
+    if _has_section(artifact, "覆盖矩阵"):
+        coverage_rows = _markdown_table_rows(_section_body(artifact, "覆盖矩阵"))
+        if len(coverage_rows) < 2:
+            state.quality_errors.append("测试用例草稿覆盖矩阵必须包含表头和至少一条有效映射。")
+
     covered_groups = _covered_keyword_groups(artifact)
     if len(covered_groups) < 4:
         state.quality_errors.append("测试用例草稿覆盖维度不足，至少需覆盖 4 类关键场景。")
@@ -415,7 +419,7 @@ def testcase_mvp_quality_check_node(state: QAWorkflowState, repo_root: Path) -> 
         and state.llm.get("used") is True
         and not state.llm.get("testcase_quality_fallback_used")
     ):
-        from runtime.graph.nodes.mvp_generation import render_testcase_skeleton
+        from runtime.graph.nodes.artifact_generation import render_testcase_skeleton
 
         state.llm["testcase_quality_fallback_used"] = True
         fallback_errors = state.quality_errors[quality_error_start:]
@@ -425,7 +429,7 @@ def testcase_mvp_quality_check_node(state: QAWorkflowState, repo_root: Path) -> 
         fallback = render_testcase_skeleton(state)
         state.draft_artifacts["testcases"] = fallback
         state.draft_artifact = fallback
-        return testcase_mvp_quality_check_node(state, repo_root)
+        return testcase_quality_check_node(state, repo_root)
 
     prd_name = resolve_prd_path(repo_root, state.prd_path).name
     _check_output_path(

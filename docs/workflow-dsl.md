@@ -16,12 +16,12 @@ input:
   user_input: required
 
 state:
-  task_type: mvp_analysis_testcases
+  task_type: analysis_and_testcases
 
 nodes:
   - id: command_router
     type: python
-    handler: runtime.graph.nodes.mvp_context_loader.mvp_command_router_node
+    handler: runtime.graph.nodes.workflow_context.workflow_command_router_node
 
 edges:
   - from: start
@@ -44,7 +44,7 @@ edges:
 - 同一 workflow 不允许重复 `node id` 或重复 `edge`。
 - 同一 `from` 不允许混合无条件固定边和条件边。
 - 同一 `from` 最多只能有一条 `condition: default` 边。
-- 条件边先按 YAML 顺序评估普通 condition，全部不命中时才走 `default`。没有显式 `default` 时，为兼容旧 MVP DSL，Runtime 会隐式路由到 `end`。
+- 条件边先按 YAML 顺序评估普通 condition，全部不命中时才走 `default`。每组条件边都必须显式声明且只能声明一条 `default`，Runtime 不推断路由目标。
 
 ### 当前内置 condition
 
@@ -60,8 +60,8 @@ edges:
 | `review_waiting` | Review Gate 仍等待人工确认 |
 | `task_is_analysis` | 当前任务为需求分析 |
 | `task_is_testcase_generation` | 当前任务为测试用例生成 |
-| `task_is_analysis_or_mvp` | 当前任务为需求分析或需求分析加用例生成 |
-| `task_is_mvp` | 当前任务为需求分析加用例生成，且无质量错误 |
+| `task_is_analysis_or_combined` | 当前任务为需求分析或需求分析加用例生成 |
+| `task_is_analysis_and_testcases` | 当前任务为需求分析加用例生成，且无质量错误 |
 | `ready_to_write_preview` | `approved/write_approved` 且 `next_action=promote` 时允许写入候选产物 |
 | `task_is_api_test_draft` | 当前任务为接口测试草稿生成 |
 | `task_is_ui_test_draft` | 当前任务为 UI 自动化草稿生成 |
@@ -73,7 +73,7 @@ edges:
 
 | workflow_id | 文件 | task_type |
 |---|---|---|
-| `analysis_and_testcases` | `workflows/runtime/analysis-and-testcases.workflow.yml` | `mvp_analysis_testcases` |
+| `analysis_and_testcases` | `workflows/runtime/analysis-and-testcases.workflow.yml` | `analysis_and_testcases` |
 | `requirement_analysis` | `workflows/runtime/requirement-analysis.workflow.yml` | `analysis` |
 | `testcase_generation` | `workflows/runtime/testcase-generation.workflow.yml` | `testcase_generation` |
 | `api_test_draft` | `workflows/runtime/api-test-draft.workflow.yml` | `api_test_draft` |
@@ -340,7 +340,7 @@ edges:
 
 | 节点类型 | 说明 |
 |---|---|
-| `python` | 直接绑定 Python callable 的通用节点，兼容当前 MVP Runtime 节点实现 |
+| `python` | 直接绑定 Python callable 的通用节点 |
 | `tool` | 确定性工具节点，例如读取文件、创建确认记录、执行测试 |
 | `rag` | RAG 检索节点，负责文档加载、检索、筛选和上下文构建 |
 | `agent` | LLM Agent 节点，负责需求分析、用例生成、失败分析、报告生成等任务 |

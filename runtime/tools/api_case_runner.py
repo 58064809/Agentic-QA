@@ -9,10 +9,7 @@ from typing import Any
 
 import yaml
 
-from runtime.schemas.api_test_cases import (
-    API_CASES_SCHEMA_VERSION,
-    LEGACY_API_CASES_SCHEMA_VERSION,
-)
+from runtime.schemas.api_test_cases import API_CASES_SCHEMA_VERSION
 
 ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)}")
 
@@ -41,32 +38,9 @@ class ApiCaseResult:
     passed: bool
 
 
-def _legacy_assertions(expected: Any) -> list[dict[str, Any]]:
-    if not isinstance(expected, dict):
-        return []
-    assertions: list[dict[str, Any]] = []
-    if "status_code" in expected:
-        assertions.append({"type": "status_code", "expected": expected["status_code"]})
-    for key in expected.get("json_contains_keys") or []:
-        assertions.append({"type": "json_field_exists", "path": f"$.{key}"})
-    return assertions
-
-
-def _normalize_case(item: dict[str, Any], schema_version: str, index: int) -> ApiCase:
-    if schema_version == LEGACY_API_CASES_SCHEMA_VERSION:
-        request = dict(item.get("request") or {})
-        request["method"] = str(item.get("method") or "GET").upper()
-        request["path"] = str(item.get("path") or "/")
-        if "body" not in request and "json" in request:
-            request["body"] = request.pop("json")
-        assertions = _legacy_assertions(item.get("expected"))
-    elif schema_version == API_CASES_SCHEMA_VERSION:
-        request = dict(item.get("request") or {})
-        assertions = [
-            dict(value) for value in item.get("assertions") or [] if isinstance(value, dict)
-        ]
-    else:
-        raise ValueError(f"不支持的接口 YAML schema_version: {schema_version}")
+def _normalize_case(item: dict[str, Any], index: int) -> ApiCase:
+    request = dict(item.get("request") or {})
+    assertions = [dict(value) for value in item.get("assertions") or [] if isinstance(value, dict)]
     return ApiCase(
         id=str(item.get("id") or f"API-{index:03d}"),
         title=str(item.get("title") or item.get("id") or f"API case {index}"),
@@ -81,6 +55,11 @@ def load_api_cases(path: Path | str) -> list[ApiCase]:
     if not isinstance(data, dict):
         raise ValueError(f"接口 YAML 用例必须是 mapping: {source.as_posix()}")
     schema_version = str(data.get("schema_version") or "")
+    if schema_version != API_CASES_SCHEMA_VERSION:
+        raise ValueError(
+            "接口 YAML schema_version 必须是 "
+            f"{API_CASES_SCHEMA_VERSION}: {schema_version or '<missing>'}"
+        )
     cases = data.get("cases")
     if not isinstance(cases, list) or not cases:
         raise ValueError(f"接口 YAML 用例缺少 cases: {source.as_posix()}")
@@ -88,7 +67,7 @@ def load_api_cases(path: Path | str) -> list[ApiCase]:
     for index, item in enumerate(cases, start=1):
         if not isinstance(item, dict):
             raise ValueError(f"接口 YAML 用例第 {index} 条必须是 mapping")
-        parsed.append(_normalize_case(item, schema_version, index))
+        parsed.append(_normalize_case(item, index))
     return parsed
 
 
@@ -139,8 +118,8 @@ def execute_api_case(
     env = env or os.environ
     request = _resolve_env_placeholders(case.request, env)
     headers = dict(request.get("headers") or {})
-    params = request.get("query", request.get("params"))
-    json_body = request.get("body", request.get("json"))
+    params = request.get("query")
+    json_body = request.get("body")
     if request_func is None:
         import requests
 

@@ -36,7 +36,7 @@ def _artifact_keys_for_task(state: QAWorkflowState) -> list[str]:
         return ["api_discovery_report"]
     if state.task_type == "qa_report":
         return ["qa_report"]
-    if state.task_type == "mvp_analysis_testcases":
+    if state.task_type == "analysis_and_testcases":
         return ["requirement_analysis", "testcases"]
     return list(ARTIFACT_SPECS)
 
@@ -430,7 +430,7 @@ def promote_artifacts(
     run_id: str,
     *,
     repo_root: Path,
-    task_type: str = "mvp_analysis_testcases",
+    task_type: str = "analysis_and_testcases",
 ) -> QAWorkflowState:
     state = QAWorkflowState(
         user_input="promote_artifacts",

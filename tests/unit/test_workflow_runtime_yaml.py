@@ -12,7 +12,7 @@ from runtime.workflow.loader import load_workflow_spec, load_workflow_spec_by_id
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_WORKFLOW_DIR = REPO_ROOT / "workflows/runtime"
 EXPECTED_RUNTIME_WORKFLOWS = {
-    "analysis-and-testcases.workflow.yml": ("analysis_and_testcases", "mvp_analysis_testcases"),
+    "analysis-and-testcases.workflow.yml": ("analysis_and_testcases", "analysis_and_testcases"),
     "api-discovery-report.workflow.yml": ("api_discovery_report", "api_discovery_report"),
     "api-test-draft.workflow.yml": ("api_test_draft", "api_test_draft"),
     "qa-report.workflow.yml": ("qa_report", "qa_report"),

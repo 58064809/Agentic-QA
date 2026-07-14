@@ -12,11 +12,11 @@ from runtime.graph.nodes.api_test_generation import (
     API_RAG_RUN_RECORD_DEBUG_KEY,
     API_RAG_RUN_RECORD_FILENAME,
 )
-from runtime.graph.nodes.mvp_context_loader import (
+from runtime.graph.nodes.workflow_context import (
     TASK_ANALYSIS,
+    TASK_ANALYSIS_AND_TESTCASES,
     TASK_API_DISCOVERY_REPORT,
     TASK_API_TEST_DRAFT,
-    TASK_MVP,
     TASK_QA_REPORT,
     TASK_TESTCASE_GENERATION,
     TASK_UI_TEST_DRAFT,
@@ -47,7 +47,7 @@ def _artifact_keys_for_task(state: QAWorkflowState) -> list[str]:
         return ["api_discovery_report"]
     if state.task_type == TASK_QA_REPORT:
         return ["qa_report"]
-    if state.task_type == TASK_MVP:
+    if state.task_type == TASK_ANALYSIS_AND_TESTCASES:
         return ["requirement_analysis", "testcases"]
     return []
 

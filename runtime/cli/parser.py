@@ -229,10 +229,6 @@ def _explicit_artifact_keys_from_text(value: str) -> list[str]:
     return keys
 
 
-def _artifact_keys_from_text(value: str) -> list[str]:
-    return _explicit_artifact_keys_from_text(value) or ["requirement_analysis", "testcases"]
-
-
 def _publish_all_requested(value: str) -> bool:
     return any(
         keyword in value
@@ -300,7 +296,7 @@ def _task_type_from_artifact_keys(keys: list[str]) -> str:
         return "api_discovery_report"
     if normalized == {"qa_report"}:
         return "qa_report"
-    return "mvp_analysis_testcases"
+    return "analysis_and_testcases"
 
 
 def _is_promote_request(user_input: str) -> bool:

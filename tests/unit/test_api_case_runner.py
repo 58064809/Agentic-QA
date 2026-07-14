@@ -15,7 +15,7 @@ class FakeResponse:
         return {"code": 0, "data": {"ok": True}}
 
 
-def test_load_api_cases_from_yaml(tmp_path):
+def test_load_api_cases_rejects_removed_v1_contract(tmp_path):
     path = tmp_path / "api-test-cases.yml"
     path.write_text(
         yaml.safe_dump(
@@ -38,11 +38,8 @@ def test_load_api_cases_from_yaml(tmp_path):
         encoding="utf-8",
     )
 
-    cases = load_api_cases(Path(path))
-
-    assert len(cases) == 1
-    assert cases[0].id == "API-001"
-    assert cases[0].method == "POST"
+    with pytest.raises(ValueError, match="schema_version 必须是 agentic-qa.api-cases.v1.1"):
+        load_api_cases(Path(path))
 
 
 def test_load_api_cases_v11_from_nested_contract(tmp_path):

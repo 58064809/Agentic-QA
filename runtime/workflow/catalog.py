@@ -24,7 +24,7 @@ BASE_CONTEXT_FILES = (
 )
 ANALYSIS_CONTEXT_FILES = (
     *BASE_CONTEXT_FILES,
-    "workflows/01-requirement-analysis-workflow.md",
+    "workflows/runtime/requirement-analysis.workflow.yml",
     "prompts/requirement-analysis-prompt.md",
     "rules/requirement-analysis-rules.md",
     "rules/review-gate-rules.md",
@@ -38,8 +38,7 @@ TESTCASE_CONTEXT_FILES = (
     "skills/test-design/test-method-selection-skill.md",
     "skills/test-design/testcase-generation-skill.md",
     "skills/test-design/testcase-review-skill.md",
-    "workflows/10-runtime-testcase-generation-workflow.md",
-    "workflows/02-testcase-generation-workflow.md",
+    "workflows/runtime/testcase-generation.workflow.yml",
     "prompts/testcase-design-prompt.md",
     "rules/testcase-rules.md",
     "rules/review-gate-rules.md",
@@ -63,12 +62,9 @@ API_TEST_CONTEXT_FILES = (
 )
 RAG_AUTOMATION_CASE_CONTEXT_FILES = (
     *API_TEST_CONTEXT_FILES,
-    "docs/automation-case-generation.md",
-    "docs/rag-architecture.md",
+    "docs/rag-design.md",
     "docs/rag-run-record-spec.md",
-    "workflows/10-rag-automation-case-generation-workflow.md",
     "workflows/runtime/rag-automation-case.workflow.yml",
-    "prompts/rag-automation-case-prompt.md",
     "rules/automation-case-rules.md",
     "rules/rag-rules.md",
     "rules/source-reference-rules.md",
@@ -175,7 +171,7 @@ DEFAULT_WORKFLOW_REGISTRY = WorkflowRegistry(
         ),
         RuntimeWorkflowDefinition(
             workflow_id="analysis_and_testcases",
-            task_type="mvp_analysis_testcases",
+            task_type="analysis_and_testcases",
             context_files=tuple(sorted({*ANALYSIS_CONTEXT_FILES, *TESTCASE_CONTEXT_FILES})),
         ),
     ]

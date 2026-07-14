@@ -12,20 +12,14 @@ from runtime.llm.openai_compatible import OpenAICompatibleAdapter
 # ── 支持的所有意图 ────────────────────────────────────────────
 
 SUPPORTED_INTENTS: dict[str, str] = {
-    "mvp": "需求分析 + 测试用例生成",
+    "analysis_and_testcases": "需求分析 + 测试用例生成",
     "requirement_analysis": "需求分析",
     "testcase_generation": "测试用例生成",
     "api_test_draft": "API 接口测试草稿生成",
     "rag_automation_case_generation": "RAG 接口自动化 YAML 用例生成",
     "ui_test_draft": "UI 自动化测试草稿生成",
     "api_discovery_report": "接口发现报告生成",
-    "ui_test_generation": "UI 端到端测试生成",
-    "test_execution": "测试执行",
-    "failure_analysis": "失败分析",
-    "bug_draft": "缺陷草稿生成",
     "qa_report": "QA 报告生成",
-    "report_generation": "QA 报告生成（兼容别名）",
-    "archive": "归档",
     "resume": "继续上次对话",
 }
 
@@ -142,7 +136,7 @@ def _infer_intent_fallback(user_input: str) -> str:
         keyword in user_input for keyword in ("测试用例", "用例", "testcase", "test case")
     )
     if has_analysis and has_testcases:
-        return "mvp"
+        return "analysis_and_testcases"
     if has_analysis:
         return "requirement_analysis"
     if has_testcases:
@@ -182,18 +176,8 @@ def _infer_intent_fallback(user_input: str) -> str:
         )
     ):
         return "api_test_draft"
-    if any(keyword in user_input for keyword in ("执行", "跑测试", "运行测试")):
-        return "test_execution"
-    if any(keyword in user_input for keyword in ("失败分析", "分析失败", "failure")):
-        return "failure_analysis"
-    if any(keyword in user_input for keyword in ("bug", "缺陷")):
-        return "bug_draft"
     if any(keyword in user_input for keyword in ("报告", "QA报告", "qa report")):
         return "qa_report"
-    if any(keyword in user_input for keyword in ("UI", "ui", "端到端", "E2E", "e2e")):
-        return "ui_test_generation"
-    if any(keyword in user_input for keyword in ("归档", "archive")):
-        return "archive"
     if "resume" in text or "继续" in user_input:
         return "resume"
     return "resume"

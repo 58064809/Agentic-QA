@@ -3,18 +3,18 @@ from __future__ import annotations
 import json
 
 import yaml
-from runtime_mvp_fixtures import count_testcase_rows, create_mvp_repo, write_file
+from runtime_fixtures import count_testcase_rows, create_runtime_repo, write_file
 
-from runtime.graph.mvp_graph import (
-    promote_mvp_artifacts,
-    run_mvp_analysis_and_testcases_workflow,
-    run_mvp_testcase_generation_workflow,
+from runtime.graph.app import (
+    promote_artifacts,
+    run_analysis_and_testcases_workflow,
     run_requirement_analysis_workflow,
+    run_testcase_generation_workflow,
 )
 
 
 def test_analyze_dry_run_generates_analysis_without_writing(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
     result = run_requirement_analysis_workflow(
         "请分析这个需求",
@@ -34,12 +34,11 @@ def test_analyze_dry_run_generates_analysis_without_writing(tmp_path):
     assert "needs_human_review" in analysis
     assert "## 1. 需求背景与目标" in analysis
     assert "## 12. 需求到测试覆盖映射" in analysis
-    assert "Runtime MVP Skeleton" not in analysis
     assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
 
 
 def test_analyze_approve_write_creates_analysis_draft(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
     result = run_requirement_analysis_workflow(
         "请分析这个需求",
@@ -66,9 +65,9 @@ def test_analyze_approve_write_creates_analysis_draft(tmp_path):
 
 
 def test_generate_testcases_dry_run_generates_testcases_without_writing(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -94,9 +93,9 @@ def test_generate_testcases_dry_run_generates_testcases_without_writing(tmp_path
 
 
 def test_generate_testcases_approve_write_creates_testcase_draft(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -115,10 +114,10 @@ def test_generate_testcases_approve_write_creates_testcase_draft(tmp_path):
     )
 
 
-def test_mvp_dry_run_generates_two_drafts_without_writing(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+def test_combined_dry_run_generates_two_drafts_without_writing(tmp_path):
+    repo_root = create_runtime_repo(tmp_path)
 
-    result = run_mvp_analysis_and_testcases_workflow(
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -126,7 +125,7 @@ def test_mvp_dry_run_generates_two_drafts_without_writing(tmp_path):
     )
 
     assert result.success
-    assert result.task_type == "mvp_analysis_testcases"
+    assert result.task_type == "analysis_and_testcases"
     assert result.run_status == "interrupted"
     assert result.review_status == "needs_human_review"
     assert result.next_action == "wait_for_review"
@@ -140,10 +139,10 @@ def test_mvp_dry_run_generates_two_drafts_without_writing(tmp_path):
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
-def test_mvp_approve_write_creates_analysis_and_testcases(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+def test_combined_approve_write_creates_analysis_and_testcases(tmp_path):
+    repo_root = create_runtime_repo(tmp_path)
 
-    result = run_mvp_analysis_and_testcases_workflow(
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -170,9 +169,9 @@ def test_mvp_approve_write_creates_analysis_and_testcases(tmp_path):
 
 
 def test_debug_approve_preview_write_never_confirms_or_promotes(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
-    result = run_mvp_analysis_and_testcases_workflow(
+    result = run_analysis_and_testcases_workflow(
         "璇峰垎鏋愰渶姹傚苟鐢熸垚娴嬭瘯鐢ㄤ緥",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -202,7 +201,7 @@ def test_debug_approve_preview_write_never_confirms_or_promotes(tmp_path):
     assert review["status"] == "needs_human_review"
     assert review["decision"] == ""
 
-    promoted = promote_mvp_artifacts(
+    promoted = promote_artifacts(
         "prd/demo-requirement",
         result.run_id or "",
         repo_root=repo_root,
@@ -215,12 +214,12 @@ def test_debug_approve_preview_write_never_confirms_or_promotes(tmp_path):
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
-def test_mvp_approve_write_writes_run_candidates_when_defaults_exist(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+def test_combined_approve_write_writes_run_candidates_when_defaults_exist(tmp_path):
+    repo_root = create_runtime_repo(tmp_path)
     existing_analysis = repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md"
     write_file(existing_analysis, "人工已有分析")
 
-    result = run_mvp_analysis_and_testcases_workflow(
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,

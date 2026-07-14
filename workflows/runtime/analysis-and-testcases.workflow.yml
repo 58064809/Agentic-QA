@@ -7,16 +7,16 @@ input:
   user_input: required
 
 state:
-  task_type: mvp_analysis_testcases
+  task_type: analysis_and_testcases
 
 nodes:
   - id: command_router
     type: python
-    handler: runtime.graph.nodes.mvp_context_loader.mvp_command_router_node
+    handler: runtime.graph.nodes.workflow_context.workflow_command_router_node
 
   - id: workflow_selector
     type: python
-    handler: runtime.graph.nodes.mvp_context_loader.mvp_workflow_selector_node
+    handler: runtime.graph.nodes.workflow_context.workflow_context_selector_node
 
   - id: requirement_normalizer
     type: python
@@ -24,23 +24,23 @@ nodes:
 
   - id: context_loader
     type: python
-    handler: runtime.graph.nodes.mvp_context_loader.mvp_context_loader_node
+    handler: runtime.graph.nodes.workflow_context.workflow_context_loader_node
 
   - id: requirement_analysis_generator
     type: python
-    handler: runtime.graph.nodes.mvp_generation.requirement_analysis_generation_node
+    handler: runtime.graph.nodes.artifact_generation.requirement_analysis_generation_node
 
   - id: requirement_analysis_quality
     type: python
-    handler: runtime.graph.nodes.mvp_quality.requirement_analysis_quality_check_node
+    handler: runtime.graph.nodes.artifact_quality.requirement_analysis_quality_check_node
 
   - id: testcase_generator
     type: python
-    handler: runtime.graph.nodes.mvp_generation.testcase_generation_mvp_node
+    handler: runtime.graph.nodes.artifact_generation.testcase_generation_node
 
   - id: testcase_quality
     type: python
-    handler: runtime.graph.nodes.mvp_quality.testcase_mvp_quality_check_node
+    handler: runtime.graph.nodes.artifact_quality.testcase_quality_check_node
 
   - id: review_gate
     type: python
@@ -88,7 +88,7 @@ edges:
 
   - from: context_loader
     to: requirement_analysis_generator
-    condition: task_is_analysis_or_mvp
+    condition: task_is_analysis_or_combined
 
   - from: context_loader
     to: end
@@ -99,7 +99,7 @@ edges:
 
   - from: requirement_analysis_quality
     to: testcase_generator
-    condition: task_is_mvp
+    condition: task_is_analysis_and_testcases
 
   - from: requirement_analysis_quality
     to: end
@@ -117,7 +117,7 @@ edges:
     condition: default
 
   - from: artifact_preview_writer
-    to: review_gate
+    to: metadata_update
     condition: no_errors
 
   - from: artifact_preview_writer
@@ -141,10 +141,6 @@ edges:
     condition: review_waiting
 
   - from: review_gate
-    to: metadata_update
-    condition: no_errors
-
-  - from: review_gate
     to: end
     condition: default
 
@@ -157,4 +153,9 @@ edges:
     condition: default
 
   - from: metadata_update
+    to: review_gate
+    condition: no_errors
+
+  - from: metadata_update
     to: end
+    condition: default

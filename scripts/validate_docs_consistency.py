@@ -25,8 +25,8 @@ CORE_FILES = [
     "docs/testcase-standards.md",
     "docs/rag-design.md",
     "docs/roadmap.md",
-    "workflows/10-runtime-testcase-generation-workflow.md",
-    "runtime/README.md",
+    "docs/architecture.md",
+    "runtime/llm/prompt_builder.py",
     "skills/registry/skills.yaml",
 ]
 
@@ -35,7 +35,6 @@ CORE_DIRS = [
     ".github/workflows",
     "docs",
     "workflows",
-    "agents",
     "prompts",
     "rules",
     "skills",
@@ -43,7 +42,6 @@ CORE_DIRS = [
     "skills/core",
     "skills/analysis",
     "skills/test-design",
-    "skills/automation",
     "skills/reporting",
     "skills/knowledge",
     "knowledge",
@@ -75,7 +73,6 @@ COMPLETION_TEMPLATE_REQUIRED_TERMS = [
 ]
 PATH_PREFIXES = (
     "workflows/",
-    "agents/",
     "prompts/",
     "rules/",
     "skills/",
@@ -111,22 +108,11 @@ PLANNED_REFERENCE_MARKERS = (
     "可选新增",
     "后续任务中创建",
 )
-TARGET_STATE_PATH_TOKENS = {
-    "config/",
-    "runtime/config/",
-    "runtime/intent/",
-    "runtime/workflow/",
-    "runtime/rag/",
-    "runtime/agents/",
-    "integrations/",
-}
 RUNTIME_WORKFLOW_GLOB = "*.workflow.yml"
 API_CONTRACT_DOCS = (
     "docs/api-test-generation.md",
-    "docs/automation-case-generation.md",
     "knowledge/automation/yaml-case-schema.md",
     "prompts/api-test-generation.md",
-    "prompts/rag-automation-case-prompt.md",
     "rules/automation-case-rules.md",
 )
 
@@ -201,8 +187,6 @@ def find_broken_markdown_path_refs(repo_root: Path) -> list[str]:
                 token = normalize_path_token(match.group(1))
                 if should_skip_path_token(token):
                     continue
-                if source == "README.md" and token in TARGET_STATE_PATH_TOKENS:
-                    continue
                 if not (repo_root / token).exists():
                     errors.append(f"{source}:{line_number} 引用了不存在的路径: {token}")
     return errors
@@ -251,9 +235,30 @@ def validate_api_contract_docs(repo_root: Path) -> list[str]:
             errors.append(
                 f"{relative} 未声明当前 API Cases Schema: {API_CASES_SCHEMA_VERSION}"
             )
-    legacy_prompt = repo_root / "prompts/api-test-generation-prompt.md"
-    if legacy_prompt.exists():
+    duplicate_prompt = repo_root / "prompts/api-test-generation-prompt.md"
+    if duplicate_prompt.exists():
         errors.append("存在重复 API Prompt: prompts/api-test-generation-prompt.md")
+    return errors
+
+
+def validate_canonical_prompt_boundaries(repo_root: Path) -> list[str]:
+    errors: list[str] = []
+    prompt_builder_path = repo_root / "runtime/llm/prompt_builder.py"
+    if not prompt_builder_path.is_file():
+        return ["缺少 Prompt Builder: runtime/llm/prompt_builder.py"]
+    prompt_builder = read_text(prompt_builder_path)
+    canonical_prompts = (
+        "prompts/requirement-analysis-prompt.md",
+        "prompts/testcase-design-prompt.md",
+        "prompts/api-test-generation.md",
+        "prompts/ui-test-generation.md",
+        "prompts/report-generation-prompt.md",
+    )
+    for relative_path in canonical_prompts:
+        if not (repo_root / relative_path).is_file():
+            errors.append(f"缺少 canonical Prompt: {relative_path}")
+        if relative_path not in prompt_builder:
+            errors.append(f"Prompt Builder 未加载 canonical Prompt: {relative_path}")
     return errors
 
 
@@ -279,6 +284,7 @@ def validate_docs_consistency(repo_root: Path) -> list[str]:
     errors.extend(find_broken_markdown_path_refs(repo_root))
     errors.extend(validate_runtime_workflow_docs(repo_root))
     errors.extend(validate_api_contract_docs(repo_root))
+    errors.extend(validate_canonical_prompt_boundaries(repo_root))
     return errors
 
 

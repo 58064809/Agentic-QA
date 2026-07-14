@@ -1,68 +1,25 @@
-# Agentic-QA 建设路线图
+# Agentic-QA 路线图
 
-本文档替代历史 Runtime 路线草稿，围绕当前 Agentic QA Engineering 目标重新组织。
+路线图只区分“当前已验证”和“下一阶段”，未进入当前 WorkflowSpec 的能力不得出现在支持意图中。
 
-## 工程底座
+## 当前已验证
 
-- 配置层
-- 需求工作区
-- 运行记录
-- 产物写入
-- 产物版本管理
-- 历史追溯
-- 失败处理
-- 幂等与恢复
-- 确认状态管理
+- YAML WorkflowSpec 驱动 LangGraph，Python 不维护第二套流程。
+- 需求分析、测试用例和联合生成。
+- API 测试草稿与 `agentic-qa.api-cases.v1.1`。
+- RAG API 自动化用例、检索 trace 和 run record。
+- UI 自动化草稿、接口发现报告、QA 报告。
+- run 候选区、结构化 sidecar、需求级 latest/index。
+- Review Gate interrupt、自然语言审核、确定性 promote。
+- checkpoint、恢复、重试、质量门、文档一致性检查。
+- 零基础设施默认配置；FAISS 和 PostgreSQL 按需启用。
 
-## Runtime
+## 下一阶段
 
-- 意图识别
-- 工作流选择
-- 工作流编排
-- 状态流转
-- 质量检查
-- Review Gate Workflow
+1. 为修订意图建立独立 WorkflowSpec，确保新 run 与差异记录完整。
+2. 增加真实测试执行 WorkflowSpec，并定义可验证的执行证据 Schema。
+3. 在执行证据之上实现失败归因和缺陷草稿，禁止无证据结论。
+4. 完善正式产物历史索引、清理策略和 RAG 知识准入。
+5. 增加端到端真实 LLM + RAG 契约测试和可观测性基线。
 
-## RAG
-
-- 文档加载
-- Markdown 切分
-- 索引构建
-- 上下文检索
-- 召回结果追踪
-- 上下文预算控制
-
-## QA 生成能力
-
-- 需求分析生成
-- 测试用例生成
-- 接口测试生成
-- UI 测试生成
-- 失败分析生成
-- Bug 草稿生成
-- QA 报告生成
-
-## 测试执行能力
-
-- pytest 执行
-- Playwright 执行
-- 执行结果收集
-- 失败归因
-- 报告汇总
-
-## 协作入口
-
-- AI 编辑器 Chat
-- 飞书 Bot
-- 微信 Bot
-- 钉钉 Bot
-- API
-- Web
-
-## 知识沉淀
-
-- 需求资产归档
-- 历史用例复用
-- 缺陷经验沉淀
-- 项目规则沉淀
-- RAG 知识库持续更新
+每项能力只有在 WorkflowSpec、Schema、文档和测试同时落地后，才能从“下一阶段”移入“当前已验证”。

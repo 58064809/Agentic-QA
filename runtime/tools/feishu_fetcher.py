@@ -15,7 +15,6 @@ import requests
 from bs4 import BeautifulSoup
 
 from integrations.feishu import (
-    fetch_doc_content,
     fetch_docx_content,
     fetch_wiki_node,
 )
@@ -62,31 +61,6 @@ def is_feishu_url(url: str) -> bool:
 # ── 飞书 Open API 方式（私密文档，使用 lark-oapi SDK） ────────────────
 
 
-def _get_wiki_node_info(token: str, wiki_token: str) -> dict:
-    """查询 Wiki 节点信息（兼容旧签名，委托 SDK）。"""
-    return fetch_wiki_node(wiki_token)
-
-
-def _get_docx_content(token: str, doc_id: str) -> tuple[str, str]:
-    """获取新版文档内容（兼容旧签名，委托 SDK）。返回 (title, markdown)。"""
-    title, content = fetch_docx_content(doc_id)
-    return title, content
-
-
-def _get_docx_content_from_blocks(token: str, doc_id: str) -> str:
-    """从文档的 blocks 接口拼接内容（sdk raw_content 已覆盖此场景，留作备选）。"""
-    # lark-oapi raw_content 接口已经返回完整的 Markdown，
-    # 如果 future 版本需要 blocks 粒度的处理，可在此扩展。
-    from integrations.feishu.doc_fetcher import fetch_docx_raw_content
-
-    return fetch_docx_raw_content(doc_id)
-
-
-def _get_doc_content(token: str, doc_token: str) -> tuple[str, str]:
-    """获取旧版文档内容（兼容旧签名，委托 SDK）。返回 (title, content)。"""
-    return fetch_doc_content(doc_token)
-
-
 def _fetch_via_api(url: str) -> tuple[str, str]:
     """通过飞书 Open API（lark-oapi SDK）获取文档内容。
 
@@ -100,22 +74,20 @@ def _fetch_via_api(url: str) -> tuple[str, str]:
 
     if url_type == "wiki":
         # Wiki 链接：先解析节点信息
-        node_info = _get_wiki_node_info(None, doc_id)
+        node_info = fetch_wiki_node(doc_id)
         obj_token = node_info["obj_token"]
         obj_type = node_info["obj_type"]
         title = node_info["title"]
 
         if obj_type == "docx":
-            _, content = _get_docx_content(None, obj_token)
-        elif obj_type == "doc":
-            _, content = _get_doc_content(None, obj_token)
+            _, content = fetch_docx_content(obj_token)
         else:
-            raise ValueError(f"不支持的文档类型: {obj_type}")
+            raise ValueError(f"仅支持飞书 docx 文档，当前类型: {obj_type}")
         return title or "未命名文档", content
 
     elif url_type == "docx":
         # 新版文档直链
-        title, content = _get_docx_content(None, doc_id)
+        title, content = fetch_docx_content(doc_id)
         return title, content
 
     raise ValueError(f"不支持的链接类型: {url_type}")

@@ -7,9 +7,6 @@ from integrations.feishu.client import (
     has_api_credentials as has_api_credentials,
 )
 from integrations.feishu.doc_fetcher import (
-    fetch_doc_content as fetch_doc_content,
-)
-from integrations.feishu.doc_fetcher import (
     fetch_docx_content as fetch_docx_content,
 )
 from integrations.feishu.doc_fetcher import (
@@ -20,7 +17,6 @@ from integrations.feishu.doc_fetcher import (
 )
 
 __all__ = [
-    "fetch_doc_content",
     "fetch_docx_content",
     "fetch_docx_raw_content",
     "fetch_wiki_node",

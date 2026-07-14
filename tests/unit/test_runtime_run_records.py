@@ -11,9 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from runtime_mvp_fixtures import create_mvp_repo  # noqa: E402
+from runtime_fixtures import create_runtime_repo  # noqa: E402
 
-from runtime.graph.app import run_mvp_testcase_generation_workflow  # noqa: E402
+from runtime.graph.app import run_testcase_generation_workflow  # noqa: E402
 from runtime.records.run_id import generate_run_id  # noqa: E402
 from runtime.workflow.runner import retry_failed_workflow_for_run  # noqa: E402
 
@@ -38,9 +38,9 @@ def test_generate_run_id_format_is_stable():
 
 
 def test_dry_run_generates_run_record_by_default(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -58,14 +58,14 @@ def test_dry_run_generates_run_record_by_default(tmp_path):
     assert not (repo_root / result.run_record_dir / "workflow-events.jsonl").exists()
     assert (repo_root / result.run_record_dir / "graph-state.json").is_file()
     assert (repo_root / result.run_record_dir / "run-state.json").is_file()
-    preview_path = repo_root / f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
+    preview_path = repo_root / f"prd/demo-requirement/runs/{result.run_id}/testcases.preview.md"
     assert preview_path.exists()
 
 
 def test_record_run_false_does_not_generate_run_record(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -79,9 +79,9 @@ def test_record_run_false_does_not_generate_run_record(tmp_path):
 
 
 def test_run_record_json_contains_runtime_summary(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -105,9 +105,9 @@ def test_run_record_json_contains_runtime_summary(tmp_path):
 
 
 def test_run_record_markdown_contains_nodes_and_review_status(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -122,10 +122,10 @@ def test_run_record_markdown_contains_nodes_and_review_status(tmp_path):
 
 
 def test_failed_runtime_flow_still_generates_run_record(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     (repo_root / "prd/demo-requirement/input/requirement.md").unlink()
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -141,7 +141,7 @@ def test_failed_runtime_flow_still_generates_run_record(tmp_path):
 
 
 def test_postgres_checkpointer_missing_dsn_generates_failed_run_record(tmp_path, monkeypatch):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     monkeypatch.delenv("AGENTIC_QA_CHECKPOINT_POSTGRES_DSN", raising=False)
     (repo_root / "configs").mkdir(parents=True, exist_ok=True)
     (repo_root / "configs/local.yaml").write_text(
@@ -153,7 +153,7 @@ runtime:
         encoding="utf-8",
     )
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -169,12 +169,12 @@ runtime:
 
 
 def test_failed_runtime_flow_can_retry_same_thread_after_input_fix(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     requirement_path = repo_root / "prd/demo-requirement/input/requirement.md"
     original = requirement_path.read_text(encoding="utf-8")
     requirement_path.unlink()
 
-    failed = run_mvp_testcase_generation_workflow(
+    failed = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -203,9 +203,9 @@ def test_failed_runtime_flow_can_retry_same_thread_after_input_fix(tmp_path):
 
 
 def test_run_record_does_not_store_full_draft_artifact(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,

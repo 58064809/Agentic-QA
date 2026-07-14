@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import yaml
-from runtime_mvp_fixtures import create_mvp_repo, write_file
+from runtime_fixtures import create_runtime_repo, write_file
 
-from runtime.graph.mvp_graph import (
-    promote_mvp_artifacts,
-    run_mvp_analysis_and_testcases_workflow,
+from runtime.graph.app import (
+    promote_artifacts,
+    run_analysis_and_testcases_workflow,
 )
 from runtime.workflow.runner import resume_workflow_for_run
 
 
 def test_interrupt_review_gate_approve_resume_writes_candidate_preview(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_analysis_and_testcases_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -26,7 +26,7 @@ def test_interrupt_review_gate_approve_resume_writes_candidate_preview(tmp_path)
     assert interrupt_payload["prd_path"] == "prd/demo-requirement"
     assert interrupt_payload["artifact_keys"] == ["requirement_analysis", "testcases"]
     assert interrupt_payload["review_status"] == "needs_human_review"
-    assert interrupt_payload["preview_path"].endswith("/artifact-preview.md")
+    assert interrupt_payload["preview_path"].endswith("/requirement-analysis.preview.md")
     assert interrupt_payload["allowed_actions"] == [
         "approve",
         "reject",
@@ -63,8 +63,8 @@ def test_interrupt_review_gate_approve_resume_writes_candidate_preview(tmp_path)
 
 
 def test_interrupt_review_gate_reject_resume_stops_without_formal_artifact(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_analysis_and_testcases_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -88,8 +88,8 @@ def test_interrupt_review_gate_reject_resume_stops_without_formal_artifact(tmp_p
 
 
 def test_interrupt_review_gate_revise_resume_enters_needs_changes(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_analysis_and_testcases_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -115,8 +115,8 @@ def test_interrupt_review_gate_revise_resume_enters_needs_changes(tmp_path):
 
 
 def test_promote_artifacts_requires_approved_reviews(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_analysis_and_testcases_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -124,7 +124,7 @@ def test_promote_artifacts_requires_approved_reviews(tmp_path):
         record_run=False,
     )
 
-    promoted = promote_mvp_artifacts(
+    promoted = promote_artifacts(
         "prd/demo-requirement",
         result.run_id or "runtime",
         repo_root=repo_root,
@@ -136,11 +136,11 @@ def test_promote_artifacts_requires_approved_reviews(tmp_path):
 
 
 def test_promote_artifacts_publishes_confirmed_preview(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     current_testcases = repo_root / "prd/demo-requirement/artifacts/testcases.md"
     write_file(current_testcases, "旧版测试用例")
 
-    result = run_mvp_analysis_and_testcases_workflow(
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -161,7 +161,7 @@ def test_promote_artifacts_publishes_confirmed_preview(tmp_path):
             encoding="utf-8",
         )
 
-    promoted = promote_mvp_artifacts(
+    promoted = promote_artifacts(
         "prd/demo-requirement",
         run_id,
         repo_root=repo_root,

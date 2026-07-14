@@ -11,7 +11,7 @@ def test_registered_workflows_cover_runtime_task_types():
         "analysis",
         "api_discovery_report",
         "api_test_draft",
-        "mvp_analysis_testcases",
+        "analysis_and_testcases",
         "qa_report",
         "rag_automation_case_generation",
         "testcase_generation",

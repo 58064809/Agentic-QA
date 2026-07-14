@@ -19,14 +19,12 @@ def create_minimal_docs_repo(root: Path) -> Path:
         "workflows",
         ".github/workflows",
         "docs",
-        "agents",
         "prompts",
         "rules",
         "skills/registry",
         "skills/core",
         "skills/analysis",
         "skills/test-design",
-        "skills/automation",
         "skills/reporting",
         "skills/knowledge",
         "knowledge/templates",
@@ -54,10 +52,36 @@ def create_minimal_docs_repo(root: Path) -> Path:
         "docs/testcase-standards.md",
         "docs/rag-design.md",
         "docs/roadmap.md",
-        "workflows/10-runtime-testcase-generation-workflow.md",
-        "runtime/README.md",
+        "docs/architecture.md",
+        "runtime/llm/prompt_builder.py",
+        "runtime/config.py",
+        "prompts/requirement-analysis-prompt.md",
+        "prompts/testcase-design-prompt.md",
+        "prompts/api-test-generation.md",
+        "prompts/ui-test-generation.md",
+        "prompts/report-generation-prompt.md",
     ]:
         write_file(root / file_path)
+
+    (root / "runtime/intent").mkdir(parents=True, exist_ok=True)
+    (root / "runtime/workflow").mkdir(parents=True, exist_ok=True)
+
+    write_file(
+        root / "runtime/llm/prompt_builder.py",
+        "\n".join(
+            [
+                "prompts/requirement-analysis-prompt.md",
+                "prompts/testcase-design-prompt.md",
+                "prompts/api-test-generation.md",
+                "prompts/ui-test-generation.md",
+                "prompts/report-generation-prompt.md",
+            ]
+        ),
+    )
+    write_file(
+        root / "prompts/api-test-generation.md",
+        "schema_version: agentic-qa.api-cases.v1.1\n",
+    )
 
     write_file(
         root / "rules/agent-output-rules.md",
@@ -114,13 +138,13 @@ def test_validate_docs_consistency_reports_missing_workflow_dsl(tmp_path):
     assert any(error.endswith("docs/workflow-dsl.md") for error in errors)
 
 
-def test_validate_docs_consistency_reports_missing_runtime_readme(tmp_path):
+def test_validate_docs_consistency_reports_missing_architecture_doc(tmp_path):
     repo_root = create_minimal_docs_repo(tmp_path)
-    (repo_root / "runtime/README.md").unlink()
+    (repo_root / "docs/architecture.md").unlink()
 
     errors = validate_docs_consistency(repo_root)
 
-    assert any(error.endswith("runtime/README.md") for error in errors)
+    assert any(error.endswith("docs/architecture.md") for error in errors)
 
 
 def test_validate_docs_consistency_reports_missing_agent_output_heading(tmp_path):
@@ -156,12 +180,12 @@ def test_validate_docs_consistency_ignores_local_runtime_output_path(tmp_path):
     assert not errors
 
 
-def test_validate_docs_consistency_allows_readme_target_state_paths(tmp_path):
+def test_validate_docs_consistency_accepts_existing_readme_paths(tmp_path):
     repo_root = create_minimal_docs_repo(tmp_path)
     write_file(
         repo_root / "README.md",
-        "目标结构包含 `runtime/config/`、`runtime/intent/`、"
-        "`runtime/workflow/`、`runtime/rag/`、`runtime/agents/`。\n",
+        "当前结构包含 `runtime/config.py`、`runtime/intent/`、"
+        "`runtime/workflow/`、`rag/`、`integrations/`。\n",
     )
 
     errors = validate_docs_consistency(repo_root)

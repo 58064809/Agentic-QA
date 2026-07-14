@@ -9,7 +9,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from runtime_mvp_fixtures import create_mvp_repo  # noqa: E402
+from runtime_fixtures import create_runtime_repo  # noqa: E402
 from test_api_test_generation import add_api_test_context_files  # noqa: E402
 
 from runtime.cli.parser import _extract_api_doc_path  # noqa: E402
@@ -53,7 +53,7 @@ def openapi_with_security() -> dict:
 
 
 def test_api_test_draft_uses_workspace_openapi_normalized_api_doc(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_api_test_context_files(repo_root)
     source = repo_root / "prd/demo-requirement/input/api.openapi.json"
     source.write_text(json.dumps(openapi_with_security()), encoding="utf-8")
@@ -90,7 +90,7 @@ def test_api_test_draft_uses_workspace_openapi_normalized_api_doc(tmp_path):
 
 
 def test_cli_workflow_imports_external_openapi_before_api_test_draft(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_api_test_context_files(repo_root)
     external = tmp_path / "activity-openapi.json"
     external.write_text(json.dumps(openapi_with_security()), encoding="utf-8")

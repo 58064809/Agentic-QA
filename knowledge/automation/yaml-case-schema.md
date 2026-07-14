@@ -24,8 +24,8 @@ status: needs_human_review
 human_review_required: true
 base_url_env: AGENTIC_QA_BASE_URL
 generated_from:
-  workflow: workflows/10-rag-automation-case-generation-workflow.md
-  prompt: prompts/rag-automation-case-prompt.md
+  workflow: workflows/runtime/rag-automation-case.workflow.yml
+  prompt: prompts/api-test-generation.md
   rag_run_record: rag/run_records/<run_id>.json
 source_refs:
   - source_type: prd

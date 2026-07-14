@@ -9,9 +9,9 @@ from pathlib import Path
 from rag.manager import RagManager
 from rag.retriever import assemble_rag_context
 from runtime.config import load_app_config
-from runtime.graph.nodes.mvp_context_loader import (
+from runtime.graph.nodes.workflow_context import (
     TASK_ANALYSIS,
-    TASK_MVP,
+    TASK_ANALYSIS_AND_TESTCASES,
     TASK_TESTCASE_GENERATION,
 )
 from runtime.graph.state import QAWorkflowState
@@ -359,7 +359,7 @@ def _render_login_analysis(context: RequirementContext, source_lines: str) -> st
 status: needs_human_review
 artifact_type: requirement_analysis
 human_review_required: true
-generated_by: Runtime MVP Review Grade Draft
+generated_by: Runtime Review Grade Draft
 ---
 
 # 需求分析草稿
@@ -508,7 +508,7 @@ def _render_generic_analysis(context: RequirementContext, source_lines: str) -> 
 status: needs_human_review
 artifact_type: requirement_analysis
 human_review_required: true
-generated_by: Runtime MVP Review Grade Draft
+generated_by: Runtime Review Grade Draft
 ---
 
 # 需求分析草稿
@@ -847,6 +847,10 @@ def _enrich_rich_testcase_table(markdown: str) -> str:
     enriched: list[str] = []
     for line in lines:
         stripped = line.strip()
+        if header_seen and stripped.startswith("#"):
+            header_seen = False
+            enriched.append(line)
+            continue
         if stripped.startswith("| 用例ID |"):
             header_seen = True
             enriched.append(line)
@@ -1178,7 +1182,7 @@ def render_testcase_skeleton(state: QAWorkflowState) -> str:
 status: needs_human_review
 artifact_type: testcase_draft
 human_review_required: true
-generated_by: Runtime MVP Review Grade Draft
+generated_by: Runtime Review Grade Draft
 ---
 
 # 测试用例草稿
@@ -1218,7 +1222,7 @@ generated_by: Runtime MVP Review Grade Draft
 
 
 def requirement_analysis_generation_node(state: QAWorkflowState) -> QAWorkflowState:
-    if state.task_type not in {TASK_ANALYSIS, TASK_MVP}:
+    if state.task_type not in {TASK_ANALYSIS, TASK_ANALYSIS_AND_TESTCASES}:
         return state
     if state.errors:
         return state
@@ -1249,8 +1253,8 @@ def requirement_analysis_generation_node(state: QAWorkflowState) -> QAWorkflowSt
     return state
 
 
-def testcase_generation_mvp_node(state: QAWorkflowState) -> QAWorkflowState:
-    if state.task_type not in {TASK_TESTCASE_GENERATION, TASK_MVP}:
+def testcase_generation_node(state: QAWorkflowState) -> QAWorkflowState:
+    if state.task_type not in {TASK_TESTCASE_GENERATION, TASK_ANALYSIS_AND_TESTCASES}:
         return state
     if state.errors:
         return state

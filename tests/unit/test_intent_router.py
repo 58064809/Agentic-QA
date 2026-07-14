@@ -20,7 +20,7 @@ def test_route_intent_without_api_key_falls_back_to_plain_natural_language(monke
     )
 
     assert route.is_valid
-    assert route.intent == "mvp"
+    assert route.intent == "analysis_and_testcases"
     assert route.prd_path == "prd/5月第二周运营活动核心需求-review"
     assert "降级" in route.summary
 
@@ -39,7 +39,7 @@ def test_route_intent_llm_failure_falls_back(monkeypatch):
     )
 
     assert route.is_valid
-    assert route.intent == "mvp"
+    assert route.intent == "analysis_and_testcases"
     assert route.prd_path == "prd/demo-requirement"
     assert "LLM 路由调用失败" in route.summary
 

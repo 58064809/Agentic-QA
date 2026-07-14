@@ -131,7 +131,7 @@ def _conditional_router(edges: list[EdgeSpec]) -> Callable[[QAWorkflowState], st
                 return edge.target
         if default_edges:
             return default_edges[0].target
-        return "end"
+        raise RuntimeError("条件路由没有命中；WorkflowSpec 必须声明 default edge")
 
     return route
 
@@ -144,6 +144,8 @@ def _validate_source_edges(spec: WorkflowSpec, source: str, edges: list[EdgeSpec
     default_edges = [edge for edge in conditional if edge.condition == DEFAULT_CONDITION]
     if len(default_edges) > 1:
         raise ValueError(f"Workflow {spec.id} 同一 source 只能有一个 default edge: {source}")
+    if conditional and not default_edges:
+        raise ValueError(f"Workflow {spec.id} 条件边必须声明 default edge: {source}")
 
 
 def build_graph_from_spec(

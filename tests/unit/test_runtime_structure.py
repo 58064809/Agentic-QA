@@ -5,7 +5,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_mvp_phase0_directories_exist():
+def test_combined_phase0_directories_exist():
     for relative_path in [
         "apps/cli",
         "rag/loaders",
@@ -18,7 +18,7 @@ def test_mvp_phase0_directories_exist():
         assert (REPO_ROOT / relative_path).is_dir(), relative_path
 
 
-def test_mvp_phase0_example_configs_exist():
+def test_combined_phase0_example_configs_exist():
     for relative_path in [
         "configs/config.example.yaml",
         "configs/model.example.yaml",

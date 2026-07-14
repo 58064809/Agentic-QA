@@ -2,21 +2,21 @@ from __future__ import annotations
 
 import json
 
-from runtime_mvp_fixtures import build_valid_testcases, count_testcase_rows, create_mvp_repo
+from runtime_fixtures import build_valid_testcases, count_testcase_rows, create_runtime_repo
 
-from runtime.graph.mvp_graph import (
-    run_mvp_testcase_generation_workflow,
+from runtime.graph.app import (
     run_requirement_analysis_workflow,
+    run_testcase_generation_workflow,
 )
-from runtime.graph.nodes import mvp_generation
+from runtime.graph.nodes import artifact_generation
 from runtime.llm.openai_compatible import OpenAICompatibleAdapter
 
 
 def test_review_grade_analysis_quality_rejects_old_section_skeleton(tmp_path, monkeypatch):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
     monkeypatch.setattr(
-        mvp_generation,
+        artifact_generation,
         "render_requirement_analysis_skeleton",
         lambda state: (
             """---
@@ -52,10 +52,10 @@ human_review_required: true
 
 
 def test_review_grade_analysis_rejects_empty_pending_questions(tmp_path, monkeypatch):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
     monkeypatch.setattr(
-        mvp_generation,
+        artifact_generation,
         "render_requirement_analysis_skeleton",
         lambda state: (
             """---
@@ -112,10 +112,10 @@ human_review_required: true
 
 
 def test_review_grade_testcase_quality_rejects_short_placeholder_table(tmp_path, monkeypatch):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
     monkeypatch.setattr(
-        mvp_generation,
+        artifact_generation,
         "render_testcase_skeleton",
         lambda state: (
             """---
@@ -133,7 +133,7 @@ human_review_required: true
         ),
     )
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -146,7 +146,7 @@ human_review_required: true
 
 
 def test_review_grade_testcase_rejects_type_column(tmp_path, monkeypatch):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     valid = build_valid_testcases()
     invalid = valid.replace(
         "| 用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | "
@@ -157,9 +157,9 @@ def test_review_grade_testcase_rejects_type_column(tmp_path, monkeypatch):
         "| TC-001 | REQ-001 | 主流程成功处理 | 功能 | P0 |",
         "| TC-001 | REQ-001 | 主流程成功处理 | 主流程 | 功能 | P0 |",
     )
-    monkeypatch.setattr(mvp_generation, "render_testcase_skeleton", lambda state: invalid)
+    monkeypatch.setattr(artifact_generation, "render_testcase_skeleton", lambda state: invalid)
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -172,14 +172,14 @@ def test_review_grade_testcase_rejects_type_column(tmp_path, monkeypatch):
 
 
 def test_review_grade_testcase_rejects_invalid_priority(tmp_path, monkeypatch):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     invalid = build_valid_testcases().replace(
         "| TC-002 | REQ-002 | 异常输入被拒绝 | 功能 | P1 |",
         "| TC-002 | REQ-002 | 异常输入被拒绝 | 功能 | P4 |",
     )
-    monkeypatch.setattr(mvp_generation, "render_testcase_skeleton", lambda state: invalid)
+    monkeypatch.setattr(artifact_generation, "render_testcase_skeleton", lambda state: invalid)
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -190,8 +190,25 @@ def test_review_grade_testcase_rejects_invalid_priority(tmp_path, monkeypatch):
     assert any("非法优先级: P4" in error for error in result.quality_errors)
 
 
+def test_review_grade_testcase_rejects_empty_coverage_matrix(tmp_path, monkeypatch):
+    repo_root = create_runtime_repo(tmp_path)
+    invalid = build_valid_testcases() + "\n## 覆盖矩阵\n\n"
+    monkeypatch.setattr(artifact_generation, "render_testcase_skeleton", lambda state: invalid)
+
+    result = run_testcase_generation_workflow(
+        "请生成测试用例",
+        "prd/demo-requirement",
+        repo_root=repo_root,
+        use_llm=False,
+        record_run=False,
+    )
+
+    assert not result.success
+    assert any("覆盖矩阵必须包含表头和至少一条有效映射" in error for error in result.quality_errors)
+
+
 def test_llm_generated_review_grade_testcases_pass_quality_gate(tmp_path, monkeypatch):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "local-secret")
     monkeypatch.setattr(
         OpenAICompatibleAdapter,
@@ -199,7 +216,7 @@ def test_llm_generated_review_grade_testcases_pass_quality_gate(tmp_path, monkey
         lambda self, prompt: build_valid_testcases(row_count=15),
     )
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -213,7 +230,7 @@ def test_llm_generated_review_grade_testcases_pass_quality_gate(tmp_path, monkey
 
 
 def test_llm_prompt_uses_configured_max_and_compacts_image_links(tmp_path, monkeypatch):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     requirement = repo_root / "prd/demo-requirement/input/requirement.md"
     requirement.write_text(
         requirement.read_text(encoding="utf-8")
@@ -230,7 +247,7 @@ def test_llm_prompt_uses_configured_max_and_compacts_image_links(tmp_path, monke
 
     monkeypatch.setattr(OpenAICompatibleAdapter, "generate_text", fake_generate)
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -246,7 +263,7 @@ def test_llm_prompt_uses_configured_max_and_compacts_image_links(tmp_path, monke
 
 
 def test_llm_testcases_allow_repeated_table_header(tmp_path, monkeypatch):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "local-secret")
     valid = build_valid_testcases(row_count=15)
     rich_header = (
@@ -266,7 +283,7 @@ def test_llm_testcases_allow_repeated_table_header(tmp_path, monkeypatch):
         lambda self, prompt: duplicated_header,
     )
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -280,7 +297,7 @@ def test_llm_testcases_allow_repeated_table_header(tmp_path, monkeypatch):
 
 
 def test_llm_invalid_testcases_fallback_to_skeleton(tmp_path, monkeypatch):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "local-secret")
     monkeypatch.setattr(
         OpenAICompatibleAdapter,
@@ -301,7 +318,7 @@ human_review_required: true
         ),
     )
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -318,7 +335,7 @@ human_review_required: true
 
 
 def test_use_llm_without_api_key_degrades_to_skeleton(tmp_path, monkeypatch):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
 
     result = run_requirement_analysis_workflow(
@@ -337,7 +354,7 @@ def test_use_llm_without_api_key_degrades_to_skeleton(tmp_path, monkeypatch):
 
 
 def test_run_record_does_not_store_llm_secret(tmp_path, monkeypatch):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "secret-token-should-not-be-stored")
     monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://example.test/v1")
     monkeypatch.setenv("DEEPSEEK_MODEL", "demo-model")

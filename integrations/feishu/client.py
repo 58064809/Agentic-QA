@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 
-from lark_oapi import Client, LogLevelEnum
+from lark_oapi import Client, LogLevel
 
 _client_instance: Client | None = None
 
@@ -39,7 +39,7 @@ def get_feishu_client() -> Client:
         )
 
     _client_instance = (
-        Client.builder().app_id(app_id).app_secret(app_secret).log_level(LogLevelEnum.ERROR).build()
+        Client.builder().app_id(app_id).app_secret(app_secret).log_level(LogLevel.ERROR).build()
     )
     return _client_instance
 

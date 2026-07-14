@@ -32,6 +32,8 @@ pytest 在显式测试环境中读取 YAML 执行
 - `prompts/api-test-generation.md`
 - `skills/api-testing.md`
 
+`prompts/api-test-generation.md` 是 API 测试草稿和 RAG API YAML 的唯一 canonical Prompt。
+
 ## OpenAPI / Swagger 导入
 
 CLI 支持传入本地 OpenAPI / Swagger / Apifox 导出文件：
@@ -57,18 +59,17 @@ prd/<需求ID>/input/api.md
 
 ## 无接口文档规则
 
-没有可用 `input/api.md` 时，Runtime 允许生成接口候选点，但必须标记：
+没有可用接口契约时，Runtime 只生成业务测试意图，接口部分必须标记为 `contract_status: missing`：
 
-```text
-待补充接口文档
-待确认 URL
-待确认 Method
-待确认请求字段
-待确认响应字段
-待确认鉴权方式
+```yaml
+contract_status: missing
+request: {}
+assertions: []
+review_questions:
+  - 请补充 Swagger / OpenAPI / Apifox 接口契约。
 ```
 
-推断内容不得写成确定接口事实。
+网络抓包发现的 method/path 只能标记 `pending_confirmation`，普通 Markdown 接口说明最多标记 `partial`；只有完整 OpenAPI operation 可以标记 `confirmed`。
 
 ## 质量门
 
@@ -79,7 +80,7 @@ prd/<需求ID>/input/api.md
 - 输出包含 pytest + requests 脚本草稿。
 - 同 run 目录生成 `api-test-cases.yml`，schema_version 为 `agentic-qa.api-cases.v1.1`。
 - YAML 用例包含 `business_rules` 和 `cases[].id/title/priority/contract_status/business_rule_refs/request/assertions/variables/cleanup/pending`。
-- 新用例只允许使用嵌套 `request.method/path` 和类型化 `assertions`；旧 v1 仅保留读取兼容。
+- 只接受 `agentic-qa.api-cases.v1.1`：使用嵌套 `request.method/path` 和类型化 `assertions`。v1 已移除，不再兼容读取。
 - YAML 用例不得写完整环境域名，base URL 只能通过 `AGENTIC_QA_BASE_URL` 注入。
 - 输出包含断言策略。
 - 无可用接口文档时包含“待补充接口文档”提示。

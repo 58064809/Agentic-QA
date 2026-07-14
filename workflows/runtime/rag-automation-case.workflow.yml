@@ -25,6 +25,10 @@ nodes:
     type: python
     handler: runtime.graph.nodes.artifact_preview_writer.artifact_preview_writer_node
 
+  - id: metadata_update
+    type: python
+    handler: runtime.graph.nodes.metadata_update.metadata_update_node
+
   - id: review_gate
     type: python
     handler: runtime.graph.nodes.human_review.human_review_node
@@ -54,10 +58,18 @@ edges:
     condition: default
 
   - from: artifact_preview_writer
-    to: review_gate
+    to: metadata_update
     condition: no_errors
 
   - from: artifact_preview_writer
+    to: end
+    condition: default
+
+  - from: metadata_update
+    to: review_gate
+    condition: no_errors
+
+  - from: metadata_update
     to: end
     condition: default
 

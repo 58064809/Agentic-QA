@@ -9,7 +9,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from runtime_mvp_fixtures import create_mvp_repo  # noqa: E402
+from runtime_fixtures import create_runtime_repo  # noqa: E402
 
 from runtime.cli.importer import _import_network_capture_to_workspace  # noqa: E402
 from runtime.cli.parser import (  # noqa: E402
@@ -89,7 +89,7 @@ def test_network_capture_path_parser_derives_prd_workspace():
 
 
 def test_external_network_capture_is_copied_to_standard_workspace_path(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     external = tmp_path / "captures" / "activity.har"
     external.parent.mkdir()
     external.write_text('{"log":{"entries":[]}}', encoding="utf-8")
@@ -105,7 +105,7 @@ def test_external_network_capture_is_copied_to_standard_workspace_path(tmp_path)
 
 
 def test_api_discovery_report_generates_preview_and_sanitizes(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_discovery_context_files(repo_root)
     write_capture(repo_root)
 
@@ -129,7 +129,7 @@ def test_api_discovery_report_generates_preview_and_sanitizes(tmp_path):
 
 
 def test_api_discovery_promote_writes_formal_artifact(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_discovery_context_files(repo_root)
     write_capture(repo_root)
 
@@ -159,7 +159,7 @@ def test_api_discovery_promote_writes_formal_artifact(tmp_path):
 
 
 def test_api_discovery_quality_rejects_unsanitized_secret(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     state = QAWorkflowState(
         user_input="接口发现报告",
         prd_path="prd/demo-requirement",

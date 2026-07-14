@@ -38,8 +38,8 @@ def test_api_discovery_report_keys():
     assert _artifact_keys_for_task(_state("api_discovery_report")) == ["api_discovery_report"]
 
 
-def test_mvp_keys():
-    keys = _artifact_keys_for_task(_state("mvp_analysis_testcases"))
+def test_combined_keys():
+    keys = _artifact_keys_for_task(_state("analysis_and_testcases"))
     assert keys == ["requirement_analysis", "testcases"]
 
 

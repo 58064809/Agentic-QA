@@ -1,105 +1,49 @@
 # Agentic-QA
 
-**Agentic-QA** 是一个面向测试工程师的 **Agentic QA Engineering** 项目，用于构建 AI 辅助的软件测试工程工作流。
+Agentic-QA 把自然语言 QA 任务编排成可追踪、可审核的 LangGraph 工作流。当前 Runtime 以 `workflows/runtime/*.workflow.yml` 为唯一流程定义；所有生成结果先写入候选区，只有通过 Review Gate 后才能发布为正式产物。
 
-项目通过自然语言入口、Runtime 编排、配置层管理、RAG 上下文检索、专业 QA Agent、测试方法论、规则约束和确认机制，帮助测试工程师将需求文档转化为结构化的需求分析、测试用例、自动化脚本草稿、执行记录、失败分析、Bug 草稿、QA 报告和可复用知识资产。
+## 当前能力
 
-Agentic-QA 的最终目标是让用户通过 **Chat、Bot 或 CLI** 以自然语言完成需求分析、测试设计、用例生成、自动化生成、测试执行、失败分析、缺陷草稿、报告和归档等测试活动。用户不需要手动维护流程状态、产物路径或运行记录，Runtime 负责将自然语言意图转换为可追踪、可执行、可审核、可恢复的工程化工作流。
+| 意图 | WorkflowSpec | 候选产物 |
+|---|---|---|
+| 需求分析 | `requirement_analysis` | `requirement-analysis.preview.md` |
+| 测试用例 | `testcase_generation` | `testcases.preview.md` |
+| 需求分析 + 测试用例 | `analysis_and_testcases` | 拆分后的需求候选和用例候选 |
+| API 测试草稿 | `api_test_draft` | Markdown 草稿；有契约时附 API YAML |
+| RAG API 自动化用例 | `rag_automation_case_generation` | API YAML 与 RAG run record |
+| UI 自动化草稿 | `ui_test_draft` | `ui-test-draft.preview.md` |
+| 接口发现报告 | `api_discovery_report` | `api-discovery-report.preview.md` |
+| QA 报告 | `qa_report` | `qa-report.preview.md` |
 
-## 核心能力
+测试执行、失败分析、缺陷草稿和归档编排不属于当前 Runtime 能力；路线图中的后续项不得当作已实现入口。
 
-- **统一自然语言入口**：AI Chat、Bot、CLI 和 API 都只是入口形态，Runtime 统一负责意图识别、工作流选择和任务执行。
-- **配置层管理**：统一管理 Runtime、RAG、LLM、工作区、协作入口、日志和运行 Profile。
-- **意图识别与工作流选择**：识别用户输入的 QA 任务目标，并匹配对应 QA 工作流。
-- **Runtime 编排**：负责任务执行、节点流转、状态管理、质量检查、确认门禁和产物写入。
-- **运行可靠性策略**：支持节点失败处理、重试、降级、部分产物保留、原子写入、幂等执行和恢复。
-- **产物版本管理**：正式产物保持稳定路径，修订结果先生成候选版本，确认后再提升为当前版本，历史版本可追溯。
-- **RAG 上下文检索**：当前采用“确定性上下文加载 + 知识库向量检索”的混合模式，后续可扩展为统一索引式 RAG。
-- **专业 QA Agent**：覆盖需求分析、测试设计、接口测试生成、UI 测试生成、测试执行、失败分析、Bug 草稿和 QA 报告等任务。
-- **自然语言确认机制**：用户可通过 Chat、Bot 或 CLI 表达通过、修改、驳回、继续执行等确认意图。
-
-## Review Gate 原则
-
-Review Gate 遵循“LLM 负责理解，程序负责裁决”的边界：LLM 或语义解析器只能把用户自然语言转换为结构化 `ReviewDecision`，不能直接写入 `artifacts/`、不能直接把状态改成 `confirmed`、不能执行 promote。
-
-正式流转由确定性状态机控制：候选产物进入 `needs_human_review` 后，用户确认只会把目标 review 更新为 `approved`；正式发布仍必须由确定性 `promote` 命令或函数执行，成功后才会写入正式产物并标记 `confirmed`。
-
-## 工作流主链路
+## 唯一主链路
 
 ```text
-用户输入 / AI Chat / Bot / CLI / API
-  ↓
-意图识别
-  ↓
-工作流选择
-  ↓
-工作流编排
-  ↓
-需求加载
-  ↓
-文档归一化
-  ↓
-RAG 检索
-  ↓
-上下文构建
-  ↓
-QA Agent 执行
-  ↓
-质量检查
-  ↓
-写入候选产物 preview 文件
-  ↓
-确认门禁 Review Gate
-  ↓
-发布正式产物 / 进入修订 / 等待确认
-  ↓
-运行记录 / 元数据更新
+自然语言
+  -> intent
+  -> workflows/runtime/*.workflow.yml
+  -> LangGraph QAWorkflowState
+  -> 质量门
+  -> prd/<id>/runs/<run_id>/<artifact>.preview.md
+  -> prd/<id>/runs/<run_id>/artifact-preview.md 索引
+  -> metadata.yml + reviews/*.review.yml
+  -> Review Gate interrupt
+  -> approved
+  -> promote
+  -> prd/<id>/artifacts/
 ```
 
-关键原则：**修订工作流不得直接覆盖正式产物**。Runtime 必须先生成候选版本，经过质量检查和确认门禁后，才允许将候选版本提升为当前正式版本。
+约束：
 
-## 架构概览
+- Python 不维护第二套工作流或 Prompt 契约。
+- `prompts/` 中每种生成能力只保留一份 canonical Prompt。
+- 未确认内容不得写入 `artifacts/`。
+- `confirmed` 只能由确定性 promote 成功后产生。
+- 缺少 API 契约时不得猜测 method、path、参数或断言；只有完整 OpenAPI 可以进入 `confirmed` 契约状态。
+- API YAML 只接受 `agentic-qa.api-cases.v1.1`。
 
-![Agentic-QA 架构图](docs/assets/agentic-qa-architecture.png)
-
-```text
-入口层
-├── AI 编辑器 Chat
-├── 飞书 Bot / 微信 Bot / 钉钉 Bot
-├── CLI
-└── API
-
-配置层
-├── Runtime 配置
-├── RAG 配置
-├── LLM 配置
-├── 工作区配置
-└── 协作入口配置
-
-Runtime
-├── 意图识别
-├── 工作流选择
-├── 工作流编排
-├── 状态管理
-├── 质量检查
-├── 失败处理
-├── 幂等与恢复
-├── 确认门禁
-├── 产物版本管理
-└── 运行记录
-
-知识资产
-├── rules/
-├── skills/
-├── prompts/
-├── workflows/
-├── knowledge/
-└── prd/
-```
-
-## 需求工作区
-
-每个需求使用独立工作区管理输入、产物、确认状态、历史版本和运行记录。
+## 工作区
 
 ```text
 prd/<需求ID>/
@@ -107,216 +51,97 @@ prd/<需求ID>/
 │   ├── requirement.md
 │   ├── api.md
 │   └── attachments/
-├── artifacts/
-│   ├── requirement-analysis.md
-│   ├── testcases.md
-│   ├── api-test-draft.md
-│   ├── ui-test-draft.md
-│   ├── execution-report.md
-│   ├── failure-analysis.md
-│   ├── bug-draft.md
-│   ├── qa-report.md
-│   ├── archive-index.md
-│   └── history/
-│       └── testcases/
-│           ├── testcases.v1.md
-│           ├── testcases.v2.md
-│           └── index.yml
-├── reviews/
-│   ├── requirement-analysis.review.yml
-│   ├── testcases.review.yml
-│   └── qa-report.review.yml
 ├── runs/
 │   ├── latest.yml
 │   ├── index.jsonl
-│   └── <run-id>/
-│       ├── artifact-preview.md              # 候选产物索引
+│   └── <run_id>/
+│       ├── artifact-preview.md
 │       ├── artifact-preview.json
 │       ├── artifact-preview.yml
 │       ├── requirement-analysis.preview.md
 │       ├── testcases.preview.md
 │       └── <artifact>.preview.yml/json
+├── reviews/
+├── artifacts/
+│   ├── requirement-analysis.md
+│   ├── testcases.md
+│   ├── api-test-draft.md
+│   ├── ui-test-draft.md
+│   ├── api-discovery-report.md
+│   ├── qa-report.md
+│   └── history/
 └── metadata.yml
 ```
 
-Runtime 内部执行记录当前保存到 `.runtime/runs/<run-id>/`：
+`.runtime/runs/<run_id>/` 保存内部 graph state、checkpoint、review events 和运行摘要；`prd/<id>/runs/` 保存用户可审核的候选产物及需求级索引。
 
-```text
-.runtime/runs/<run-id>/
-├── run-summary.json
-├── run-summary.md
-├── run-state.json
-├── graph-state.json
-├── review-events.jsonl
-├── rag.json
-└── checkpointer.pkl
-```
-
-## 项目结构
-
-| 路径 | 说明 |
-|---|---|
-| `configs/` | 项目运行配置、Profile 配置和示例配置 |
-| `runtime/` | Runtime 主体代码，负责工作流编排和执行 |
-| `runtime/config.py` | 配置加载、合并、校验和环境变量解析 |
-| `runtime/llm/intent_router.py` | 意图识别、任务解析和结构化任务结果 |
-| `runtime/workflow/` | 工作流选择、注册和执行入口 |
-| `runtime/graph/` | 工作流图、节点、状态和路由 |
-| `rag/` | 文档切分、索引、检索和上下文选择 |
-| `runtime/graph/nodes/` | 可执行 QA Agent 节点、工具节点和 Runtime 编排节点 |
-| `runtime/llm/` | LLM 调用抽象和模型适配 |
-| `runtime/tools/` | 文件读写、产物写入、测试执行和报告工具 |
-| `runtime/schemas/` | 结构化输入输出 Schema |
-| `integrations/` | 飞书、微信、钉钉、API 等外部入口适配 |
-| `workflows/` | QA 工作流定义、流程配置和执行策略 |
-| `prompts/` | Prompt 模板 |
-| `rules/` | 路径、输出、确认门禁、版本策略和质量强约束 |
-| `skills/` | 可复用 QA 技能和测试方法 |
-| `knowledge/` | RAG 知识库 |
-| `prd/` | 需求工作区和生成产物 |
-| `scripts/` | 校验、执行、报告和归档辅助脚本 |
-| `tests/` | 单元测试和 Runtime 测试 |
-| `docs/` | 架构设计、路线图和使用说明 |
-
-## 快速开始
-
-推荐先创建本地虚拟环境并安装项目：
+## 安装
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-PowerShell 也可以使用：
+按需安装：
 
 ```bash
-.venv\Scripts\Activate.ps1
+pip install -e ".[rag]"        # FAISS
+pip install -e ".[postgres]"   # PostgreSQL checkpoint
+pip install -e ".[documents]"  # Office/PDF 转 Markdown
+pip install -e ".[feishu]"     # 飞书 docx 导入
+pip install -e ".[full,dev]"   # 全部可选能力
 ```
 
-默认安装包含 CLI、LangGraph、LLM 适配器和内存 RAG，可直接运行，不要求 PostgreSQL
-或 FAISS。需要额外能力时按需安装：
+## 使用
 
-```bash
-pip install -e ".[rag]"        # FAISS 向量索引
-pip install -e ".[postgres]"   # PostgreSQL checkpoint / store
-pip install -e ".[documents]"  # DOCX/PDF/PPTX/XLS/XLSX 转 Markdown
-pip install -e ".[feishu]"     # 飞书文档导入
-pip install -e ".[full,dev]"   # 全部运行能力和开发工具
-```
-
-创建需求工作区：
+创建并校验工作区：
 
 ```bash
 python scripts/create_prd_workspace.py demo-requirement
-```
-
-将需求文档写入：
-
-```text
-prd/demo-requirement/input/requirement.md
-```
-
-校验需求工作区：
-
-```bash
 python scripts/validate_prd_workspace.py prd/demo-requirement
 ```
 
-安装后可以使用两种本地入口：
-
-```bash
-agentic-qa "分析 prd/demo-requirement 并生成测试用例"
-python -m runtime.cli "分析 prd/demo-requirement 并生成测试用例"
-```
-
-### 通过自然语言发起任务
-
-Agentic-QA 的主要使用方式是通过 AI Chat、Bot、CLI 或 API 输入自然语言任务，由 Runtime 统一完成意图识别、工作流选择、上下文构建、Agent 执行、质量检查、确认门禁和产物写入。
-
-示例：
-
-```text
-分析 prd/demo-requirement 这个需求，并生成测试用例。
-```
-
-```text
-读取这个飞书文档，生成需求分析和测试用例草稿。
-```
-
-```text
-测试用例不通过，补充支付失败、库存不足和优惠券异常场景。
-```
-
-### 使用 CLI 调试 Runtime
-
-CLI 是自然语言入口之一，主要用于本地调试、脚本化执行和最小 Runtime 验证。
+生成候选产物：
 
 ```bash
 python -m runtime.cli "分析 prd/demo-requirement 并生成测试用例"
 ```
 
-运行基础检查：
+审核并发布：
 
 ```bash
-pytest
+python -m runtime.cli resume <run_id> "全部通过，全部发布"
+python -m runtime.cli promote prd/demo-requirement <run_id> testcases
+```
+
+RAG 调试：
+
+```bash
+python -m runtime.cli rag status
+python -m runtime.cli rag build
+python -m runtime.cli rag search "边界值 活动规则"
+```
+
+## 验证
+
+```bash
 ruff check .
+python scripts/validate_docs_consistency.py
+pytest -q
 ```
 
-## 设计文档
+## 文档边界
 
-| 文档 | 说明 |
+| 文档 | 负责内容 |
 |---|---|
-| [`docs/architecture.md`](docs/architecture.md) | 系统架构图、分层职责和主链路说明 |
-| [`docs/workflow-dsl.md`](docs/workflow-dsl.md) | Workflow DSL、节点类型、输入输出契约和路由条件 |
-| [`docs/runtime-reliability.md`](docs/runtime-reliability.md) | 节点失败策略、部分成功、原子写入、幂等和运行尝试 |
-| [`docs/artifact-versioning.md`](docs/artifact-versioning.md) | 产物版本管理、候选版本、历史索引和发布策略 |
-| [`docs/review-gate.md`](docs/review-gate.md) | 自然语言确认机制和 Review Gate Workflow |
-| [`docs/artifact-standards.md`](docs/artifact-standards.md) | QA 产物标准、元数据和状态定义 |
-| [`docs/testcase-standards.md`](docs/testcase-standards.md) | 测试用例结构、字段说明、优先级和质量要求 |
-| [`docs/api-test-generation.md`](docs/api-test-generation.md) | 接口测试草稿生成、输入规则、质量门和发布路径 |
-| [`docs/ui-test-generation.md`](docs/ui-test-generation.md) | UI 自动化草稿生成、Playwright 草稿和质量门 |
-| [`docs/api-discovery.md`](docs/api-discovery.md) | 基于网络抓包的接口发现报告、脱敏和离线解析规则 |
-| [`docs/qa-report-generation.md`](docs/qa-report-generation.md) | QA 报告草稿生成、风险披露和发布路径 |
-| [`docs/prompt-engineering.md`](docs/prompt-engineering.md) | Prompt 结构、路径契约、版本策略和治理规范 |
-| [`docs/rag-design.md`](docs/rag-design.md) | RAG 链路、召回追踪和上下文构建 |
-| [`docs/rag-architecture.md`](docs/rag-architecture.md) | 公司业务知识库、RAG 检索和接口自动化用例生成骨架 |
-| [`docs/rag-run-record-spec.md`](docs/rag-run-record-spec.md) | RAG 检索、上下文选择和生成过程的运行记录规范 |
-| [`docs/automation-case-generation.md`](docs/automation-case-generation.md) | PRD / Swagger / 业务规则生成 YAML 接口自动化用例草稿 |
-| [`docs/roadmap.md`](docs/roadmap.md) | 建设路线图 |
-
-## 建设路线图
-
-```text
-工程底座
-├── 配置层
-├── 需求工作区
-├── 运行记录
-├── 产物写入
-├── 产物版本管理
-├── 历史追溯
-├── 失败处理
-├── 幂等与恢复
-└── 确认状态管理
-
-Runtime
-├── 意图识别
-├── 工作流选择
-├── 工作流编排
-├── 状态流转
-├── 质量检查
-└── Review Gate Workflow
-
-QA 生成能力
-├── 需求分析生成
-├── 测试用例生成
-├── 接口测试生成
-├── UI 测试生成
-├── 失败分析生成
-├── Bug 草稿生成
-└── QA 报告生成
-```
-
-## 项目愿景
-
-Agentic-QA 的目标是让 AI 参与完整 QA 工程生命周期，从需求理解、测试设计、自动化生成，到执行分析、报告归档和知识复用，逐步沉淀为可运行、可追踪、可扩展的智能测试工程体系。
+| [架构](docs/architecture.md) | 分层、唯一主链路与边界 |
+| [Workflow DSL](docs/workflow-dsl.md) | YAML Schema、节点、条件边与失败策略 |
+| [Review Gate](docs/review-gate.md) | 审核状态机与 promote 规则 |
+| [运行可靠性](docs/runtime-reliability.md) | checkpoint、重试、幂等与运行记录 |
+| [产物版本](docs/artifact-versioning.md) | 候选、正式产物与历史版本 |
+| [测试用例标准](docs/testcase-standards.md) | 11 列用例契约与质量门 |
+| [API 测试生成](docs/api-test-generation.md) | 契约状态与 API YAML v1.1 |
+| [RAG 设计](docs/rag-design.md) | 索引、检索、上下文和 trace |
+| [Prompt 工程](docs/prompt-engineering.md) | Prompt 单一事实源和治理规则 |
+| [命令入口](COMMANDS.md) | 当前自然语言与 CLI 用法 |
+| [路线图](docs/roadmap.md) | 已实现范围与下一阶段 |

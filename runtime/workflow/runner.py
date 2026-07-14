@@ -10,7 +10,7 @@ from langgraph.types import Command
 
 from runtime.config import load_app_config
 from runtime.graph.app import default_repo_root
-from runtime.graph.nodes.mvp_context_loader import TASK_MVP
+from runtime.graph.nodes.workflow_context import TASK_ANALYSIS_AND_TESTCASES
 from runtime.graph.state import QAWorkflowState
 from runtime.llm.config import OpenAICompatibleConfig
 from runtime.records.run_recorder import (
@@ -298,7 +298,7 @@ def run_workflow_by_id(
         run_status="running",
     )
     apply_workflow_state_defaults(initial_state, spec)
-    initial_state.max_llm_calls = 2 if initial_state.task_type == TASK_MVP else 1
+    initial_state.max_llm_calls = 2 if initial_state.task_type == TASK_ANALYSIS_AND_TESTCASES else 1
 
     try:
         checkpointer = create_checkpointer(

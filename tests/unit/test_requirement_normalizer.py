@@ -6,7 +6,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from runtime.graph.mvp_graph import run_requirement_analysis_workflow  # noqa: E402
+from runtime.graph.app import run_requirement_analysis_workflow  # noqa: E402
 from runtime.graph.nodes import requirement_normalizer  # noqa: E402
 from runtime.graph.nodes.requirement_normalizer import (  # noqa: E402
     normalize_requirement_document,
@@ -24,9 +24,6 @@ def create_repo(root: Path, *, with_requirement_md: bool = False) -> Path:
         "AGENTS.md": "Agent 协作规范",
         "COMMANDS.md": "命令路由",
         "docs/roadmap.md": "Runtime 路线图",
-        "workflows/01-requirement-analysis-workflow.md": "需求分析工作流",
-        "workflows/10-runtime-testcase-generation-workflow.md": "Runtime 测试用例工作流",
-        "workflows/02-testcase-generation-workflow.md": "测试用例工作流",
         "workflows/runtime/requirement-analysis.workflow.yml": (
             REPO_ROOT / "workflows/runtime/requirement-analysis.workflow.yml"
         ).read_text(encoding="utf-8"),

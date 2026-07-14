@@ -10,12 +10,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from runtime_mvp_fixtures import create_mvp_repo, write_file  # noqa: E402
+from runtime_fixtures import create_runtime_repo, write_file  # noqa: E402
 
-from runtime.graph.mvp_graph import (  # noqa: E402
-    promote_mvp_artifacts,
-    run_mvp_analysis_and_testcases_workflow,
-    run_mvp_testcase_generation_workflow,
+from runtime.graph.app import (  # noqa: E402
+    promote_artifacts,
+    run_analysis_and_testcases_workflow,
+    run_testcase_generation_workflow,
 )
 from runtime.graph.nodes import human_review as human_review_module  # noqa: E402
 from runtime.workflow.runner import resume_workflow_for_run  # noqa: E402
@@ -44,9 +44,9 @@ def write_review_status(repo_root: Path, name: str, *, status: str, run_id: str)
 
 
 def test_unreviewed_workflow_interrupts_with_review_payload(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
 
-    result = run_mvp_analysis_and_testcases_workflow(
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -66,7 +66,7 @@ def test_unreviewed_workflow_interrupts_with_review_payload(tmp_path):
     assert payload["prd_path"] == "prd/demo-requirement"
     assert payload["artifact_keys"] == ["requirement_analysis", "testcases"]
     assert payload["review_status"] == "needs_human_review"
-    assert payload["preview_path"].endswith("/artifact-preview.md")
+    assert payload["preview_path"].endswith("/requirement-analysis.preview.md")
     assert payload["action_request"]["action"] == "review_artifact"
     assert payload["config"]["allow_accept"] is True
     assert payload["config"]["allow_respond"] is True
@@ -79,12 +79,20 @@ def test_unreviewed_workflow_interrupts_with_review_payload(tmp_path):
         "hold",
         "clarify",
     ]
+    for review_name in ("requirement-analysis.review.yml", "testcases.review.yml"):
+        review = yaml.safe_load(
+            (repo_root / f"prd/demo-requirement/reviews/{review_name}").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert review["run_id"] == result.run_id
+        assert review["status"] == "needs_human_review"
     assert not (repo_root / "prd/demo-requirement/artifacts/testcases.md").exists()
 
 
 def test_interrupt_resume_accept_response_maps_to_approve(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_testcase_generation_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -110,8 +118,8 @@ def test_interrupt_resume_accept_response_maps_to_approve(tmp_path):
 
 
 def test_single_artifact_approve_can_omit_target_artifact(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_testcase_generation_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -137,7 +145,7 @@ def test_single_artifact_approve_can_omit_target_artifact(tmp_path):
 
 
 def test_interrupt_resume_calls_process_review_gate_with_original_user_input(tmp_path, monkeypatch):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     captured: dict[str, object] = {}
     original = human_review_module.process_review_gate
 
@@ -146,7 +154,7 @@ def test_interrupt_resume_calls_process_review_gate_with_original_user_input(tmp
         return original(**kwargs)
 
     monkeypatch.setattr(human_review_module, "process_review_gate", spy_process_review_gate)
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -169,8 +177,8 @@ def test_interrupt_resume_calls_process_review_gate_with_original_user_input(tmp
 
 
 def test_interrupt_resume_natural_language_reject_uses_review_gate(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_analysis_and_testcases_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -193,8 +201,8 @@ def test_interrupt_resume_natural_language_reject_uses_review_gate(tmp_path):
 
 
 def test_interrupt_resume_natural_language_revise_uses_review_gate(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_analysis_and_testcases_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -218,8 +226,8 @@ def test_interrupt_resume_natural_language_revise_uses_review_gate(tmp_path):
 
 
 def test_interrupt_resume_negative_language_does_not_approve(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_testcase_generation_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -245,8 +253,8 @@ def test_interrupt_resume_negative_language_does_not_approve(tmp_path):
 
 
 def test_interrupt_resume_show_diff_does_not_change_review_status(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_testcase_generation_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -270,8 +278,8 @@ def test_interrupt_resume_show_diff_does_not_change_review_status(tmp_path):
 
 
 def test_interrupt_resume_clarify_keeps_waiting_review(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_testcase_generation_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_testcase_generation_workflow(
         "generate testcases",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -296,8 +304,8 @@ def test_interrupt_resume_clarify_keeps_waiting_review(tmp_path):
 
 
 def test_multi_artifact_approve_requires_target_artifact(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_analysis_and_testcases_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -321,8 +329,8 @@ def test_multi_artifact_approve_requires_target_artifact(tmp_path):
 
 
 def test_multi_artifact_approve_rejects_invalid_target_artifact(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_analysis_and_testcases_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -345,8 +353,8 @@ def test_multi_artifact_approve_rejects_invalid_target_artifact(tmp_path):
 
 
 def test_multi_artifact_approve_single_target_only_approves_that_review(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_analysis_and_testcases_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -365,15 +373,17 @@ def test_multi_artifact_approve_single_target_only_approves_that_review(tmp_path
     assert resumed.success
     assert resumed.review_status == "confirmed"
     assert read_review(repo_root, "testcases.review.yml")["status"] == "confirmed"
-    assert not (repo_root / "prd/demo-requirement/reviews/requirement-analysis.review.yml").exists()
+    assert read_review(repo_root, "requirement-analysis.review.yml")["status"] == (
+        "needs_human_review"
+    )
     assert resumed.output_paths == {"testcases": "prd/demo-requirement/artifacts/testcases.md"}
     assert (repo_root / "prd/demo-requirement/artifacts/testcases.md").is_file()
     assert not (repo_root / "prd/demo-requirement/artifacts/requirement-analysis.md").exists()
 
 
 def test_multi_artifact_all_target_approves_all_reviews(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_analysis_and_testcases_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -395,8 +405,8 @@ def test_multi_artifact_all_target_approves_all_reviews(tmp_path):
 
 
 def test_reject_without_target_defaults_to_all_for_multi_artifact(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_analysis_and_testcases_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -420,8 +430,8 @@ def test_reject_without_target_defaults_to_all_for_multi_artifact(tmp_path):
 
 
 def test_revise_requires_target_for_multi_artifact(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_analysis_and_testcases_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -444,8 +454,8 @@ def test_revise_requires_target_for_multi_artifact(tmp_path):
 
 @pytest.mark.parametrize("action", ["confirmed", "publish", ""])
 def test_illegal_resume_action_cannot_promote_or_confirm(tmp_path, action):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_testcase_generation_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -468,10 +478,10 @@ def test_illegal_resume_action_cannot_promote_or_confirm(tmp_path, action):
 
 @pytest.mark.parametrize("status", ["needs_human_review", "needs_changes", "rejected", "confirmed"])
 def test_promote_rejects_non_approved_review_statuses(tmp_path, status):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     write_file(repo_root / "prd/demo-requirement/artifacts/testcases.md", "旧版测试用例")
     run_id = "runtime"
-    run_mvp_analysis_and_testcases_workflow(
+    run_analysis_and_testcases_workflow(
         "请分析需求并生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -485,7 +495,7 @@ def test_promote_rejects_non_approved_review_statuses(tmp_path, status):
         run_id=run_id,
     )
 
-    promoted = promote_mvp_artifacts(
+    promoted = promote_artifacts(
         "prd/demo-requirement",
         run_id,
         repo_root=repo_root,
@@ -500,8 +510,8 @@ def test_promote_rejects_non_approved_review_statuses(tmp_path, status):
 
 
 def test_confirmed_status_only_comes_from_promote_artifacts(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
-    result = run_mvp_testcase_generation_workflow(
+    repo_root = create_runtime_repo(tmp_path)
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,

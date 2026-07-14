@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from runtime.graph.nodes.mvp_context_loader import TASK_API_DISCOVERY_REPORT
-from runtime.graph.nodes.mvp_generation import _upsert_artifact
+from runtime.graph.nodes.artifact_generation import _upsert_artifact
+from runtime.graph.nodes.workflow_context import TASK_API_DISCOVERY_REPORT
 from runtime.graph.state import QAWorkflowState
 from runtime.tools.api_discovery_normalizer import (
     load_network_capture,

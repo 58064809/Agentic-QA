@@ -6,7 +6,6 @@ from pathlib import Path
 
 from runtime.cli.parser import (
     _artifact_keys_from_recorded_run,
-    _artifact_keys_from_text,
     _clarify_multi_artifact_message,
     _explicit_artifact_keys_from_text,
     _extract_run_id,
@@ -15,7 +14,19 @@ from runtime.cli.parser import (
     _read_latest_run_id,
     _task_type_from_artifact_keys,
 )
-from runtime.graph.app import promote_artifacts, resume_recorded_workflow, retry_failed_workflow
+from runtime.graph.app import (
+    promote_artifacts,
+    resume_recorded_workflow,
+    retry_failed_workflow,
+    run_analysis_and_testcases_workflow,
+    run_api_discovery_report_workflow,
+    run_api_test_draft_workflow,
+    run_qa_report_workflow,
+    run_rag_automation_case_workflow,
+    run_requirement_analysis_workflow,
+    run_testcase_generation_workflow,
+    run_ui_test_draft_workflow,
+)
 from runtime.review import ReviewDecision, ReviewIntent, process_review_gate
 from runtime.schemas.runtime_result import RuntimeResult
 from runtime.workspace import PRDWorkspace, read_yaml_mapping
@@ -190,7 +201,7 @@ def _resolve_artifact_keys(
             msg = _clarify_multi_artifact_message(recorded)
             raise ValueError(msg)
         return recorded
-    return ["testcases", "requirement_analysis"]
+    raise ValueError(f"运行记录未声明候选产物: {run_id}")
 
 
 def _print_promote_result(result: RuntimeResult) -> None:
@@ -292,7 +303,8 @@ def _run_promote_command(args: list[str], repo_root: Path) -> int:
     if not artifact_keys:
         artifact_keys = _artifact_keys_from_recorded_run(repo_root, selected_run_id)
     if not artifact_keys:
-        artifact_keys = _artifact_keys_from_text(rest)
+        print(f"❌ 运行记录未声明候选产物: {selected_run_id or '<missing>'}")
+        return 1
     try:
         result = _run_promote(
             repo_root,
@@ -335,7 +347,7 @@ def _run_workflow(
     rag_automation_case_use_llm = api_test_draft_use_llm
     ui_test_draft_use_llm = llm_enabled and app_config.workflow.use_llm_for("ui_test_draft")
     qa_report_use_llm = llm_enabled and app_config.workflow.use_llm_for("qa_report")
-    mvp_use_llm = llm_enabled and app_config.workflow.use_llm_for("mvp_analysis_testcases")
+    combined_use_llm = llm_enabled and app_config.workflow.use_llm_for("analysis_and_testcases")
 
     approve_write = (
         app_config.workflow.get("approve_write", False)
@@ -348,9 +360,7 @@ def _run_workflow(
         )
 
     if intent == "requirement_analysis":
-        import runtime.cli as cli_api
-
-        return cli_api.run_requirement_analysis_workflow(
+        return run_requirement_analysis_workflow(
             user_input=user_input,
             prd_path=Path(prd_path),
             repo_root=repo_root,
@@ -359,9 +369,7 @@ def _run_workflow(
             use_llm=requirement_analysis_use_llm,
         )
     elif intent == "testcase_generation":
-        import runtime.cli as cli_api
-
-        return cli_api.run_mvp_testcase_generation_workflow(
+        return run_testcase_generation_workflow(
             user_input=user_input,
             prd_path=Path(prd_path),
             repo_root=repo_root,
@@ -370,13 +378,12 @@ def _run_workflow(
             use_llm=testcase_generation_use_llm,
         )
     elif intent == "api_test_draft":
-        import runtime.cli as cli_api
         from runtime.tools.api_doc_loader import import_api_document_to_workspace
 
         if api_doc_path:
             import_api_document_to_workspace(repo_root, prd_path, api_doc_path)
 
-        return cli_api.run_api_test_draft_workflow(
+        return run_api_test_draft_workflow(
             user_input=user_input,
             prd_path=Path(prd_path),
             repo_root=repo_root,
@@ -385,13 +392,12 @@ def _run_workflow(
             use_llm=api_test_draft_use_llm,
         )
     elif intent == "rag_automation_case_generation":
-        import runtime.cli as cli_api
         from runtime.tools.api_doc_loader import import_api_document_to_workspace
 
         if api_doc_path:
             import_api_document_to_workspace(repo_root, prd_path, api_doc_path)
 
-        return cli_api.run_rag_automation_case_workflow(
+        return run_rag_automation_case_workflow(
             user_input=user_input,
             prd_path=Path(prd_path),
             repo_root=repo_root,
@@ -400,9 +406,7 @@ def _run_workflow(
             use_llm=rag_automation_case_use_llm,
         )
     elif intent == "ui_test_draft":
-        import runtime.cli as cli_api
-
-        return cli_api.run_ui_test_draft_workflow(
+        return run_ui_test_draft_workflow(
             user_input=user_input,
             prd_path=Path(prd_path),
             repo_root=repo_root,
@@ -411,13 +415,12 @@ def _run_workflow(
             use_llm=ui_test_draft_use_llm,
         )
     elif intent == "api_discovery_report":
-        import runtime.cli as cli_api
         from runtime.cli.importer import _import_network_capture_to_workspace
 
         if network_capture_path:
             _import_network_capture_to_workspace(repo_root, prd_path, network_capture_path)
 
-        return cli_api.run_api_discovery_report_workflow(
+        return run_api_discovery_report_workflow(
             user_input=user_input,
             prd_path=Path(prd_path),
             repo_root=repo_root,
@@ -425,10 +428,8 @@ def _run_workflow(
             record_run=True,
             use_llm=False,
         )
-    elif intent in {"qa_report", "report_generation"}:
-        import runtime.cli as cli_api
-
-        return cli_api.run_qa_report_workflow(
+    elif intent == "qa_report":
+        return run_qa_report_workflow(
             user_input=user_input,
             prd_path=Path(prd_path),
             repo_root=repo_root,
@@ -436,14 +437,13 @@ def _run_workflow(
             record_run=True,
             use_llm=qa_report_use_llm,
         )
-    else:
-        import runtime.cli as cli_api
-
-        return cli_api.run_mvp_analysis_and_testcases_workflow(
+    elif intent == "analysis_and_testcases":
+        return run_analysis_and_testcases_workflow(
             user_input=user_input,
             prd_path=Path(prd_path),
             repo_root=repo_root,
             approve_write=approve_write,
             record_run=True,
-            use_llm=mvp_use_llm,
+            use_llm=combined_use_llm,
         )
+    raise ValueError(f"当前 Runtime 不支持 intent: {intent}")

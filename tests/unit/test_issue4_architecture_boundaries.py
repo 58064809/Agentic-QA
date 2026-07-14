@@ -10,7 +10,7 @@ from runtime.workflow.runner import workflow_id_for_task_type
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_phase0_baseline_core_directories_and_entries_exist():
+def test_current_architecture_core_directories_and_entries_exist():
     for relative_path in [
         "runtime",
         "docs",
@@ -19,7 +19,8 @@ def test_phase0_baseline_core_directories_and_entries_exist():
         "README.md",
         "AGENTS.md",
         "COMMANDS.md",
-        "runtime/cli.py",
+        "runtime/cli/main.py",
+        "runtime/cli/__main__.py",
         "runtime/graph/app.py",
     ]:
         assert (REPO_ROOT / relative_path).exists(), relative_path
@@ -40,10 +41,10 @@ def test_core_layers_are_explicit_modules():
 def test_workflow_selection_uses_registry_lookup():
     assert workflow_id_for_task_type("analysis") == "requirement_analysis"
     assert workflow_id_for_task_type("testcase_generation") == "testcase_generation"
-    assert workflow_id_for_task_type("mvp_analysis_testcases") == "analysis_and_testcases"
+    assert workflow_id_for_task_type("analysis_and_testcases") == "analysis_and_testcases"
 
 
-def test_legacy_hardcoded_graph_path_is_removed():
+def test_removed_hardcoded_graph_path_stays_absent():
     removed_paths = [
         "runtime/graph/langgraph_app.py",
         "runtime/graph/nodes/intent_router.py",
@@ -61,11 +62,10 @@ def test_legacy_hardcoded_graph_path_is_removed():
 
 
 def test_cli_declares_natural_language_and_debug_modes_without_absolute_claims():
-    cli_text = (REPO_ROOT / "runtime/cli.py").read_text(encoding="utf-8")
+    cli_text = (REPO_ROOT / "runtime/cli/parser.py").read_text(encoding="utf-8")
     commands_text = (REPO_ROOT / "COMMANDS.md").read_text(encoding="utf-8")
 
-    assert "自然语言模式是主入口" in cli_text
-    assert "工程命令用于本地调试" in cli_text
+    assert 'agentic-qa "你的自然语言命令"' in cli_text
     assert "无子命令、无参数" not in cli_text
     assert "natural language mode" in commands_text
     assert "debug mode" in commands_text

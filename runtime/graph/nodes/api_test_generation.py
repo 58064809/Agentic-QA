@@ -7,8 +7,7 @@ from typing import Any
 
 import yaml
 
-from runtime.graph.nodes.mvp_context_loader import TASK_API_TEST_DRAFT
-from runtime.graph.nodes.mvp_generation import (
+from runtime.graph.nodes.artifact_generation import (
     _build_rag_context,
     _generate_with_optional_llm,
     _path_content,
@@ -16,6 +15,7 @@ from runtime.graph.nodes.mvp_generation import (
     _render_source_files,
     _upsert_artifact,
 )
+from runtime.graph.nodes.workflow_context import TASK_API_TEST_DRAFT
 from runtime.graph.state import QAWorkflowState
 from runtime.llm.prompt_builder import build_api_test_prompt
 from runtime.schemas.api_test_cases import API_CASES_SCHEMA_VERSION
@@ -661,15 +661,11 @@ def render_api_test_cases_yaml(state: QAWorkflowState, repo_root: Path) -> str:
         "human_review_required": True,
         "generated_from": {
             "workflow": (
-                "workflows/10-rag-automation-case-generation-workflow.md"
+                "workflows/runtime/rag-automation-case.workflow.yml"
                 if state.intent == "rag_automation_case_generation"
                 else "workflows/runtime/api-test-draft.workflow.yml"
             ),
-            "prompt": (
-                "prompts/rag-automation-case-prompt.md"
-                if state.intent == "rag_automation_case_generation"
-                else "prompts/api-test-generation.md"
-            ),
+            "prompt": "prompts/api-test-generation.md",
             "rag_run_record": f"rag/run_records/{state.run_id or '<run_id>'}.json",
         },
         "source_artifact": "artifacts/api-test-draft.md",
@@ -763,7 +759,7 @@ def render_api_rag_run_record(state: QAWorkflowState, repo_root: Path) -> str:
             "historical": ["knowledge/historical/"],
         },
         "corpus_snapshot": {
-            "index_version": "mvp-deterministic-context-v1",
+            "index_version": "deterministic-context-v1",
             "documents": sorted(state.loaded_files),
         },
         "retrieval_query": {
@@ -777,7 +773,7 @@ def render_api_rag_run_record(state: QAWorkflowState, repo_root: Path) -> str:
         else list(state.rag_retrievals),
         "selected_context": selected_context,
         "generation": {
-            "prompt": "prompts/rag-automation-case-prompt.md",
+            "prompt": "prompts/api-test-generation.md",
             "output_path": (
                 Path(state.output_paths.get("api_test_draft", ""))
                 .with_name(API_CASES_YAML_FILENAME)

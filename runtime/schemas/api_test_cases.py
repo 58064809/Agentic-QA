@@ -5,7 +5,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 API_CASES_SCHEMA_VERSION = "agentic-qa.api-cases.v1.1"
-LEGACY_API_CASES_SCHEMA_VERSION = "agentic-qa.api-cases.v1"
 
 
 class SourceRef(BaseModel):
@@ -20,7 +19,7 @@ class SourceRef(BaseModel):
 
 
 class ApiRequest(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     method: str | None = None
     path: str | None = None
@@ -30,7 +29,7 @@ class ApiRequest(BaseModel):
 
 
 class ApiAssertion(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     type: str = Field(min_length=1)
     expected: Any | None = None

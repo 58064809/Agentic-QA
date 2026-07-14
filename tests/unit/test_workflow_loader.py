@@ -39,7 +39,7 @@ version: 1
 nodes:
   - id: a
     type: python
-    handler: runtime.graph.nodes.mvp_context_loader.mvp_command_router_node
+    handler: runtime.graph.nodes.workflow_context.workflow_command_router_node
 edges:
   - from: start
     to: a
@@ -62,7 +62,7 @@ version: 1
 nodes:
   - id: a
     type: python
-    handler: runtime.graph.nodes.mvp_context_loader.mvp_command_router_node
+    handler: runtime.graph.nodes.workflow_context.workflow_command_router_node
 edges:
   - from: start
     to: a

@@ -9,7 +9,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from runtime_mvp_fixtures import create_mvp_repo  # noqa: E402
+from runtime_fixtures import create_runtime_repo  # noqa: E402
 
 from runtime.graph.app import (  # noqa: E402
     resume_recorded_workflow,
@@ -47,21 +47,12 @@ def add_api_test_context_files(repo_root: Path) -> None:
         "workflows/runtime/rag-automation-case.workflow.yml": (
             REPO_ROOT / "workflows/runtime/rag-automation-case.workflow.yml"
         ).read_text(encoding="utf-8"),
-        "docs/automation-case-generation.md": (
-            REPO_ROOT / "docs/automation-case-generation.md"
-        ).read_text(encoding="utf-8"),
-        "docs/rag-architecture.md": (REPO_ROOT / "docs/rag-architecture.md").read_text(
+        "docs/rag-design.md": (REPO_ROOT / "docs/rag-design.md").read_text(
             encoding="utf-8"
         ),
         "docs/rag-run-record-spec.md": (REPO_ROOT / "docs/rag-run-record-spec.md").read_text(
             encoding="utf-8"
         ),
-        "workflows/10-rag-automation-case-generation-workflow.md": (
-            REPO_ROOT / "workflows/10-rag-automation-case-generation-workflow.md"
-        ).read_text(encoding="utf-8"),
-        "prompts/rag-automation-case-prompt.md": (
-            REPO_ROOT / "prompts/rag-automation-case-prompt.md"
-        ).read_text(encoding="utf-8"),
         "rules/automation-case-rules.md": (REPO_ROOT / "rules/automation-case-rules.md").read_text(
             encoding="utf-8"
         ),
@@ -103,7 +94,7 @@ def test_api_prompt_builder_uses_canonical_file_as_single_source():
 
 
 def test_api_test_draft_with_api_doc_generates_candidate_artifact(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_api_test_context_files(repo_root)
 
     result = run_api_test_draft_workflow(
@@ -126,7 +117,7 @@ def test_api_test_draft_with_api_doc_generates_candidate_artifact(tmp_path):
 
 
 def test_api_test_draft_without_api_doc_marks_missing_contract(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_api_test_context_files(repo_root)
     (repo_root / "prd/demo-requirement/input/api.md").unlink()
 
@@ -146,7 +137,7 @@ def test_api_test_draft_without_api_doc_marks_missing_contract(tmp_path):
 
 
 def test_api_cases_yaml_missing_contract_does_not_invent_method_path_or_request(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     state = QAWorkflowState(
         prd_path="prd/demo-requirement",
         task_type="api_test_draft",
@@ -174,7 +165,7 @@ def test_api_cases_yaml_missing_contract_does_not_invent_method_path_or_request(
 
 
 def test_api_test_draft_uses_discovery_json_when_api_doc_missing(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_api_test_context_files(repo_root)
     (repo_root / "prd/demo-requirement/input/api.md").unlink()
     discovery_dir = repo_root / "prd/demo-requirement/runs/run-discovery"
@@ -214,7 +205,7 @@ def test_api_test_draft_uses_discovery_json_when_api_doc_missing(tmp_path):
 
 
 def test_api_cases_yaml_discovery_contract_pending_confirmation(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     discovery_dir = repo_root / "prd/demo-requirement/runs/run-discovery"
     discovery_dir.mkdir(parents=True)
     (discovery_dir / "api_discovery_report.discovery.json").write_text(
@@ -311,7 +302,7 @@ def test_api_cases_yaml_validator_rejects_method_path_when_contract_missing():
 
 
 def test_api_cases_yaml_with_api_doc_generates_confirmed_method_path(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     api_doc = (repo_root / "prd/demo-requirement/input/api.md").read_text(encoding="utf-8")
     state = QAWorkflowState(
         prd_path="prd/demo-requirement",
@@ -337,7 +328,7 @@ def test_api_cases_yaml_with_api_doc_generates_confirmed_method_path(tmp_path):
 
 
 def test_api_test_draft_approve_write_only_writes_run_preview(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_api_test_context_files(repo_root)
 
     result = run_api_test_draft_workflow(
@@ -391,7 +382,7 @@ def test_api_test_draft_approve_write_only_writes_run_preview(tmp_path):
 
 
 def test_rag_automation_case_workflow_runs_as_stategraph_sidecar(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_api_test_context_files(repo_root)
 
     result = run_rag_automation_case_workflow(
@@ -410,7 +401,7 @@ def test_rag_automation_case_workflow_runs_as_stategraph_sidecar(tmp_path):
     assert "context_loader" in result.executed_nodes
     assert "api_test_generator" in result.executed_nodes
     assert "artifact_preview_writer" in result.executed_nodes
-    assert "prompts/rag-automation-case-prompt.md" in result.loaded_files
+    assert "prompts/api-test-generation.md" in result.loaded_files
     preview = repo_root / result.output_paths["api_test_draft"]
     assert preview.is_file()
     assert preview.with_name(API_CASES_YAML_FILENAME).is_file()
@@ -419,7 +410,7 @@ def test_rag_automation_case_workflow_runs_as_stategraph_sidecar(tmp_path):
 
 
 def test_api_test_draft_promote_writes_formal_artifact(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_api_test_context_files(repo_root)
 
     result = run_api_test_draft_workflow(
@@ -459,7 +450,7 @@ def test_api_test_draft_promote_writes_formal_artifact(tmp_path):
 
 
 def test_api_test_draft_needs_changes_routes_to_reviser_and_interrupts_again(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_api_test_context_files(repo_root)
 
     result = run_api_test_draft_workflow(
@@ -484,7 +475,7 @@ def test_api_test_draft_needs_changes_routes_to_reviser_and_interrupts_again(tmp
     assert "api_test_reviser" in resumed.executed_nodes
     assert "artifact_preview_writer" in resumed.executed_nodes
     assert resumed.human_review["interrupt"]
-    preview = repo_root / f"prd/demo-requirement/runs/{result.run_id}/artifact-preview.md"
+    preview = repo_root / resumed.output_paths["api_test_draft"]
     assert "自动修订记录" in preview.read_text(encoding="utf-8")
     assert not (repo_root / "prd/demo-requirement/artifacts/api-test-draft.md").exists()
 
@@ -510,7 +501,7 @@ def test_intent_routes_api_test_draft_without_llm(monkeypatch):
 
 
 def test_api_test_quality_rejects_missing_sections_and_execution_claims(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     state = QAWorkflowState(
         user_input="生成接口测试草稿",
         prd_path="prd/demo-requirement",
@@ -533,7 +524,7 @@ def test_api_test_quality_rejects_missing_sections_and_execution_claims(tmp_path
 
 
 def test_api_test_quality_rejects_cases_without_source_refs(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     payload = {
         "schema_version": "agentic-qa.api-cases.v1.1",
         "artifact_type": "api_automation_cases",

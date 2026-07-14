@@ -9,8 +9,8 @@ def default_repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _run_mvp_graph_facade(
-    function_name: str,
+def _run_workflow_entry(
+    workflow_id: str,
     *,
     user_input: str,
     prd_path: Path | str,
@@ -20,10 +20,10 @@ def _run_mvp_graph_facade(
     record_run: bool,
     use_llm: bool,
 ) -> RuntimeResult:
-    from runtime.graph import mvp_graph
+    from runtime.workflow import run_workflow_by_id
 
-    run_fn = getattr(mvp_graph, function_name)
-    return run_fn(
+    return run_workflow_by_id(
+        workflow_id=workflow_id,
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -44,8 +44,8 @@ def run_requirement_analysis_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    return _run_mvp_graph_facade(
-        "run_requirement_analysis_workflow",
+    return _run_workflow_entry(
+        "requirement_analysis",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -56,7 +56,7 @@ def run_requirement_analysis_workflow(
     )
 
 
-def run_mvp_testcase_generation_workflow(
+def run_testcase_generation_workflow(
     user_input: str,
     prd_path: Path | str,
     *,
@@ -66,8 +66,8 @@ def run_mvp_testcase_generation_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    return _run_mvp_graph_facade(
-        "run_mvp_testcase_generation_workflow",
+    return _run_workflow_entry(
+        "testcase_generation",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -78,7 +78,7 @@ def run_mvp_testcase_generation_workflow(
     )
 
 
-def run_mvp_analysis_and_testcases_workflow(
+def run_analysis_and_testcases_workflow(
     user_input: str,
     prd_path: Path | str,
     *,
@@ -88,8 +88,8 @@ def run_mvp_analysis_and_testcases_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    return _run_mvp_graph_facade(
-        "run_mvp_analysis_and_testcases_workflow",
+    return _run_workflow_entry(
+        "analysis_and_testcases",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -110,8 +110,8 @@ def run_api_test_draft_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    return _run_mvp_graph_facade(
-        "run_api_test_draft_workflow",
+    return _run_workflow_entry(
+        "api_test_draft",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -132,8 +132,8 @@ def run_rag_automation_case_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    return _run_mvp_graph_facade(
-        "run_rag_automation_case_workflow",
+    return _run_workflow_entry(
+        "rag_automation_case_generation",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -154,8 +154,8 @@ def run_ui_test_draft_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    return _run_mvp_graph_facade(
-        "run_ui_test_draft_workflow",
+    return _run_workflow_entry(
+        "ui_test_draft",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -176,8 +176,8 @@ def run_api_discovery_report_workflow(
     record_run: bool = True,
     use_llm: bool = False,
 ) -> RuntimeResult:
-    return _run_mvp_graph_facade(
-        "run_api_discovery_report_workflow",
+    return _run_workflow_entry(
+        "api_discovery_report",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -198,8 +198,8 @@ def run_qa_report_workflow(
     record_run: bool = True,
     use_llm: bool = True,
 ) -> RuntimeResult:
-    return _run_mvp_graph_facade(
-        "run_qa_report_workflow",
+    return _run_workflow_entry(
+        "qa_report",
         user_input=user_input,
         prd_path=Path(prd_path),
         repo_root=repo_root,
@@ -255,14 +255,15 @@ def promote_artifacts(
     run_id: str,
     *,
     repo_root: Path | None = None,
-    task_type: str = "mvp_analysis_testcases",
+    task_type: str = "analysis_and_testcases",
 ) -> RuntimeResult:
     root = (repo_root or default_repo_root()).resolve()
-    from runtime.graph.mvp_graph import promote_mvp_artifacts
+    from runtime.graph.nodes.artifact_promoter import promote_artifacts as promote_node_artifacts
 
-    return promote_mvp_artifacts(
+    state = promote_node_artifacts(
         prd_path,
         run_id,
         repo_root=root,
         task_type=task_type,
     )
+    return RuntimeResult.from_state(state)

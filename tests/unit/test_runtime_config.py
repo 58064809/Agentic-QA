@@ -5,10 +5,11 @@ from pathlib import Path
 
 import pytest
 
-import runtime.cli as cli
+from runtime.cli import promoter as cli
 from runtime.config import _mapping, load_app_config
-from runtime.graph.nodes.mvp_context_loader import mvp_workflow_selector_node
+from runtime.graph.nodes.workflow_context import workflow_context_selector_node
 from runtime.graph.state import QAWorkflowState
+from runtime.intent import route_user_intent
 from runtime.llm.config import OpenAICompatibleConfig
 from runtime.session import SessionManager
 from runtime.workflow.runner import _graph_config
@@ -43,8 +44,8 @@ def test_load_app_config_merges_tracked_and_local_files(tmp_path: Path) -> None:
         tmp_path / "configs/config.yaml",
         """
 workflow:
-  default_workflow_files:
-    - workflows/default.md
+  use_llm:
+    requirement_analysis: false
 rag:
   enabled: false
   top_k: 3
@@ -61,7 +62,7 @@ rag:
 
     config = load_app_config(tmp_path)
 
-    assert config.workflow.default_workflow_files == ["workflows/default.md"]
+    assert config.workflow.use_llm_for("requirement_analysis") is False
     assert config.llm.enabled is True
     assert config.rag["enabled"] is True
     assert config.rag["top_k"] == 3
@@ -79,7 +80,7 @@ workflow:
   use_llm:
     requirement_analysis: false
     testcase_generation: true
-    mvp_analysis_testcases: false
+    analysis_and_testcases: false
 """,
     )
 
@@ -99,26 +100,20 @@ def test_load_app_config_rejects_non_mapping_yaml(tmp_path: Path) -> None:
         load_app_config(tmp_path)
 
 
-def test_workflow_selector_uses_configured_workflow_files(tmp_path: Path) -> None:
-    write_file(
-        tmp_path / "configs/config.yaml",
-        """
-workflow:
-  intent_workflow_files:
-    testcase_generation:
-      - workflows/custom-testcase.md
-""",
-    )
-    write_file(tmp_path / "workflows/custom-testcase.md")
+def test_workflow_selector_uses_canonical_registry_files(tmp_path: Path) -> None:
+    from runtime.workflow.catalog import TESTCASE_CONTEXT_FILES
+
+    for relative_path in TESTCASE_CONTEXT_FILES:
+        write_file(tmp_path / relative_path)
     state = QAWorkflowState(
         user_input="请生成测试用例",
         prd_path="prd/demo",
         intent="testcase_generation",
     )
 
-    mvp_workflow_selector_node(state, tmp_path)
+    workflow_context_selector_node(state, tmp_path)
 
-    assert state.workflow_files == ["workflows/custom-testcase.md"]
+    assert state.workflow_files == list(TESTCASE_CONTEXT_FILES)
     assert not state.errors
 
 
@@ -130,7 +125,7 @@ workflow:
   use_llm:
     requirement_analysis: false
     testcase_generation: true
-    mvp_analysis_testcases: false
+    analysis_and_testcases: false
 """,
     )
     calls: list[tuple[str, bool]] = []
@@ -144,12 +139,12 @@ workflow:
         return object()
 
     def fake_mvp(**kwargs):
-        calls.append(("mvp_analysis_testcases", kwargs["use_llm"]))
+        calls.append(("analysis_and_testcases", kwargs["use_llm"]))
         return object()
 
     monkeypatch.setattr(cli, "run_requirement_analysis_workflow", fake_requirement)
-    monkeypatch.setattr(cli, "run_mvp_testcase_generation_workflow", fake_testcase)
-    monkeypatch.setattr(cli, "run_mvp_analysis_and_testcases_workflow", fake_mvp)
+    monkeypatch.setattr(cli, "run_testcase_generation_workflow", fake_testcase)
+    monkeypatch.setattr(cli, "run_analysis_and_testcases_workflow", fake_mvp)
 
     cli._run_workflow(
         "分析",
@@ -168,7 +163,7 @@ workflow:
     cli._run_workflow(
         "全部",
         "prd/demo",
-        intent="mvp",
+        intent="analysis_and_testcases",
         repo_root=tmp_path,
         session=object(),  # type: ignore[arg-type]
     )
@@ -176,7 +171,7 @@ workflow:
     assert calls == [
         ("requirement_analysis", False),
         ("testcase_generation", True),
-        ("mvp_analysis_testcases", False),
+        ("analysis_and_testcases", False),
     ]
 
 
@@ -196,12 +191,12 @@ def test_cli_run_workflow_accepts_session_without_debug_flag(
         calls.append(kwargs["approve_write"])
         return object()
 
-    monkeypatch.setattr(cli, "run_mvp_analysis_and_testcases_workflow", fake_mvp)
+    monkeypatch.setattr(cli, "run_analysis_and_testcases_workflow", fake_mvp)
 
     cli._run_workflow(
         "all",
         "prd/demo",
-        intent="mvp",
+        intent="analysis_and_testcases",
         repo_root=tmp_path,
         session=session,
     )
@@ -226,7 +221,7 @@ workflow:
         calls.append(kwargs["use_llm"])
         return object()
 
-    monkeypatch.setattr(cli, "run_mvp_testcase_generation_workflow", fake_testcase)
+    monkeypatch.setattr(cli, "run_testcase_generation_workflow", fake_testcase)
 
     cli._run_workflow(
         "用例",
@@ -249,7 +244,7 @@ llm:
 """,
     )
 
-    route = cli._route_user_intent("帮我分析 prd/demo", tmp_path)
+    route = route_user_intent("帮我分析 prd/demo", tmp_path)
 
     assert route.intent == "requirement_analysis"
     assert "配置已禁用 LLM 语义路由" in route.summary

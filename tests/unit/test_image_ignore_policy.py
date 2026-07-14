@@ -7,9 +7,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from runtime.graph.mvp_graph import (  # noqa: E402
-    run_mvp_testcase_generation_workflow,
+from runtime.graph.app import (  # noqa: E402
     run_requirement_analysis_workflow,
+    run_testcase_generation_workflow,
 )
 from runtime.llm.prompt_builder import (  # noqa: E402
     build_requirement_analysis_prompt,
@@ -27,9 +27,6 @@ def create_repo(root: Path, *, requirement: str | None = None) -> Path:
         "AGENTS.md": "Agent 协作规范",
         "COMMANDS.md": "命令路由",
         "docs/roadmap.md": "Runtime 路线图",
-        "workflows/01-requirement-analysis-workflow.md": "需求分析工作流",
-        "workflows/10-runtime-testcase-generation-workflow.md": "Runtime 测试用例工作流",
-        "workflows/02-testcase-generation-workflow.md": "测试用例工作流",
         "workflows/runtime/analysis-and-testcases.workflow.yml": (
             REPO_ROOT / "workflows/runtime/analysis-and-testcases.workflow.yml"
         ).read_text(encoding="utf-8"),
@@ -126,7 +123,7 @@ def test_no_image_does_not_warn_about_prototype_notes(tmp_path):
         record_run=False,
         use_llm=False,
     )
-    mvp_result = run_mvp_testcase_generation_workflow(
+    testcase_result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,
@@ -138,9 +135,9 @@ def test_no_image_does_not_warn_about_prototype_notes(tmp_path):
     assert analysis_result.prototype_notes["requirement_has_images"] is False
     assert analysis_result.prototype_notes["warning"] is None
     assert not any("prototype-notes" in warning for warning in analysis_result.warnings)
-    assert mvp_result.success
-    assert mvp_result.prototype_notes["warning"] is None
-    assert not any("prototype-notes" in warning for warning in mvp_result.warnings)
+    assert testcase_result.success
+    assert testcase_result.prototype_notes["warning"] is None
+    assert not any("prototype-notes" in warning for warning in testcase_result.warnings)
 
 
 def test_requirement_image_reference_produces_strong_warning(tmp_path):
@@ -239,7 +236,7 @@ def test_testcase_generation_does_not_invent_from_images_or_prototype_notes(tmp_
     )
     write_file(repo_root / "prd/demo-requirement/prototype-notes.md", prototype_notes_content())
 
-    result = run_mvp_testcase_generation_workflow(
+    result = run_testcase_generation_workflow(
         "请生成测试用例",
         "prd/demo-requirement",
         repo_root=repo_root,

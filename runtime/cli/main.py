@@ -1,4 +1,4 @@
-"""CLI: 主入口 + 对话循环。入口函数 ``main()`` 由 runtime.cli 包 re-export。"""
+"""CLI 主入口与对话循环。"""
 
 from __future__ import annotations
 
@@ -59,12 +59,19 @@ def _print_result(result, intent: str) -> None:
         "ui_test_draft": "UI 自动化草稿生成",
         "api_discovery_report": "接口发现报告生成",
         "qa_report": "QA 报告生成",
-        "report_generation": "QA 报告生成",
-        "mvp": "需求分析 + 测试用例",
+        "analysis_and_testcases": "需求分析 + 测试用例",
     }
     task_name = intent_names.get(intent, intent)
 
-    table = Table(title=f"✅ {task_name} 完成", show_header=False, box=None)
+    waiting_for_review = (
+        result.run_status == "interrupted" or result.review_status == "needs_human_review"
+    )
+    title = (
+        f"🟡 {task_name}候选产物已生成，等待人工审核"
+        if waiting_for_review
+        else f"✅ {task_name}完成"
+    )
+    table = Table(title=title, show_header=False, box=None)
     table.add_column("属性", style="cyan")
     table.add_column("值")
 
@@ -78,6 +85,8 @@ def _print_result(result, intent: str) -> None:
             table.add_row("质量门", qe)
     if result.run_id:
         table.add_row("运行记录", f".runtime/runs/{result.run_id}/")
+    if waiting_for_review:
+        table.add_row("下一步", result.next_action or "审核候选产物")
 
     console.print(table)
     console.print()
@@ -148,7 +157,7 @@ def _dialogue_loop(
             continue
 
         prd_path = route.prd_path or _extract_prd_workspace_path(line) or last_prd
-        intent = route.intent or last_intent or "mvp"
+        intent = route.intent or last_intent or "analysis_and_testcases"
 
         if not prd_path and route.url:
             try:
@@ -271,7 +280,7 @@ def main() -> int:
 
     intent = route.intent
     if intent == "resume" or not intent:
-        intent = session.meta.last_intent or "mvp"
+        intent = session.meta.last_intent or "analysis_and_testcases"
 
     session.update_meta(last_prd_path=prd_rel, last_intent=intent)
     session.append_history("user", user_input)

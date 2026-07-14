@@ -225,20 +225,12 @@ class FaissVectorStore:
         """从磁盘加载索引和元数据。"""
         index_path = directory / "index.faiss"
         metadata_path = directory / "metadata.json"
-        legacy_metadata_path = directory / "metadata.pkl"
 
-        has_metadata = metadata_path.is_file() or legacy_metadata_path.is_file()
-        if not index_path.is_file() or not has_metadata:
+        if not index_path.is_file() or not metadata_path.is_file():
             return None
 
         index = faiss.read_index(str(index_path))
-        if metadata_path.is_file():
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        else:
-            import pickle
-
-            with open(legacy_metadata_path, "rb") as f:
-                metadata = pickle.load(f)
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
 
         return index, metadata
 

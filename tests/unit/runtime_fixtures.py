@@ -17,14 +17,11 @@ def write_file(path: Path, content: str = "placeholder") -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def create_mvp_repo(root: Path) -> Path:
+def create_runtime_repo(root: Path) -> Path:
     required_files = {
         "AGENTS.md": "Agent 协作规范",
         "COMMANDS.md": "命令路由",
         "docs/roadmap.md": "Runtime 路线图",
-        "workflows/01-requirement-analysis-workflow.md": "需求分析工作流",
-        "workflows/10-runtime-testcase-generation-workflow.md": "Runtime 测试用例工作流",
-        "workflows/02-testcase-generation-workflow.md": "测试用例工作流",
         "workflows/runtime/analysis-and-testcases.workflow.yml": (
             REPO_ROOT / "workflows/runtime/analysis-and-testcases.workflow.yml"
         ).read_text(encoding="utf-8"),
@@ -51,32 +48,20 @@ def create_mvp_repo(root: Path) -> Path:
         ).read_text(encoding="utf-8"),
         "prompts/requirement-analysis-prompt.md": "需求分析 Prompt",
         "prompts/testcase-design-prompt.md": "测试用例 Prompt",
-        "prompts/api-test-generation.md": (REPO_ROOT / "prompts/api-test-generation.md").read_text(
-            encoding="utf-8"
-        ),
-        "prompts/rag-automation-case-prompt.md": (
-            REPO_ROOT / "prompts/rag-automation-case-prompt.md"
+        "prompts/api-test-generation.md": (
+            REPO_ROOT / "prompts/api-test-generation.md"
         ).read_text(encoding="utf-8"),
-        "docs/api-test-generation.md": (REPO_ROOT / "docs/api-test-generation.md").read_text(
-            encoding="utf-8"
-        ),
-        "docs/automation-case-generation.md": (
-            REPO_ROOT / "docs/automation-case-generation.md"
+        "docs/api-test-generation.md": (
+            REPO_ROOT / "docs/api-test-generation.md"
         ).read_text(encoding="utf-8"),
-        "docs/rag-architecture.md": (REPO_ROOT / "docs/rag-architecture.md").read_text(
+        "docs/rag-design.md": (REPO_ROOT / "docs/rag-design.md").read_text(
             encoding="utf-8"
         ),
         "docs/rag-run-record-spec.md": (REPO_ROOT / "docs/rag-run-record-spec.md").read_text(
             encoding="utf-8"
         ),
-        "workflows/10-rag-automation-case-generation-workflow.md": (
-            REPO_ROOT / "workflows/10-rag-automation-case-generation-workflow.md"
-        ).read_text(encoding="utf-8"),
         "rules/requirement-analysis-rules.md": "需求分析规则",
         "rules/testcase-rules.md": "测试用例规则",
-        "rules/api-test-rules.md": (REPO_ROOT / "rules/api-test-rules.md").read_text(
-            encoding="utf-8"
-        ),
         "rules/automation-case-rules.md": (REPO_ROOT / "rules/automation-case-rules.md").read_text(
             encoding="utf-8"
         ),

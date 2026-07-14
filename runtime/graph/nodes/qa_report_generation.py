@@ -3,8 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from runtime.graph.nodes.mvp_context_loader import TASK_QA_REPORT
-from runtime.graph.nodes.mvp_generation import (
+from runtime.graph.nodes.artifact_generation import (
     _build_rag_context,
     _generate_with_optional_llm,
     _path_content,
@@ -12,6 +11,7 @@ from runtime.graph.nodes.mvp_generation import (
     _render_source_files,
     _upsert_artifact,
 )
+from runtime.graph.nodes.workflow_context import TASK_QA_REPORT
 from runtime.graph.state import QAWorkflowState
 from runtime.llm.prompt_builder import build_report_prompt
 from runtime.workspace import is_run_candidate_markdown_path, resolve_prd_path

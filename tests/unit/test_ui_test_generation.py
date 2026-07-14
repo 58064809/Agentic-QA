@@ -8,7 +8,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from runtime_mvp_fixtures import create_mvp_repo  # noqa: E402
+from runtime_fixtures import create_runtime_repo  # noqa: E402
 
 from runtime.graph.app import (  # noqa: E402
     resume_recorded_workflow,
@@ -61,7 +61,7 @@ def test_intent_routes_ui_test_draft_without_llm(monkeypatch):
 
 
 def test_ui_test_draft_approve_write_only_writes_run_preview(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_ui_context_files(repo_root)
 
     result = run_ui_test_draft_workflow(
@@ -83,7 +83,7 @@ def test_ui_test_draft_approve_write_only_writes_run_preview(tmp_path):
 
 
 def test_ui_test_draft_fallback_passes_quality_gate_without_llm(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_ui_context_files(repo_root)
 
     result = run_ui_test_draft_workflow(
@@ -99,7 +99,7 @@ def test_ui_test_draft_fallback_passes_quality_gate_without_llm(tmp_path):
 
 
 def test_android_ui_test_draft_prioritizes_emulator_and_appium(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_ui_context_files(repo_root)
 
     result = run_ui_test_draft_workflow(
@@ -132,7 +132,7 @@ def test_android_ui_test_draft_prioritizes_emulator_and_appium(tmp_path):
 
 
 def test_ui_test_draft_promote_writes_formal_artifact(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     add_ui_context_files(repo_root)
 
     result = run_ui_test_draft_workflow(
@@ -163,7 +163,7 @@ def test_ui_test_draft_promote_writes_formal_artifact(tmp_path):
 
 
 def test_ui_test_quality_rejects_missing_sections_and_execution_claims(tmp_path):
-    repo_root = create_mvp_repo(tmp_path)
+    repo_root = create_runtime_repo(tmp_path)
     state = QAWorkflowState(
         user_input="生成 UI 自动化草稿",
         prd_path="prd/demo-requirement",
