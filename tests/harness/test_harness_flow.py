@@ -7,7 +7,12 @@ import pytest
 
 from harness import Harness, PlanTask, QAPlan, ReviewDecision, TaskRequest
 from harness.budget import BudgetLimits
-from harness.engine import AgentOutput, build_default_plan, default_recorded_artifact
+from harness.engine import (
+    AgentOutput,
+    _quality_check,
+    build_default_plan,
+    default_recorded_artifact,
+)
 from harness.evals import recorded_model_gateway
 from harness.model import CallableModelGateway
 
@@ -341,3 +346,41 @@ def test_internal_task_output_is_not_written_as_public_candidate(tmp_path: Path)
     assert not (
         tmp_path / f"workspaces/demo/candidates/{snapshot.run_id}/risk_analysis.md"
     ).exists()
+
+
+def test_testcase_quality_gate_rejects_multiline_markdown_rows() -> None:
+    content = "\n".join(
+        [
+            "| 用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | "
+            "测试步骤 | 预期结果 | 断言/证据 | 待确认项 |",
+            "|" + "|".join(["---"] * 11) + "|",
+            "| TC-001 | source | title | 功能 | P1 | ready | data | 1. first",
+            "2. second | result | evidence | none |",
+            "# 覆盖矩阵",
+            "| 规则/风险 | 测试用例 | 映射依据 |",
+            "|---|---|---|",
+            "| rule | TC-001 | source |",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="multiline"):
+        _quality_check("testcases", content)
+
+
+def test_requirement_quality_gate_rejects_embedded_testcases() -> None:
+    content = "\n".join(
+        [
+            "# Requirement Analysis",
+            "## 来源",
+            "- source",
+            "## 已确认规则",
+            "- rule",
+            "## 待确认项",
+            "- pending",
+            "# 测试用例",
+            "| 用例ID |",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="must not embed testcases"):
+        _quality_check("requirement_analysis", content)

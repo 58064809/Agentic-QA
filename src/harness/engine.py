@@ -81,13 +81,16 @@ ARTIFACT_OUTPUT_CONTRACTS = {
     "requirement_analysis": (
         "输出完整 Markdown 需求分析，至少包含：来源、已确认规则、推断、冲突/歧义、"
         "待确认项和测试影响。每条事实必须可追踪到 source；不得补造缺失配置。"
+        "只输出需求分析，不得附带测试用例表。若同一术语存在不同条件口径，必须列为冲突。"
     ),
     "testcases": (
         "输出完整 Markdown 测试用例。主表表头必须严格按此顺序且逐字一致：\n"
         "| 用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | "
         "测试步骤 | 预期结果 | 断言/证据 | 待确认项 |\n"
         "表格至少包含一条可执行用例；随后输出“覆盖矩阵”，包含规则/风险、用例和映射依据，"
-        "且至少一条有效映射。不得把待确认规则写成确定预期。"
+        "且至少一条有效映射。每条 Markdown 表格记录必须保持在单个物理行内，多步骤使用 "
+        "<br> 分隔。不得把待确认规则写成确定预期；没有 OpenAPI 或数据模型证据时，不得"
+        "编造接口调用、数据库表或字段。"
     ),
 }
 
@@ -186,6 +189,36 @@ def _testcase_template(goal: str) -> str:
 def default_recorded_artifact(artifact: str, goal: str) -> str:
     if artifact == "testcases":
         return _testcase_template(goal)
+    if artifact == "requirement_analysis":
+        return "\n".join(
+            [
+                "# Requirement Analysis 候选",
+                "",
+                "## 来源",
+                "",
+                "- user_goal",
+                "",
+                "## 已确认规则",
+                "",
+                "- 当前仅确认用户提交的测试目标。",
+                "",
+                "## 推断",
+                "",
+                "- 无。",
+                "",
+                "## 冲突/歧义",
+                "",
+                "- 无可确认冲突。",
+                "",
+                "## 待确认项",
+                "",
+                "- 需求来源、测试环境和验收规则待补充。",
+                "",
+                "## 测试影响",
+                "",
+                f"- 当前目标：{goal}",
+            ]
+        )
     title = artifact.replace("_", " ").title()
     return "\n".join(
         [
@@ -801,6 +834,15 @@ def _tool_key(
 def _quality_check(artifact: str, content: str) -> None:
     if not content.strip():
         raise ValueError(f"{artifact} candidate is empty")
+    if artifact == "requirement_analysis":
+        required_sections = ("## 来源", "## 已确认", "## 待确认")
+        missing_sections = [section for section in required_sections if section not in content]
+        if missing_sections:
+            raise ValueError(
+                f"requirement_analysis candidate misses required sections: {missing_sections}"
+            )
+        if "# 测试用例" in content or "| 用例ID |" in content:
+            raise ValueError("requirement_analysis candidate must not embed testcases")
     if artifact == "testcases":
         missing = [header for header in TESTCASE_HEADERS if header not in content]
         if missing:
@@ -812,12 +854,44 @@ def _quality_check(artifact: str, content: str) -> None:
         )
         if header_index is None:
             raise ValueError("testcases candidate has no exact ordered 11-column header row")
-        data_rows = [
-            cells for cells in rows[header_index + 2 :] if len(cells) == len(TESTCASE_HEADERS)
+        coverage_index = next(
+            (
+                index
+                for index, line in enumerate(content.splitlines())
+                if index > header_index and line.lstrip().startswith("#") and "覆盖矩阵" in line
+            ),
+            None,
+        )
+        if coverage_index is None:
+            raise ValueError("testcases candidate has no coverage matrix section")
+        main_lines = content.splitlines()[header_index + 2 : coverage_index]
+        invalid_lines = [
+            line
+            for line in main_lines
+            if line.strip()
+            and not line.strip().startswith("|")
+            and not line.strip().startswith(">")
         ]
+        if invalid_lines:
+            raise ValueError(
+                "testcases candidate contains multiline or non-table content inside main table"
+            )
+        data_rows = [_markdown_cells(line) for line in main_lines if line.strip().startswith("|")]
+        if any(len(row) != len(TESTCASE_HEADERS) for row in data_rows):
+            raise ValueError("testcases candidate contains a row that is not exactly 11 columns")
         if not data_rows or not any(row[0] and row[2] for row in data_rows):
             raise ValueError("testcases candidate has no valid 11-column data row")
-        if "覆盖矩阵" in content and content.count("|") < 20:
+        coverage_rows = [
+            _markdown_cells(line)
+            for line in content.splitlines()[coverage_index + 1 :]
+            if line.strip().startswith("|")
+        ]
+        if (
+            len(coverage_rows) < 3
+            or coverage_rows[0]
+            not in (["规则/风险", "用例", "映射依据"], ["规则/风险", "测试用例", "映射依据"])
+            or not any(len(row) == 3 and all(row) for row in coverage_rows[2:])
+        ):
             raise ValueError("coverage matrix has no valid mapping")
 
 
