@@ -14,4 +14,4 @@ Schema、allowlist、风险和限制。无 ReviewDecision 的 `resume` 恢复可
 
 状态只使用 `planning`、`running`、`needs_human_review`、`partial`、`rejected`、
 `needs_revision`、`published`、`failed` 和 `recoverable`。`RunSnapshot` 同时公开待处理任务、
-委派、工具调用、模型 usage、预算和 interrupt 摘要。不加载旧状态别名。
+委派、工具调用、模型 usage、模型路由、预算和 interrupt 摘要。不加载旧状态别名。

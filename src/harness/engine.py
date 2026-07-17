@@ -23,7 +23,7 @@ from harness.contracts import (
     RunSnapshot,
     TaskRequest,
 )
-from harness.model import ModelGateway
+from harness.model import ModelGateway, ModelPolicy
 from harness.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.review import apply_review, validate_review_decision
 from harness.security import sanitize_untrusted
@@ -197,6 +197,7 @@ class HarnessEngine:
         self.skills = skills
         self.tools = tools
         self.model = model
+        self.model_policy = ModelPolicy()
         self.limits = limits or BudgetLimits()
         self.tool_handlers = tool_handlers or {}
         self._event_lock = Lock()
@@ -204,7 +205,8 @@ class HarnessEngine:
     def execute(self, request: TaskRequest, emit: Any | None = None) -> RunSnapshot:
         if self.model is None:
             raise RuntimeError(
-                "未配置全局模型；设置 AGENTIC_QA_MODEL 和模型密钥环境变量，"
+                "未配置模型；设置 DEEPSEEK_API_KEY，"
+                "或显式配置 AGENTIC_QA_MODEL 和模型密钥环境变量，"
                 "或显式注入 ModelGateway"
             )
         run_id = f"run-{datetime.now(tz=UTC):%Y%m%d-%H%M%S}-{uuid4().hex[:8]}"
@@ -292,6 +294,8 @@ class HarnessEngine:
                 )
                 sequence += 1
                 self.store.append_event(snapshot.workspace, item)
+                if event_type == "model_routed":
+                    snapshot.model_routes.append(dict(item.data))
                 if emit:
                     emit(item)
 
@@ -350,6 +354,8 @@ class HarnessEngine:
             if self.model is None:  # guarded by execute, retained for type narrowing
                 raise RuntimeError("model is not configured")
             budget.consume_model()
+            route = self.model_policy.for_planner(request)
+            event("model_routed", agent="qa_supervisor", **self.model.describe_route(route))
             plan = self.model.structured(
                 system=self.agents.get("qa_supervisor").prompt,
                 prompt=(
@@ -357,6 +363,7 @@ class HarnessEngine:
                     "只能使用已注册 Agent，并为任务声明证据要求。\n" + request.model_dump_json()
                 ),
                 response_model=QAPlan,
+                route=route,
             )
             self._validate_plan(plan, request)
             ready = _ready_task_ids(plan, [task.id for task in plan.tasks], [])
@@ -381,6 +388,7 @@ class HarnessEngine:
                     run_id=worker["run_id"],
                     budget=budget,
                     runtime=runtime,
+                    event=event,
                 )
                 result = {
                     "task_id": task.id,
@@ -546,6 +554,7 @@ class HarnessEngine:
         run_id: str,
         budget: Budget,
         runtime: ToolRuntime,
+        event: Any,
     ) -> AgentOutput:
         if self.model is None:
             raise RuntimeError("model is not configured")
@@ -554,6 +563,13 @@ class HarnessEngine:
         tool_results: list[dict[str, Any]] = []
         for step in range(manifest.max_steps):
             budget.consume_model()
+            route = self.model_policy.for_task(task)
+            event(
+                "model_routed",
+                task_id=task.id,
+                agent=manifest.name,
+                **self.model.describe_route(route),
+            )
             result = self.model.structured(
                 system=(
                     manifest.prompt
@@ -578,6 +594,7 @@ class HarnessEngine:
                 tools=[
                     self.tools.get(name).model_dump(mode="json") for name in manifest.tool_allowlist
                 ],
+                route=route,
             )
             if result.tool_requests:
                 for call in result.tool_requests:
@@ -642,6 +659,7 @@ class HarnessEngine:
                 "delegations": state.get("delegations", []),
                 "tool_calls": self.store.tool_records(snapshot.workspace, snapshot.run_id),
                 "model_usage": dict(getattr(self.model, "last_usage", {})),
+                "model_routes": snapshot.model_routes,
                 "interrupt": interrupt_value,
                 "errors": list(dict.fromkeys([*snapshot.errors, *state.get("errors", [])])),
                 "budget": budget.snapshot(),

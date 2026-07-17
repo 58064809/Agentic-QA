@@ -63,10 +63,7 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
 
-$env:AGENTIC_QA_MODEL="<provider-model>"
-$env:AGENTIC_QA_MODEL_BASE_URL="<openai-compatible-base-url>"
-$env:AGENTIC_QA_MODEL_API_KEY_ENV="DEEPSEEK_API_KEY"
-# 在本机环境中设置 DEEPSEEK_API_KEY；不要写入仓库。
+$env:DEEPSEEK_API_KEY="<your-key>"
 
 agentic-qa workspace init demo
 agentic-qa run demo "分析登录需求并生成测试用例"
@@ -76,6 +73,12 @@ agentic-qa resume <run_id> approve --artifact all --reason "人工审核通过"
 
 运行中断后，使用 `agentic-qa resume <run_id>` 从同一 checkpoint 恢复。没有配置模型时，
 `run` 会在创建候选前明确失败；离线评测使用录制响应，不会伪装成真实模型输出。
+
+Harness 会自动使用 `deepseek-v4-flash` 处理常规结构化任务，用
+`deepseek-v4-pro` 处理复杂主管规划、风险策略和失败分诊。规划启用思考模式，常规专家任务
+关闭思考模式；路由决策记录在 run snapshot 和事件中，但不保存模型的 `reasoning_content`。
+可用 `AGENTIC_QA_MODEL_FLASH`、`AGENTIC_QA_MODEL_PRO` 覆盖两档模型；设置
+`AGENTIC_QA_MODEL` 会把两档固定到同一个模型。
 
 其他命令：
 

@@ -222,6 +222,7 @@ class RunSnapshot(StrictModel):
     delegations: list[dict[str, Any]] = Field(default_factory=list)
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     model_usage: dict[str, int] = Field(default_factory=dict)
+    model_routes: list[dict[str, Any]] = Field(default_factory=list)
     interrupt: dict[str, Any] | None = None
     budget: BudgetUsage = Field(default_factory=BudgetUsage)
     errors: list[str] = Field(default_factory=list)

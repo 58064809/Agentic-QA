@@ -6,7 +6,7 @@
 - `Harness.run/stream/resume/inspect`、薄 CLI 和恢复语义。
 - LangGraph 动态并行派发、SQLite checkpoint、真实 interrupt、预算和 partial 降级。
 - `workspaces/<id>/` Artifact Store、硬 Review Gate 和原子 promote。
-- Agent/Skill/Tool manifest、全局单模型网关和 MCP allowlist 快照。
+- Agent/Skill/Tool manifest、单 Provider 的 Flash/Pro 集中模型路由和 MCP allowlist 快照。
 - Workspace/RAG/OpenAPI/API execution/evidence/diff 目标工具。
 - API cases v1.1、execution evidence v1、failure triage v1。
 

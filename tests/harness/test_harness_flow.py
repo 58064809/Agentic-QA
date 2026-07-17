@@ -18,9 +18,14 @@ def _harness(path: Path) -> Harness:
 
 def test_missing_model_fails_before_creating_a_run(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("AGENTIC_QA_MODEL", raising=False)
+    monkeypatch.delenv("AGENTIC_QA_MODEL_FLASH", raising=False)
+    monkeypatch.delenv("AGENTIC_QA_MODEL_PRO", raising=False)
+    monkeypatch.delenv("AGENTIC_QA_MODEL_API_KEY_ENV", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     harness = Harness(tmp_path)
     workspace = harness.init_workspace("demo")
-    with pytest.raises(RuntimeError, match="未配置全局模型"):
+    with pytest.raises(RuntimeError, match="未配置模型"):
         harness.run(TaskRequest(workspace="demo", goal="test"))
     assert not list((workspace / "runs").iterdir())
 
@@ -37,6 +42,10 @@ def test_run_review_and_deterministic_promote(tmp_path: Path) -> None:
     )
 
     assert snapshot.status == "needs_human_review"
+    assert any(
+        route["tier"] == "pro" and route["purpose"] == "expert:risk_strategist"
+        for route in snapshot.model_routes
+    )
     assert {item.artifact for item in snapshot.candidates} == {
         "testcases",
         "requirement_analysis",
