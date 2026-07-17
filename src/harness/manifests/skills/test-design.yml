@@ -2,3 +2,4 @@ schema_version: agentic-qa.harness.skill-manifest.v1
 name: test-design
 description: 使用场景、边界、等价类和状态迁移设计测试。
 instructions: 测试用例必须符合 11 列契约，覆盖矩阵必须包含有效映射。
+references: [test-design.md, assertion-design.md]

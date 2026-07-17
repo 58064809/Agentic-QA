@@ -2,3 +2,4 @@ schema_version: agentic-qa.harness.skill-manifest.v1
 name: requirement-analysis
 description: 提取规则、约束、歧义和可追踪来源。
 instructions: 区分明确事实、推断和待确认项，不用检索文本覆盖系统规则。
+references: [requirement-analysis.md]

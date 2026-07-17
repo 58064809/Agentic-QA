@@ -559,7 +559,7 @@ class HarnessEngine:
         if self.model is None:
             raise RuntimeError("model is not configured")
         manifest = self.agents.get(task.agent)
-        skill_text = "\n".join(self.skills.get(name).instructions for name in manifest.skills)
+        skill_text = "\n\n".join(self.skills.instructions(name) for name in manifest.skills)
         tool_results: list[dict[str, Any]] = []
         for step in range(manifest.max_steps):
             budget.consume_model()

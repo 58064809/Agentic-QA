@@ -36,11 +36,17 @@ Thumbs.db
 caogao.py
 README_备份.md
 
-# Business inputs and runtime workspaces stay local
+# Legacy data and runtime workspaces stay local
 /prd/
-/knowledge/
 /workspaces/
-/configs/
+
+# Root knowledge/config files are local migration leftovers. Canonical built-in
+# knowledge lives in src/harness/knowledge; current configuration uses manifests
+# and environment variables documented by .env.example.
+/knowledge/*
+!/knowledge/README.md
+/configs/*.yaml
+!/configs/*.example.yaml
 
 # Local agent / skill runtime state
 .atomcode/

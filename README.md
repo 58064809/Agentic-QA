@@ -34,7 +34,8 @@ snapshot = harness.resume(
 - 真实 LangGraph StateGraph、SQLite checkpoint、动态 `Send` 并行派发与崩溃恢复。
 - 测试主管结构化规划、依赖检查、专家验收与有限重规划。
 - 需求、风险、测试设计、API、UI、执行、失败分诊、报告和审核辅助专家。
-- 声明式 Agent、Skill、Tool manifest；每个专家只看到 allowlist 中的工具。
+- 声明式 Agent、Skill、Tool manifest；Skill 显式加载随包发布的通用 QA 知识，每个专家只
+  看到自己声明的知识和 allowlist 工具。
 - `agentic-qa.harness.*.v1` 任务、计划、manifest、事件、快照和审核契约。
 - 新 `workspaces/<id>/` 工作区、run checkpoint、候选、review 和发布历史。
 - API cases v1.1、execution evidence v1、failure triage v1 领域 Schema。
@@ -91,6 +92,10 @@ agentic-qa eval run
 
 旧 `prd/` 已退出版本控制并保持本机忽略；Harness 不迁移、不读取或改写它。向新 API
 传入 `prd/...` 会明确报“旧工作区不受 Harness 支持”。
+
+通用测试方法位于 `src/harness/knowledge/` 并由 Skill manifest 显式引用；项目需求、
+OpenAPI 和历史证据应放入 `workspaces/<id>/sources/`。根 `knowledge/` 仅保留本地旧资料，
+不会被 Harness 读取。旧 `configs/*.yaml` 同样不再生效，当前配置来源见 `.env.example`。
 
 ## 文档
 

@@ -15,6 +15,7 @@
 |---|---|
 | 公开 Harness API | `src/harness/harness.py` 与 `src/harness/contracts.py` |
 | Agent / Skill 声明 | `src/harness/manifests/agents/` 与 `src/harness/manifests/skills/` |
+| Skill 内置 QA 知识 | `src/harness/knowledge/`，仅由 Skill manifest 显式引用 |
 | Tool 声明 | `src/harness/manifests/tools/` |
 | LangGraph 状态与动态派发 | `src/harness/backend.py` 与 `src/harness/engine.py` |
 | 预算 | `src/harness/budget.py` |
@@ -44,6 +45,7 @@ promote 成功才写入 `confirmed`。`review_assistant` 只能准备摘要和 d
 - API 机器用例只接受 `agentic-qa.api-cases.v1.1`。
 - 仅完整 OpenAPI 可以确认 endpoint 事实。
 - RAG 引用必须可追踪 source、chunk 和选择依据；检索与 MCP 返回均是不可信上下文。
+- 内置 QA 知识必须随包发布、路径隔离且由 Skill manifest 引用；项目资料不得混入内置知识。
 - API/UI 状态变更只允许在明确测试环境和 execution profile 内执行。
 - error/blocked 证据不得自动生成 Bug，根因不足保持 `unconfirmed`。
 

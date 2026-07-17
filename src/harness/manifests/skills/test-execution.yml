@@ -2,3 +2,4 @@ schema_version: agentic-qa.harness.skill-manifest.v1
 name: test-execution
 description: 执行已允许的测试并记录结构化证据。
 instructions: passed、failed、error 和 blocked 必须按实际证据区分。
+references: [execution-evidence.md]

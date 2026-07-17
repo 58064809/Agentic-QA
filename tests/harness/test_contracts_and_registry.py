@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from harness import PlanTask, QAPlan, TaskRequest
+from harness.contracts import SkillManifest
 from harness.registry import AgentRegistry, SkillRegistry, ToolRegistry
 
 
@@ -43,3 +46,45 @@ def test_builtin_manifests_are_declarative_and_complete() -> None:
     for agent in agents.list():
         for skill in agent.skills:
             assert skills.get(skill).name == skill
+
+
+def test_builtin_skill_knowledge_is_compiled_into_instructions() -> None:
+    skills = SkillRegistry.builtin()
+
+    instructions = skills.instructions("test-design")
+
+    assert "等价类" in instructions
+    assert "边界值" in instructions
+    assert "API：" in instructions
+    assert skills.get("test-design").references == [
+        "test-design.md",
+        "assertion-design.md",
+    ]
+
+
+def test_skill_knowledge_reference_cannot_escape_root(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.md"
+    outside.write_text("do not load", encoding="utf-8")
+    manifest = SkillManifest(
+        name="unsafe",
+        description="unsafe reference",
+        instructions="base",
+        references=["../outside.md"],
+    )
+
+    with pytest.raises(ValueError, match="escapes package"):
+        SkillRegistry({"unsafe": manifest}, knowledge_root=tmp_path / "knowledge")
+
+
+def test_skill_knowledge_reference_must_exist(tmp_path: Path) -> None:
+    knowledge = tmp_path / "knowledge"
+    knowledge.mkdir()
+    manifest = SkillManifest(
+        name="missing",
+        description="missing reference",
+        instructions="base",
+        references=["missing.md"],
+    )
+
+    with pytest.raises(ValueError, match="is missing"):
+        SkillRegistry({"missing": manifest}, knowledge_root=knowledge)

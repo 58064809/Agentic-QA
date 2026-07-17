@@ -143,6 +143,7 @@ class SkillManifest(StrictModel):
     name: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
     description: str = Field(min_length=1)
     instructions: str = Field(min_length=1)
+    references: list[str] = Field(default_factory=list)
 
 
 class ToolRisk(str, Enum):

@@ -86,12 +86,46 @@ class ToolRegistry:
 
 
 class SkillRegistry:
-    def __init__(self, manifests: dict[str, SkillManifest]):
+    def __init__(
+        self,
+        manifests: dict[str, SkillManifest],
+        *,
+        knowledge_root: Path | None = None,
+    ):
         self._items = dict(manifests)
+        self._knowledge_root = knowledge_root.resolve() if knowledge_root else None
+        self._instructions = {
+            name: self._compile_instructions(item) for name, item in self._items.items()
+        }
 
     @classmethod
     def builtin(cls) -> SkillRegistry:
-        return cls(_load_manifests(Path(__file__).parent / "manifests" / "skills", SkillManifest))
+        package_root = Path(__file__).parent
+        return cls(
+            _load_manifests(package_root / "manifests" / "skills", SkillManifest),
+            knowledge_root=package_root / "knowledge",
+        )
+
+    def _compile_instructions(self, manifest: SkillManifest) -> str:
+        sections = [manifest.instructions.strip()]
+        for reference in manifest.references:
+            if self._knowledge_root is None:
+                raise ValueError(f"skill {manifest.name} references knowledge without a root")
+            target = (self._knowledge_root / reference).resolve()
+            if not target.is_relative_to(self._knowledge_root):
+                raise ValueError(
+                    f"skill {manifest.name} knowledge path escapes package: {reference}"
+                )
+            if not target.is_file():
+                raise ValueError(f"skill {manifest.name} knowledge file is missing: {reference}")
+            text = target.read_text(encoding="utf-8").strip()
+            if not text:
+                raise ValueError(f"skill {manifest.name} knowledge file is empty: {reference}")
+            sections.append(f"参考知识：{reference}\n{text}")
+        compiled = "\n\n".join(sections)
+        if len(compiled) > 50_000:
+            raise ValueError(f"skill {manifest.name} compiled instructions exceed 50000 characters")
+        return compiled
 
     def get(self, name: str) -> SkillManifest:
         try:
@@ -101,3 +135,7 @@ class SkillRegistry:
 
     def list(self) -> list[SkillManifest]:
         return list(self._items.values())
+
+    def instructions(self, name: str) -> str:
+        self.get(name)
+        return self._instructions[name]
