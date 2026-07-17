@@ -1,0 +1,4 @@
+schema_version: agentic-qa.harness.skill-manifest.v1
+name: ui-testing
+description: 通过 allowlisted Playwright MCP 验证 UI 流程。
+instructions: 状态变更只允许在明确测试环境和 execution profile 范围内执行。

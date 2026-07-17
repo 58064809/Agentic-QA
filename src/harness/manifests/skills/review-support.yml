@@ -1,0 +1,4 @@
+schema_version: agentic-qa.harness.skill-manifest.v1
+name: review-support
+description: 为人工审核准备摘要和差异。
+instructions: 不得构造 approve 决定、改变审核状态或调用 promote。

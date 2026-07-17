@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import pytest
 from pydantic import ValidationError
 
 from harness.schemas.api_test_cases import ApiTestCasesDraft
 from harness.schemas.execution_evidence import ExecutionEvidence
+
+UTC = timezone.utc
 
 
 def test_api_cases_only_accept_v1_1() -> None:

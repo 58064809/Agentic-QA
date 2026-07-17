@@ -8,9 +8,8 @@ from threading import Thread
 from harness.budget import BudgetLimits
 from harness.contracts import HarnessEvent, ReviewDecision, RunSnapshot, TaskRequest
 from harness.engine import HarnessEngine
-from harness.model import ModelGateway
-from harness.registry import AgentRegistry, ToolRegistry
-from harness.review import apply_review
+from harness.model import ModelGateway, model_gateway_from_env
+from harness.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.store import WorkspaceStore
 
 
@@ -24,17 +23,25 @@ class Harness:
         model_gateway: ModelGateway | None = None,
         budget_limits: BudgetLimits | None = None,
         agent_registry: AgentRegistry | None = None,
+        skill_registry: SkillRegistry | None = None,
         tool_registry: ToolRegistry | None = None,
+        tool_handlers: dict[str, object] | None = None,
     ) -> None:
         self.store = WorkspaceStore(repo_root)
-        self.agents = agent_registry or AgentRegistry.builtin()
         self.tools = tool_registry or ToolRegistry.builtin()
+        self.skills = skill_registry or SkillRegistry.builtin()
+        self.agents = agent_registry or AgentRegistry.builtin(
+            skills=self.skills,
+            tools=self.tools,
+        )
         self._engine = HarnessEngine(
             store=self.store,
             agents=self.agents,
+            skills=self.skills,
             tools=self.tools,
-            model=model_gateway,
+            model=model_gateway or model_gateway_from_env(),
             limits=budget_limits,
+            tool_handlers=tool_handlers,
         )
 
     def run(self, request: TaskRequest) -> RunSnapshot:
@@ -62,9 +69,13 @@ class Harness:
             yield item
         thread.join()
 
-    def resume(self, run_id: str, decision: ReviewDecision) -> RunSnapshot:
+    def resume(
+        self,
+        run_id: str,
+        decision: ReviewDecision | None = None,
+    ) -> RunSnapshot:
         snapshot = self.store.load_snapshot(run_id)
-        return apply_review(self.store, snapshot, decision)
+        return self._engine.resume(snapshot, decision)
 
     def inspect(self, run_id: str) -> RunSnapshot:
         return self.store.load_snapshot(run_id)

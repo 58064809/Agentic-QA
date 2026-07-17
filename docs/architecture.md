@@ -9,11 +9,13 @@ Agentic-QA 采用测试主管与专家 Agent 分层。公开协议不依赖 Lang
 | Expert Agents | 在 manifest 的 Skill 和 Tool allowlist 内完成单一 QA 专业任务 |
 | ModelGateway | 全局单模型、结构化输出、usage 与错误归一化 |
 | Tool / MCP | typed tool、run 级冻结快照、风险与执行 profile 校验 |
-| Artifact Store | run、checkpoint、candidate、review、published 历史 |
+| Artifact Store | run 投影、candidate、review、published 历史 |
+| LangGraph Checkpointer | SQLite 执行事实、并行写入和 interrupt 恢复 |
 | Review Gate | 只接受人工 `ReviewDecision`，批准后确定性 promote |
 
-`src/harness/backend.py` 是内部 LangGraph `Send`/`Command` 适配边界。并行任务以任务级结果
-汇总，专家不得直接修改共享字典。公开 `RunSnapshot` 不包含 LangGraph 类型。
+`src/harness/backend.py` 定义 reducer-safe `HarnessState` 和真实 `StateGraph`。主管通过
+`Send` 派发无依赖任务，专家只追加任务级结果，再由主管单点合并。Review Gate 使用
+`interrupt()`；`resume` 以同一 run_id/thread_id 恢复。公开 `RunSnapshot` 不含 LangGraph 类型。
 
 默认硬预算为 24 次模型调用、50 次工具调用、3 次重规划、3 个并发 Agent 和 30 分钟。
 超限时生成明确标记为 partial 的可审核候选，不伪造完成。

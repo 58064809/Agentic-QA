@@ -19,10 +19,7 @@ env/
 .DS_Store
 Thumbs.db
 
-# Local configs and generated data
-/configs/config.yaml
-/configs/local.yaml
-/configs/private.yaml
+# Local generated data
 /outputs/
 /logs/
 /data/
@@ -39,13 +36,11 @@ Thumbs.db
 caogao.py
 README_备份.md
 
-# Local demo workspace from quickstart/testing
-prd/demo-requirement/
-
-# Real business PRD source/input files stay local unless explicitly approved
-prd/*-review/metadata.yml
-prd/*-review/requirement.md
-prd/*-review/requirement.pdf
+# Business inputs and runtime workspaces stay local
+/prd/
+/knowledge/
+/workspaces/
+/configs/
 
 # Local agent / skill runtime state
 .atomcode/
@@ -57,10 +52,7 @@ prd/*-review/requirement.pdf
 
 # Runtime and IDE local state
 .runtime/
-.idea/pyProjectModel.xml
-
-# Local generated PRD workspace
-prd/5月活动玩法/
+/.idea/
 
 # MkDocs build output
 site/

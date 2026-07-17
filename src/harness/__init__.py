@@ -2,12 +2,14 @@
 
 from harness.contracts import (
     AgentManifest,
+    ExecutionProfile,
     HarnessEvent,
     PlanTask,
     QAPlan,
     ReviewDecision,
     ReviewIntent,
     RunSnapshot,
+    SkillManifest,
     TaskRequest,
     ToolManifest,
 )
@@ -15,6 +17,7 @@ from harness.harness import Harness
 
 __all__ = [
     "AgentManifest",
+    "ExecutionProfile",
     "Harness",
     "HarnessEvent",
     "PlanTask",
@@ -22,6 +25,7 @@ __all__ = [
     "ReviewDecision",
     "ReviewIntent",
     "RunSnapshot",
+    "SkillManifest",
     "TaskRequest",
     "ToolManifest",
 ]

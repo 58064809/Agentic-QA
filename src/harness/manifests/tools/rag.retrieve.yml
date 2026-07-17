@@ -2,7 +2,13 @@ schema_version: agentic-qa.harness.tool-manifest.v1
 name: rag.retrieve
 provider: builtin
 description: 返回带 source、chunk 和选择依据的检索结果
-input_schema: {type: object}
+input_schema:
+  type: object
+  required: [query]
+  properties:
+    query: {type: string, minLength: 1}
+    max_chunks: {type: integer, minimum: 1, maximum: 20}
+  additionalProperties: false
 output_schema: {type: object}
 risk: read_only
 timeout_seconds: 30

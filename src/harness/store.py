@@ -5,13 +5,15 @@ import os
 import re
 import shutil
 import tempfile
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from harness.contracts import ArtifactCandidate, HarnessEvent, RunSnapshot
+
+UTC = timezone.utc
 
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 ARTIFACT_FILENAMES = {
@@ -43,6 +45,20 @@ def _atomic_text(path: Path, content: str) -> None:
 
 def _json(path: Path, payload: Any) -> None:
     _atomic_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+
+
+def _atomic_bytes(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 class WorkspaceStore:
@@ -111,15 +127,45 @@ class WorkspaceStore:
         _json(run / "state.json", payload)
         if snapshot.plan is not None:
             _json(run / "plan.json", snapshot.plan.model_dump(mode="json"))
-        checkpoint = run / "checkpoints" / f"{len(snapshot.completed_tasks):04d}.json"
-        if not checkpoint.exists():
-            _json(checkpoint, payload)
+
+    def checkpoint_path(self, workspace: str, run_id: str) -> Path:
+        return self.require_workspace(workspace) / "runs" / run_id / "checkpoints" / "graph.sqlite"
+
+    def next_event_sequence(self, workspace: str, run_id: str) -> int:
+        path = self.require_workspace(workspace) / "runs" / run_id / "events.jsonl"
+        if not path.is_file():
+            return 1
+        with path.open("r", encoding="utf-8") as handle:
+            return sum(1 for line in handle if line.strip()) + 1
 
     def append_event(self, workspace: str, event: HarnessEvent) -> None:
         path = self.require_workspace(workspace) / "runs" / event.run_id / "events.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8", newline="\n") as handle:
             handle.write(event.model_dump_json() + "\n")
+
+    def write_tool_record(
+        self,
+        workspace: str,
+        run_id: str,
+        name: str,
+        payload: dict[str, Any],
+    ) -> Path:
+        path = self.require_workspace(workspace) / "runs" / run_id / "tool-calls" / name
+        _json(path, payload)
+        return path
+
+    def tool_records(self, workspace: str, run_id: str) -> list[dict[str, Any]]:
+        root = self.require_workspace(workspace) / "runs" / run_id / "tool-calls"
+        records: list[dict[str, Any]] = []
+        for path in sorted(root.glob("*.json")):
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(value, dict):
+                records.append(value)
+        return records
 
     def load_snapshot(self, run_id: str) -> RunSnapshot:
         if not SAFE_ID.fullmatch(run_id):
@@ -154,6 +200,37 @@ class WorkspaceStore:
             status="partial" if partial else "needs_human_review",
             quality_passed=not partial,
             evidence=evidence or [],
+        )
+
+    def ensure_candidate(
+        self,
+        *,
+        workspace: str,
+        run_id: str,
+        artifact: str,
+        content: str,
+        partial: bool = False,
+        evidence: list[str] | None = None,
+    ) -> ArtifactCandidate:
+        root = self.require_workspace(workspace)
+        target = root / "candidates" / run_id / ARTIFACT_FILENAMES[artifact]
+        if target.exists():
+            if target.read_text(encoding="utf-8") != content:
+                raise FileExistsError(f"候选产物已存在且内容不同，不允许覆盖: {target}")
+            return ArtifactCandidate(
+                artifact=artifact,
+                path=target.relative_to(self.repo_root).as_posix(),
+                status="partial" if partial else "needs_human_review",
+                quality_passed=not partial,
+                evidence=evidence or [],
+            )
+        return self.write_candidate(
+            workspace=workspace,
+            run_id=run_id,
+            artifact=artifact,
+            content=content,
+            partial=partial,
+            evidence=evidence,
         )
 
     def write_review(self, snapshot: RunSnapshot, artifact: str, payload: dict[str, Any]) -> None:
@@ -204,6 +281,35 @@ class WorkspaceStore:
         index["versions"] = versions
         _atomic_text(index_path, yaml.safe_dump(index, allow_unicode=True, sort_keys=False))
         return current.relative_to(self.repo_root).as_posix()
+
+    def promote_many(self, snapshot: RunSnapshot, artifacts: list[str]) -> dict[str, str]:
+        tracked: dict[Path, bytes | None] = {}
+        workspace = self.require_workspace(snapshot.workspace)
+        for artifact in artifacts:
+            candidate = next(item for item in snapshot.candidates if item.artifact == artifact)
+            source = (self.repo_root / candidate.path).resolve()
+            published = workspace / "published" / artifact
+            paths = (
+                published / f"current{source.suffix}",
+                published / "history" / f"{snapshot.run_id}{source.suffix}",
+                published / "history" / "index.yml",
+            )
+            for path in paths:
+                if path not in tracked:
+                    tracked[path] = path.read_bytes() if path.is_file() else None
+        promoted: dict[str, str] = {}
+        try:
+            for artifact in artifacts:
+                promoted[artifact] = self.promote(snapshot, artifact)
+        except Exception:
+            for path, content in tracked.items():
+                if content is None:
+                    if path.is_file():
+                        path.unlink()
+                else:
+                    _atomic_bytes(path, content)
+            raise
+        return promoted
 
     def source_texts(self, workspace: str, limit: int = 100_000) -> list[tuple[str, str]]:
         root = self.require_workspace(workspace)

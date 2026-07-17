@@ -4,6 +4,7 @@ from collections.abc import Callable
 from contextlib import AsyncExitStack
 from typing import Any
 
+from jsonschema import ValidationError, validate
 from pydantic import BaseModel, ConfigDict, Field
 
 from harness.security import sanitize_untrusted
@@ -63,17 +64,14 @@ class MCPToolSnapshot(BaseModel):
         tool = next((item for item in self.tools if item.name == name), None)
         if tool is None:
             raise PermissionError(f"MCP tool is not frozen for this run: {name}")
-        required = tool.input_schema.get("required") or []
-        missing = [field for field in required if field not in arguments]
-        if missing:
-            raise ValueError(f"MCP tool arguments missing required fields: {missing}")
-        if tool.input_schema.get("additionalProperties") is False:
-            allowed = set((tool.input_schema.get("properties") or {}).keys())
-            unexpected = set(arguments) - allowed
-            if unexpected:
+        try:
+            validate(arguments, tool.input_schema or {"type": "object"})
+        except ValidationError as exc:
+            if exc.validator == "required":
                 raise ValueError(
-                    f"MCP tool arguments contain unexpected fields: {sorted(unexpected)}"
-                )
+                    f"MCP tool arguments missing required fields: {exc.message}"
+                ) from exc
+            raise ValueError(f"MCP tool arguments are invalid: {exc.message}") from exc
 
 
 class MCPBridge:
@@ -96,6 +94,13 @@ class MCPBridge:
                 f"mcp_tool_error:{name}:{type(exc).__name__}:{str(exc)[:300]}"
             ) from exc
         return self.snapshot.parse_result(name, result)
+
+    def tool_handler(self, payload: dict[str, Any]) -> Any:
+        name = str(payload.get("tool") or "")
+        arguments = payload.get("arguments") or {}
+        if not isinstance(arguments, dict):
+            raise ValueError("MCP arguments must be an object")
+        return self.call(name, arguments)
 
 
 class OfficialMCPClient:

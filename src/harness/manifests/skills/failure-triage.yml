@@ -1,0 +1,4 @@
+schema_version: agentic-qa.harness.skill-manifest.v1
+name: failure-triage
+description: 根据执行证据分类失败和生成 Bug 候选。
+instructions: error 或 blocked 不生成 Bug，根因不足时保持 unconfirmed。

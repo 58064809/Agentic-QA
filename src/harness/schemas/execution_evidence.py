@@ -12,14 +12,6 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class ExecutionProfile(StrictModel):
-    schema_version: Literal["agentic-qa.execution-profile.v1"] = "agentic-qa.execution-profile.v1"
-    environment_name: str = Field(default="local", min_length=1)
-    base_url_env: str = Field(default="AGENTIC_QA_BASE_URL", pattern=r"^[A-Z_][A-Z0-9_]*$")
-    allowed_methods: list[str] = Field(default_factory=lambda: ["GET", "HEAD", "OPTIONS"])
-    request_timeout_seconds: int = Field(default=10, ge=1, le=60)
-
-
 class AssertionEvidence(StrictModel):
     type: str
     passed: bool

@@ -1,0 +1,4 @@
+schema_version: agentic-qa.harness.skill-manifest.v1
+name: delegation
+description: 按 Agent 能力和工具权限派发任务。
+instructions: 只派发 manifest 已声明的 Agent，不扩大任务输出或工具权限。

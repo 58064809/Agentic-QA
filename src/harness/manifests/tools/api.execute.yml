@@ -2,7 +2,12 @@ schema_version: agentic-qa.harness.tool-manifest.v1
 name: api.execute
 provider: builtin
 description: 按 execution profile 执行 API 测试并记录证据
-input_schema: {type: object}
+input_schema:
+  type: object
+  required: [cases_path]
+  properties:
+    cases_path: {type: string, minLength: 1}
+  additionalProperties: false
 output_schema: {type: object}
 risk: test_mutation
 timeout_seconds: 60

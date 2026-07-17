@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 CONTRACT_PREFIX = "agentic-qa.harness"
+UTC = timezone.utc
 ARTIFACT_TYPES = (
     "requirement_analysis",
     "testcases",
@@ -32,6 +33,7 @@ class ExecutionProfile(StrictModel):
     base_url_env: str | None = None
     allowed_http_methods: list[str] = Field(default_factory=lambda: ["GET", "HEAD", "OPTIONS"])
     allow_ui_mutations: bool = False
+    request_timeout_seconds: int = Field(default=10, ge=1, le=60)
 
     @field_validator("allowed_http_methods")
     @classmethod
@@ -134,6 +136,15 @@ class AgentManifest(StrictModel):
     max_steps: int = Field(default=8, ge=1, le=50)
 
 
+class SkillManifest(StrictModel):
+    schema_version: Literal["agentic-qa.harness.skill-manifest.v1"] = (
+        "agentic-qa.harness.skill-manifest.v1"
+    )
+    name: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    description: str = Field(min_length=1)
+    instructions: str = Field(min_length=1)
+
+
 class ToolRisk(str, Enum):
     READ_ONLY = "read_only"
     TEST_MUTATION = "test_mutation"
@@ -191,6 +202,7 @@ RunStatus = Literal[
     "needs_revision",
     "published",
     "failed",
+    "recoverable",
 ]
 
 
@@ -204,8 +216,13 @@ class RunSnapshot(StrictModel):
     request: TaskRequest
     plan: QAPlan | None = None
     completed_tasks: list[str] = Field(default_factory=list)
+    pending_tasks: list[str] = Field(default_factory=list)
     candidates: list[ArtifactCandidate] = Field(default_factory=list)
     review_status: dict[str, str] = Field(default_factory=dict)
+    delegations: list[dict[str, Any]] = Field(default_factory=list)
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    model_usage: dict[str, int] = Field(default_factory=dict)
+    interrupt: dict[str, Any] | None = None
     budget: BudgetUsage = Field(default_factory=BudgetUsage)
     errors: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(tz=UTC))

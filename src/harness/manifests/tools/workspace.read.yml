@@ -2,7 +2,12 @@ schema_version: agentic-qa.harness.tool-manifest.v1
 name: workspace.read
 provider: builtin
 description: 读取当前 workspace 内受限文件
-input_schema: {type: object}
+input_schema:
+  type: object
+  required: [path]
+  properties:
+    path: {type: string, minLength: 1}
+  additionalProperties: false
 output_schema: {type: object}
 risk: read_only
 timeout_seconds: 10

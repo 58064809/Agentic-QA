@@ -14,9 +14,9 @@
 | 契约 | 唯一来源 |
 |---|---|
 | 公开 Harness API | `src/harness/harness.py` 与 `src/harness/contracts.py` |
-| Agent 声明 | `src/harness/manifests/agents/` |
+| Agent / Skill 声明 | `src/harness/manifests/agents/` 与 `src/harness/manifests/skills/` |
 | Tool 声明 | `src/harness/manifests/tools/` |
-| 动态派发后端 | `src/harness/backend.py` 与 `src/harness/engine.py` |
+| LangGraph 状态与动态派发 | `src/harness/backend.py` 与 `src/harness/engine.py` |
 | 预算 | `src/harness/budget.py` |
 | 工作区与 Artifact Store | `src/harness/store.py` |
 | Review 状态与 promote | `src/harness/review.py` |
@@ -28,8 +28,8 @@ LangGraph 类型不得出现在公开领域契约。CLI 只组装参数并调用
 ## 当前链路
 
 ```text
-TaskRequest -> QAPlan -> 专家动态派发 -> 质量门 -> candidate
--> needs_human_review -> 人工 ReviewDecision -> approved
+TaskRequest -> QAPlan -> Send 并行专家 -> 主管验收 -> 质量门 -> candidate
+-> interrupt -> 人工 ReviewDecision -> approved
 -> deterministic promote -> published
 ```
 
@@ -49,8 +49,8 @@ promote 成功才写入 `confirmed`。`review_assistant` 只能准备摘要和 d
 
 ## 工作区
 
-新 Runtime 只读写 `workspaces/<id>/`。旧 `prd/`、旧 run 和 `.runtime` 不迁移、不读取，
-现有文件不得删除或改写。候选不得覆盖；修订创建新 run。
+Harness 只读写 `workspaces/<id>/`。旧 `prd/` 是本机忽略数据，不迁移、不读取、不改写。
+候选不得覆盖；修订创建新 run。执行恢复必须使用同一 run 的 SQLite checkpoint。
 
 ## 验证与回执
 

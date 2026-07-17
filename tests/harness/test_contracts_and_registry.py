@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from harness import PlanTask, QAPlan, TaskRequest
-from harness.registry import AgentRegistry, ToolRegistry
+from harness.registry import AgentRegistry, SkillRegistry, ToolRegistry
 
 
 def test_task_request_rejects_legacy_prd_path() -> None:
@@ -24,6 +24,7 @@ def test_plan_rejects_cycles() -> None:
 
 def test_builtin_manifests_are_declarative_and_complete() -> None:
     agents = AgentRegistry.builtin()
+    skills = SkillRegistry.builtin()
     tools = ToolRegistry.builtin()
     assert {item.name for item in agents.list()} == {
         "qa_supervisor",
@@ -39,3 +40,6 @@ def test_builtin_manifests_are_declarative_and_complete() -> None:
     }
     assert "artifact.promote" in {item.name for item in tools.list()}
     assert "artifact.promote" not in agents.get("review_assistant").tool_allowlist
+    for agent in agents.list():
+        for skill in agent.skills:
+            assert skills.get(skill).name == skill

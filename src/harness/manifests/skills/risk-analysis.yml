@@ -1,0 +1,4 @@
+schema_version: agentic-qa.harness.skill-manifest.v1
+name: risk-analysis
+description: 基于证据识别质量风险和覆盖优先级。
+instructions: 风险结论必须引用需求、接口或执行证据，并说明影响与覆盖策略。

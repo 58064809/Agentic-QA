@@ -3,5 +3,5 @@ name: qa_reporter
 role: QA 报告专家
 prompt: 汇总已验证证据、限制和待确认事项，不扩大结论。
 skills: [reporting]
-tool_allowlist: [workspace.read, evidence.read, artifact.write_candidate]
+tool_allowlist: [workspace.read, evidence.read]
 max_steps: 8

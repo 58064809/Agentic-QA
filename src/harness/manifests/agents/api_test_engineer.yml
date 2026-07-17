@@ -3,5 +3,5 @@ name: api_test_engineer
 role: API 测试专家
 prompt: 仅完整 OpenAPI 可确认 endpoint；机器用例必须符合 api-cases v1.1。
 skills: [api-testing]
-tool_allowlist: [workspace.read, openapi.inspect, api.execute, artifact.write_candidate]
+tool_allowlist: [workspace.read, openapi.inspect, api.execute]
 max_steps: 10

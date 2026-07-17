@@ -5,15 +5,12 @@ import re
 import sys
 from pathlib import Path
 
-import yaml
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPO_ROOT / "src"
-for import_root in (str(REPO_ROOT), str(SOURCE_ROOT)):
-    if import_root not in sys.path:
-        sys.path.insert(0, import_root)
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
 
-from harness.contracts import AgentManifest, ToolManifest  # noqa: E402
+from harness.registry import AgentRegistry, SkillRegistry, ToolRegistry  # noqa: E402
 from harness.schemas.api_test_cases import API_CASES_SCHEMA_VERSION  # noqa: E402
 
 CORE_FILES = (
@@ -26,9 +23,8 @@ CORE_FILES = (
     "docs/artifact-versioning.md",
     "docs/rag-design.md",
     "docs/roadmap.md",
-    "rules/artifact-path-rules.md",
     "src/harness/contracts.py",
-    "src/harness/harness.py",
+    "src/harness/backend.py",
     "src/harness/engine.py",
     "src/harness/store.py",
     "src/harness/review.py",
@@ -41,44 +37,30 @@ EXCLUDED_PARTS = {
     ".pytest_cache",
     ".ruff_cache",
     ".runtime",
+    "knowledge",
     "prd",
+    "workspaces",
     "__pycache__",
 }
-INLINE_PATH = re.compile(
-    r"`((?:src/harness|docs|rules|prompts|knowledge|skills|scripts|tests)/[^`<>{}*?]+)`"
-)
+INLINE_PATH = re.compile(r"`((?:src/harness|docs|scripts|tests)/[^`<>{}*?]+)`")
 
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _validate_manifests(root: Path, errors: list[str]) -> None:
-    agent_names: set[str] = set()
-    for path in sorted((root / "src/harness/manifests/agents").glob("*.yml")):
-        try:
-            manifest = AgentManifest.model_validate(yaml.safe_load(_read(path)))
-        except Exception as exc:
-            errors.append(f"{path.relative_to(root).as_posix()} 无效: {exc}")
-            continue
-        if manifest.name in agent_names:
-            errors.append(f"重复 Agent manifest: {manifest.name}")
-        agent_names.add(manifest.name)
-    if "qa_supervisor" not in agent_names:
-        errors.append("缺少 qa_supervisor manifest")
-
-    tool_names: set[str] = set()
-    for path in sorted((root / "src/harness/manifests/tools").glob("*.yml")):
-        try:
-            manifest = ToolManifest.model_validate(yaml.safe_load(_read(path)))
-        except Exception as exc:
-            errors.append(f"{path.relative_to(root).as_posix()} 无效: {exc}")
-            continue
-        if manifest.name in tool_names:
-            errors.append(f"重复 Tool manifest: {manifest.name}")
-        tool_names.add(manifest.name)
-    if "artifact.promote" not in tool_names:
-        errors.append("缺少 artifact.promote manifest")
+def _validate_manifests(errors: list[str]) -> None:
+    try:
+        tools = ToolRegistry.builtin()
+        skills = SkillRegistry.builtin()
+        agents = AgentRegistry.builtin(skills=skills, tools=tools)
+    except Exception as exc:
+        errors.append(f"manifest 注册失败: {exc}")
+        return
+    if not agents.list() or not tools.list() or not skills.list():
+        errors.append("Agent、Tool 和 Skill manifest 均不得为空")
+    if "artifact.promote" in {tool for agent in agents.list() for tool in agent.tool_allowlist}:
+        errors.append("artifact.promote 不得出现在任何 Agent allowlist")
 
 
 def _validate_markdown_paths(root: Path, errors: list[str]) -> None:
@@ -100,27 +82,24 @@ def _validate_markdown_paths(root: Path, errors: list[str]) -> None:
 def validate_docs_consistency(repo_root: Path) -> list[str]:
     root = repo_root.resolve()
     errors = [f"缺少核心文件: {path}" for path in CORE_FILES if not (root / path).is_file()]
-    if (root / "runtime/workflow").exists() or (root / "workflows/runtime").exists():
-        errors.append("旧 WorkflowSpec 主链路仍存在")
-    if (root / "runtime/cli").exists() or (root / "runtime/graph/app.py").exists():
-        errors.append("旧 Runtime CLI 或 task facade 仍存在")
-    _validate_manifests(root, errors)
+    for legacy_root in ("runtime", "rag", "apps", "integrations"):
+        path = root / legacy_root
+        if path.exists() and any(path.rglob("*.py")):
+            errors.append(f"旧可执行链路仍存在: {legacy_root}/")
+    _validate_manifests(errors)
     _validate_markdown_paths(root, errors)
-    for path in (
-        "docs/api-test-generation.md",
-        "knowledge/automation/yaml-case-schema.md",
-        "prompts/api-test-generation.md",
-        "rules/automation-case-rules.md",
-    ):
-        target = root / path
-        if target.is_file() and API_CASES_SCHEMA_VERSION not in _read(target):
-            errors.append(f"{path} 未声明当前 API Cases Schema: {API_CASES_SCHEMA_VERSION}")
+    api_doc = root / "docs/api-test-generation.md"
+    if api_doc.is_file() and API_CASES_SCHEMA_VERSION not in _read(api_doc):
+        errors.append(
+            "docs/api-test-generation.md 未声明当前 API Cases Schema: "
+            f"{API_CASES_SCHEMA_VERSION}"
+        )
     return errors
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="校验 Harness 文档、manifest 和路径一致性")
-    parser.add_argument("--repo-root", default=Path(__file__).resolve().parents[1], type=Path)
+    parser.add_argument("--repo-root", default=REPO_ROOT, type=Path)
     args = parser.parse_args()
     errors = validate_docs_consistency(args.repo_root)
     if not errors:

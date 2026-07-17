@@ -33,7 +33,7 @@ def _parser() -> argparse.ArgumentParser:
 
     resume = commands.add_parser("resume")
     resume.add_argument("run_id")
-    resume.add_argument("decision", choices=[item.value for item in ReviewIntent])
+    resume.add_argument("decision", nargs="?", choices=[item.value for item in ReviewIntent])
     resume.add_argument("--artifact")
     resume.add_argument("--reason", default="Human review decision")
     resume.add_argument("--revision-request")
@@ -42,6 +42,8 @@ def _parser() -> argparse.ArgumentParser:
     agents.add_subparsers(dest="agents_command", required=True).add_parser("list")
     tools = commands.add_parser("tools")
     tools.add_subparsers(dest="tools_command", required=True).add_parser("list")
+    skills = commands.add_parser("skills")
+    skills.add_subparsers(dest="skills_command", required=True).add_parser("list")
 
     evaluate = commands.add_parser("eval")
     evaluate.add_subparsers(dest="eval_command", required=True).add_parser("run")
@@ -73,21 +75,21 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "inspect":
             _print(harness.inspect(args.run_id))
         elif args.command == "resume":
-            _print(
-                harness.resume(
-                    args.run_id,
-                    ReviewDecision(
-                        intent=args.decision,
-                        target_artifact=args.artifact,
-                        reason=args.reason,
-                        revision_request=args.revision_request,
-                    ),
+            decision = None
+            if args.decision:
+                decision = ReviewDecision(
+                    intent=args.decision,
+                    target_artifact=args.artifact,
+                    reason=args.reason,
+                    revision_request=args.revision_request,
                 )
-            )
+            _print(harness.resume(args.run_id, decision))
         elif args.command == "agents":
             _print([item.model_dump(mode="json") for item in harness.agents.list()])
         elif args.command == "tools":
             _print([item.model_dump(mode="json") for item in harness.tools.list()])
+        elif args.command == "skills":
+            _print([item.model_dump(mode="json") for item in harness.skills.list()])
         elif args.command == "eval":
             from harness.evals import run_offline_eval
 

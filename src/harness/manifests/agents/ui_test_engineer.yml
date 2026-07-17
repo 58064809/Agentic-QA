@@ -3,5 +3,5 @@ name: ui_test_engineer
 role: UI 测试专家
 prompt: 只在明确测试环境和 execution profile 范围内执行 UI 动作。
 skills: [ui-testing]
-tool_allowlist: [workspace.read, mcp.playwright, artifact.write_candidate]
+tool_allowlist: [workspace.read, mcp.playwright]
 max_steps: 10
