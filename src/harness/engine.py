@@ -95,6 +95,8 @@ ARTIFACT_OUTPUT_CONTRACTS = {
 }
 
 MAX_ARTIFACT_REPAIRS = 3
+MAX_PLAN_REPAIRS = 3
+SOURCE_PREFETCH_AGENTS = frozenset({"requirement_analyst", "risk_strategist"})
 
 
 def build_default_plan(request: TaskRequest) -> QAPlan:
@@ -416,9 +418,7 @@ class HarnessEngine:
         def planner(_state: HarnessState) -> dict[str, Any]:
             if self.model is None:  # guarded by execute, retained for type narrowing
                 raise RuntimeError("model is not configured")
-            budget.consume_model()
             route = self.model_policy.for_planner(request)
-            event("model_routed", agent="qa_supervisor", **self.model.describe_route(route))
             agent_catalog = [
                 {
                     "name": item.name,
@@ -428,21 +428,41 @@ class HarnessEngine:
                 }
                 for item in self.agents.list()
             ]
-            plan = self.model.structured(
-                system=self.agents.get("qa_supervisor").prompt,
-                prompt=(
-                    "为以下 QA 目标生成严格 QAPlan。必须覆盖全部 expected_artifacts，"
-                    "只能使用下列已注册 Agent，并为任务声明证据要求。"
-                    "生成 testcases、api_test_draft 或 ui_test_draft 时，先安排 "
-                    "requirement_analyst 和 risk_strategist 的无依赖分析任务，再让产物任务依赖"
-                    "这些分析。每个请求产物必须且只能由一个任务生成。\n"
-                    f"Agent catalog:\n{json.dumps(agent_catalog, ensure_ascii=False)}\n"
-                    + request.model_dump_json()
-                ),
-                response_model=QAPlan,
-                route=route,
-            )
-            self._validate_plan(plan, request)
+            validation_feedback: list[str] = []
+            for attempt in range(1, MAX_PLAN_REPAIRS + 1):
+                budget.consume_model()
+                event("model_routed", agent="qa_supervisor", **self.model.describe_route(route))
+                plan = self.model.structured(
+                    system=self.agents.get("qa_supervisor").prompt,
+                    prompt=(
+                        "为以下 QA 目标生成严格 QAPlan。必须覆盖全部 expected_artifacts，"
+                        "只能使用下列已注册 Agent，并为任务声明证据要求。"
+                        "生成 testcases、api_test_draft 或 ui_test_draft 时，先安排 "
+                        "requirement_analyst 和 risk_strategist 的无依赖分析任务，再让产物任务依赖"
+                        "这些分析。每个请求产物必须且只能由一个任务生成。\n"
+                        f"Agent catalog:\n{json.dumps(agent_catalog, ensure_ascii=False)}\n"
+                        f"Validation feedback:\n"
+                        f"{json.dumps(validation_feedback, ensure_ascii=False)}\n"
+                        + request.model_dump_json()
+                    ),
+                    response_model=QAPlan,
+                    route=route,
+                )
+                try:
+                    self._validate_plan(plan, request)
+                except ValueError as exc:
+                    error = str(exc)[:500]
+                    validation_feedback.append(error)
+                    event(
+                        "plan_validation_failed",
+                        agent="qa_supervisor",
+                        attempt=attempt,
+                        error=error,
+                    )
+                    if attempt >= MAX_PLAN_REPAIRS:
+                        raise
+                    continue
+                break
             ready = _ready_task_ids(plan, [task.id for task in plan.tasks], [])
             delegations = [{"task_ids": ready, "revision": plan.revision}]
             event("plan_created", task_count=len(plan.tasks), revision=plan.revision)
@@ -648,6 +668,29 @@ class HarnessEngine:
         tool_results: list[dict[str, Any]] = []
         validation_feedback: list[dict[str, str]] = []
         source_files = [path for path, _content in self.store.source_texts(request.workspace)]
+        if (
+            source_files
+            and manifest.name in SOURCE_PREFETCH_AGENTS
+            and "workspace.read" in manifest.tool_allowlist
+        ):
+            for source_path in source_files:
+                arguments = {"path": source_path}
+                value = runtime.call(
+                    workspace=request.workspace,
+                    run_id=run_id,
+                    agent=manifest.name,
+                    tool="workspace.read",
+                    arguments=arguments,
+                    profile=request.execution_profile,
+                    idempotency_key=_tool_key(
+                        run_id,
+                        task.id,
+                        -1,
+                        "workspace.read",
+                        arguments,
+                    ),
+                )
+                tool_results.append({"tool": "workspace.read", "result": value})
         for step in range(manifest.max_steps):
             budget.consume_model()
             route = self.model_policy.for_task(task)
@@ -670,6 +713,7 @@ class HarnessEngine:
                         "task": task.model_dump(mode="json"),
                         "dependencies": sanitize_untrusted(dependencies),
                         "source_files": source_files,
+                        "source_prefetched": bool(tool_results),
                         "tool_results": sanitize_untrusted(tool_results),
                         "allowed_artifacts": task.expected_outputs,
                         "artifact_output_contracts": {

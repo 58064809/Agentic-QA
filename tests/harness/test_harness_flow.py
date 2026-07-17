@@ -158,11 +158,67 @@ def test_recover_retries_same_langgraph_thread_after_planner_crash(tmp_path: Pat
     assert (tmp_path / f"workspaces/demo/runs/{failed.run_id}/checkpoints/graph.sqlite").is_file()
 
 
+def test_planner_repairs_semantically_invalid_plan_in_same_run(tmp_path: Path) -> None:
+    plans = 0
+
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        nonlocal plans
+        if response_model.__name__ == "QAPlan":
+            plans += 1
+            request = TaskRequest.model_validate_json(prompt.splitlines()[-1])
+            if plans == 1:
+                return QAPlan(
+                    tasks=[
+                        PlanTask(
+                            id="analyze_risks",
+                            objective="analyze risks",
+                            agent="risk_strategist",
+                            expected_outputs=["risk_context"],
+                        )
+                    ]
+                )
+            assert "QAPlan 未覆盖期望产物" in prompt
+            return build_default_plan(request).model_dump(mode="json")
+        context = json.loads(prompt)
+        return AgentOutput(
+            summary="recorded",
+            artifacts={
+                artifact: default_recorded_artifact(artifact, context["goal"])
+                for artifact in context["task"]["expected_outputs"]
+                if artifact == "testcases"
+            },
+            evidence=["user_goal"],
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    harness.init_workspace("demo")
+    snapshot = harness.run(TaskRequest(workspace="demo", goal="test login"))
+
+    assert snapshot.status == "needs_human_review"
+    assert plans == 2
+    assert snapshot.budget.model_calls == 5
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "workspaces/demo/runs" / snapshot.run_id / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert [event["type"] for event in events].count("plan_validation_failed") == 1
+
+
 def test_agent_tool_request_is_executed_and_recorded(tmp_path: Path) -> None:
     def respond(*, prompt: str, response_model: type, **_kwargs):
         if response_model.__name__ == "QAPlan":
-            request = TaskRequest.model_validate_json(prompt.splitlines()[-1])
-            return build_default_plan(request).model_dump(mode="json")
+            return QAPlan(
+                tasks=[
+                    PlanTask(
+                        id="produce_testcases",
+                        objective="produce testcases",
+                        agent="test_designer",
+                        expected_outputs=["testcases"],
+                    )
+                ]
+            )
         context = json.loads(prompt)
         if not context["tool_results"]:
             return AgentOutput(
@@ -176,6 +232,45 @@ def test_agent_tool_request_is_executed_and_recorded(tmp_path: Path) -> None:
             )
         return AgentOutput(
             summary="source analyzed",
+            artifacts={"testcases": default_recorded_artifact("testcases", context["goal"])},
+            evidence=["sources/requirement.md"],
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    workspace = harness.init_workspace("demo")
+    (workspace / "sources/requirement.md").write_text("登录必须校验密码", encoding="utf-8")
+    snapshot = harness.run(
+        TaskRequest(
+            workspace="demo",
+            goal="设计登录用例",
+            expected_artifacts=["testcases"],
+        )
+    )
+
+    assert snapshot.status == "needs_human_review"
+    assert snapshot.budget.tool_calls == 1
+    assert snapshot.tool_calls[0]["tool"] == "workspace.read"
+
+
+def test_source_dependent_agent_receives_prefetched_source(tmp_path: Path) -> None:
+    expert_contexts: list[dict[str, object]] = []
+
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        if response_model.__name__ == "QAPlan":
+            return QAPlan(
+                tasks=[
+                    PlanTask(
+                        id="analyze_requirements",
+                        objective="analyze requirement",
+                        agent="requirement_analyst",
+                        expected_outputs=["requirement_analysis"],
+                    )
+                ]
+            )
+        context = json.loads(prompt)
+        expert_contexts.append(context)
+        return AgentOutput(
+            summary="source analyzed",
             artifacts={
                 "requirement_analysis": default_recorded_artifact(
                     "requirement_analysis", context["goal"]
@@ -186,7 +281,10 @@ def test_agent_tool_request_is_executed_and_recorded(tmp_path: Path) -> None:
 
     harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
     workspace = harness.init_workspace("demo")
-    (workspace / "sources/requirement.md").write_text("登录必须校验密码", encoding="utf-8")
+    (workspace / "sources/requirement.md").write_text(
+        "登录必须校验密码",
+        encoding="utf-8",
+    )
     snapshot = harness.run(
         TaskRequest(
             workspace="demo",
@@ -196,8 +294,12 @@ def test_agent_tool_request_is_executed_and_recorded(tmp_path: Path) -> None:
     )
 
     assert snapshot.status == "needs_human_review"
+    assert len(expert_contexts) == 1
+    assert expert_contexts[0]["source_prefetched"] is True
+    tool_results = expert_contexts[0]["tool_results"]
+    assert isinstance(tool_results, list)
+    assert tool_results[0]["result"]["content"] == "登录必须校验密码"
     assert snapshot.budget.tool_calls == 1
-    assert snapshot.tool_calls[0]["tool"] == "workspace.read"
 
 
 def test_invalid_artifact_is_repaired_before_candidate_write(tmp_path: Path) -> None:
