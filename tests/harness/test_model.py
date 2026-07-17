@@ -60,11 +60,13 @@ def test_policy_uses_pro_only_for_complex_plans_and_specialists() -> None:
     analyst = policy.for_task(
         PlanTask(id="analysis", objective="analyze", agent="requirement_analyst")
     )
+    designer = policy.for_task(PlanTask(id="design", objective="design", agent="test_designer"))
     triager = policy.for_task(PlanTask(id="triage", objective="triage", agent="failure_triager"))
 
     assert (routine.tier, routine.thinking) == ("flash", "enabled")
     assert (complex_route.tier, complex_route.reasoning_effort) == ("pro", "max")
     assert (analyst.tier, analyst.thinking) == ("flash", "disabled")
+    assert (designer.tier, designer.thinking) == ("pro", "enabled")
     assert (triager.tier, triager.thinking) == ("pro", "enabled")
 
 

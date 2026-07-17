@@ -39,7 +39,7 @@ class ModelPolicy:
     """Deterministic, centralized model selection for the QA Harness."""
 
     _complex_artifacts = frozenset({"execution_report", "failure_analysis", "bug_draft"})
-    _pro_agents = frozenset({"risk_strategist", "failure_triager"})
+    _pro_agents = frozenset({"risk_strategist", "test_designer", "failure_triager"})
 
     def for_planner(self, request: TaskRequest) -> ModelRoute:
         complex_run = bool(set(request.expected_artifacts) & self._complex_artifacts)

@@ -21,8 +21,8 @@ Agentic-QA 采用测试主管与专家 Agent 分层。公开协议不依赖 Lang
 默认硬预算为 24 次模型调用、50 次工具调用、3 次重规划、3 个并发 Agent 和 30 分钟。
 超限时生成明确标记为 partial 的可审核候选，不伪造完成。
 
-`ModelPolicy` 是模型选择的单一入口。Flash 是常规结构化任务的默认档；Pro 只用于复杂主管
-规划、风险策略和失败分诊。思考模式只用于规划和高推理任务，且 `reasoning_content` 不进入
+`ModelPolicy` 是模型选择的单一入口。Flash 是常规结构化任务的默认档；Pro 用于复杂主管、
+风险策略、长篇测试设计和失败分诊。思考模式只用于规划和高推理任务，且 `reasoning_content` 不进入
 事件、checkpoint 或产物。一个 run 的模型、档位和思考开关记录在 `model_routes`。
 
 `src/harness/knowledge/` 只存放无项目数据的通用 QA 方法。`SkillRegistry` 校验 reference
