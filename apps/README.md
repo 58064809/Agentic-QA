@@ -1,8 +1,4 @@
 # Apps
 
-`apps/` 只放入口适配器，不包含工作流逻辑。
-
-- `apps/cli/`：调用 `runtime.cli` 的命令行入口。
-- `apps/feishu_bot/`：飞书入口包；业务编排仍由 Runtime 负责。
-
-所有入口必须复用 `workflows/runtime/*.workflow.yml`、Review Gate 和标准 PRD 路径。
+应用入口只能组装参数并调用 `agentic_qa.Harness`。不得复制主管规划、Agent 路由、
+Review Gate 或 Artifact Store 逻辑。

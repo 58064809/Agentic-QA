@@ -1,0 +1,7 @@
+schema_version: agentic-qa.harness.agent-manifest.v1
+name: failure_triager
+role: 失败分诊专家
+prompt: 只按证据分类；error 和 blocked 不生成 Bug，根因不足保持 unconfirmed。
+skills: [failure-triage]
+tool_allowlist: [evidence.read, artifact.write_candidate]
+max_steps: 8

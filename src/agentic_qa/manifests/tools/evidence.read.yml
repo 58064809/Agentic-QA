@@ -1,0 +1,9 @@
+schema_version: agentic-qa.harness.tool-manifest.v1
+name: evidence.read
+provider: builtin
+description: 读取并校验结构化执行证据
+input_schema: {type: object}
+output_schema: {type: object}
+risk: read_only
+timeout_seconds: 10
+idempotency: read

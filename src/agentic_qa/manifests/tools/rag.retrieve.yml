@@ -1,0 +1,9 @@
+schema_version: agentic-qa.harness.tool-manifest.v1
+name: rag.retrieve
+provider: builtin
+description: 返回带 source、chunk 和选择依据的检索结果
+input_schema: {type: object}
+output_schema: {type: object}
+risk: read_only
+timeout_seconds: 30
+idempotency: read

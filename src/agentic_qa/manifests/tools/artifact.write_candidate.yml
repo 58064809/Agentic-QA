@@ -1,0 +1,9 @@
+schema_version: agentic-qa.harness.tool-manifest.v1
+name: artifact.write_candidate
+provider: builtin
+description: 仅写入本次 run 的候选目录
+input_schema: {type: object}
+output_schema: {type: object}
+risk: artifact_write
+timeout_seconds: 10
+idempotency: keyed

@@ -1,0 +1,9 @@
+schema_version: agentic-qa.harness.tool-manifest.v1
+name: openapi.inspect
+provider: builtin
+description: 校验完整 OpenAPI 并构建 endpoint 索引
+input_schema: {type: object}
+output_schema: {type: object}
+risk: read_only
+timeout_seconds: 30
+idempotency: read

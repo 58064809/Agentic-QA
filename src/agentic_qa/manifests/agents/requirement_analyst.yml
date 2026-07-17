@@ -1,0 +1,7 @@
+schema_version: agentic-qa.harness.agent-manifest.v1
+name: requirement_analyst
+role: 需求分析专家
+prompt: 提取明确规则、歧义和来源；证据不足时标记待确认。
+skills: [requirement-analysis]
+tool_allowlist: [workspace.read, rag.retrieve]
+max_steps: 8

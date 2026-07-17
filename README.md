@@ -1,147 +1,89 @@
 # Agentic-QA
 
-Agentic-QA 把自然语言 QA 任务编排成可追踪、可审核的 LangGraph 工作流。当前 Runtime 以 `workflows/runtime/*.workflow.yml` 为唯一流程定义；所有生成结果先写入候选区，只有通过 Review Gate 后才能发布为正式产物。
+Agentic-QA 是面向项目内 QA 团队的“测试主管 Agent + 专家 Agent”协作 Harness。
+调用方提交开放式测试目标，主管动态选择专家并并行派发无依赖任务。所有结果先进入候选区；
+只有人工 ReviewDecision 为 `approve` 时，确定性 promote 才会写入 published。
+
+LangGraph 只作为内部动态派发与恢复后端，不属于公开领域协议。公开 Python API 为：
+
+```python
+from agentic_qa import Harness, ReviewDecision, TaskRequest
+
+harness = Harness(".")
+snapshot = harness.run(
+    TaskRequest(
+        workspace="demo",
+        goal="分析登录需求并设计测试",
+        expected_artifacts=["requirement_analysis", "testcases"],
+    )
+)
+
+# 人工审核后调用；Agent 无权构造或代替该决定。
+snapshot = harness.resume(
+    snapshot.run_id,
+    ReviewDecision(
+        intent="approve",
+        target_artifact="all",
+        reason="已完成人工审核",
+    ),
+)
+```
 
 ## 当前能力
 
-| 意图 | WorkflowSpec | 候选产物 |
-|---|---|---|
-| 需求分析 | `requirement_analysis` | `requirement-analysis.preview.md` |
-| 测试用例 | `testcase_generation` | `testcases.preview.md` |
-| 需求分析 + 测试用例 | `analysis_and_testcases` | 拆分后的需求候选和用例候选 |
-| API 测试草稿 | `api_test_draft` | Markdown 草稿；有契约时附 API YAML |
-| RAG API 自动化用例 | `rag_automation_case_generation` | API YAML 与 RAG run record |
-| UI 自动化草稿 | `ui_test_draft` | `ui-test-draft.preview.md` |
-| 接口发现报告 | `api_discovery_report` | `api-discovery-report.preview.md` |
-| QA 报告 | `qa_report` | `qa-report.preview.md` |
+- 测试主管动态规划、依赖检查、并行派发与有限预算。
+- 需求、风险、测试设计、API、UI、执行、失败分诊、报告和审核辅助专家。
+- 声明式 Agent/Tool manifest；每个专家只看到 allowlist 中的工具。
+- `agentic-qa.harness.*.v1` 任务、计划、manifest、事件、快照和审核契约。
+- 新 `workspaces/<id>/` 工作区、run checkpoint、候选、review 和发布历史。
+- API cases v1.1、execution evidence v1、failure triage v1 领域 Schema。
+- MCP 工具快照冻结、namespaced tool、脱敏、大小限制和错误归一化。
+- 硬 Review Gate：Agent 只能准备摘要与 diff，不能 approve 或 promote。
 
-测试执行、失败分析、缺陷草稿和归档编排不属于当前 Runtime 能力；路线图中的后续项不得当作已实现入口。
-
-## 唯一主链路
+## 主链路
 
 ```text
-自然语言
-  -> intent
-  -> workflows/runtime/*.workflow.yml
-  -> LangGraph QAWorkflowState
-  -> 质量门
-  -> prd/<id>/runs/<run_id>/<artifact>.preview.md
-  -> prd/<id>/runs/<run_id>/artifact-preview.md 索引
-  -> metadata.yml + reviews/*.review.yml
-  -> Review Gate interrupt
+TaskRequest
+  -> qa_supervisor 规划
+  -> 专家 Agent 动态并行派发
+  -> 证据与质量检查
+  -> workspaces/<id>/candidates/<run_id>/
+  -> needs_human_review（停止）
+  -> 人工 ReviewDecision
   -> approved
-  -> promote
-  -> prd/<id>/artifacts/
+  -> deterministic promote
+  -> workspaces/<id>/published/<artifact>/current.*
 ```
 
-约束：
+## 快速开始
 
-- Python 不维护第二套工作流或 Prompt 契约。
-- `prompts/` 中每种生成能力只保留一份 canonical Prompt。
-- 未确认内容不得写入 `artifacts/`。
-- `confirmed` 只能由确定性 promote 成功后产生。
-- 缺少 API 契约时不得猜测 method、path、参数或断言；只有完整 OpenAPI 可以进入 `confirmed` 契约状态。
-- API YAML 只接受 `agentic-qa.api-cases.v1.1`。
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
 
-## 工作区
+agentic-qa workspace init demo
+agentic-qa run demo "分析登录需求并生成测试用例"
+agentic-qa inspect <run_id>
+agentic-qa resume <run_id> approve --artifact all --reason "人工审核通过"
+```
+
+其他命令：
 
 ```text
-prd/<需求ID>/
-├── input/
-│   ├── requirement.md
-│   ├── api.md
-│   └── attachments/
-├── runs/
-│   ├── latest.yml
-│   ├── index.jsonl
-│   └── <run_id>/
-│       ├── artifact-preview.md
-│       ├── artifact-preview.json
-│       ├── artifact-preview.yml
-│       ├── requirement-analysis.preview.md
-│       ├── testcases.preview.md
-│       └── <artifact>.preview.yml/json
-├── reviews/
-├── artifacts/
-│   ├── requirement-analysis.md
-│   ├── testcases.md
-│   ├── api-test-draft.md
-│   ├── ui-test-draft.md
-│   ├── api-discovery-report.md
-│   ├── qa-report.md
-│   └── history/
-└── metadata.yml
+agentic-qa agents list
+agentic-qa tools list
+agentic-qa eval run
 ```
 
-`.runtime/runs/<run_id>/` 保存内部 graph state、checkpoint、review events 和运行摘要；`prd/<id>/runs/` 保存用户可审核的候选产物及需求级索引。
+旧 `prd/` 和 `.runtime` 内容不会迁移、读取或改写。向新 API 传入 `prd/...` 会明确报
+“旧工作区不受 Harness 支持”。
 
-## 安装
+## 文档
 
-```bash
-python -m venv .venv
-pip install -e ".[dev]"
-```
-
-按需安装：
-
-```bash
-pip install -e ".[rag]"        # FAISS
-pip install -e ".[postgres]"   # PostgreSQL checkpoint
-pip install -e ".[documents]"  # Office/PDF 转 Markdown
-pip install -e ".[feishu]"     # 飞书 docx 导入
-pip install -e ".[full,dev]"   # 全部可选能力
-```
-
-## 使用
-
-创建并校验工作区：
-
-```bash
-python scripts/create_prd_workspace.py demo-requirement
-python scripts/validate_prd_workspace.py prd/demo-requirement
-```
-
-生成候选产物：
-
-```bash
-python -m runtime.cli "分析 prd/demo-requirement 并生成测试用例"
-```
-
-审核并发布：
-
-```bash
-python -m runtime.cli resume <run_id> "全部通过，全部发布"
-python -m runtime.cli promote prd/demo-requirement <run_id> testcases
-```
-
-RAG 调试：
-
-```bash
-python -m runtime.cli rag status
-python -m runtime.cli rag build
-python -m runtime.cli rag search "边界值 活动规则"
-```
-
-## 验证
-
-```bash
-ruff check .
-python scripts/validate_docs_consistency.py
-pytest -q
-```
-
-## 文档边界
-
-| 文档 | 负责内容 |
-|---|---|
-| [架构](docs/architecture.md) | 分层、唯一主链路与边界 |
-| [Workflow DSL](docs/workflow-dsl.md) | YAML Schema、节点、条件边与失败策略 |
-| [Review Gate](docs/review-gate.md) | 审核状态机与 promote 规则 |
-| [运行可靠性](docs/runtime-reliability.md) | checkpoint、重试、幂等与运行记录 |
-| [产物版本](docs/artifact-versioning.md) | 候选、正式产物与历史版本 |
-| [测试用例标准](docs/testcase-standards.md) | 11 列用例契约与质量门 |
-| [API 测试生成](docs/api-test-generation.md) | 契约状态与 API YAML v1.1 |
-| [RAG 设计](docs/rag-design.md) | 索引、检索、上下文和 trace |
-| [Prompt 工程](docs/prompt-engineering.md) | Prompt 单一事实源和治理规则 |
-| [命令入口](COMMANDS.md) | 当前自然语言与 CLI 用法 |
-| [路线图](docs/roadmap.md) | 已实现范围与下一阶段 |
+- [架构](docs/architecture.md)
+- [Harness 契约](docs/harness-contracts.md)
+- [工作区与产物版本](docs/artifact-versioning.md)
+- [Review Gate](docs/review-gate.md)
+- [RAG 设计](docs/rag-design.md)
+- [路线图](docs/roadmap.md)

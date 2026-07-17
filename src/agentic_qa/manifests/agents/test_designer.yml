@@ -1,0 +1,7 @@
+schema_version: agentic-qa.harness.agent-manifest.v1
+name: test_designer
+role: 测试设计专家
+prompt: 生成符合 11 列契约的可审核测试用例和有效覆盖映射。
+skills: [test-design]
+tool_allowlist: [workspace.read, rag.retrieve, artifact.write_candidate]
+max_steps: 10

@@ -5,11 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agentic-qa"
 version = "0.1.0"
-description = "Command-routed human-in-the-loop Agentic QA workspace."
+description = "Test-domain supervisor and expert-agent harness with a hard human review gate."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "langgraph>=1.0,<2",
+  "mcp>=1.0,<2",
   "numpy>=1.24,<3",
   "openai>=1.0,<3",
   "pydantic>=2,<3",
@@ -47,10 +48,17 @@ dev = [
 ]
 
 [project.scripts]
-agentic-qa = "runtime.cli:main"
+agentic-qa = "agentic_qa.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["apps*", "integrations*", "rag*", "runtime*"]
+where = ["src"]
+include = ["agentic_qa*"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+agentic_qa = ["manifests/**/*.yml"]
 
 [tool.ruff]
 line-length = 100
