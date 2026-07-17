@@ -479,6 +479,14 @@ class HarnessEngine:
                         completed.append(task_id)
                     for artifact, content in output.artifacts.items():
                         _quality_check(artifact, content)
+                        if artifact not in request.expected_artifacts:
+                            event(
+                                "task_output_accepted",
+                                task_id=task_id,
+                                agent=result["agent"],
+                                output=artifact,
+                            )
+                            continue
                         candidate = self.store.ensure_candidate(
                             workspace=request.workspace,
                             run_id=snapshot.run_id,

@@ -297,3 +297,47 @@ def test_artifact_repair_stops_after_three_attempts(tmp_path: Path) -> None:
         .splitlines()
     ]
     assert [event["type"] for event in events].count("artifact_validation_failed") == 3
+
+
+def test_internal_task_output_is_not_written_as_public_candidate(tmp_path: Path) -> None:
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        if response_model.__name__ == "QAPlan":
+            return QAPlan(
+                tasks=[
+                    PlanTask(
+                        id="risk_analysis",
+                        objective="analyze risks",
+                        agent="risk_strategist",
+                        expected_outputs=["risk_analysis"],
+                    ),
+                    PlanTask(
+                        id="produce_testcases",
+                        objective="produce testcases",
+                        agent="test_designer",
+                        dependencies=["risk_analysis"],
+                        expected_outputs=["testcases"],
+                    ),
+                ]
+            )
+        context = json.loads(prompt)
+        if context["task"]["agent"] == "risk_strategist":
+            return AgentOutput(
+                summary="risk context",
+                artifacts={"risk_analysis": "High risk: authentication"},
+                evidence=["user_goal"],
+            )
+        return AgentOutput(
+            summary="testcases",
+            artifacts={"testcases": default_recorded_artifact("testcases", context["goal"])},
+            evidence=["risk_analysis"],
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    harness.init_workspace("demo")
+    snapshot = harness.run(TaskRequest(workspace="demo", goal="test login"))
+
+    assert snapshot.status == "needs_human_review"
+    assert [candidate.artifact for candidate in snapshot.candidates] == ["testcases"]
+    assert not (
+        tmp_path / f"workspaces/demo/candidates/{snapshot.run_id}/risk_analysis.md"
+    ).exists()
