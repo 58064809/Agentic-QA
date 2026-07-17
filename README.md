@@ -95,7 +95,8 @@ agentic-qa eval run
 
 通用测试方法位于 `src/harness/knowledge/` 并由 Skill manifest 显式引用；项目需求、
 OpenAPI 和历史证据应放入 `workspaces/<id>/sources/`。根 `knowledge/` 仅保留本地旧资料，
-不会被 Harness 读取。旧 `configs/*.yaml` 同样不再生效，当前配置来源见 `.env.example`。
+不会被 Harness 读取。当前配置来源为 `.env.example`、声明式 manifest 和
+`TaskRequest.execution_profile`，不设置无效的顶层配置目录。
 
 ## 文档
 

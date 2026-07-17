@@ -40,13 +40,10 @@ README_备份.md
 /prd/
 /workspaces/
 
-# Root knowledge/config files are local migration leftovers. Canonical built-in
-# knowledge lives in src/harness/knowledge; current configuration uses manifests
-# and environment variables documented by .env.example.
+# Root knowledge files are local migration leftovers. Canonical built-in
+# knowledge lives in src/harness/knowledge.
 /knowledge/*
 !/knowledge/README.md
-/configs/*.yaml
-!/configs/*.example.yaml
 
 # Local agent / skill runtime state
 .atomcode/
