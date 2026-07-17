@@ -302,6 +302,105 @@ def test_source_dependent_agent_receives_prefetched_source(tmp_path: Path) -> No
     assert snapshot.budget.tool_calls == 1
 
 
+def test_invalid_structured_agent_output_is_retried_without_replan(tmp_path: Path) -> None:
+    expert_attempts = 0
+
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        nonlocal expert_attempts
+        if response_model.__name__ == "QAPlan":
+            return QAPlan(
+                tasks=[
+                    PlanTask(
+                        id="produce_testcases",
+                        objective="produce testcases",
+                        agent="test_designer",
+                        expected_outputs=["testcases"],
+                    )
+                ]
+            )
+        expert_attempts += 1
+        if expert_attempts == 1:
+            raise RuntimeError("model_gateway_error:ValidationError:json_invalid")
+        context = json.loads(prompt)
+        assert context["validation_feedback"][0]["kind"] == "structured_output"
+        return AgentOutput(
+            summary="valid retry",
+            artifacts={"testcases": default_recorded_artifact("testcases", context["goal"])},
+            evidence=["user_goal"],
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    harness.init_workspace("demo")
+    snapshot = harness.run(TaskRequest(workspace="demo", goal="test login"))
+
+    assert snapshot.status == "needs_human_review"
+    assert expert_attempts == 2
+    assert snapshot.budget.model_calls == 3
+    assert snapshot.budget.replans == 0
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "workspaces/demo/runs" / snapshot.run_id / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert [event["type"] for event in events].count("model_output_invalid") == 1
+
+
+def test_partial_preserves_candidate_already_written_before_budget_exhaustion(
+    tmp_path: Path,
+) -> None:
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        if response_model.__name__ == "QAPlan":
+            return QAPlan(
+                tasks=[
+                    PlanTask(
+                        id="analyze_requirements",
+                        objective="analyze requirement",
+                        agent="requirement_analyst",
+                        expected_outputs=["requirement_analysis"],
+                    ),
+                    PlanTask(
+                        id="produce_testcases",
+                        objective="produce testcases",
+                        agent="test_designer",
+                        dependencies=["analyze_requirements"],
+                        expected_outputs=["testcases"],
+                    ),
+                ]
+            )
+        context = json.loads(prompt)
+        return AgentOutput(
+            summary="requirement",
+            artifacts={
+                "requirement_analysis": default_recorded_artifact(
+                    "requirement_analysis", context["goal"]
+                )
+            },
+            evidence=["user_goal"],
+        )
+
+    harness = Harness(
+        tmp_path,
+        model_gateway=CallableModelGateway(respond),
+        budget_limits=BudgetLimits(max_model_calls=2),
+    )
+    harness.init_workspace("demo")
+    snapshot = harness.run(
+        TaskRequest(
+            workspace="demo",
+            goal="test login",
+            expected_artifacts=["requirement_analysis", "testcases"],
+        )
+    )
+
+    assert snapshot.status == "partial"
+    candidates = {candidate.artifact: candidate for candidate in snapshot.candidates}
+    assert candidates["requirement_analysis"].quality_passed is True
+    assert candidates["requirement_analysis"].status == "needs_human_review"
+    assert candidates["testcases"].quality_passed is False
+    assert candidates["testcases"].status == "partial"
+
+
 def test_invalid_artifact_is_repaired_before_candidate_write(tmp_path: Path) -> None:
     feedback_seen: list[list[dict[str, str]]] = []
     valid = default_recorded_artifact("testcases", "test login")

@@ -74,7 +74,7 @@ class ToolRuntime:
         record = (
             self.store.require_workspace(workspace) / "runs" / run_id / "tool-calls" / record_name
         )
-        if manifest.idempotency == "keyed" and record.is_file():
+        if manifest.idempotency in {"read", "keyed"} and idempotency_key and record.is_file():
             return json.loads(record.read_text(encoding="utf-8"))["result"]
         self.budget.consume_tool()
         try:

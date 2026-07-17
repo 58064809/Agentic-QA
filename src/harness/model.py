@@ -195,6 +195,7 @@ class OpenAICompatibleModelGateway:
         schema_context = (
             "\n必须只输出一个 JSON object，并严格满足以下 JSON Schema；不要输出 Markdown：\n"
             + json.dumps(response_model.model_json_schema(), ensure_ascii=False)
+            + "\nJSON 字符串中的换行必须写成转义字符 \\n，不得写入未转义的物理换行。"
         )
         request_options: dict[str, Any] = {}
         if self.config.is_deepseek:

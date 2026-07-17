@@ -82,3 +82,43 @@ def test_tool_allowlist_profile_and_idempotency(tmp_path: Path) -> None:
             profile=profile,
             idempotency_key="ui-forbidden",
         )
+
+
+def test_read_tool_result_is_reused_for_same_idempotency_key(tmp_path: Path) -> None:
+    harness = Harness(tmp_path, model_gateway=recorded_model_gateway())
+    workspace = harness.init_workspace("demo")
+    (workspace / "sources/requirement.md").write_text("requirement", encoding="utf-8")
+    snapshot = harness.run(TaskRequest(workspace="demo", goal="test"))
+    budget = Budget()
+    events: list[dict[str, object]] = []
+    runtime = ToolRuntime(
+        store=harness.store,
+        agents=harness.agents,
+        tools=harness.tools,
+        budget=budget,
+        on_call=events.append,
+    )
+
+    arguments = {"path": "sources/requirement.md"}
+    first = runtime.call(
+        workspace="demo",
+        run_id=snapshot.run_id,
+        agent="requirement_analyst",
+        tool="workspace.read",
+        arguments=arguments,
+        profile=ExecutionProfile(),
+        idempotency_key="same-read",
+    )
+    second = runtime.call(
+        workspace="demo",
+        run_id=snapshot.run_id,
+        agent="requirement_analyst",
+        tool="workspace.read",
+        arguments=arguments,
+        profile=ExecutionProfile(),
+        idempotency_key="same-read",
+    )
+
+    assert first == second
+    assert budget.snapshot().tool_calls == 1
+    assert len(events) == 1

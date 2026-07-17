@@ -238,6 +238,27 @@ class WorkspaceStore:
             evidence=evidence,
         )
 
+    def load_candidate(
+        self,
+        *,
+        workspace: str,
+        run_id: str,
+        artifact: str,
+        partial: bool = False,
+        evidence: list[str] | None = None,
+    ) -> ArtifactCandidate | None:
+        root = self.require_workspace(workspace)
+        target = root / "candidates" / run_id / ARTIFACT_FILENAMES[artifact]
+        if not target.is_file():
+            return None
+        return ArtifactCandidate(
+            artifact=artifact,
+            path=target.relative_to(self.repo_root).as_posix(),
+            status="partial" if partial else "needs_human_review",
+            quality_passed=not partial,
+            evidence=evidence or [],
+        )
+
     def write_review(self, snapshot: RunSnapshot, artifact: str, payload: dict[str, Any]) -> None:
         path = (
             self.require_workspace(snapshot.workspace)
