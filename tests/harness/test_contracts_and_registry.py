@@ -5,14 +5,32 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from harness import PlanTask, QAPlan, TaskRequest
+from harness import Harness, PlanTask, QAPlan, TaskRequest
 from harness.contracts import SkillManifest
+from harness.evals import recorded_model_gateway
 from harness.registry import AgentRegistry, SkillRegistry, ToolRegistry
 
 
 def test_task_request_rejects_legacy_prd_path() -> None:
     with pytest.raises(ValidationError, match="旧工作区不受 Harness 支持"):
         TaskRequest(workspace="prd/demo", goal="test")
+
+
+def test_workspace_accepts_safe_unicode_name_with_spaces(tmp_path: Path) -> None:
+    harness = Harness(tmp_path, model_gateway=recorded_model_gateway())
+    name = "城市开局计划 H5 规则"
+
+    workspace = harness.init_workspace(name)
+    request = TaskRequest(workspace=name, goal="test")
+
+    assert workspace == tmp_path / "workspaces" / name
+    assert request.workspace == name
+
+
+@pytest.mark.parametrize("name", ["../escape", "a/b", "a\\b", "CON", "bad:name", "trail."])
+def test_workspace_rejects_unsafe_directory_name(name: str) -> None:
+    with pytest.raises(ValidationError, match="安全目录名"):
+        TaskRequest(workspace=name, goal="test")
 
 
 def test_plan_rejects_cycles() -> None:

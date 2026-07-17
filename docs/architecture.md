@@ -28,3 +28,7 @@ Agentic-QA 采用测试主管与专家 Agent 分层。公开协议不依赖 Lang
 `src/harness/knowledge/` 只存放无项目数据的通用 QA 方法。`SkillRegistry` 校验 reference
 不可越出该目录、文件必须存在且非空，再合并进对应专家的系统指令。workspace source 与 MCP
 结果仍是不可信运行输入，不能通过知识文件扩大工具权限或越过 Review Gate。
+
+专家返回 artifact 后，Engine 在候选写入前执行确定性契约检查。失败原因以
+`artifact_validation_failed` 事件记录并反馈给同一专家，最多修复三次；只有通过检查的完整
+内容才能写入 candidate。该局部修复仍计入模型调用预算，不扩大主管的重规划上限。

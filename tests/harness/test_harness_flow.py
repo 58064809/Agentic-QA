@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from harness import Harness, ReviewDecision, TaskRequest
+from harness import Harness, PlanTask, QAPlan, ReviewDecision, TaskRequest
 from harness.budget import BudgetLimits
 from harness.engine import AgentOutput, build_default_plan, default_recorded_artifact
 from harness.evals import recorded_model_gateway
@@ -193,3 +193,107 @@ def test_agent_tool_request_is_executed_and_recorded(tmp_path: Path) -> None:
     assert snapshot.status == "needs_human_review"
     assert snapshot.budget.tool_calls == 1
     assert snapshot.tool_calls[0]["tool"] == "workspace.read"
+
+
+def test_invalid_artifact_is_repaired_before_candidate_write(tmp_path: Path) -> None:
+    feedback_seen: list[list[dict[str, str]]] = []
+    valid = default_recorded_artifact("testcases", "test login")
+    reversed_headers = [
+        "待确认项",
+        "断言/证据",
+        "预期结果",
+        "测试步骤",
+        "测试数据",
+        "前置条件",
+        "优先级",
+        "测试类型",
+        "标题",
+        "需求/规则来源",
+        "用例ID",
+    ]
+    invalid = "\n".join(
+        [
+            "| " + " | ".join(reversed_headers) + " |",
+            "|" + "|".join(["---"] * 11) + "|",
+            "| " + " | ".join(["value"] * 11) + " |",
+        ]
+    )
+
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        if response_model.__name__ == "QAPlan":
+            return QAPlan(
+                tasks=[
+                    PlanTask(
+                        id="produce_testcases",
+                        objective="produce testcases",
+                        agent="test_designer",
+                        expected_outputs=["testcases"],
+                    )
+                ]
+            )
+        context = json.loads(prompt)
+        feedback_seen.append(context["validation_feedback"])
+        return AgentOutput(
+            summary="candidate",
+            artifacts={"testcases": valid if context["validation_feedback"] else invalid},
+            evidence=["user_goal"],
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    harness.init_workspace("demo")
+    snapshot = harness.run(TaskRequest(workspace="demo", goal="test login"))
+
+    assert snapshot.status == "needs_human_review"
+    assert feedback_seen[0] == []
+    assert "exact ordered 11-column" in feedback_seen[1][0]["error"]
+    assert snapshot.budget.model_calls == 3
+    candidate = tmp_path / snapshot.candidates[0].path
+    assert candidate.read_text(encoding="utf-8") == valid
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "workspaces/demo/runs" / snapshot.run_id / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert [event["type"] for event in events].count("artifact_validation_failed") == 1
+
+
+def test_artifact_repair_stops_after_three_attempts(tmp_path: Path) -> None:
+    invalid = "# Testcases\n\nmissing required table"
+
+    def respond(*, response_model: type, **_kwargs):
+        if response_model.__name__ == "QAPlan":
+            return QAPlan(
+                tasks=[
+                    PlanTask(
+                        id="produce_testcases",
+                        objective="produce testcases",
+                        agent="test_designer",
+                        expected_outputs=["testcases"],
+                    )
+                ]
+            )
+        return AgentOutput(
+            summary="still invalid",
+            artifacts={"testcases": invalid},
+            evidence=["user_goal"],
+        )
+
+    harness = Harness(
+        tmp_path,
+        model_gateway=CallableModelGateway(respond),
+        budget_limits=BudgetLimits(max_replans=0),
+    )
+    harness.init_workspace("demo")
+    snapshot = harness.run(TaskRequest(workspace="demo", goal="test login"))
+
+    assert snapshot.status == "partial"
+    assert snapshot.budget.model_calls == 4
+    assert snapshot.candidates[0].status == "partial"
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "workspaces/demo/runs" / snapshot.run_id / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert [event["type"] for event in events].count("artifact_validation_failed") == 3

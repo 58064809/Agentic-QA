@@ -19,6 +19,35 @@ ARTIFACT_TYPES = (
     "failure_analysis",
     "bug_draft",
 )
+WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
+INVALID_WORKSPACE_CHARS = frozenset('<>:"/\\|?*')
+
+
+def normalize_workspace_id(value: str) -> str:
+    normalized = value.strip().replace("\\", "/")
+    if normalized == "prd" or normalized.startswith("prd/") or "/prd/" in f"/{normalized}/":
+        raise ValueError("旧工作区不受 Harness 支持；请使用 workspaces/<id>")
+    if normalized.startswith("workspaces/"):
+        normalized = normalized.removeprefix("workspaces/")
+    if (
+        not normalized
+        or "/" in normalized
+        or normalized in {".", ".."}
+        or len(normalized) > 128
+        or normalized.endswith(".")
+        or any(character in INVALID_WORKSPACE_CHARS for character in normalized)
+        or any(ord(character) < 32 for character in normalized)
+        or normalized.split(".", 1)[0].upper() in WINDOWS_RESERVED_NAMES
+    ):
+        raise ValueError("workspace 必须是单个安全目录名")
+    return normalized
 
 
 class StrictModel(BaseModel):
@@ -56,14 +85,7 @@ class TaskRequest(StrictModel):
     @field_validator("workspace")
     @classmethod
     def reject_legacy_workspace(cls, value: str) -> str:
-        normalized = value.strip().replace("\\", "/").strip("/")
-        if normalized == "prd" or normalized.startswith("prd/") or "/prd/" in f"/{normalized}/":
-            raise ValueError("旧工作区不受 Harness 支持；请使用 workspaces/<id>")
-        if normalized.startswith("workspaces/"):
-            normalized = normalized.removeprefix("workspaces/")
-        if not normalized or "/" in normalized or normalized in {".", ".."}:
-            raise ValueError("workspace 必须是单个安全标识")
-        return normalized
+        return normalize_workspace_id(value)
 
     @field_validator("expected_artifacts")
     @classmethod

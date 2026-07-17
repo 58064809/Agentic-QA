@@ -72,6 +72,8 @@ agentic-qa inspect <run_id>
 agentic-qa resume <run_id> approve --artifact all --reason "人工审核通过"
 ```
 
+workspace 名称可以使用安全的中文、英文、数字、空格、点、下划线和连字符，但必须是单层目录名。
+
 运行中断后，使用 `agentic-qa resume <run_id>` 从同一 checkpoint 恢复。没有配置模型时，
 `run` 会在创建候选前明确失败；离线评测使用录制响应，不会伪装成真实模型输出。
 
@@ -80,6 +82,9 @@ Harness 会自动使用 `deepseek-v4-flash` 处理常规结构化任务，用
 关闭思考模式；路由决策记录在 run snapshot 和事件中，但不保存模型的 `reasoning_content`。
 可用 `AGENTIC_QA_MODEL_FLASH`、`AGENTIC_QA_MODEL_PRO` 覆盖两档模型；设置
 `AGENTIC_QA_MODEL` 会把两档固定到同一个模型。
+
+专家产物在写入 candidate 前会执行确定性格式校验；格式错误会连同具体缺失项反馈给原专家，
+单任务最多自修复三次。无效内容不会落盘，仍失败时才由主管在全局重规划预算内处理。
 
 其他命令：
 

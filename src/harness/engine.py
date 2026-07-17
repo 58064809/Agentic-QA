@@ -63,6 +63,36 @@ ARTIFACT_AGENT = {
     "bug_draft": "failure_triager",
 }
 
+TESTCASE_HEADERS = (
+    "用例ID",
+    "需求/规则来源",
+    "标题",
+    "测试类型",
+    "优先级",
+    "前置条件",
+    "测试数据",
+    "测试步骤",
+    "预期结果",
+    "断言/证据",
+    "待确认项",
+)
+
+ARTIFACT_OUTPUT_CONTRACTS = {
+    "requirement_analysis": (
+        "输出完整 Markdown 需求分析，至少包含：来源、已确认规则、推断、冲突/歧义、"
+        "待确认项和测试影响。每条事实必须可追踪到 source；不得补造缺失配置。"
+    ),
+    "testcases": (
+        "输出完整 Markdown 测试用例。主表表头必须严格按此顺序且逐字一致：\n"
+        "| 用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | "
+        "测试步骤 | 预期结果 | 断言/证据 | 待确认项 |\n"
+        "表格至少包含一条可执行用例；随后输出“覆盖矩阵”，包含规则/风险、用例和映射依据，"
+        "且至少一条有效映射。不得把待确认规则写成确定预期。"
+    ),
+}
+
+MAX_ARTIFACT_REPAIRS = 3
+
 
 def build_default_plan(request: TaskRequest) -> QAPlan:
     """Deterministic recorded-model fixture; production planning still uses the model."""
@@ -356,11 +386,25 @@ class HarnessEngine:
             budget.consume_model()
             route = self.model_policy.for_planner(request)
             event("model_routed", agent="qa_supervisor", **self.model.describe_route(route))
+            agent_catalog = [
+                {
+                    "name": item.name,
+                    "role": item.role,
+                    "skills": item.skills,
+                    "tool_allowlist": item.tool_allowlist,
+                }
+                for item in self.agents.list()
+            ]
             plan = self.model.structured(
                 system=self.agents.get("qa_supervisor").prompt,
                 prompt=(
                     "为以下 QA 目标生成严格 QAPlan。必须覆盖全部 expected_artifacts，"
-                    "只能使用已注册 Agent，并为任务声明证据要求。\n" + request.model_dump_json()
+                    "只能使用下列已注册 Agent，并为任务声明证据要求。"
+                    "生成 testcases、api_test_draft 或 ui_test_draft 时，先安排 "
+                    "requirement_analyst 和 risk_strategist 的无依赖分析任务，再让产物任务依赖"
+                    "这些分析。每个请求产物必须且只能由一个任务生成。\n"
+                    f"Agent catalog:\n{json.dumps(agent_catalog, ensure_ascii=False)}\n"
+                    + request.model_dump_json()
                 ),
                 response_model=QAPlan,
                 route=route,
@@ -561,6 +605,8 @@ class HarnessEngine:
         manifest = self.agents.get(task.agent)
         skill_text = "\n\n".join(self.skills.instructions(name) for name in manifest.skills)
         tool_results: list[dict[str, Any]] = []
+        validation_feedback: list[dict[str, str]] = []
+        source_files = [path for path, _content in self.store.source_texts(request.workspace)]
         for step in range(manifest.max_steps):
             budget.consume_model()
             route = self.model_policy.for_task(task)
@@ -582,11 +628,15 @@ class HarnessEngine:
                         "goal": request.goal,
                         "task": task.model_dump(mode="json"),
                         "dependencies": sanitize_untrusted(dependencies),
-                        "source_files": [
-                            path for path, _content in self.store.source_texts(request.workspace)
-                        ],
+                        "source_files": source_files,
                         "tool_results": sanitize_untrusted(tool_results),
                         "allowed_artifacts": task.expected_outputs,
+                        "artifact_output_contracts": {
+                            artifact: ARTIFACT_OUTPUT_CONTRACTS[artifact]
+                            for artifact in task.expected_outputs
+                            if artifact in ARTIFACT_OUTPUT_CONTRACTS
+                        },
+                        "validation_feedback": validation_feedback,
                     },
                     ensure_ascii=False,
                 ),
@@ -623,6 +673,41 @@ class HarnessEngine:
             missing = required - set(result.artifacts)
             if missing:
                 raise ValueError(f"agent omitted delegated artifacts: {sorted(missing)}")
+            try:
+                if (
+                    manifest.name == "requirement_analyst"
+                    and source_files
+                    and not any(
+                        item.get("tool") in {"workspace.read", "rag.retrieve"}
+                        for item in tool_results
+                    )
+                ):
+                    raise ValueError(
+                        "requirement_analyst must read or retrieve workspace sources before output"
+                    )
+                for artifact, content in result.artifacts.items():
+                    _quality_check(artifact, content)
+            except ValueError as exc:
+                error = str(exc)[:500]
+                validation_feedback.append(
+                    {
+                        "kind": "artifact_validation",
+                        "error": error,
+                        "instruction": "修正后返回完整产物，不要只返回补丁或解释。",
+                    }
+                )
+                event(
+                    "artifact_validation_failed",
+                    task_id=task.id,
+                    agent=manifest.name,
+                    attempt=len(validation_feedback),
+                    error=error,
+                )
+                if len(validation_feedback) >= MAX_ARTIFACT_REPAIRS:
+                    raise ValueError(
+                        f"artifact validation failed after {MAX_ARTIFACT_REPAIRS} attempts: {error}"
+                    ) from exc
+                continue
             return result
         raise RuntimeError(f"agent step limit exceeded: {manifest.name}")
 
@@ -709,21 +794,27 @@ def _quality_check(artifact: str, content: str) -> None:
     if not content.strip():
         raise ValueError(f"{artifact} candidate is empty")
     if artifact == "testcases":
-        required = (
-            "用例ID",
-            "需求/规则来源",
-            "标题",
-            "测试类型",
-            "优先级",
-            "前置条件",
-            "测试数据",
-            "测试步骤",
-            "预期结果",
-            "断言/证据",
-            "待确认项",
-        )
-        missing = [header for header in required if header not in content]
+        missing = [header for header in TESTCASE_HEADERS if header not in content]
         if missing:
             raise ValueError(f"testcases candidate misses required columns: {missing}")
+        rows = [_markdown_cells(line) for line in content.splitlines()]
+        header_index = next(
+            (index for index, cells in enumerate(rows) if cells == list(TESTCASE_HEADERS)),
+            None,
+        )
+        if header_index is None:
+            raise ValueError("testcases candidate has no exact ordered 11-column header row")
+        data_rows = [
+            cells for cells in rows[header_index + 2 :] if len(cells) == len(TESTCASE_HEADERS)
+        ]
+        if not data_rows or not any(row[0] and row[2] for row in data_rows):
+            raise ValueError("testcases candidate has no valid 11-column data row")
         if "覆盖矩阵" in content and content.count("|") < 20:
             raise ValueError("coverage matrix has no valid mapping")
+
+
+def _markdown_cells(line: str) -> list[str]:
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return []
+    return [cell.strip() for cell in stripped[1:-1].split("|")]

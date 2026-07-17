@@ -11,11 +11,16 @@ from typing import Any
 
 import yaml
 
-from harness.contracts import ArtifactCandidate, HarnessEvent, RunSnapshot
+from harness.contracts import (
+    ArtifactCandidate,
+    HarnessEvent,
+    RunSnapshot,
+    normalize_workspace_id,
+)
 
 UTC = timezone.utc
 
-SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 ARTIFACT_FILENAMES = {
     "requirement_analysis": "requirement-analysis.md",
     "testcases": "testcases.md",
@@ -67,14 +72,14 @@ class WorkspaceStore:
         self.root = self.repo_root / "workspaces"
 
     def workspace_path(self, workspace: str) -> Path:
-        if not SAFE_ID.fullmatch(workspace):
-            raise ValueError("workspace 标识不安全")
+        workspace = normalize_workspace_id(workspace)
         path = (self.root / workspace).resolve()
         if path.parent != self.root.resolve():
             raise ValueError("workspace 路径越界")
         return path
 
     def init_workspace(self, workspace: str) -> Path:
+        workspace = normalize_workspace_id(workspace)
         path = self.workspace_path(workspace)
         if path.exists():
             raise FileExistsError(f"workspace 已存在: {workspace}")
@@ -168,7 +173,7 @@ class WorkspaceStore:
         return records
 
     def load_snapshot(self, run_id: str) -> RunSnapshot:
-        if not SAFE_ID.fullmatch(run_id):
+        if not SAFE_RUN_ID.fullmatch(run_id):
             raise ValueError("run_id 不安全")
         matches = list(self.root.glob(f"*/runs/{run_id}/state.json"))
         if not matches:
