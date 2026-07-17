@@ -11,7 +11,7 @@ from typing import Any
 
 from langgraph.types import Command, Send
 
-from agentic_qa.contracts import PlanTask
+from harness.contracts import PlanTask
 
 
 def dispatch(tasks: list[PlanTask]) -> list[Send]:

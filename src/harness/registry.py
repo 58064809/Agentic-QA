@@ -6,7 +6,7 @@ from typing import TypeVar
 import yaml
 from pydantic import BaseModel
 
-from agentic_qa.contracts import AgentManifest, ToolManifest
+from harness.contracts import AgentManifest, ToolManifest
 
 T = TypeVar("T", bound=BaseModel)
 

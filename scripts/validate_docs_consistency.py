@@ -13,8 +13,8 @@ for import_root in (str(REPO_ROOT), str(SOURCE_ROOT)):
     if import_root not in sys.path:
         sys.path.insert(0, import_root)
 
-from agentic_qa.contracts import AgentManifest, ToolManifest  # noqa: E402
-from agentic_qa.schemas.api_test_cases import API_CASES_SCHEMA_VERSION  # noqa: E402
+from harness.contracts import AgentManifest, ToolManifest  # noqa: E402
+from harness.schemas.api_test_cases import API_CASES_SCHEMA_VERSION  # noqa: E402
 
 CORE_FILES = (
     "README.md",
@@ -27,11 +27,11 @@ CORE_FILES = (
     "docs/rag-design.md",
     "docs/roadmap.md",
     "rules/artifact-path-rules.md",
-    "src/agentic_qa/contracts.py",
-    "src/agentic_qa/harness.py",
-    "src/agentic_qa/engine.py",
-    "src/agentic_qa/store.py",
-    "src/agentic_qa/review.py",
+    "src/harness/contracts.py",
+    "src/harness/harness.py",
+    "src/harness/engine.py",
+    "src/harness/store.py",
+    "src/harness/review.py",
 )
 EXCLUDED_PARTS = {
     ".git",
@@ -45,7 +45,7 @@ EXCLUDED_PARTS = {
     "__pycache__",
 }
 INLINE_PATH = re.compile(
-    r"`((?:agentic_qa|docs|rules|prompts|knowledge|skills|scripts|tests)/[^`<>{}*?]+)`"
+    r"`((?:src/harness|docs|rules|prompts|knowledge|skills|scripts|tests)/[^`<>{}*?]+)`"
 )
 
 
@@ -55,7 +55,7 @@ def _read(path: Path) -> str:
 
 def _validate_manifests(root: Path, errors: list[str]) -> None:
     agent_names: set[str] = set()
-    for path in sorted((root / "src/agentic_qa/manifests/agents").glob("*.yml")):
+    for path in sorted((root / "src/harness/manifests/agents").glob("*.yml")):
         try:
             manifest = AgentManifest.model_validate(yaml.safe_load(_read(path)))
         except Exception as exc:
@@ -68,7 +68,7 @@ def _validate_manifests(root: Path, errors: list[str]) -> None:
         errors.append("缺少 qa_supervisor manifest")
 
     tool_names: set[str] = set()
-    for path in sorted((root / "src/agentic_qa/manifests/tools").glob("*.yml")):
+    for path in sorted((root / "src/harness/manifests/tools").glob("*.yml")):
         try:
             manifest = ToolManifest.model_validate(yaml.safe_load(_read(path)))
         except Exception as exc:

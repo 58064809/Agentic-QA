@@ -12,7 +12,7 @@ Agentic-QA 采用测试主管与专家 Agent 分层。公开协议不依赖 Lang
 | Artifact Store | run、checkpoint、candidate、review、published 历史 |
 | Review Gate | 只接受人工 `ReviewDecision`，批准后确定性 promote |
 
-`src/agentic_qa/backend.py` 是内部 LangGraph `Send`/`Command` 适配边界。并行任务以任务级结果
+`src/harness/backend.py` 是内部 LangGraph `Send`/`Command` 适配边界。并行任务以任务级结果
 汇总，专家不得直接修改共享字典。公开 `RunSnapshot` 不包含 LangGraph 类型。
 
 默认硬预算为 24 次模型调用、50 次工具调用、3 次重规划、3 个并发 Agent 和 30 分钟。

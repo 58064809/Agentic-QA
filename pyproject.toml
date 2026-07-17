@@ -48,17 +48,17 @@ dev = [
 ]
 
 [project.scripts]
-agentic-qa = "agentic_qa.cli:main"
+agentic-qa = "harness.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["agentic_qa*"]
+include = ["harness*"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
-agentic_qa = ["manifests/**/*.yml"]
+harness = ["manifests/**/*.yml"]
 
 [tool.ruff]
 line-length = 100

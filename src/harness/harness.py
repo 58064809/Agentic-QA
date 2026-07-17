@@ -5,13 +5,13 @@ from pathlib import Path
 from queue import Queue
 from threading import Thread
 
-from agentic_qa.budget import BudgetLimits
-from agentic_qa.contracts import HarnessEvent, ReviewDecision, RunSnapshot, TaskRequest
-from agentic_qa.engine import HarnessEngine
-from agentic_qa.model import ModelGateway
-from agentic_qa.registry import AgentRegistry, ToolRegistry
-from agentic_qa.review import apply_review
-from agentic_qa.store import WorkspaceStore
+from harness.budget import BudgetLimits
+from harness.contracts import HarnessEvent, ReviewDecision, RunSnapshot, TaskRequest
+from harness.engine import HarnessEngine
+from harness.model import ModelGateway
+from harness.registry import AgentRegistry, ToolRegistry
+from harness.review import apply_review
+from harness.store import WorkspaceStore
 
 
 class Harness:

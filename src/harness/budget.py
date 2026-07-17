@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from threading import Lock
 from time import monotonic
 
-from agentic_qa.contracts import BudgetUsage
+from harness.contracts import BudgetUsage
 
 
 class BudgetExceeded(RuntimeError):

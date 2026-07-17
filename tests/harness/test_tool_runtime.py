@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from agentic_qa import Harness, TaskRequest
-from agentic_qa.budget import Budget
-from agentic_qa.contracts import ExecutionProfile
-from agentic_qa.tools import ToolRuntime
+from harness import Harness, TaskRequest
+from harness.budget import Budget
+from harness.contracts import ExecutionProfile
+from harness.tools import ToolRuntime
 
 
 def test_tool_allowlist_profile_and_idempotency(tmp_path: Path) -> None:

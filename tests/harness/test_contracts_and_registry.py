@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from agentic_qa import PlanTask, QAPlan, TaskRequest
-from agentic_qa.registry import AgentRegistry, ToolRegistry
+from harness import PlanTask, QAPlan, TaskRequest
+from harness.registry import AgentRegistry, ToolRegistry
 
 
 def test_task_request_rejects_legacy_prd_path() -> None:

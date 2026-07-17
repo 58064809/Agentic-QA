@@ -7,11 +7,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from agentic_qa.budget import Budget
-from agentic_qa.contracts import ExecutionProfile
-from agentic_qa.registry import AgentRegistry, ToolRegistry
-from agentic_qa.security import sanitize_untrusted
-from agentic_qa.store import WorkspaceStore
+from harness.budget import Budget
+from harness.contracts import ExecutionProfile
+from harness.registry import AgentRegistry, ToolRegistry
+from harness.security import sanitize_untrusted
+from harness.store import WorkspaceStore
 
 
 class ToolRuntime:

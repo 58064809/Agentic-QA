@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentic_qa.security import sanitize_untrusted
+from harness.security import sanitize_untrusted
 
 
 class MCPTool(BaseModel):

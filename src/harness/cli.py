@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from agentic_qa import Harness, ReviewDecision, ReviewIntent, TaskRequest
+from harness import Harness, ReviewDecision, ReviewIntent, TaskRequest
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "tools":
             _print([item.model_dump(mode="json") for item in harness.tools.list()])
         elif args.command == "eval":
-            from agentic_qa.evals import run_offline_eval
+            from harness.evals import run_offline_eval
 
             result = run_offline_eval()
             _print(result)

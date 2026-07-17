@@ -13,14 +13,14 @@
 
 | 契约 | 唯一来源 |
 |---|---|
-| 公开 Harness API | `src/agentic_qa/harness.py` 与 `src/agentic_qa/contracts.py` |
-| Agent 声明 | `src/agentic_qa/manifests/agents/` |
-| Tool 声明 | `src/agentic_qa/manifests/tools/` |
-| 动态派发后端 | `src/agentic_qa/backend.py` 与 `src/agentic_qa/engine.py` |
-| 预算 | `src/agentic_qa/budget.py` |
-| 工作区与 Artifact Store | `src/agentic_qa/store.py` |
-| Review 状态与 promote | `src/agentic_qa/review.py` |
-| 领域 Schema | `src/agentic_qa/schemas/` |
+| 公开 Harness API | `src/harness/harness.py` 与 `src/harness/contracts.py` |
+| Agent 声明 | `src/harness/manifests/agents/` |
+| Tool 声明 | `src/harness/manifests/tools/` |
+| 动态派发后端 | `src/harness/backend.py` 与 `src/harness/engine.py` |
+| 预算 | `src/harness/budget.py` |
+| 工作区与 Artifact Store | `src/harness/store.py` |
+| Review 状态与 promote | `src/harness/review.py` |
+| 领域 Schema | `src/harness/schemas/` |
 | RAG 行为 | `docs/rag-design.md` |
 
 LangGraph 类型不得出现在公开领域契约。CLI 只组装参数并调用 `Harness`。

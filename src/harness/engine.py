@@ -8,9 +8,9 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentic_qa.backend import dispatch, return_to_supervisor
-from agentic_qa.budget import Budget, BudgetExceeded, BudgetLimits
-from agentic_qa.contracts import (
+from harness.backend import dispatch, return_to_supervisor
+from harness.budget import Budget, BudgetExceeded, BudgetLimits
+from harness.contracts import (
     EvidenceRequirement,
     HarnessEvent,
     PlanTask,
@@ -18,10 +18,10 @@ from agentic_qa.contracts import (
     RunSnapshot,
     TaskRequest,
 )
-from agentic_qa.model import ModelGateway
-from agentic_qa.registry import AgentRegistry, ToolRegistry
-from agentic_qa.security import sanitize_untrusted
-from agentic_qa.store import WorkspaceStore
+from harness.model import ModelGateway
+from harness.registry import AgentRegistry, ToolRegistry
+from harness.security import sanitize_untrusted
+from harness.store import WorkspaceStore
 
 
 class AgentOutput(BaseModel):

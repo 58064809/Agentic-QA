@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from agentic_qa import Harness, ReviewDecision, TaskRequest
-from agentic_qa.budget import BudgetLimits
-from agentic_qa.model import CallableModelGateway
+from harness import Harness, ReviewDecision, TaskRequest
+from harness.budget import BudgetLimits
+from harness.model import CallableModelGateway
 
 
 def test_run_review_and_deterministic_promote(tmp_path: Path) -> None:

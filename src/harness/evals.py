@@ -4,8 +4,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from agentic_qa.contracts import ARTIFACT_TYPES, ReviewDecision, TaskRequest
-from agentic_qa.harness import Harness
+from harness.contracts import ARTIFACT_TYPES, ReviewDecision, TaskRequest
+from harness.harness import Harness
 
 
 def run_offline_eval() -> dict[str, Any]:

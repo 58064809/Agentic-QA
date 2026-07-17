@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from agentic_qa.schemas.api_test_cases import ApiTestCasesDraft
-from agentic_qa.schemas.execution_evidence import ExecutionEvidence
+from harness.schemas.api_test_cases import ApiTestCasesDraft
+from harness.schemas.execution_evidence import ExecutionEvidence
 
 
 def test_api_cases_only_accept_v1_1() -> None:

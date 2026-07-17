@@ -1,6 +1,6 @@
 """Public API for the Agentic-QA agent harness."""
 
-from agentic_qa.contracts import (
+from harness.contracts import (
     AgentManifest,
     HarnessEvent,
     PlanTask,
@@ -11,7 +11,7 @@ from agentic_qa.contracts import (
     TaskRequest,
     ToolManifest,
 )
-from agentic_qa.harness import Harness
+from harness.harness import Harness
 
 __all__ = [
     "AgentManifest",

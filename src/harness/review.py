@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from agentic_qa.contracts import ReviewDecision, ReviewIntent, RunSnapshot
-from agentic_qa.store import WorkspaceStore
+from harness.contracts import ReviewDecision, ReviewIntent, RunSnapshot
+from harness.store import WorkspaceStore
 
 
 def apply_review(

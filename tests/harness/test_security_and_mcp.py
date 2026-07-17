@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_qa.mcp import MCPBridge, MCPToolSnapshot
-from agentic_qa.security import sanitize_untrusted
+from harness.mcp import MCPBridge, MCPToolSnapshot
+from harness.security import sanitize_untrusted
 
 
 def test_mcp_snapshot_freezes_allowlist_and_redacts_results() -> None:

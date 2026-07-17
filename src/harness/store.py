@@ -11,7 +11,7 @@ from typing import Any
 
 import yaml
 
-from agentic_qa.contracts import ArtifactCandidate, HarnessEvent, RunSnapshot
+from harness.contracts import ArtifactCandidate, HarnessEvent, RunSnapshot
 
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 ARTIFACT_FILENAMES = {
