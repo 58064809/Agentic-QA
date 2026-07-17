@@ -3,7 +3,6 @@ __pycache__/
 *.pyo
 .pytest_cache/
 .ruff_cache/
-.deepeval/
 .mypy_cache/
 .coverage
 htmlcov/
@@ -19,22 +18,8 @@ env/
 .DS_Store
 Thumbs.db
 
-# Local generated data
-/outputs/
-/logs/
-/data/
-/cache/
-/vector_store/
-.rag_index/
-*.faiss
-*.index
-*.db
-*.sqlite
+# Local generated logs
 *.log
-
-# Local scratch files
-caogao.py
-README_备份.md
 
 # Legacy data and runtime workspaces stay local
 /prd/
