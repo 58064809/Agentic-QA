@@ -59,6 +59,12 @@ class ModelPolicy:
         )
 
     def for_task(self, task: PlanTask) -> ModelRoute:
+        if task.agent == "test_designer":
+            return ModelRoute(
+                tier="pro",
+                thinking="disabled",
+                purpose=f"expert:{task.agent}",
+            )
         if task.agent in self._pro_agents:
             return ModelRoute(
                 tier="pro",
@@ -95,6 +101,7 @@ class ModelConfig:
     pro_model: str = DEFAULT_PRO_MODEL
     api_key_env: str = "DEEPSEEK_API_KEY"
     base_url: str | None = DEFAULT_DEEPSEEK_BASE_URL
+    request_timeout_seconds: float = 180.0
 
     @classmethod
     def from_env(cls) -> ModelConfig | None:
@@ -134,6 +141,9 @@ class ModelConfig:
             or DEFAULT_PRO_MODEL,
             api_key_env=api_key_env,
             base_url=os.getenv("AGENTIC_QA_MODEL_BASE_URL", "").strip() or default_base_url,
+            request_timeout_seconds=float(
+                os.getenv("AGENTIC_QA_MODEL_TIMEOUT_SECONDS", "").strip() or "180"
+            ),
         )
 
     def model_for(self, route: ModelRoute) -> str:
@@ -162,7 +172,12 @@ class OpenAICompatibleModelGateway:
         except ImportError as exc:  # pragma: no cover - dependency gate
             raise RuntimeError("openai SDK is not installed") from exc
         self.config = config
-        self._client = OpenAI(api_key=api_key, base_url=config.base_url)
+        self._client = OpenAI(
+            api_key=api_key,
+            base_url=config.base_url,
+            timeout=config.request_timeout_seconds,
+            max_retries=0,
+        )
         self._lock = Lock()
         self.last_usage: dict[str, int] = {}
         self.route_history: list[dict[str, Any]] = []

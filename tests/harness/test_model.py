@@ -33,6 +33,7 @@ def test_deepseek_key_enables_default_v4_routing(monkeypatch) -> None:
     assert config.base_url == DEFAULT_DEEPSEEK_BASE_URL
     assert config.flash_model == "deepseek-v4-flash"
     assert config.pro_model == "deepseek-v4-pro"
+    assert config.request_timeout_seconds == 180
 
 
 def test_single_model_override_pins_both_tiers(monkeypatch) -> None:
@@ -66,7 +67,7 @@ def test_policy_uses_pro_only_for_complex_plans_and_specialists() -> None:
     assert (routine.tier, routine.thinking) == ("flash", "enabled")
     assert (complex_route.tier, complex_route.reasoning_effort) == ("pro", "max")
     assert (analyst.tier, analyst.thinking) == ("flash", "disabled")
-    assert (designer.tier, designer.thinking) == ("pro", "enabled")
+    assert (designer.tier, designer.thinking) == ("pro", "disabled")
     assert (triager.tier, triager.thinking) == ("pro", "enabled")
 
 

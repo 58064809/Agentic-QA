@@ -22,8 +22,10 @@ Agentic-QA 采用测试主管与专家 Agent 分层。公开协议不依赖 Lang
 超限时生成明确标记为 partial 的可审核候选，不伪造完成。
 
 `ModelPolicy` 是模型选择的单一入口。Flash 是常规结构化任务的默认档；Pro 用于复杂主管、
-风险策略、长篇测试设计和失败分诊。思考模式只用于规划和高推理任务，且 `reasoning_content` 不进入
-事件、checkpoint 或产物。一个 run 的模型、档位和思考开关记录在 `model_routes`。
+风险策略、长篇测试设计和失败分诊。思考模式只用于规划和高推理任务；测试设计使用 Pro
+但关闭思考模式。单次模型请求默认 180 秒超时且禁用 SDK 隐式重试，后续显式重试由 Harness
+预算约束。`reasoning_content` 不进入事件、checkpoint 或产物。一个 run 的模型、档位和
+思考开关记录在 `model_routes`。
 
 `src/harness/knowledge/` 只存放无项目数据的通用 QA 方法。`SkillRegistry` 校验 reference
 不可越出该目录、文件必须存在且非空，再合并进对应专家的系统指令。workspace source 与 MCP
