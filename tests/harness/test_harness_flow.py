@@ -241,6 +241,53 @@ def test_planner_repairs_semantically_invalid_plan_in_same_run(tmp_path: Path) -
     assert [event["type"] for event in events].count("plan_validation_failed") == 1
 
 
+def test_planner_repairs_public_artifact_assigned_to_wrong_agent(tmp_path: Path) -> None:
+    plans = 0
+
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        nonlocal plans
+        if response_model.__name__ == "QAPlan":
+            plans += 1
+            agent = "qa_supervisor" if plans == 1 else "requirement_analyst"
+            if plans == 2:
+                assert "requirement_analysis 必须由 requirement_analyst 生成" in prompt
+            return QAPlan(
+                tasks=[
+                    PlanTask(
+                        id="produce-requirement-analysis",
+                        objective="produce requirement analysis",
+                        agent=agent,
+                        expected_outputs=["requirement_analysis"],
+                    )
+                ]
+            )
+        context = json.loads(prompt)
+        return AgentOutput(
+            summary="requirement analysis",
+            artifacts={
+                "requirement_analysis": default_recorded_artifact(
+                    "requirement_analysis", context["goal"]
+                )
+            },
+            evidence=["user_goal"],
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    harness.init_workspace("demo")
+    snapshot = harness.run(
+        TaskRequest(
+            workspace="demo",
+            goal="analyze requirement",
+            expected_artifacts=["requirement_analysis"],
+        )
+    )
+
+    assert snapshot.status == "needs_human_review"
+    assert plans == 2
+    assert snapshot.plan is not None
+    assert snapshot.plan.tasks[0].agent == "requirement_analyst"
+
+
 def test_agent_tool_request_is_executed_and_recorded(tmp_path: Path) -> None:
     def respond(*, prompt: str, response_model: type, **_kwargs):
         if response_model.__name__ == "QAPlan":
@@ -499,6 +546,48 @@ def test_invalid_artifact_is_repaired_before_candidate_write(tmp_path: Path) -> 
     assert [event["type"] for event in events].count("artifact_validation_failed") == 1
 
 
+def test_source_absent_implementation_observations_are_repaired(tmp_path: Path) -> None:
+    valid = default_recorded_artifact("testcases", "test login")
+    attempts = 0
+
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        nonlocal attempts
+        if response_model.__name__ == "QAPlan":
+            return QAPlan(
+                tasks=[
+                    PlanTask(
+                        id="produce_testcases",
+                        objective="produce testcases",
+                        agent="test_designer",
+                        expected_outputs=["testcases"],
+                    )
+                ]
+            )
+        attempts += 1
+        context = json.loads(prompt)
+        if attempts == 2:
+            assert "remove implementation observations absent from sources" in str(
+                context["validation_feedback"]
+            )
+        content = valid if attempts == 2 else valid + "\n\n证据来自后台、数据库和日志。"
+        return AgentOutput(
+            summary="candidate",
+            artifacts={"testcases": content},
+            evidence=["sources/requirement.md"],
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    workspace = harness.init_workspace("demo")
+    (workspace / "sources/requirement.md").write_text(
+        "用户登录后可以查看登录结果。",
+        encoding="utf-8",
+    )
+    snapshot = harness.run(TaskRequest(workspace="demo", goal="test login"))
+
+    assert snapshot.status == "needs_human_review"
+    assert attempts == 2
+
+
 def test_artifact_repair_stops_after_three_attempts(tmp_path: Path) -> None:
     invalid = "# Testcases\n\nmissing required table"
 
@@ -638,3 +727,21 @@ def test_requirement_quality_gate_rejects_embedded_testcases() -> None:
 
     with pytest.raises(ValueError, match="must not embed testcases"):
         _quality_check("requirement_analysis", content)
+
+
+def test_requirement_quality_gate_preserves_approximate_suggestion_status() -> None:
+    content = "\n".join(
+        [
+            "# Requirement Analysis",
+            "## 来源",
+            "- source",
+            "## 已确认规则",
+            "- 获奖人数比例固定为50%，按四舍五入计算。",
+            "## 待确认项",
+            "- none",
+        ]
+    )
+    source = "每场获奖人数按约 50% 测算。开发计算建议：人数 × 50%。"
+
+    with pytest.raises(ValueError, match="non-final suggestions"):
+        _quality_check("requirement_analysis", content, source_corpus=source)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any
@@ -82,6 +83,7 @@ ARTIFACT_OUTPUT_CONTRACTS = {
         "输出完整 Markdown 需求分析，至少包含：来源、已确认规则、推断、冲突/歧义、"
         "待确认项和测试影响。每条事实必须可追踪到 source；不得补造缺失配置。"
         "只输出需求分析，不得附带测试用例表。若同一术语存在不同条件口径，必须列为冲突。"
+        "来源使用“约”或“建议”时不得改写为已确认固定规则。"
     ),
     "testcases": (
         "输出完整 Markdown 测试用例。主表表头必须严格按此顺序且逐字一致：\n"
@@ -90,13 +92,28 @@ ARTIFACT_OUTPUT_CONTRACTS = {
         "表格至少包含一条可执行用例；随后输出“覆盖矩阵”，包含规则/风险、用例和映射依据，"
         "且至少一条有效映射。每条 Markdown 表格记录必须保持在单个物理行内，多步骤使用 "
         "<br> 分隔。不得把待确认规则写成确定预期；没有 OpenAPI 或数据模型证据时，不得"
-        "编造接口调用、数据库表或字段。"
+        "编造接口调用、数据库表或字段。不得增加来源未定义的后台、管理员、日志、"
+        "个人奖励页或账户余额等观察点。正式配置存在最低核销人数时，低于该人数的"
+        "纯计算分析不得写成可执行 H5 奖励场景。"
     ),
 }
 
 MAX_ARTIFACT_REPAIRS = 3
 MAX_PLAN_REPAIRS = 3
 SOURCE_PREFETCH_AGENTS = frozenset({"requirement_analyst", "risk_strategist"})
+IMPLEMENTATION_OBSERVATION_TERMS = (
+    "后台",
+    "数据库",
+    "日志",
+    "管理员",
+    "账户余额",
+    "个人奖励页面",
+    "个人奖励记录",
+    "可领取列表",
+)
+LOW_PARTICIPANT_PATTERN = re.compile(
+    r"(?:参与人数|核销人数)\s*(?:=|为)?\s*([1-9])\s*人|([1-9])\s*人核销"
+)
 
 
 def build_default_plan(request: TaskRequest) -> QAPlan:
@@ -177,7 +194,7 @@ def _testcase_template(goal: str) -> str:
             "|" + "|".join(["---"] * 11) + "|",
             "| TC-001 | 用户目标 | 主流程验证 | 功能 | P1 | 待确认 | 待确认 | "
             "1. 准备测试环境；2. 执行目标主流程 | 结果符合已确认规则 | "
-            "保留执行日志与关键断言 | 需求来源和具体数据待确认 |",
+            "保留可观察结果与关键断言 | 需求来源和具体数据待确认 |",
             "",
             "## 覆盖矩阵",
             "",
@@ -665,6 +682,15 @@ class HarnessEngine:
         missing = set(request.expected_artifacts) - produced
         if missing:
             raise ValueError(f"QAPlan 未覆盖期望产物: {sorted(missing)}")
+        for artifact in request.expected_artifacts:
+            producers = [task for task in plan.tasks if artifact in task.expected_outputs]
+            if len(producers) != 1:
+                raise ValueError(f"QAPlan 中期望产物必须且只能由一个任务生成: {artifact}")
+            expected_agent = ARTIFACT_AGENT.get(artifact)
+            if expected_agent and producers[0].agent != expected_agent:
+                raise ValueError(
+                    f"{artifact} 必须由 {expected_agent} 生成，" f"不能委派给 {producers[0].agent}"
+                )
 
     def _run_task(
         self,
@@ -685,7 +711,9 @@ class HarnessEngine:
         validation_feedback: list[dict[str, str]] = []
         artifact_repair_attempts = 0
         structured_output_attempts = 0
-        source_files = [path for path, _content in self.store.source_texts(request.workspace)]
+        source_items = self.store.source_texts(request.workspace)
+        source_files = [path for path, _content in source_items]
+        source_corpus = "\n".join(content for _path, content in source_items)
         if (
             source_files
             and manifest.name in SOURCE_PREFETCH_AGENTS
@@ -814,7 +842,7 @@ class HarnessEngine:
                         "requirement_analyst must read or retrieve workspace sources before output"
                     )
                 for artifact, content in result.artifacts.items():
-                    _quality_check(artifact, content)
+                    _quality_check(artifact, content, source_corpus=source_corpus)
             except ValueError as exc:
                 error = str(exc)[:500]
                 artifact_repair_attempts += 1
@@ -943,7 +971,12 @@ def _tool_key(
     return f"{run_id}:{task_id}:{step}:{tool}:{digest}"
 
 
-def _quality_check(artifact: str, content: str) -> None:
+def _quality_check(
+    artifact: str,
+    content: str,
+    *,
+    source_corpus: str | None = None,
+) -> None:
     if not content.strip():
         raise ValueError(f"{artifact} candidate is empty")
     if artifact == "requirement_analysis":
@@ -955,6 +988,18 @@ def _quality_check(artifact: str, content: str) -> None:
             )
         if "# 测试用例" in content or "| 用例ID |" in content:
             raise ValueError("requirement_analysis candidate must not embed testcases")
+        normalized_source = (source_corpus or "").replace(" ", "")
+        if "约50%" in normalized_source and "开发计算建议" in normalized_source:
+            confirmed = content.split("## 已确认", 1)[1].split("\n## ", 1)[0]
+            if "获奖人数比例" in confirmed and not (
+                "约" in confirmed
+                and "建议" in confirmed
+                and any(term in confirmed for term in ("非确定", "待确认", "未确认"))
+            ):
+                raise ValueError(
+                    "requirement_analysis must preserve '约50%' and calculation/rounding "
+                    "as non-final suggestions, not confirmed fixed rules"
+                )
     if artifact == "testcases":
         missing = [header for header in TESTCASE_HEADERS if header not in content]
         if missing:
@@ -1004,6 +1049,38 @@ def _quality_check(artifact: str, content: str) -> None:
             or not any(len(row) == 3 and all(row) for row in coverage_rows[2:])
         ):
             raise ValueError("coverage matrix has no valid mapping")
+        if source_corpus is not None:
+            semantic_errors: list[str] = []
+            unsupported = [
+                term
+                for term in IMPLEMENTATION_OBSERVATION_TERMS
+                if term in content and term not in source_corpus
+            ]
+            if unsupported:
+                semantic_errors.append(
+                    f"remove implementation observations absent from sources: {unsupported}"
+                )
+            if "最低核销人数" in source_corpus and "10人" in source_corpus:
+                invalid_low_count_cases = []
+                for row in data_rows:
+                    scenario = " ".join((row[2], row[5], row[6], row[7]))
+                    expected = row[8]
+                    if (
+                        LOW_PARTICIPANT_PATTERN.search(scenario)
+                        and any(term in expected for term in ("H5", "获奖", "奖励"))
+                        and not any(
+                            term in expected
+                            for term in ("未达", "拒绝", "不发放", "不计入", "不可执行")
+                        )
+                    ):
+                        invalid_low_count_cases.append(row[0])
+                if invalid_low_count_cases:
+                    semantic_errors.append(
+                        "low-count cases below the confirmed minimum verification count "
+                        f"must not assert executable H5 rewards: {invalid_low_count_cases}"
+                    )
+            if semantic_errors:
+                raise ValueError("; ".join(semantic_errors))
 
 
 def _markdown_cells(line: str) -> list[str]:
