@@ -683,6 +683,8 @@ class HarnessEngine:
         skill_text = "\n\n".join(self.skills.instructions(name) for name in manifest.skills)
         tool_results: list[dict[str, Any]] = []
         validation_feedback: list[dict[str, str]] = []
+        artifact_repair_attempts = 0
+        structured_output_attempts = 0
         source_files = [path for path, _content in self.store.source_texts(request.workspace)]
         if (
             source_files
@@ -753,6 +755,7 @@ class HarnessEngine:
                 if not _is_invalid_structured_output(exc) or step + 1 >= manifest.max_steps:
                     raise
                 error = str(exc)[:500]
+                structured_output_attempts += 1
                 validation_feedback.append(
                     {
                         "kind": "structured_output",
@@ -767,9 +770,7 @@ class HarnessEngine:
                     "model_output_invalid",
                     task_id=task.id,
                     agent=manifest.name,
-                    attempt=sum(
-                        item["kind"] == "structured_output" for item in validation_feedback
-                    ),
+                    attempt=structured_output_attempts,
                     error=error,
                 )
                 continue
@@ -816,6 +817,7 @@ class HarnessEngine:
                     _quality_check(artifact, content)
             except ValueError as exc:
                 error = str(exc)[:500]
+                artifact_repair_attempts += 1
                 validation_feedback.append(
                     {
                         "kind": "artifact_validation",
@@ -827,10 +829,10 @@ class HarnessEngine:
                     "artifact_validation_failed",
                     task_id=task.id,
                     agent=manifest.name,
-                    attempt=len(validation_feedback),
+                    attempt=artifact_repair_attempts,
                     error=error,
                 )
-                if len(validation_feedback) >= MAX_ARTIFACT_REPAIRS:
+                if artifact_repair_attempts >= MAX_ARTIFACT_REPAIRS:
                     raise ValueError(
                         f"artifact validation failed after {MAX_ARTIFACT_REPAIRS} attempts: {error}"
                     ) from exc
@@ -998,8 +1000,7 @@ def _quality_check(artifact: str, content: str) -> None:
         ]
         if (
             len(coverage_rows) < 3
-            or coverage_rows[0]
-            not in (["规则/风险", "用例", "映射依据"], ["规则/风险", "测试用例", "映射依据"])
+            or not _is_coverage_header(coverage_rows[0])
             or not any(len(row) == 3 and all(row) for row in coverage_rows[2:])
         ):
             raise ValueError("coverage matrix has no valid mapping")
@@ -1010,3 +1011,14 @@ def _markdown_cells(line: str) -> list[str]:
     if not stripped.startswith("|") or not stripped.endswith("|"):
         return []
     return [cell.strip() for cell in stripped[1:-1].split("|")]
+
+
+def _is_coverage_header(cells: list[str]) -> bool:
+    if len(cells) != 3:
+        return False
+    rule, testcase, basis = cells
+    return (
+        any(keyword in rule for keyword in ("规则", "风险", "覆盖"))
+        and "用例" in testcase
+        and any(keyword in basis for keyword in ("映射", "依据", "说明", "验证"))
+    )

@@ -568,6 +568,24 @@ def test_testcase_quality_gate_rejects_multiline_markdown_rows() -> None:
         _quality_check("testcases", content)
 
 
+def test_testcase_quality_gate_accepts_semantic_coverage_headers() -> None:
+    content = "\n".join(
+        [
+            "| 用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | "
+            "测试步骤 | 预期结果 | 断言/证据 | 待确认项 |",
+            "|" + "|".join(["---"] * 11) + "|",
+            "| TC-001 | source | title | 功能 | P1 | ready | data | step | result | "
+            "evidence | none |",
+            "# 覆盖矩阵",
+            "| 覆盖规则/风险点 | 关联用例ID | 验证说明 |",
+            "|---|---|---|",
+            "| rule | TC-001 | source |",
+        ]
+    )
+
+    _quality_check("testcases", content)
+
+
 def test_requirement_quality_gate_rejects_embedded_testcases() -> None:
     content = "\n".join(
         [
