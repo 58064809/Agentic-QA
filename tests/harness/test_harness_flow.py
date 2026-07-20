@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from harness import Harness, PlanTask, QAPlan, ReviewDecision, TaskRequest
 from harness.budget import BudgetLimits
@@ -35,6 +36,11 @@ def test_missing_model_fails_before_creating_a_run(tmp_path: Path, monkeypatch) 
     assert not list((workspace / "runs").iterdir())
 
 
+def test_review_decision_requires_explicit_reviewer_identity() -> None:
+    with pytest.raises(ValidationError, match="reviewed_by"):
+        ReviewDecision(intent="approve", reason="reviewed")
+
+
 def test_run_review_and_deterministic_promote(tmp_path: Path) -> None:
     harness = _harness(tmp_path)
     harness.init_workspace("demo")
@@ -60,16 +66,41 @@ def test_run_review_and_deterministic_promote(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="多候选审核必须指定"):
         harness.resume(
             snapshot.run_id,
-            ReviewDecision(intent="approve", reason="reviewed"),
+            ReviewDecision(intent="approve", reason="reviewed", reviewed_by="qa_owner"),
         )
 
     published = harness.resume(
         snapshot.run_id,
-        ReviewDecision(intent="approve", target_artifact="all", reason="reviewed"),
+        ReviewDecision(
+            intent="approve",
+            target_artifact="all",
+            reason="reviewed",
+            reviewed_by="qa_owner",
+        ),
     )
     assert published.status == "published"
     assert (tmp_path / "workspaces/demo/published/testcases/current.md").is_file()
     assert harness.inspect(snapshot.run_id).review_status["testcases"] == "confirmed"
+
+
+def test_revision_updates_each_target_review_status(tmp_path: Path) -> None:
+    harness = _harness(tmp_path)
+    harness.init_workspace("demo")
+    snapshot = harness.run(TaskRequest(workspace="demo", goal="test login"))
+
+    revised = harness.resume(
+        snapshot.run_id,
+        ReviewDecision(
+            intent="revise",
+            target_artifact="all",
+            reason="coverage incomplete",
+            revision_request="add missing cases",
+            reviewed_by="qa_owner",
+        ),
+    )
+
+    assert revised.status == "needs_revision"
+    assert revised.review_status == {"testcases": "needs_revision"}
 
 
 def test_checkpoint_and_events_capture_parallel_dispatch(tmp_path: Path) -> None:
@@ -98,7 +129,11 @@ def test_budget_exhaustion_produces_reviewable_partial(tmp_path: Path) -> None:
     with pytest.raises(PermissionError, match="不可发布"):
         harness.resume(
             snapshot.run_id,
-            ReviewDecision(intent="approve", reason="must not publish partial"),
+            ReviewDecision(
+                intent="approve",
+                reason="must not publish partial",
+                reviewed_by="qa_owner",
+            ),
         )
 
 

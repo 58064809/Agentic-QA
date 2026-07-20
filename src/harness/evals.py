@@ -117,6 +117,7 @@ def run_offline_eval() -> dict[str, Any]:
                 intent="approve",
                 target_artifact="all",
                 reason="offline deterministic eval",
+                reviewed_by="recorded_qa_owner",
             ),
         )
         checks = {

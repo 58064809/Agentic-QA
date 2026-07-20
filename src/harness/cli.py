@@ -37,6 +37,7 @@ def _parser() -> argparse.ArgumentParser:
     resume.add_argument("--artifact")
     resume.add_argument("--reason", default="Human review decision")
     resume.add_argument("--revision-request")
+    resume.add_argument("--reviewed-by")
 
     agents = commands.add_parser("agents")
     agents.add_subparsers(dest="agents_command", required=True).add_parser("list")
@@ -77,11 +78,14 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "resume":
             decision = None
             if args.decision:
+                if not args.reviewed_by:
+                    raise ValueError("review decision requires --reviewed-by")
                 decision = ReviewDecision(
                     intent=args.decision,
                     target_artifact=args.artifact,
                     reason=args.reason,
                     revision_request=args.revision_request,
+                    reviewed_by=args.reviewed_by,
                 )
             _print(harness.resume(args.run_id, decision))
         elif args.command == "agents":

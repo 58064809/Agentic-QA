@@ -43,8 +43,12 @@ def apply_review(
         if all(snapshot.review_status.get(artifact) == "confirmed" for artifact in artifacts):
             snapshot.status = "published"
     elif decision.intent == ReviewIntent.REJECT:
+        for artifact in targets:
+            snapshot.review_status[artifact] = "rejected"
         snapshot.status = "rejected"
     else:
+        for artifact in targets:
+            snapshot.review_status[artifact] = "needs_revision"
         snapshot.status = "needs_revision"
     record_status = "confirmed" if decision.intent == ReviewIntent.APPROVE else next_status
     for artifact in targets:

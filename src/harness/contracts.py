@@ -269,7 +269,7 @@ class ReviewDecision(StrictModel):
     target_artifact: str | None = None
     reason: str = Field(min_length=1)
     revision_request: str | None = None
-    reviewed_by: str = "human"
+    reviewed_by: str = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_revision(self) -> ReviewDecision:

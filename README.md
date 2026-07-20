@@ -25,6 +25,7 @@ snapshot = harness.resume(
         intent="approve",
         target_artifact="all",
         reason="已完成人工审核",
+        reviewed_by="qa_owner",
     ),
 )
 ```
@@ -69,7 +70,7 @@ $env:DEEPSEEK_API_KEY="<your-key>"
 agentic-qa workspace init demo
 agentic-qa run demo "分析登录需求并生成测试用例"
 agentic-qa inspect <run_id>
-agentic-qa resume <run_id> approve --artifact all --reason "人工审核通过"
+agentic-qa resume <run_id> approve --artifact all --reason "人工审核通过" --reviewed-by qa_owner
 ```
 
 workspace 名称可以使用安全的中文、英文、数字、空格、点、下划线和连字符，但必须是单层目录名。
