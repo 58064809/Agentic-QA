@@ -115,3 +115,30 @@ def test_deepseek_gateway_uses_json_object_and_thinking_parameters(monkeypatch) 
             "model": "deepseek-v4-pro",
         }
     ]
+
+
+def test_gateway_repairs_raw_control_characters_inside_json_strings(monkeypatch) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "not-a-real-key")
+    gateway = OpenAICompatibleModelGateway(ModelConfig())
+
+    def create(**_kwargs):
+        return SimpleNamespace(
+            usage=None,
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content='{\n  "value": "line 1\nline 2\tend"\n}')
+                )
+            ],
+        )
+
+    gateway._client = SimpleNamespace(  # type: ignore[assignment]
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+
+    result = gateway.structured(
+        system="Return json.",
+        prompt="test",
+        response_model=ExampleOutput,
+    )
+
+    assert result.value == "line 1\nline 2\tend"

@@ -246,7 +246,13 @@ class OpenAICompatibleModelGateway:
             content = response.choices[0].message.content
             if not content:
                 raise ValueError("model returned empty structured output")
-            return response_model.model_validate_json(content)
+            try:
+                return response_model.model_validate_json(content)
+            except ValueError:
+                repaired = _escape_json_string_control_characters(content)
+                if repaired == content:
+                    raise
+                return response_model.model_validate_json(repaired)
         except Exception as exc:
             if isinstance(exc, KeyboardInterrupt | SystemExit):
                 raise
@@ -306,3 +312,33 @@ class CallableModelGateway:
 def model_gateway_from_env() -> ModelGateway | None:
     config = ModelConfig.from_env()
     return OpenAICompatibleModelGateway(config) if config else None
+
+
+def _escape_json_string_control_characters(payload: str) -> str:
+    """Escape raw C0 controls only while inside JSON strings."""
+    output: list[str] = []
+    in_string = False
+    escaped = False
+    for character in payload:
+        if not in_string:
+            output.append(character)
+            if character == '"':
+                in_string = True
+            continue
+        if escaped:
+            output.append(character)
+            escaped = False
+            continue
+        if character == "\\":
+            output.append(character)
+            escaped = True
+            continue
+        if character == '"':
+            output.append(character)
+            in_string = False
+            continue
+        if ord(character) < 0x20:
+            output.append(f"\\u{ord(character):04x}")
+            continue
+        output.append(character)
+    return "".join(output)
