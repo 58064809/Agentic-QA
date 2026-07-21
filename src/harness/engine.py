@@ -94,7 +94,12 @@ ARTIFACT_OUTPUT_CONTRACTS = {
         "<br> 分隔。不得把待确认规则写成确定预期；没有 OpenAPI 或数据模型证据时，不得"
         "编造接口调用、数据库表或字段。不得增加来源未定义的后台、管理员、日志、"
         "个人奖励页或账户余额等观察点。正式配置存在最低核销人数时，低于该人数的"
-        "纯计算分析不得写成可执行 H5 奖励场景。"
+        "场景只能标为不可执行的说明，不得包含操作步骤或产品结果。来源中的约数、计算"
+        "建议和取整建议不得写成固定断言；若保留建议用例，必须在预期和待确认项中明确"
+        "条件性。不得用‘非两队’判定非对抗，个人对个人和多人积分排名也可能是对抗类。"
+        "内容真实性判定、奖励审核或发放时机未定义时，不得伪造自动判定或到账证据。"
+        "来源存在正式逐场奖励配置表时，必须以表驱动用例逐场覆盖准确的新老玩家单价、"
+        "预算底标和最低核销人数，不得使用示意假数据。"
     ),
 }
 
@@ -110,6 +115,11 @@ IMPLEMENTATION_OBSERVATION_TERMS = (
     "个人奖励页面",
     "个人奖励记录",
     "可领取列表",
+    "奖励页面",
+    "成长金页面",
+    "活动管理页面",
+    "圈子管理页面",
+    "领取按钮",
 )
 LOW_PARTICIPANT_PATTERN = re.compile(
     r"(?:参与人数|核销人数)\s*(?:=|为)?\s*([1-9])\s*人|([1-9])\s*人核销"
@@ -988,6 +998,13 @@ def _quality_check(
             )
         if "# 测试用例" in content or "| 用例ID |" in content:
             raise ValueError("requirement_analysis candidate must not embed testcases")
+        if source_corpus is not None:
+            unsupported = _unsupported_implementation_terms(content, source_corpus)
+            if unsupported:
+                raise ValueError(
+                    "requirement_analysis contains implementation details absent from sources: "
+                    f"{unsupported}"
+                )
         normalized_source = (source_corpus or "").replace(" ", "")
         if "约50%" in normalized_source and "开发计算建议" in normalized_source:
             confirmed = content.split("## 已确认", 1)[1].split("\n## ", 1)[0]
@@ -1051,11 +1068,7 @@ def _quality_check(
             raise ValueError("coverage matrix has no valid mapping")
         if source_corpus is not None:
             semantic_errors: list[str] = []
-            unsupported = [
-                term
-                for term in IMPLEMENTATION_OBSERVATION_TERMS
-                if term in content and term not in source_corpus
-            ]
+            unsupported = _unsupported_implementation_terms(content, source_corpus)
             if unsupported:
                 semantic_errors.append(
                     f"remove implementation observations absent from sources: {unsupported}"
@@ -1064,20 +1077,150 @@ def _quality_check(
                 invalid_low_count_cases = []
                 for row in data_rows:
                     scenario = " ".join((row[2], row[5], row[6], row[7]))
-                    expected = row[8]
-                    if (
-                        LOW_PARTICIPANT_PATTERN.search(scenario)
-                        and any(term in expected for term in ("H5", "获奖", "奖励"))
-                        and not any(
-                            term in expected
-                            for term in ("未达", "拒绝", "不发放", "不计入", "不可执行")
+                    non_executable = " ".join((row[2], row[7], row[8], row[10]))
+                    if LOW_PARTICIPANT_PATTERN.search(scenario) and not (
+                        any(
+                            term in non_executable
+                            for term in ("不可执行", "不执行", "仅作数学说明")
                         )
+                        and row[7].strip() in {"-", "无", "不执行"}
                     ):
                         invalid_low_count_cases.append(row[0])
                 if invalid_low_count_cases:
                     semantic_errors.append(
                         "low-count cases below the confirmed minimum verification count "
-                        f"must not assert executable H5 rewards: {invalid_low_count_cases}"
+                        "must be non-executable notes without product steps or outcomes: "
+                        f"{invalid_low_count_cases}"
+                    )
+            normalized_source = source_corpus.replace(" ", "")
+            if "约50%" in normalized_source and "开发计算建议" in normalized_source:
+                fixed_suggestion_cases = []
+                for row in data_rows:
+                    scenario = " ".join((row[2], row[5], row[6], row[7]))
+                    result = " ".join((row[8], row[9]))
+                    pending = row[10].strip()
+                    uses_suggestion = "50%" in scenario or any(
+                        term in scenario for term in ("向上取整", "向下取整", "四舍五入")
+                    )
+                    asserts_fixed_result = bool(re.search(r"\d", result)) and not any(
+                        term in result for term in ("若采用", "按建议", "待确认", "不可执行")
+                    )
+                    preserves_uncertainty = pending not in {"", "-", "无", "无。"} and any(
+                        term in pending for term in ("获奖", "比例", "50%", "取整", "建议")
+                    )
+                    if uses_suggestion and asserts_fixed_result and not preserves_uncertainty:
+                        fixed_suggestion_cases.append(row[0])
+                if fixed_suggestion_cases:
+                    semantic_errors.append(
+                        "approximate ratios and calculation/rounding suggestions must not become "
+                        f"fixed testcase assertions without an explicit pending condition: "
+                        f"{fixed_suggestion_cases}"
+                    )
+            invalid_combat_cases = []
+            for row in data_rows:
+                scenario = " ".join((row[2], row[5], row[6], row[7]))
+                expected = row[8]
+                if any(
+                    term in scenario for term in ("非两队", "个人对个人", "多人积分排名")
+                ) and any(term in expected for term in ("非对抗", "普通文案", "不展示")):
+                    invalid_combat_cases.append(row[0])
+            if invalid_combat_cases:
+                semantic_errors.append(
+                    "not being a two-team event does not prove a scenario is non-combat; "
+                    "negate the three sourced combat conditions independently: "
+                    f"{invalid_combat_cases}"
+                )
+            if "内容“真实有效”" in source_corpus and "具体判定方式" in source_corpus:
+                invented_content_judgments = []
+                for row in data_rows:
+                    scenario = " ".join((row[2], row[5], row[6], row[7]))
+                    result = " ".join((row[8], row[9]))
+                    if (
+                        any(term in scenario for term in ("真实", "灌水", "刷量"))
+                        and any(
+                            term in result
+                            for term in (
+                                "系统判定",
+                                "显示内容无效",
+                                "不计入",
+                                "计数不增加",
+                                "数量不变",
+                                "标记为无效",
+                            )
+                        )
+                        and not any(term in result for term in ("待确认", "不可执行", "阻塞"))
+                    ):
+                        invented_content_judgments.append(row[0])
+                if invented_content_judgments:
+                    semantic_errors.append(
+                        "content authenticity has no confirmed decision mechanism; do not assert "
+                        f"automatic invalidation outcomes: {invented_content_judgments}"
+                    )
+            if "前端展示建议" in source_corpus or "可以展示为" in source_corpus:
+                fixed_display_suggestions = []
+                for row in data_rows:
+                    scenario = " ".join((row[2], row[5], row[6], row[7]))
+                    result = " ".join((row[8], row[9]))
+                    if (
+                        "对抗" in scenario
+                        and "显示" in result
+                        and any(term in result for term in ("胜队", "胜者", "排名"))
+                        and not any(
+                            term in result
+                            for term in ("若采用", "按建议", "待确认", "不可执行", "阻塞")
+                        )
+                    ):
+                        fixed_display_suggestions.append(row[0])
+                if fixed_display_suggestions:
+                    semantic_errors.append(
+                        "suggested combat display copy must not become a fixed UI assertion: "
+                        f"{fixed_display_suggestions}"
+                    )
+            formal_config = _formal_reward_config(source_corpus)
+            if formal_config:
+                missing_config_rows = [
+                    stage
+                    for stage, new_price, old_price, budget_floor, minimum in formal_config
+                    if not any(
+                        _row_covers_reward_config(
+                            row,
+                            stage=stage,
+                            new_price=new_price,
+                            old_price=old_price,
+                            budget_floor=budget_floor,
+                            minimum=minimum,
+                        )
+                        for row in data_rows
+                    )
+                ]
+                if missing_config_rows:
+                    expected_format = "; ".join(
+                        f"第{stage}场:新玩家{new_price}元/老玩家{old_price}元/"
+                        f"底标{budget_floor}元/最低核销{minimum}人"
+                        for stage, new_price, old_price, budget_floor, minimum in formal_config
+                        if stage in missing_config_rows
+                    )
+                    semantic_errors.append(
+                        "formal reward configuration must have exact table-driven coverage for "
+                        f"every configured stage; missing stages: {missing_config_rows}; "
+                        f"use these exact labeled values in testcase rows: {expected_format}"
+                    )
+                incompatible_examples = _incompatible_reward_examples(data_rows, formal_config)
+                if incompatible_examples:
+                    semantic_errors.append(
+                        "remove reward unit-price examples that conflict with the formal source "
+                        f"configuration: {incompatible_examples}"
+                    )
+            if "成长金发放时机" in source_corpus:
+                invented_growth_payouts = [
+                    row[0]
+                    for row in data_rows
+                    if "成长金" in " ".join(row) and "到账" in " ".join((row[8], row[9]))
+                ]
+                if invented_growth_payouts:
+                    semantic_errors.append(
+                        "growth-fund payout timing is unconfirmed; verify tier selection without "
+                        f"asserting到账 evidence: {invented_growth_payouts}"
                     )
             if semantic_errors:
                 raise ValueError("; ".join(semantic_errors))
@@ -1088,6 +1231,75 @@ def _markdown_cells(line: str) -> list[str]:
     if not stripped.startswith("|") or not stripped.endswith("|"):
         return []
     return [cell.strip() for cell in stripped[1:-1].split("|")]
+
+
+def _unsupported_implementation_terms(content: str, source: str) -> list[str]:
+    unsupported: list[str] = []
+    negations = ("不得", "禁止", "未定义", "不应", "不能", "不使用", "删除")
+    for term in IMPLEMENTATION_OBSERVATION_TERMS:
+        if term in source:
+            continue
+        claimed = any(
+            term in line and not any(negation in line for negation in negations)
+            for line in content.splitlines()
+        )
+        if claimed:
+            unsupported.append(term)
+    return unsupported
+
+
+def _formal_reward_config(source: str) -> list[tuple[int, int, int, int, int]]:
+    rows: list[tuple[int, int, int, int, int]] = []
+    pattern = re.compile(
+        r"^\|\s*(\d+)\s*\|\s*(\d+)元\s*\|\s*(\d+)元\s*\|\s*(\d+)元\s*\|\s*(\d+)人\s*\|$"
+    )
+    for line in source.splitlines():
+        match = pattern.match(line.strip())
+        if match:
+            rows.append(tuple(int(value) for value in match.groups()))
+    return rows
+
+
+def _row_covers_reward_config(
+    row: list[str],
+    *,
+    stage: int,
+    new_price: int,
+    old_price: int,
+    budget_floor: int,
+    minimum: int,
+) -> bool:
+    text = re.sub(r"\s+", "", " ".join(row))
+    checks = (
+        rf"(?:第{stage}场|场次[:=：]?{stage}(?!\d))",
+        rf"(?:新玩家|新客户|新)(?:单价|奖励)?[:=：为]?{new_price}元",
+        rf"(?:老玩家|老客户|老)(?:单价|奖励)?[:=：为]?{old_price}元",
+        rf"(?:预算底标|底标)[:=：为]?{budget_floor}元",
+        rf"(?:最低核销人数|最低核销)[:=：为]?{minimum}人",
+    )
+    return all(re.search(pattern, text) for pattern in checks)
+
+
+def _incompatible_reward_examples(
+    rows: list[list[str]],
+    formal_config: list[tuple[int, int, int, int, int]],
+) -> list[str]:
+    expected = {
+        stage: (new_price, old_price) for stage, new_price, old_price, _, _ in formal_config
+    }
+    incompatible: list[str] = []
+    pattern = re.compile(
+        r"第(\d+)场.{0,100}?新玩家(?:单价|奖励)?[（(:：为=]?\s*(\d+)元"
+        r".{0,100}?老玩家(?:单价|奖励)?[）):：为=]?\s*(\d+)元"
+    )
+    for row in rows:
+        text = " ".join(row)
+        for stage_text, new_text, old_text in pattern.findall(text):
+            stage = int(stage_text)
+            if stage in expected and (int(new_text), int(old_text)) != expected[stage]:
+                incompatible.append(row[0])
+                break
+    return incompatible
 
 
 def _is_coverage_header(cells: list[str]) -> bool:

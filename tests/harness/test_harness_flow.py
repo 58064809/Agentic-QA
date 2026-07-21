@@ -710,6 +710,272 @@ def test_testcase_quality_gate_accepts_semantic_coverage_headers() -> None:
     _quality_check("testcases", content)
 
 
+def _testcase_artifact(row: list[str]) -> str:
+    assert len(row) == 11
+    return "\n".join(
+        [
+            "| 用例ID | 需求/规则来源 | 标题 | 测试类型 | 优先级 | 前置条件 | 测试数据 | "
+            "测试步骤 | 预期结果 | 断言/证据 | 待确认项 |",
+            "|" + "|".join(["---"] * 11) + "|",
+            "| " + " | ".join(row) + " |",
+            "## 覆盖矩阵",
+            "| 规则/风险 | 测试用例 | 映射依据 |",
+            "|---|---|---|",
+            f"| source rule | {row[0]} | source mapping |",
+        ]
+    )
+
+
+def test_testcase_quality_gate_rejects_fixed_approximate_suggestion() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CALC-001",
+            "source",
+            "10人按50%获奖",
+            "功能",
+            "P1",
+            "核销人数10人",
+            "10×50%=5",
+            "查看H5",
+            "H5固定显示获奖人数5人",
+            "显示5人",
+            "奖励发放机制",
+        ]
+    )
+    source = "每场获奖人数按约 50% 测算。开发计算建议：人数 × 50%。"
+
+    with pytest.raises(ValueError, match="approximate ratios"):
+        _quality_check("testcases", content, source_corpus=source)
+
+
+def test_testcase_quality_gate_accepts_conditional_suggestion() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CALC-001",
+            "source",
+            "10人按50%建议测算",
+            "规则确认",
+            "P1",
+            "核销人数10人",
+            "10×50%=5",
+            "不执行",
+            "若采用当前建议，预计获奖人数为5，最终规则待确认",
+            "按建议计算的说明",
+            "获奖比例与取整建议待确认",
+        ]
+    )
+    source = "每场获奖人数按约 50% 测算。开发计算建议：人数 × 50%。"
+
+    _quality_check("testcases", content, source_corpus=source)
+
+
+def test_testcase_quality_gate_rejects_executable_low_count_case() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-MIN-001",
+            "source",
+            "核销9人低于最低要求",
+            "功能",
+            "P1",
+            "活动已发布",
+            "核销人数9人",
+            "1. 完成活动<br>2. 查看奖励状态",
+            "系统提示人数不足或不发放奖励",
+            "观察产品提示",
+            "具体产品行为待确认",
+        ]
+    )
+    source = "最低核销人数为10人。"
+
+    with pytest.raises(ValueError, match="non-executable notes"):
+        _quality_check("testcases", content, source_corpus=source)
+
+
+def test_testcase_quality_gate_rejects_non_two_team_combat_misclassification() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CAT-001",
+            "source",
+            "非两队的个人赛",
+            "功能",
+            "P1",
+            "个人对个人且有胜负",
+            "两名玩家",
+            "打开H5",
+            "按非对抗活动展示普通文案",
+            "不展示胜队文案",
+            "无",
+        ]
+    )
+    source = "对抗类包括队伍对队伍、个人对个人和多人积分排名。"
+
+    with pytest.raises(ValueError, match="does not prove"):
+        _quality_check("testcases", content, source_corpus=source)
+
+
+def test_testcase_quality_gate_rejects_unconfirmed_content_judgment() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CONTENT-001",
+            "source",
+            "灌水内容无效",
+            "功能",
+            "P1",
+            "用户发布重复内容",
+            "重复文本",
+            "发布内容后查看统计",
+            "系统判定内容无效并不计入",
+            "显示内容无效",
+            "真实性算法待确认",
+        ]
+    )
+    source = "内容“真实有效”、灌水和刷量的具体判定方式仍待确认。"
+
+    with pytest.raises(ValueError, match="authenticity"):
+        _quality_check("testcases", content, source_corpus=source)
+
+
+def test_testcase_quality_gate_rejects_unconfirmed_growth_payout_evidence() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-GROWTH-001",
+            "source",
+            "成长金最高档不叠加",
+            "功能",
+            "P1",
+            "满足三档",
+            "8场、100人、50条",
+            "检查档位选择",
+            "选择1500元档位",
+            "成长金到账1500元",
+            "成长金发放时机待确认",
+        ]
+    )
+    source = "同一圈子只领取最高档。成长金发放时机仍待确认。"
+
+    with pytest.raises(ValueError, match="payout timing"):
+        _quality_check("testcases", content, source_corpus=source)
+
+
+def test_requirement_quality_gate_rejects_unsourced_delivery_channel() -> None:
+    content = "\n".join(
+        [
+            "# Requirement Analysis",
+            "## 来源",
+            "- source",
+            "## 已确认规则",
+            "- 奖励到账。",
+            "## 推断",
+            "- 可能发放到 App 账户余额。",
+            "## 待确认项",
+            "- 发放方式待确认。",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="implementation details"):
+        _quality_check("requirement_analysis", content, source_corpus="奖励到账，方式待确认。")
+
+
+def test_testcase_quality_gate_rejects_fixed_combat_display_suggestion() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-VS-001",
+            "source",
+            "对抗类活动展示",
+            "功能",
+            "P1",
+            "三条件均满足",
+            "两队比赛",
+            "查看H5",
+            "页面显示胜队人均奖励",
+            "显示胜队文案",
+            "展示规则待确认",
+        ]
+    )
+    source = "前端展示建议：篮球对抗类活动可以展示为胜队预计人均可领。"
+
+    with pytest.raises(ValueError, match="fixed UI assertion"):
+        _quality_check("testcases", content, source_corpus=source)
+
+
+def test_testcase_quality_gate_requires_every_formal_reward_stage() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CONFIG-001",
+            "source",
+            "第1场正式配置",
+            "配置",
+            "P0",
+            "正式配置已提供",
+            "第1场：新玩家20元、老玩家0元、预算底标300元、最低核销10人",
+            "核对配置",
+            "四项值一致",
+            "配置文本",
+            "无",
+        ]
+    )
+    source = "\n".join(
+        [
+            "| 场次 | 新客户奖励 | 老客户奖励 | 预算底标 | 最低核销人数 |",
+            "|---:|---:|---:|---:|---:|",
+            "| 1 | 20元 | 0元 | 300元 | 10人 |",
+            "| 2 | 25元 | 16元 | 240元 | 10人 |",
+        ]
+    )
+
+    with pytest.raises(ValueError, match=r"missing stages: \[2\]"):
+        _quality_check("testcases", content, source_corpus=source)
+
+
+def test_testcase_quality_gate_accepts_labeled_reward_config_shorthand() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CONFIG-001",
+            "source",
+            "正式配置表驱动核对",
+            "配置",
+            "P0",
+            "正式配置已提供",
+            "第1场：新20元/老0元/底标300元/最低核销10人；"
+            "第2场：新25元/老16元/底标240元/最低核销10人",
+            "核对配置",
+            "各标签值与正式配置一致",
+            "配置文本",
+            "无",
+        ]
+    )
+    source = "\n".join(
+        [
+            "| 1 | 20元 | 0元 | 300元 | 10人 |",
+            "| 2 | 25元 | 16元 | 240元 | 10人 |",
+        ]
+    )
+
+    _quality_check("testcases", content, source_corpus=source)
+
+
+def test_testcase_quality_gate_rejects_conflicting_reward_example() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CONFIG-001",
+            "source",
+            "第1场正式配置",
+            "配置",
+            "P0",
+            "正式配置已提供",
+            "第1场：新玩家20元、老玩家0元、预算底标300元、最低核销10人",
+            "核对配置",
+            "第1场单价（如新玩家2元，老玩家1元）",
+            "配置文本",
+            "无",
+        ]
+    )
+    source = "| 1 | 20元 | 0元 | 300元 | 10人 |"
+
+    with pytest.raises(ValueError, match="conflict with the formal"):
+        _quality_check("testcases", content, source_corpus=source)
+
+
 def test_requirement_quality_gate_rejects_embedded_testcases() -> None:
     content = "\n".join(
         [
