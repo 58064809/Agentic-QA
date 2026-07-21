@@ -98,6 +98,7 @@ ARTIFACT_OUTPUT_CONTRACTS = {
         "建议和取整建议不得写成固定断言；若保留建议用例，必须在预期和待确认项中明确"
         "条件性。不得用‘非两队’判定非对抗，个人对个人和多人积分排名也可能是对抗类。"
         "内容真实性判定、奖励审核或发放时机未定义时，不得伪造自动判定或到账证据。"
+        "覆盖矩阵不得使用暂无、未覆盖、待补充或需后续设计等占位映射。"
         "来源存在正式逐场奖励配置表时，必须以表驱动用例逐场覆盖准确的新老玩家单价、"
         "预算底标和最低核销人数，不得使用示意假数据。"
     ),
@@ -112,6 +113,7 @@ IMPLEMENTATION_OBSERVATION_TERMS = (
     "日志",
     "管理员",
     "账户余额",
+    "奖励账户",
     "个人奖励页面",
     "个人奖励记录",
     "可领取列表",
@@ -122,7 +124,7 @@ IMPLEMENTATION_OBSERVATION_TERMS = (
     "领取按钮",
 )
 LOW_PARTICIPANT_PATTERN = re.compile(
-    r"(?:参与人数|核销人数)\s*(?:=|为)?\s*([1-9])\s*人|([1-9])\s*人核销"
+    r"(?:参与人数|核销人数|核销)\s*(?:[:：=]|为)?\s*([1-9])(?!\d)\s*人?" r"|([1-9])\s*人核销"
 )
 
 
@@ -773,6 +775,10 @@ class HarnessEngine:
                             "source_prefetched": bool(tool_results),
                             "tool_results": sanitize_untrusted(tool_results),
                             "allowed_artifacts": task.expected_outputs,
+                            "artifact_key_rule": (
+                                "artifacts object 的 key 必须且只能使用 allowed_artifacts；"
+                                "覆盖矩阵是 testcases Markdown 的组成部分，不是独立 artifact。"
+                            ),
                             "artifact_output_contracts": {
                                 artifact: ARTIFACT_OUTPUT_CONTRACTS[artifact]
                                 for artifact in task.expected_outputs
@@ -832,14 +838,18 @@ class HarnessEngine:
                     )
                     tool_results.append({"tool": call.tool, "result": value})
                 continue
-            unexpected = set(result.artifacts) - set(task.expected_outputs)
-            if unexpected:
-                raise ValueError(f"agent returned undelegated artifacts: {sorted(unexpected)}")
-            required = set(task.expected_outputs) & set(ARTIFACT_AGENT)
-            missing = required - set(result.artifacts)
-            if missing:
-                raise ValueError(f"agent omitted delegated artifacts: {sorted(missing)}")
+            enrichments: list[dict[str, Any]] = []
             try:
+                unexpected = set(result.artifacts) - set(task.expected_outputs)
+                if unexpected:
+                    raise ValueError(
+                        f"agent returned undelegated artifacts: {sorted(unexpected)}; "
+                        "embed coverage_matrix inside testcases Markdown"
+                    )
+                required = set(task.expected_outputs) & set(ARTIFACT_AGENT)
+                missing = required - set(result.artifacts)
+                if missing:
+                    raise ValueError(f"agent omitted delegated artifacts: {sorted(missing)}")
                 if (
                     manifest.name == "requirement_analyst"
                     and source_files
@@ -851,7 +861,16 @@ class HarnessEngine:
                     raise ValueError(
                         "requirement_analyst must read or retrieve workspace sources before output"
                     )
-                for artifact, content in result.artifacts.items():
+                for artifact, content in list(result.artifacts.items()):
+                    enriched, enrichment = _deterministically_enrich_artifact(
+                        artifact,
+                        content,
+                        source_corpus=source_corpus,
+                    )
+                    if enrichment is not None:
+                        result.artifacts[artifact] = enriched
+                        content = enriched
+                        enrichments.append(enrichment)
                     _quality_check(artifact, content, source_corpus=source_corpus)
             except ValueError as exc:
                 error = str(exc)[:500]
@@ -875,6 +894,13 @@ class HarnessEngine:
                         f"artifact validation failed after {MAX_ARTIFACT_REPAIRS} attempts: {error}"
                     ) from exc
                 continue
+            for enrichment in enrichments:
+                event(
+                    "artifact_deterministically_enriched",
+                    task_id=task.id,
+                    agent=manifest.name,
+                    **enrichment,
+                )
             return result
         raise RuntimeError(f"agent step limit exceeded: {manifest.name}")
 
@@ -981,6 +1007,208 @@ def _tool_key(
     return f"{run_id}:{task_id}:{step}:{tool}:{digest}"
 
 
+def _deterministically_enrich_artifact(
+    artifact: str,
+    content: str,
+    *,
+    source_corpus: str,
+) -> tuple[str, dict[str, Any] | None]:
+    if artifact != "testcases":
+        return content, None
+    lines = content.splitlines()
+    rows = [_markdown_cells(line) for line in lines]
+    header_index = next(
+        (index for index, cells in enumerate(rows) if cells == list(TESTCASE_HEADERS)),
+        None,
+    )
+    coverage_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if header_index is not None
+            and index > header_index
+            and line.lstrip().startswith("#")
+            and "覆盖矩阵" in line
+        ),
+        None,
+    )
+    if header_index is None or coverage_index is None:
+        return content, None
+    rules: list[str] = []
+    normalized_case_ids: list[str] = []
+    normalized_source = source_corpus.replace(" ", "")
+    for index in range(header_index + 2, coverage_index):
+        row = _markdown_cells(lines[index])
+        if len(row) != len(TESTCASE_HEADERS):
+            continue
+        changed = False
+        scenario = " ".join((row[2], row[5], row[6], row[7]))
+        result = " ".join((row[8], row[9]))
+        if "最低核销人数" in source_corpus and "10人" in source_corpus:
+            non_executable = " ".join((row[2], row[7], row[8], row[10]))
+            if LOW_PARTICIPANT_PATTERN.search(scenario) and not (
+                any(term in non_executable for term in ("不可执行", "不执行", "仅作数学说明"))
+                and row[7].strip() in {"-", "无", "不执行"}
+            ):
+                row[7] = "不执行"
+                row[8] = "不可执行：仅确认低于最低核销人数，后续产品行为待确认"
+                row[9] = "来源配置中的最低核销人数；不产生产品结果断言"
+                row[10] = _append_pending(row[10], "低于门槛后的资格、提示与奖励处理待确认")
+                rules.append("block_low_participant_case")
+                changed = True
+        if "约50%" in normalized_source and "开发计算建议" in normalized_source:
+            uses_suggestion = "50%" in scenario or any(
+                term in scenario for term in ("向上取整", "向下取整", "四舍五入")
+            )
+            asserts_fixed_result = bool(re.search(r"\d", result)) and not any(
+                term in result for term in ("若采用", "按建议", "待确认", "不可执行")
+            )
+            if uses_suggestion and asserts_fixed_result:
+                row[8] = f"若采用来源中的当前建议：{row[8]}；最终比例及取整规则待确认"
+                row[9] = "仅记录按建议推导的结果，不作为已确认产品断言"
+                row[10] = _append_pending(row[10], "获奖比例及取整规则待确认")
+                rules.append("condition_approximate_suggestion")
+                changed = True
+        if "内容“真实有效”" in source_corpus and "具体判定方式" in source_corpus:
+            if (
+                any(term in scenario for term in ("真实", "灌水", "刷量"))
+                and any(
+                    term in result
+                    for term in (
+                        "系统判定",
+                        "显示内容无效",
+                        "不计入",
+                        "计数不增加",
+                        "数量不变",
+                        "标记为无效",
+                    )
+                )
+                and not any(term in result for term in ("待确认", "不可执行", "阻塞"))
+            ):
+                row[7] = "不执行"
+                row[8] = "阻塞：内容真实性判定方式未确认，不产生计数或有效性结果断言"
+                row[9] = "来源仅确认真实性原则，缺少判定机制证据"
+                row[10] = _append_pending(row[10], "内容真实性判定方式待确认")
+                rules.append("block_unconfirmed_content_judgment")
+                changed = True
+        if "前端展示建议" in source_corpus or "可以展示为" in source_corpus:
+            if (
+                "对抗" in scenario
+                and "显示" in result
+                and any(term in result for term in ("胜队", "胜者", "排名"))
+                and not any(
+                    term in result for term in ("若采用", "按建议", "待确认", "不可执行", "阻塞")
+                )
+            ):
+                row[8] = f"若采用来源中的展示建议：{row[8]}；最终展示规则待确认"
+                row[9] = "仅核对对抗类三条件分类，不固定断言展示文案"
+                row[10] = _append_pending(row[10], "对抗类展示规则待确认")
+                rules.append("condition_combat_display_suggestion")
+                changed = True
+        if "成长金发放时机" in source_corpus and "成长金" in " ".join(row):
+            if any(
+                term in " ".join((row[8], row[9]))
+                for term in ("到账", "发放记录", "发放一次", "已发放", "收到成长金")
+            ):
+                row[8] = "仅核对满足条件时选择的最高成长金档位；实际发放时机待确认"
+                row[9] = "来源中的档位和不叠加规则，不使用发放结果作为证据"
+                row[10] = _append_pending(row[10], "成长金发放时机待确认")
+                rules.append("remove_unconfirmed_growth_payout")
+                changed = True
+        if changed:
+            lines[index] = "| " + " | ".join(row) + " |"
+            normalized_case_ids.append(row[0])
+
+    formal_config = _formal_reward_config(source_corpus)
+    generated_case_id: str | None = None
+    if formal_config and "TC-CONFIG-SOURCE" not in content:
+        data_rows = [
+            _markdown_cells(line)
+            for line in lines[header_index + 2 : coverage_index]
+            if line.strip().startswith("|")
+        ]
+        has_complete_config = data_rows and all(
+            any(
+                _row_covers_reward_config(
+                    row,
+                    stage=stage,
+                    new_price=new_price,
+                    old_price=old_price,
+                    budget_floor=budget_floor,
+                    minimum=minimum,
+                )
+                for row in data_rows
+            )
+            for stage, new_price, old_price, budget_floor, minimum in formal_config
+        )
+        if not has_complete_config:
+            source_data = "<br>".join(
+                f"第{stage}场：新玩家{new_price}元、老玩家{old_price}元、"
+                f"预算底标{budget_floor}元、最低核销{minimum}人"
+                for stage, new_price, old_price, budget_floor, minimum in formal_config
+            )
+            if "第10场以后统一按第10场标准" in normalized_source:
+                stage, new_price, old_price, budget_floor, minimum = formal_config[-1]
+                source_data += (
+                    f"<br>第{stage + 1}场及以后：沿用第{stage}场，新玩家{new_price}元、"
+                    f"老玩家{old_price}元、预算底标{budget_floor}元、最低核销{minimum}人"
+                )
+            deterministic_row = [
+                "TC-CONFIG-SOURCE",
+                "workspace sources 正式奖励配置表",
+                "表驱动核对正式逐场奖励配置",
+                "静态配置核对",
+                "P0",
+                "已取得被测环境当前奖励配置快照",
+                source_data,
+                "1. 读取当前奖励配置快照<br>2. 按场次逐字段与来源表核对",
+                "每场新老玩家奖励、预算底标和最低核销人数均与已确认来源一致",
+                "保留配置快照和逐字段差异结果",
+                "被测环境配置读取入口待确认",
+            ]
+            lines.insert(coverage_index, "| " + " | ".join(deterministic_row) + " |")
+            coverage_index += 1
+            coverage_rows = [_markdown_cells(line) for line in lines[coverage_index + 1 :]]
+            coverage_header_offset = next(
+                (
+                    offset
+                    for offset, cells in enumerate(coverage_rows)
+                    if _is_coverage_header(cells)
+                ),
+                None,
+            )
+            if coverage_header_offset is not None:
+                insert_at = coverage_index + 1 + coverage_header_offset + 2
+                lines.insert(
+                    insert_at,
+                    "| 正式奖励配置逐场字段 | TC-CONFIG-SOURCE | "
+                    "由来源配置表确定性生成，覆盖全部配置行 |",
+                )
+            rules.append("source_formal_reward_config")
+            generated_case_id = "TC-CONFIG-SOURCE"
+    if not rules:
+        return content, None
+    enriched = "\n".join(lines)
+    if content.endswith("\n"):
+        enriched += "\n"
+    return enriched, {
+        "artifact": artifact,
+        "rules": sorted(set(rules)),
+        "source_rows": len(formal_config),
+        "generated_case_id": generated_case_id,
+        "normalized_case_ids": sorted(set(normalized_case_ids)),
+    }
+
+
+def _append_pending(current: str, note: str) -> str:
+    cleaned = current.strip()
+    if cleaned in {"", "-", "无", "无。"}:
+        return note
+    if note in cleaned:
+        return cleaned
+    return f"{cleaned}；{note}"
+
+
 def _quality_check(
     artifact: str,
     content: str,
@@ -1066,6 +1294,20 @@ def _quality_check(
             or not any(len(row) == 3 and all(row) for row in coverage_rows[2:])
         ):
             raise ValueError("coverage matrix has no valid mapping")
+        incomplete_coverage = [
+            row[0]
+            for row in coverage_rows[2:]
+            if len(row) == 3
+            and any(
+                term in " ".join(row)
+                for term in ("暂无", "未覆盖", "待补充", "需补充", "后续设计", "仍需补充")
+            )
+        ]
+        if incomplete_coverage:
+            raise ValueError(
+                "coverage matrix contains incomplete placeholder mappings: "
+                f"{incomplete_coverage}"
+            )
         if source_corpus is not None:
             semantic_errors: list[str] = []
             unsupported = _unsupported_implementation_terms(content, source_corpus)
@@ -1205,7 +1447,9 @@ def _quality_check(
                         f"every configured stage; missing stages: {missing_config_rows}; "
                         f"use these exact labeled values in testcase rows: {expected_format}"
                     )
-                incompatible_examples = _incompatible_reward_examples(data_rows, formal_config)
+                incompatible_examples = _incompatible_reward_examples(
+                    data_rows + coverage_rows[2:], formal_config
+                )
                 if incompatible_examples:
                     semantic_errors.append(
                         "remove reward unit-price examples that conflict with the formal source "
@@ -1215,7 +1459,17 @@ def _quality_check(
                 invented_growth_payouts = [
                     row[0]
                     for row in data_rows
-                    if "成长金" in " ".join(row) and "到账" in " ".join((row[8], row[9]))
+                    if "成长金" in " ".join(row)
+                    and any(
+                        term in " ".join((row[8], row[9]))
+                        for term in (
+                            "到账",
+                            "发放记录",
+                            "发放一次",
+                            "已发放",
+                            "收到成长金",
+                        )
+                    )
                 ]
                 if invented_growth_payouts:
                     semantic_errors.append(
@@ -1285,21 +1539,33 @@ def _incompatible_reward_examples(
     formal_config: list[tuple[int, int, int, int, int]],
 ) -> list[str]:
     expected = {
-        stage: (new_price, old_price) for stage, new_price, old_price, _, _ in formal_config
+        stage: (new_price, old_price, budget_floor, minimum)
+        for stage, new_price, old_price, budget_floor, minimum in formal_config
     }
     incompatible: list[str] = []
-    pattern = re.compile(
-        r"第(\d+)场.{0,100}?新玩家(?:单价|奖励)?[（(:：为=]?\s*(\d+)元"
-        r".{0,100}?老玩家(?:单价|奖励)?[）):：为=]?\s*(\d+)元"
+    stage_pattern = re.compile(r"(?:第(\d+)场|场次[:=：]?\s*(\d+))")
+    value_patterns = (
+        (0, re.compile(r"(?:新玩家|新客户|新手)(?:单价|奖励)?[（(:：为=]?\s*(\d+)元")),
+        (1, re.compile(r"(?:老玩家|老客户|老手)(?:单价|奖励)?[）):：为=]?\s*(\d+)元")),
+        (2, re.compile(r"(?:预算底标|底标)[）):：为=]?\s*(\d+)(?:元)?")),
+        (3, re.compile(r"(?:最低核销人数|最低核销)[）):：为=]?\s*(\d+)人")),
     )
     for row in rows:
-        text = " ".join(row)
-        for stage_text, new_text, old_text in pattern.findall(text):
-            stage = int(stage_text)
-            if stage in expected and (int(new_text), int(old_text)) != expected[stage]:
+        text = re.sub(r"\s+", "", " ".join(row))
+        stages = list(stage_pattern.finditer(text))
+        for index, match in enumerate(stages):
+            stage = int(match.group(1) or match.group(2))
+            if stage not in expected:
+                continue
+            end = stages[index + 1].start() if index + 1 < len(stages) else len(text)
+            segment = text[match.start() : end]
+            if any(
+                any(int(value) != expected[stage][field] for value in pattern.findall(segment))
+                for field, pattern in value_patterns
+            ):
                 incompatible.append(row[0])
                 break
-    return incompatible
+    return sorted(set(incompatible))
 
 
 def _is_coverage_header(cells: list[str]) -> bool:

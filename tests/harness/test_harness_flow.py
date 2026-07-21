@@ -10,6 +10,7 @@ from harness import Harness, PlanTask, QAPlan, ReviewDecision, TaskRequest
 from harness.budget import BudgetLimits
 from harness.engine import (
     AgentOutput,
+    _deterministically_enrich_artifact,
     _quality_check,
     build_default_plan,
     default_recorded_artifact,
@@ -231,6 +232,8 @@ def test_planner_repairs_semantically_invalid_plan_in_same_run(tmp_path: Path) -
 
     assert snapshot.status == "needs_human_review"
     assert plans == 2
+    assert snapshot.plan is not None
+    assert snapshot.plan.tasks[0].agent == "requirement_analyst"
     assert snapshot.budget.model_calls == 5
     events = [
         json.loads(line)
@@ -284,8 +287,56 @@ def test_planner_repairs_public_artifact_assigned_to_wrong_agent(tmp_path: Path)
 
     assert snapshot.status == "needs_human_review"
     assert plans == 2
-    assert snapshot.plan is not None
-    assert snapshot.plan.tasks[0].agent == "requirement_analyst"
+
+
+def test_agent_repairs_undelegated_artifact_without_supervisor_replan(tmp_path: Path) -> None:
+    outputs = 0
+
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        nonlocal outputs
+        if response_model.__name__ == "QAPlan":
+            return QAPlan(
+                tasks=[
+                    PlanTask(
+                        id="produce-testcases",
+                        objective="produce testcases",
+                        agent="test_designer",
+                        expected_outputs=["testcases"],
+                    )
+                ]
+            )
+        outputs += 1
+        context = json.loads(prompt)
+        if outputs == 1:
+            return AgentOutput(
+                summary="split output",
+                artifacts={
+                    "testcases": default_recorded_artifact("testcases", "test login"),
+                    "coverage_matrix": "| rule | TC-001 | source |",
+                },
+            )
+        assert "undelegated artifacts" in json.dumps(
+            context["validation_feedback"], ensure_ascii=False
+        )
+        return AgentOutput(
+            summary="repaired output",
+            artifacts={"testcases": default_recorded_artifact("testcases", "test login")},
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    harness.init_workspace("demo")
+    snapshot = harness.run(TaskRequest(workspace="demo", goal="test login"))
+
+    assert snapshot.status == "needs_human_review"
+    assert outputs == 2
+    assert snapshot.plan.revision == 0
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "workspaces/demo/runs" / snapshot.run_id / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert [event["type"] for event in events].count("artifact_validation_failed") == 1
 
 
 def test_agent_tool_request_is_executed_and_recorded(tmp_path: Path) -> None:
@@ -726,6 +777,230 @@ def _testcase_artifact(row: list[str]) -> str:
     )
 
 
+def test_source_config_deterministically_enriches_testcases() -> None:
+    content = default_recorded_artifact("testcases", "核对正式配置")
+    source = "\n".join(
+        [
+            "| 场次 | 新客户奖励 | 老客户奖励 | 预算底标 | 最低核销人数 |",
+            "|---:|---:|---:|---:|---:|",
+            "| 1 | 20元 | 0元 | 300元 | 10人 |",
+            "| 2 | 25元 | 16元 | 240元 | 10人 |",
+        ]
+    )
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+
+    assert metadata == {
+        "artifact": "testcases",
+        "rules": ["source_formal_reward_config"],
+        "source_rows": 2,
+        "generated_case_id": "TC-CONFIG-SOURCE",
+        "normalized_case_ids": [],
+    }
+    assert "第1场：新玩家20元、老玩家0元、预算底标300元、最低核销10人" in enriched
+    assert "| 正式奖励配置逐场字段 | TC-CONFIG-SOURCE |" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+    unchanged, second_metadata = _deterministically_enrich_artifact(
+        "testcases",
+        enriched,
+        source_corpus=source,
+    )
+    assert unchanged == enriched
+    assert second_metadata is None
+
+
+def test_source_uncertainties_are_deterministically_normalized() -> None:
+    rows = [
+        [
+            "TC-LOW-001",
+            "source",
+            "5人参与奖励核对",
+            "功能",
+            "P1",
+            "本场核销=5",
+            "5人",
+            "执行奖励流程",
+            "5人均获得奖励",
+            "奖励结果",
+            "无",
+        ],
+        [
+            "TC-CALC-001",
+            "source",
+            "10人按50%获奖",
+            "规则",
+            "P1",
+            "核销人数10人",
+            "10×50%=5",
+            "计算获奖人数",
+            "固定有5人获奖",
+            "结果为5人",
+            "无",
+        ],
+        [
+            "TC-CONTENT-001",
+            "source",
+            "灌水内容真实性校验",
+            "规则",
+            "P1",
+            "存在灌水内容",
+            "灌水文本",
+            "提交内容",
+            "系统判定内容无效且不计入",
+            "计数不增加",
+            "无",
+        ],
+        [
+            "TC-COMBAT-001",
+            "source",
+            "对抗活动展示",
+            "规则",
+            "P1",
+            "满足对抗类三条件",
+            "两队结果",
+            "查看展示结果",
+            "显示胜队和排名",
+            "页面显示胜队",
+            "无",
+        ],
+        [
+            "TC-GROWTH-001",
+            "source",
+            "成长金最高档",
+            "规则",
+            "P1",
+            "同时满足多档条件",
+            "成长金档位",
+            "核对结果",
+            "最高档成长金到账",
+            "到账记录",
+            "无",
+        ],
+    ]
+    content = _testcase_artifact(rows[0])
+    extra_rows = "\n".join("| " + " | ".join(row) + " |" for row in rows[1:])
+    content = content.replace("## 覆盖矩阵", f"{extra_rows}\n## 覆盖矩阵")
+    source = "\n".join(
+        [
+            "最低核销人数为10人。",
+            "每场获奖人数约 50%，开发计算建议为人数乘以50%。",
+            "内容“真实有效”，具体判定方式待确认。",
+            "前端展示建议：可以展示为胜队和排名。",
+            "成长金发放时机待确认。",
+        ]
+    )
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+
+    assert metadata == {
+        "artifact": "testcases",
+        "rules": [
+            "block_low_participant_case",
+            "block_unconfirmed_content_judgment",
+            "condition_approximate_suggestion",
+            "condition_combat_display_suggestion",
+            "remove_unconfirmed_growth_payout",
+        ],
+        "source_rows": 0,
+        "generated_case_id": None,
+        "normalized_case_ids": [
+            "TC-CALC-001",
+            "TC-COMBAT-001",
+            "TC-CONTENT-001",
+            "TC-GROWTH-001",
+            "TC-LOW-001",
+        ],
+    }
+    assert "| TC-LOW-001 |" in enriched and "| 不执行 | 不可执行：" in enriched
+    assert "若采用来源中的当前建议" in enriched
+    assert "内容真实性判定方式未确认" in enriched
+    assert "若采用来源中的展示建议" in enriched
+    assert "实际发放时机待确认" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_source_config_enrichment_is_recorded_in_run_events(tmp_path: Path) -> None:
+    def respond(*, response_model: type, **_kwargs):
+        if response_model.__name__ == "QAPlan":
+            return QAPlan(
+                tasks=[
+                    PlanTask(
+                        id="produce_testcases",
+                        objective="produce testcases",
+                        agent="test_designer",
+                        expected_outputs=["testcases"],
+                    )
+                ]
+            )
+        return AgentOutput(
+            summary="candidate",
+            artifacts={"testcases": default_recorded_artifact("testcases", "核对配置")},
+            evidence=["sources/config.md"],
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    workspace = harness.init_workspace("demo")
+    (workspace / "sources/config.md").write_text(
+        "\n".join(
+            [
+                "| 场次 | 新客户奖励 | 老客户奖励 | 预算底标 | 最低核销人数 |",
+                "|---:|---:|---:|---:|---:|",
+                "| 1 | 20元 | 0元 | 300元 | 10人 |",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = harness.run(TaskRequest(workspace="demo", goal="核对配置"))
+
+    assert snapshot.status == "needs_human_review"
+    candidate = tmp_path / snapshot.candidates[0].path
+    assert "TC-CONFIG-SOURCE" in candidate.read_text(encoding="utf-8")
+    events = [
+        json.loads(line)
+        for line in (workspace / "runs" / snapshot.run_id / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    enrichment = next(
+        event for event in events if event["type"] == "artifact_deterministically_enriched"
+    )
+    assert enrichment["data"]["source_rows"] == 1
+
+
+def test_testcase_quality_gate_rejects_incomplete_coverage_placeholders() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-001",
+            "source",
+            "valid case",
+            "功能",
+            "P1",
+            "ready",
+            "data",
+            "step",
+            "result",
+            "evidence",
+            "无",
+        ]
+    ).replace(
+        "| source rule | TC-001 | source mapping |",
+        "| growth tiers | 暂无 | 未覆盖，需后续设计 |",
+    )
+
+    with pytest.raises(ValueError, match="incomplete placeholder mappings"):
+        _quality_check("testcases", content)
+
+
 def test_testcase_quality_gate_rejects_fixed_approximate_suggestion() -> None:
     content = _testcase_artifact(
         [
@@ -847,7 +1122,7 @@ def test_testcase_quality_gate_rejects_unconfirmed_growth_payout_evidence() -> N
             "8场、100人、50条",
             "检查档位选择",
             "选择1500元档位",
-            "成长金到账1500元",
+            "成长金发放记录为1500元",
             "成长金发放时机待确认",
         ]
     )
@@ -874,6 +1149,27 @@ def test_requirement_quality_gate_rejects_unsourced_delivery_channel() -> None:
 
     with pytest.raises(ValueError, match="implementation details"):
         _quality_check("requirement_analysis", content, source_corpus="奖励到账，方式待确认。")
+
+
+def test_testcase_quality_gate_rejects_unsourced_reward_account() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-REWARD-001",
+            "source",
+            "奖励资格",
+            "功能",
+            "P1",
+            "满足条件",
+            "user",
+            "检查资格",
+            "符合奖励条件",
+            "用户奖励账户显示奖励",
+            "发放观察点待确认",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="implementation observations"):
+        _quality_check("testcases", content, source_corpus="满足全部条件可获得奖励。")
 
 
 def test_testcase_quality_gate_rejects_fixed_combat_display_suggestion() -> None:
@@ -969,6 +1265,31 @@ def test_testcase_quality_gate_rejects_conflicting_reward_example() -> None:
             "配置文本",
             "无",
         ]
+    )
+    source = "| 1 | 20元 | 0元 | 300元 | 10人 |"
+
+    with pytest.raises(ValueError, match="conflict with the formal"):
+        _quality_check("testcases", content, source_corpus=source)
+
+
+def test_testcase_quality_gate_rejects_conflicting_price_in_coverage_mapping() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CONFIG-001",
+            "source",
+            "第1场正式配置",
+            "配置",
+            "P0",
+            "正式配置已提供",
+            "第1场：新玩家20元、老玩家0元、预算底标300元、最低核销10人",
+            "核对配置",
+            "四项值一致",
+            "配置文本",
+            "无",
+        ]
+    ).replace(
+        "| source rule | TC-CONFIG-001 | source mapping |",
+        "| 第1场全新玩家 | TC-CONFIG-001 | 新玩家单价4元 |",
     )
     source = "| 1 | 20元 | 0元 | 300元 | 10人 |"
 
