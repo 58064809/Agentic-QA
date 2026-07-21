@@ -1,19 +1,30 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Lock
+from threading import Barrier, Lock, local
 from time import sleep
 
 import pytest
 from pydantic import ValidationError
 
-from harness import ExecutionProfile, Harness, PlanTask, QAPlan, ReviewDecision, TaskRequest
+from harness import (
+    EvidenceRequirement,
+    ExecutionProfile,
+    Harness,
+    QAPlan,
+    ReviewDecision,
+    TaskRequest,
+)
+from harness import (
+    PlanTask as ContractPlanTask,
+)
 from harness.budget import BudgetLimits
 from harness.engine import (
     AgentOutput,
     _deterministically_enrich_artifact,
-    _merge_model_usage,
+    _ModelUsageTracker,
     _quality_check,
     build_default_plan,
     default_recorded_artifact,
@@ -23,28 +34,78 @@ from harness.mcp import MCPToolSnapshot
 from harness.model import CallableModelGateway
 
 
+def PlanTask(*args, **kwargs) -> ContractPlanTask:
+    kwargs.setdefault(
+        "evidence_requirements",
+        [EvidenceRequirement(kind="trace", description="test evidence")],
+    )
+    return ContractPlanTask(*args, **kwargs)
+
+
 def _harness(path: Path) -> Harness:
     return Harness(path, model_gateway=recorded_model_gateway())
 
 
-def test_model_usage_merge_adds_only_current_run_delta() -> None:
-    assert _merge_model_usage(
-        {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150},
-        {"input_tokens": 1_000, "output_tokens": 500, "total_tokens": 1_500},
-        {"input_tokens": 1_020, "output_tokens": 510, "total_tokens": 1_530},
-    ) == {
-        "input_tokens": 120,
-        "output_tokens": 60,
-        "total_tokens": 180,
+def test_model_usage_is_isolated_between_concurrent_runs(tmp_path: Path) -> None:
+    gateway = recorded_model_gateway()
+    original = gateway._callback
+    call_usage = local()
+    planners = Barrier(2)
+
+    def tracked_response(**kwargs):
+        prompt = kwargs["prompt"]
+        if kwargs["response_model"].__name__ == "QAPlan":
+            planners.wait(timeout=5)
+        factor = 1 if "usage-small" in prompt else 10
+        sleep(0.02)
+        result = original(**kwargs)
+        call_usage.value = {
+            "input_tokens": factor,
+            "output_tokens": factor,
+            "total_tokens": factor * 2,
+        }
+        return result
+
+    gateway._callback = tracked_response
+    gateway.last_call_usage = lambda: dict(getattr(call_usage, "value", {}))
+    harness = Harness(tmp_path, model_gateway=gateway)
+    harness.init_workspace("small")
+    harness.init_workspace("large")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        small_future = pool.submit(
+            harness.run,
+            TaskRequest(workspace="small", goal="usage-small"),
+        )
+        large_future = pool.submit(
+            harness.run,
+            TaskRequest(workspace="large", goal="usage-large"),
+        )
+        small = small_future.result(timeout=10)
+        large = large_future.result(timeout=10)
+
+    assert small.budget.model_calls == large.budget.model_calls == 4
+    assert small.model_usage == {
+        "input_tokens": 4,
+        "output_tokens": 4,
+        "total_tokens": 8,
+    }
+    assert large.model_usage == {
+        "input_tokens": 40,
+        "output_tokens": 40,
+        "total_tokens": 80,
     }
 
 
-def test_model_usage_merge_does_not_subtract_after_gateway_reset() -> None:
-    assert _merge_model_usage(
-        {"total_tokens": 150},
-        {"total_tokens": 1_500},
-        {"total_tokens": 25},
-    ) == {"total_tokens": 150}
+def test_model_usage_tracker_accumulates_restored_run_usage() -> None:
+    tracker = _ModelUsageTracker({"input_tokens": 10, "total_tokens": 10})
+    tracker.add({"input_tokens": 3, "output_tokens": 2, "total_tokens": 5})
+
+    assert tracker.snapshot() == {
+        "input_tokens": 13,
+        "output_tokens": 2,
+        "total_tokens": 15,
+    }
 
 
 def test_workspace_playwright_mcp_is_initialized_and_frozen_per_run(
@@ -510,6 +571,58 @@ def test_planner_repairs_public_artifact_assigned_to_wrong_agent(tmp_path: Path)
     assert plans == 2
 
 
+def test_planner_repairs_task_without_evidence_requirements(tmp_path: Path) -> None:
+    plans = 0
+
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        nonlocal plans
+        if response_model.__name__ == "QAPlan":
+            plans += 1
+            task_type = ContractPlanTask if plans == 1 else PlanTask
+            if plans == 2:
+                assert "必须声明证据要求" in prompt
+            return QAPlan(
+                tasks=[
+                    task_type(
+                        id="produce_requirement_analysis",
+                        objective="produce requirement analysis",
+                        agent="requirement_analyst",
+                        expected_outputs=["requirement_analysis"],
+                    )
+                ]
+            )
+        context = json.loads(prompt)
+        return AgentOutput(
+            summary="requirement analysis",
+            artifacts={
+                "requirement_analysis": default_recorded_artifact(
+                    "requirement_analysis", context["goal"]
+                )
+            },
+            evidence=["user_goal"],
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    harness.init_workspace("demo")
+    snapshot = harness.run(
+        TaskRequest(
+            workspace="demo",
+            goal="analyze requirement evidence",
+            expected_artifacts=["requirement_analysis"],
+        )
+    )
+
+    assert snapshot.status == "needs_human_review"
+    assert plans == 2
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "workspaces/demo/runs" / snapshot.run_id / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert [event["type"] for event in events].count("plan_validation_failed") == 1
+
+
 def test_agent_repairs_undelegated_artifact_without_supervisor_replan(tmp_path: Path) -> None:
     outputs = 0
 
@@ -604,6 +717,62 @@ def test_agent_tool_request_is_executed_and_recorded(tmp_path: Path) -> None:
     assert snapshot.status == "needs_human_review"
     assert snapshot.budget.tool_calls == 1
     assert snapshot.tool_calls[0]["tool"] == "workspace.read"
+
+
+def test_agent_retry_reuses_completed_tool_call_after_model_crash(tmp_path: Path) -> None:
+    handler_calls = 0
+    crash_once = True
+
+    def read_source(_arguments):
+        nonlocal handler_calls
+        handler_calls += 1
+        return {"path": "sources/requirement.md", "content": "login requirement"}
+
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        nonlocal crash_once
+        if response_model.__name__ == "QAPlan":
+            return QAPlan(
+                tasks=[
+                    PlanTask(
+                        id="produce_testcases",
+                        objective="produce testcases",
+                        agent="test_designer",
+                        expected_outputs=["testcases"],
+                    )
+                ]
+            )
+        context = json.loads(prompt)
+        if not context["tool_results"]:
+            return AgentOutput(
+                summary="read source",
+                tool_requests=[
+                    {
+                        "tool": "workspace.read",
+                        "arguments": {"path": "sources/requirement.md"},
+                    }
+                ],
+            )
+        if crash_once:
+            crash_once = False
+            raise RuntimeError("simulated model crash after tool completion")
+        return AgentOutput(
+            summary="recovered",
+            artifacts={"testcases": default_recorded_artifact("testcases", context["goal"])},
+            evidence=["sources/requirement.md"],
+        )
+
+    harness = Harness(
+        tmp_path,
+        model_gateway=CallableModelGateway(respond),
+        tool_handlers={"workspace.read": read_source},
+    )
+    harness.init_workspace("demo")
+    snapshot = harness.run(TaskRequest(workspace="demo", goal="test tool recovery"))
+
+    assert snapshot.status == "needs_human_review"
+    assert snapshot.budget.replans == 1
+    assert snapshot.budget.tool_calls == 1
+    assert handler_calls == 1
 
 
 def test_source_dependent_agent_receives_prefetched_source(tmp_path: Path) -> None:

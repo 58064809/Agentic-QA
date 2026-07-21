@@ -2,6 +2,7 @@
 
 from harness.contracts import (
     AgentManifest,
+    EvidenceRequirement,
     ExecutionProfile,
     HarnessEvent,
     PlanTask,
@@ -17,6 +18,7 @@ from harness.harness import Harness
 
 __all__ = [
     "AgentManifest",
+    "EvidenceRequirement",
     "ExecutionProfile",
     "Harness",
     "HarnessEvent",

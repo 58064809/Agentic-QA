@@ -117,6 +117,36 @@ def test_deepseek_gateway_uses_json_object_and_thinking_parameters(monkeypatch) 
     ]
 
 
+def test_gateway_exposes_usage_for_only_the_current_thread_call(monkeypatch) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "not-a-real-key")
+    gateway = OpenAICompatibleModelGateway(ModelConfig())
+
+    def create(**_kwargs):
+        return SimpleNamespace(
+            usage=SimpleNamespace(
+                prompt_tokens=11,
+                completion_tokens=7,
+                total_tokens=18,
+            ),
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"value":"ok"}'))],
+        )
+
+    gateway._client = SimpleNamespace(  # type: ignore[assignment]
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    gateway.structured(
+        system="Return json.",
+        prompt="test",
+        response_model=ExampleOutput,
+    )
+
+    assert gateway.last_call_usage() == {
+        "input_tokens": 11,
+        "output_tokens": 7,
+        "total_tokens": 18,
+    }
+
+
 def test_gateway_repairs_raw_control_characters_inside_json_strings(monkeypatch) -> None:
     monkeypatch.setenv("DEEPSEEK_API_KEY", "not-a-real-key")
     gateway = OpenAICompatibleModelGateway(ModelConfig())

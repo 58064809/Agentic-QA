@@ -30,7 +30,8 @@ Agentic-QA 采用测试主管与专家 Agent 分层。公开协议不依赖 Lang
 但关闭思考模式。单次模型请求默认 180 秒超时且禁用 SDK 隐式重试，后续显式重试由 Harness
 预算约束。`reasoning_content` 不进入事件、checkpoint 或产物。一个 run 的模型、档位和
 思考开关记录在 `model_routes`。模型 usage 按 run 记录增量，恢复执行时在原 run 上累加，
-不得混入同一 Gateway 先前运行的累计值。
+不得混入同一 Gateway 先前运行的累计值。Gateway 在每次结构化调用线程中暴露该次 usage，
+Engine 再写入当前 run 的线程安全 accumulator；并行专家和并行 run 不通过共享总量做差。
 
 `src/harness/knowledge/` 只存放无项目数据的通用 QA 方法。`SkillRegistry` 校验 reference
 不可越出该目录、文件必须存在且非空，再合并进对应专家的系统指令。workspace source 与 MCP

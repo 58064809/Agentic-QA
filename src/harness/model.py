@@ -4,7 +4,7 @@ import json
 import os
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from threading import Lock
+from threading import Lock, local
 from typing import Any, Literal, Protocol, TypeVar
 
 from pydantic import BaseModel
@@ -83,6 +83,8 @@ class ModelGateway(Protocol):
     route_history: list[dict[str, Any]]
 
     def describe_route(self, route: ModelRoute) -> dict[str, Any]: ...
+
+    def last_call_usage(self) -> dict[str, int]: ...
 
     def structured(
         self,
@@ -179,6 +181,7 @@ class OpenAICompatibleModelGateway:
             max_retries=0,
         )
         self._lock = Lock()
+        self._local = local()
         self.last_usage: dict[str, int] = {}
         self.route_history: list[dict[str, Any]] = []
 
@@ -194,6 +197,7 @@ class OpenAICompatibleModelGateway:
         tools: list[dict[str, Any]] | None = None,
         route: ModelRoute | None = None,
     ) -> T:
+        self._local.last_call_usage = {}
         selected = route or ModelRoute(
             tier="flash",
             thinking="disabled",
@@ -239,6 +243,7 @@ class OpenAICompatibleModelGateway:
                     "output_tokens": int(usage.completion_tokens),
                     "total_tokens": int(usage.total_tokens),
                 }
+                self._local.last_call_usage = current
                 with self._lock:
                     self.last_usage = {
                         key: self.last_usage.get(key, 0) + value for key, value in current.items()
@@ -260,12 +265,16 @@ class OpenAICompatibleModelGateway:
                 f"model_gateway_error:{type(exc).__name__}:{str(exc)[:300]}"
             ) from exc
 
+    def last_call_usage(self) -> dict[str, int]:
+        return dict(getattr(self._local, "last_call_usage", {}))
+
 
 class CallableModelGateway:
     """Recorded/fake gateway used by deterministic tests and offline evals."""
 
     def __init__(self, callback: Callable[..., BaseModel | dict[str, Any] | str]):
         self._callback = callback
+        self._local = local()
         self.route_history: list[dict[str, Any]] = []
 
     def describe_route(self, route: ModelRoute) -> dict[str, Any]:
@@ -280,6 +289,7 @@ class CallableModelGateway:
         tools: list[dict[str, Any]] | None = None,
         route: ModelRoute | None = None,
     ) -> T:
+        self._local.last_call_usage = {}
         try:
             selected = route or ModelRoute(
                 tier="flash",
@@ -307,6 +317,9 @@ class CallableModelGateway:
             raise RuntimeError(
                 f"model_gateway_error:{type(exc).__name__}:{str(exc)[:300]}"
             ) from exc
+
+    def last_call_usage(self) -> dict[str, int]:
+        return dict(getattr(self._local, "last_call_usage", {}))
 
 
 def model_gateway_from_env() -> ModelGateway | None:
