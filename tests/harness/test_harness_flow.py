@@ -597,7 +597,9 @@ def test_invalid_artifact_is_repaired_before_candidate_write(tmp_path: Path) -> 
     assert [event["type"] for event in events].count("artifact_validation_failed") == 1
 
 
-def test_source_absent_implementation_observations_are_repaired(tmp_path: Path) -> None:
+def test_source_absent_implementation_prose_is_removed_without_model_retry(
+    tmp_path: Path,
+) -> None:
     valid = default_recorded_artifact("testcases", "test login")
     attempts = 0
 
@@ -615,12 +617,7 @@ def test_source_absent_implementation_observations_are_repaired(tmp_path: Path) 
                 ]
             )
         attempts += 1
-        context = json.loads(prompt)
-        if attempts == 2:
-            assert "remove implementation observations absent from sources" in str(
-                context["validation_feedback"]
-            )
-        content = valid if attempts == 2 else valid + "\n\n证据来自后台、数据库和日志。"
+        content = valid + "\n\n证据来自后台、数据库和日志。"
         return AgentOutput(
             summary="candidate",
             artifacts={"testcases": content},
@@ -636,10 +633,16 @@ def test_source_absent_implementation_observations_are_repaired(tmp_path: Path) 
     snapshot = harness.run(TaskRequest(workspace="demo", goal="test login"))
 
     assert snapshot.status == "needs_human_review"
-    assert attempts == 2
+    assert attempts == 1
+    candidate = tmp_path / snapshot.candidates[0].path
+    candidate_text = candidate.read_text(encoding="utf-8")
+    assert "后台" not in candidate_text
+    assert "数据库" not in candidate_text
+    assert "日志" not in candidate_text
+    assert "具体实现假设已移除" in candidate_text
 
 
-def test_artifact_repair_stops_after_three_attempts(tmp_path: Path) -> None:
+def test_artifact_repair_stops_after_five_attempts(tmp_path: Path) -> None:
     invalid = "# Testcases\n\nmissing required table"
 
     def respond(*, response_model: type, **_kwargs):
@@ -669,7 +672,7 @@ def test_artifact_repair_stops_after_three_attempts(tmp_path: Path) -> None:
     snapshot = harness.run(TaskRequest(workspace="demo", goal="test login"))
 
     assert snapshot.status == "partial"
-    assert snapshot.budget.model_calls == 4
+    assert snapshot.budget.model_calls == 6
     assert snapshot.candidates[0].status == "partial"
     events = [
         json.loads(line)
@@ -677,7 +680,7 @@ def test_artifact_repair_stops_after_three_attempts(tmp_path: Path) -> None:
         .read_text(encoding="utf-8")
         .splitlines()
     ]
-    assert [event["type"] for event in events].count("artifact_validation_failed") == 3
+    assert [event["type"] for event in events].count("artifact_validation_failed") == 5
 
 
 def test_internal_task_output_is_not_written_as_public_candidate(tmp_path: Path) -> None:
@@ -739,7 +742,7 @@ def test_testcase_quality_gate_rejects_multiline_markdown_rows() -> None:
         ]
     )
 
-    with pytest.raises(ValueError, match="multiline"):
+    with pytest.raises(ValueError, match=r"physical lines: \[4\]"):
         _quality_check("testcases", content)
 
 
@@ -923,9 +926,586 @@ def test_source_uncertainties_are_deterministically_normalized() -> None:
     assert "| TC-LOW-001 |" in enriched and "| 不执行 | 不可执行：" in enriched
     assert "若采用来源中的当前建议" in enriched
     assert "内容真实性判定方式未确认" in enriched
-    assert "若采用来源中的展示建议" in enriched
+    assert "来源中的对抗类展示仅为建议" in enriched
     assert "实际发放时机待确认" in enriched
     _quality_check("testcases", enriched, source_corpus=source)
+    unchanged, second_metadata = _deterministically_enrich_artifact(
+        "testcases",
+        enriched,
+        source_corpus=source,
+    )
+    assert unchanged == enriched
+    assert second_metadata is None
+
+
+def test_missing_verification_does_not_match_following_numbered_step() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-NO-VERIFY",
+            "source",
+            "未完成核销时不满足领取条件",
+            "功能",
+            "P1",
+            "1. 用户已报名<br>2. 活动完成<br>3. 用户未核销",
+            "用户未核销",
+            "1. 核对条件<br>2. 记录结果",
+            "不满足已确认的核销条件",
+            "条件核对记录",
+            "结果观察点待确认",
+        ]
+    )
+    source = "正式配置的最低核销人数为10人。"
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+
+    assert enriched == content
+    assert metadata is None
+    _quality_check("testcases", content, source_corpus=source)
+
+
+def test_conflicting_reward_examples_are_replaced_with_source_backed_audit() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-BAD-PRICE",
+            "model example",
+            "第1场错误金额示例",
+            "功能",
+            "P0",
+            "主理人第1场活动",
+            "第1场：新玩家4元、老玩家10元、预算底标20元、最低核销10人",
+            "按示意值计算",
+            "获得示意金额",
+            "示意金额记录",
+            "观察点待确认",
+        ]
+    ).replace(
+        "| source rule | TC-BAD-PRICE | source mapping |",
+        "| 第1场错误示意 | TC-BAD-PRICE | 第1场新玩家单价4元 |",
+    )
+    source = "\n".join(
+        [
+            "| 场次 | 新客户奖励 | 老客户奖励 | 预算底标 | 最低核销人数 |",
+            "|---:|---:|---:|---:|---:|",
+            "| 1 | 20元 | 0元 | 300元 | 10人 |",
+        ]
+    )
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+
+    assert metadata == {
+        "artifact": "testcases",
+        "rules": [
+            "remove_conflicting_reward_coverage",
+            "remove_conflicting_reward_example",
+            "source_formal_reward_config",
+        ],
+        "source_rows": 1,
+        "generated_case_id": "TC-CONFIG-SOURCE",
+        "normalized_case_ids": ["TC-BAD-PRICE"],
+    }
+    assert "新玩家4元" not in enriched
+    assert "预算底标20元" not in enriched
+    assert "单价与底标仅取正式配置快照" in enriched
+    assert "以 TC-CONFIG-SOURCE 的正式来源表和来源计算公式为准" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_decimal_reward_prices_without_a_known_stage_are_rejected() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-DECIMAL-PRICE",
+            "invented dated config",
+            "篮球日期场奖励",
+            "功能",
+            "P1",
+            "活动已完成",
+            "新单价14.80元，老单价10.80元，底标2000元",
+            "计算奖金池",
+            "按日期场配置计算",
+            "保留计算结果",
+            "无",
+        ]
+    )
+    source = "\n".join(
+        [
+            "| 场次 | 新客户奖励 | 老客户奖励 | 预算底标 | 最低核销人数 |",
+            "|---:|---:|---:|---:|---:|",
+            "| 1 | 20元 | 0元 | 300元 | 10人 |",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="conflict with the formal"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert "remove_conflicting_reward_example" in metadata["rules"]
+    assert "14.80" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_unsourced_implementation_observations_are_conditioned_in_table_rows() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-OBS-001",
+            "source",
+            "领取入口核对",
+            "功能",
+            "P1",
+            "后台活动属性已配置奖励",
+            "用户满足条件",
+            "点击领取按钮",
+            "奖励页面显示成功",
+            "检查后台日志",
+            "无",
+        ]
+    )
+    source = "用户满足全部领取条件后可获得奖励，具体产品入口与观察点待确认。"
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+
+    assert metadata == {
+        "artifact": "testcases",
+        "rules": ["condition_unsourced_implementation_observation"],
+        "source_rows": 0,
+        "generated_case_id": None,
+        "normalized_case_ids": ["TC-OBS-001"],
+    }
+    for term in ("后台", "日志", "奖励页面", "领取按钮", "活动属性"):
+        assert term not in enriched
+    assert "若相关产品入口经确认" in enriched
+    assert "若相关产品行为经确认" in enriched
+    assert "具体产品入口与观察点待确认" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_missing_reward_condition_does_not_invent_ui_or_prompt_observation() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-REWARD-MISSING",
+            "城市开局计划 H5 规则.md:318-323",
+            "缺少报名条件",
+            "功能",
+            "P1",
+            "用户未报名，其他条件满足",
+            "未报名用户",
+            "查看奖励列表",
+            "界面显示0元并提示需报名",
+            "奖励列表不含活动",
+            "无",
+        ]
+    )
+    source = "## 领取奖励条件\n用户需同时满足报名、核销、进入获奖名单等六项条件。"
+
+    with pytest.raises(ValueError, match="undefined UI, prompt, list, or amount"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert metadata["rules"] == ["condition_partial_reward_evidence"]
+    assert "不满足来源中要求同时成立的全部领取条件" in enriched
+    assert "不断言未定义界面、提示或发放记录" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_reward_condition_does_not_cause_award_list_membership() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-REWARD-CAUSE",
+            "奖励六条件:318",
+            "已报名用户进入获奖名单",
+            "功能",
+            "P1",
+            "用户已报名",
+            "报名用户",
+            "核对报名状态",
+            "用户出现在获奖名单中",
+            "获奖名单包含用户",
+            "名单生成规则待确认",
+        ]
+    )
+    source = "## 领取奖励条件\n用户需同时满足报名、核销、进入获奖名单等六项条件。"
+
+    with pytest.raises(ValueError, match="undefined UI, prompt, list, or amount"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, _ = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert "仅确认当前来源条件满足" in enriched
+    assert "获奖名单包含用户" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_complete_reward_conditions_do_not_assert_unconfirmed_payout() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-REWARD-PAYOUT",
+            "城市开局计划 H5 规则 §01 领取条件1-6",
+            "六项条件全部满足",
+            "功能",
+            "P1",
+            "已报名、核销并进入获奖名单",
+            "趣看动态带#今天一起开局并@交子立方官方号",
+            "核对六项条件后发放奖励",
+            "奖励发放成功",
+            "观察奖励到账通知和可领奖状态",
+            "自动或手动发放待确认",
+        ]
+    )
+    source = "## 领取奖励条件\n318-323 六项条件；奖励自动发放还是手动领取待确认。"
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert metadata["rules"] == ["remove_unsourced_reward_condition_observation"]
+    assert "满足来源中的六项领取条件；具体奖励处理与时机待确认" in enriched
+    assert "奖励发放成功" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_explicit_new_old_player_example_below_minimum_is_blocked() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-LOW-MIX",
+            "正式奖励配置",
+            "第1场奖金池计算",
+            "功能",
+            "P1",
+            "第1场有效活动",
+            "新玩家2人，老玩家1人",
+            "按正式单价计算奖金池",
+            "奖金池为40元",
+            "保留计算过程",
+            "无",
+        ]
+    )
+    source = "\n".join(
+        [
+            "| 场次 | 新客户奖励 | 老客户奖励 | 预算底标 | 最低核销人数 |",
+            "|---:|---:|---:|---:|---:|",
+            "| 1 | 20元 | 0元 | 300元 | 10人 |",
+        ]
+    )
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert "block_low_new_old_player_example" in metadata["rules"]
+    assert "明确的新老玩家合计低于最低核销人数" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_missing_reward_condition_does_not_assert_no_payout() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-REWARD-NO-PAYOUT",
+            "城市开局计划 H5 规则.md 第318行",
+            "未报名不能领取",
+            "功能",
+            "P1",
+            "用户未报名，其他条件满足",
+            "用户B",
+            "系统检查六条件",
+            "不发放奖励",
+            "无奖励发放",
+            "自动或手动发放待确认",
+        ]
+    )
+    source = "## 领取奖励条件\n318-323 六项条件；奖励自动发放还是手动领取待确认。"
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert "具体产品处理待确认" in enriched
+    assert "不发放奖励" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_positive_reward_requires_all_six_condition_evidence() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-VS-REWARD",
+            "对抗类规则",
+            "胜队玩家获得奖励",
+            "功能",
+            "P1",
+            "比赛结束并确认胜队",
+            "胜队A",
+            "核对比赛结果",
+            "胜队玩家获得本场奖励",
+            "比赛结果记录",
+            "无",
+        ]
+    )
+    content = content.replace(
+        "| source rule | TC-VS-REWARD | source mapping |",
+        "| 奖励六条件 | TC-VS-REWARD | 报名、核销、获奖名单、趣看发布动态、"
+        "#今天一起开局、@交子立方官方号 |",
+    )
+    source = "\n".join(
+        [
+            "## 领取奖励条件",
+            "用户需同时满足：App报名、到场核销、进入获奖名单、在趣看发布动态、",
+            "动态带#今天一起开局、动态@交子立方官方号。",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="requires evidence for all six"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert metadata["rules"] == ["condition_incomplete_reward_eligibility"]
+    assert "最终奖励资格待确认" in enriched
+    assert "六项领取条件的完整证据待补齐" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_approximate_reward_scenario_without_numeric_result_stays_conditional() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-RATIO-NONNUMERIC",
+            "source",
+            "前50%玩家获奖",
+            "功能",
+            "P1",
+            "多人积分排名",
+            "排名结果",
+            "选取前50%玩家",
+            "排名靠前玩家进入获奖名单",
+            "名单与排名一致",
+            "无",
+        ]
+    )
+    source = "每场获奖人数按约 50% 测算。开发计算建议：人数 × 50%。"
+
+    with pytest.raises(ValueError, match="approximate ratios"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert metadata["rules"] == ["condition_approximate_suggestion"]
+    assert "按来源约50%建议核对" in enriched
+    assert "若采用来源当前建议" in enriched
+    assert "获奖比例及取整规则待确认" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_growth_tier_partial_match_is_not_rewritten_as_no_tier() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-GROWTH-TIER-1",
+            "source",
+            "满足档位1但不满足档位2和3",
+            "功能",
+            "P1",
+            "3场、30人、15条",
+            "档位数据",
+            "核对成长金资格",
+            "获得成长金500元",
+            "成长金记录为500元",
+            "成长金发放时机待确认",
+        ]
+    )
+    source = "同一圈子只领取最高档。成长金发放时机仍待确认。"
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert "核对满足条件时选择的最高成长金档位" in enriched
+    assert "未满足任何已确认成长金档位" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_confirmed_activity_scopes_are_not_reopened_as_merge_question() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-ACTIVITY-SCOPES",
+            "source",
+            "两种有效活动口径",
+            "功能",
+            "P1",
+            "分别准备四条件和三条件活动",
+            "活动数据",
+            "分别核对两个统计口径",
+            "按各自条件计数",
+            "口径核对记录",
+            "两套有效活动口径是否统一",
+        ]
+    )
+    source = "\n".join(
+        [
+            "奖励场次还要求：有到场核销 / 签到 / 平台确认记录。",
+            "成长金口径：App内发布｜报名人数大于5人｜活动实际完成。",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="separately confirmed"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert metadata["rules"] == ["preserve_distinct_activity_scopes"]
+    assert "分别按来源执行" in enriched
+    assert "是否统一" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_incomplete_combat_classification_is_blocked_and_complete_case_is_added() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-COMBAT-PARTIAL",
+            "source condition 1",
+            "仅有明确对抗关系",
+            "功能",
+            "P1",
+            "活动为队伍对队伍",
+            "队伍A与队伍B",
+            "系统判断活动类型",
+            "归类为对抗类",
+            "分类结果",
+            "无",
+        ]
+    )
+    source = "\n".join(
+        [
+            "1. 活动有明确的对抗关系，比如队伍对队伍。",
+            "2. 活动有明确胜负或排名规则。",
+            "3. 活动结束后，能确认获胜队伍、获胜个人或排名靠前用户。",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="requires all three sourced conditions"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+
+    assert metadata == {
+        "artifact": "testcases",
+        "rules": [
+            "block_incomplete_combat_classification",
+            "source_combat_definition",
+        ],
+        "source_rows": 0,
+        "generated_case_id": None,
+        "normalized_case_ids": ["TC-COMBAT-PARTIAL"],
+    }
+    assert "单个条件不足以判定对抗类" in enriched
+    assert "| TC-COMBAT-SOURCE |" in enriched
+    assert "| 对抗类活动三条件同时成立 | TC-COMBAT-SOURCE |" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_negative_combat_classification_is_not_treated_as_positive_assertion() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-COMBAT-NEGATIVE",
+            "source",
+            "无对抗关系",
+            "功能",
+            "P1",
+            "活动不具备对抗关系",
+            "普通交流活动",
+            "核对三项条件",
+            "不标记为对抗类",
+            "三项条件核对记录",
+            "系统分类入口待确认",
+        ]
+    )
+    source = "\n".join(
+        [
+            "1. 活动有明确的对抗关系，比如队伍对队伍。",
+            "2. 活动有明确胜负或排名规则。",
+            "3. 活动结束后，能确认获胜队伍、获胜个人或排名靠前用户。",
+        ]
+    )
+
+    _quality_check("testcases", content, source_corpus=source)
+
+
+def test_complete_combat_synonyms_are_recognized() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-COMBAT-SYNONYMS",
+            "source",
+            "队伍对抗赛",
+            "功能",
+            "P1",
+            "明确两队对抗，比分定胜负，结束后可获取比分",
+            "比赛结果",
+            "核对对抗关系、规则和赛后结果",
+            "活动类型标识为对抗类",
+            "三类活动证据",
+            "分类入口待确认",
+        ]
+    )
+    source = "\n".join(
+        [
+            "1. 活动有明确的对抗关系，比如队伍对队伍。",
+            "2. 活动有明确胜负或排名规则。",
+            "3. 活动结束后，能确认获胜队伍、获胜个人或排名靠前用户。",
+        ]
+    )
+
+    _quality_check("testcases", content, source_corpus=source)
+    unchanged, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert unchanged == content
+    assert metadata is None
 
 
 def test_source_config_enrichment_is_recorded_in_run_events(tmp_path: Path) -> None:
@@ -1110,6 +1690,101 @@ def test_testcase_quality_gate_rejects_unconfirmed_content_judgment() -> None:
         _quality_check("testcases", content, source_corpus=source)
 
 
+def test_all_four_content_conditions_do_not_bypass_authenticity_gate() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CONTENT-ALL",
+            "城市开局计划 H5 规则.md:内容四条件",
+            "内容满足全部四条件",
+            "功能",
+            "P1",
+            "动态发布在对应圈子且活动期内",
+            "与活动相关的动态",
+            "核对四项条件",
+            "系统识别动态满足条件，内容计数+1",
+            "规则文档6.3，内容统计增加",
+            "内容真实有效的判定方式待确认",
+        ]
+    )
+    source = "内容“真实有效”、灌水和刷量的具体判定方式仍待确认。"
+
+    with pytest.raises(ValueError, match="authenticity"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert metadata["rules"] == ["block_unconfirmed_content_judgment"]
+    assert "不产生计数或有效性结果断言" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_single_content_condition_does_not_assert_positive_count() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CONTENT-SINGLE",
+            "内容条件：发布在对应圈子内",
+            "圈子内动态计入统计",
+            "功能",
+            "P1",
+            "用户在圈子C发布动态",
+            "动态一条",
+            "发布动态",
+            "该动态计入圈子C内容数",
+            "圈子C内容数+1",
+            "无",
+        ]
+    )
+    source = "内容“真实有效”、灌水和刷量的具体判定方式仍待确认。"
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert metadata["rules"] == ["condition_incomplete_content_eligibility"]
+    assert "当前单项条件通过不代表内容可计数" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_coverage_matrix_must_map_each_sourced_reward_and_content_condition() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-GENERIC",
+            "source",
+            "generic",
+            "功能",
+            "P1",
+            "precondition",
+            "data",
+            "step",
+            "result",
+            "evidence",
+            "无",
+        ]
+    )
+    source = "\n".join(
+        [
+            "## 领取奖励条件",
+            "在 App 内报名；到场核销；进入获奖名单；在趣看发布动态；",
+            "动态带#今天一起开局；动态@交子立方官方号。",
+            "内容需发布在对应圈子内、与圈子活动相关、在活动期内发布、真实有效。",
+            "内容“真实有效”、灌水和刷量的具体判定方式仍待确认。",
+        ]
+    )
+
+    with pytest.raises(ValueError) as error:
+        _quality_check("testcases", content, source_corpus=source)
+
+    message = str(error.value)
+    assert "all six sourced reward conditions" in message
+    assert "all four sourced content conditions" in message
+
+
 def test_testcase_quality_gate_rejects_unconfirmed_growth_payout_evidence() -> None:
     content = _testcase_artifact(
         [
@@ -1122,7 +1797,7 @@ def test_testcase_quality_gate_rejects_unconfirmed_growth_payout_evidence() -> N
             "8场、100人、50条",
             "检查档位选择",
             "选择1500元档位",
-            "成长金发放记录为1500元",
+            "成长金记录为1500元",
             "成长金发放时机待确认",
         ]
     )
@@ -1130,6 +1805,116 @@ def test_testcase_quality_gate_rejects_unconfirmed_growth_payout_evidence() -> N
 
     with pytest.raises(ValueError, match="payout timing"):
         _quality_check("testcases", content, source_corpus=source)
+
+
+def test_growth_tier_failure_does_not_invent_display_outcome() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-GROWTH-NOT-MET",
+            "成长金档位1",
+            "参与玩家不足档位1",
+            "功能",
+            "P1",
+            "有效活动3场，参与玩家29人，内容15条",
+            "圈子C",
+            "系统计算成长金",
+            "不显示档位1成长金或显示未达标",
+            "断言无成长金并显示进度",
+            "展示方式待确认",
+        ]
+    ).replace(
+        "| source rule | TC-GROWTH-NOT-MET | source mapping |",
+        "| 成长金档位1未达标 | TC-GROWTH-NOT-MET | 参与玩家不足时不满足档位1 |",
+    )
+    source = "成长金档位1要求3场、30人、15条；成长金发放时机待确认。"
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert "remove_unconfirmed_growth_payout" in metadata["rules"]
+    assert "仅核对未满足任何已确认成长金档位" in enriched
+    assert "核对来源门槛与满足条件时的最高档位选择" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_reward_config_filename_does_not_turn_reward_case_into_growth_case() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-REWARD-CONFIG",
+            "奖励与成长金配置.md",
+            "第1场奖金池计算",
+            "功能",
+            "P1",
+            "新玩家10人，老玩家0人",
+            "正式奖励单价",
+            "计算奖金池",
+            "奖金池按正式配置计算",
+            "保留计算过程",
+            "底标展示待确认",
+        ]
+    )
+    source = "成长金发放时机待确认。"
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert enriched == content
+    assert metadata is None
+
+
+def test_coverage_rows_do_not_fix_unconfirmed_reward_growth_or_combat_outcomes() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-GENERIC-COVERAGE",
+            "source",
+            "generic",
+            "功能",
+            "P1",
+            "precondition",
+            "data",
+            "step",
+            "result",
+            "evidence",
+            "无",
+        ]
+    ).replace(
+        "| source rule | TC-GENERIC-COVERAGE | source mapping |",
+        "\n".join(
+            [
+                "| 奖励领取-全部满足 | TC-GENERIC-COVERAGE | 验证奖励发放 |",
+                "| 成长金档位1 | TC-GENERIC-COVERAGE | 达标后领取500元 |",
+                "| 对抗类全部满足 | TC-GENERIC-COVERAGE | 标记并展示胜队文案 |",
+            ]
+        ),
+    )
+    source = "\n".join(
+        [
+            "## 领取奖励条件",
+            "成长金发放时机待确认。",
+            "前端展示建议：对抗类可以展示为胜队预计人均可领。",
+        ]
+    )
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert {
+        "condition_reward_payout_coverage",
+        "condition_growth_payout_coverage",
+        "condition_combat_display_coverage",
+    }.issubset(metadata["rules"])
+    assert "奖励处理与时机待确认" in enriched
+    assert "展示与发放待确认" in enriched
+    assert "展示建议待确认" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
 
 
 def test_requirement_quality_gate_rejects_unsourced_delivery_channel() -> None:
@@ -1183,7 +1968,7 @@ def test_testcase_quality_gate_rejects_fixed_combat_display_suggestion() -> None
             "三条件均满足",
             "两队比赛",
             "查看H5",
-            "页面显示胜队人均奖励",
+            "H5展示胜队人均奖励",
             "显示胜队文案",
             "展示规则待确认",
         ]
@@ -1192,6 +1977,38 @@ def test_testcase_quality_gate_rejects_fixed_combat_display_suggestion() -> None
 
     with pytest.raises(ValueError, match="fixed UI assertion"):
         _quality_check("testcases", content, source_corpus=source)
+
+
+def test_recommended_activity_card_style_stays_conditional() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-UI-CARD",
+            "source",
+            "H5活动列表卡片",
+            "UI",
+            "P2",
+            "多个活动",
+            "活动名称与场次",
+            "查看卡片元素",
+            "展示活动名称、场次和按钮立即报名，底部小字说明",
+            "固定文案和元素检查",
+            "无",
+        ]
+    )
+    source = "# 推荐样式文案\n按钮：立即报名\n底部小字：奖励以核销数据为准。"
+
+    with pytest.raises(ValueError, match="recommended activity-card copy"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert metadata["rules"] == ["condition_recommended_card_style"]
+    assert "不作为已确认固定界面断言" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
 
 
 def test_testcase_quality_gate_requires_every_formal_reward_stage() -> None:
@@ -1272,6 +2089,28 @@ def test_testcase_quality_gate_rejects_conflicting_reward_example() -> None:
         _quality_check("testcases", content, source_corpus=source)
 
 
+def test_testcase_quality_gate_rejects_unlabeled_conflicting_reward_math() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CONFIG-MATH",
+            "source",
+            "第1场奖金池计算",
+            "配置",
+            "P0",
+            "第1场，新老玩家各5人",
+            "第1场配置：新100，老80",
+            "计算奖金池=5×100+5×80",
+            "奖金池为900元",
+            "计算过程",
+            "无",
+        ]
+    )
+    source = "| 1 | 20元 | 0元 | 300元 | 10人 |"
+
+    with pytest.raises(ValueError, match="conflict with the formal"):
+        _quality_check("testcases", content, source_corpus=source)
+
+
 def test_testcase_quality_gate_rejects_conflicting_price_in_coverage_mapping() -> None:
     content = _testcase_artifact(
         [
@@ -1295,6 +2134,106 @@ def test_testcase_quality_gate_rejects_conflicting_price_in_coverage_mapping() -
 
     with pytest.raises(ValueError, match="conflict with the formal"):
         _quality_check("testcases", content, source_corpus=source)
+
+
+def test_testcase_quality_gate_rejects_unknown_budget_floor_comparison() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CONFIG-001",
+            "source",
+            "第1场正式配置",
+            "配置",
+            "P0",
+            "正式配置已提供",
+            "第1场：新玩家20元、老玩家0元、预算底标300元、最低核销10人",
+            "核对配置",
+            "四项值一致",
+            "配置文本",
+            "无",
+        ]
+    ).replace(
+        "| source rule | TC-CONFIG-001 | source mapping |",
+        "| 预算底标风险 | TC-CONFIG-001 | 奖金池605<1000，标记未达成 |",
+    )
+    source = "| 1 | 20元 | 0元 | 300元 | 10人 |"
+
+    with pytest.raises(ValueError, match="conflict with the formal"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert metadata["rules"] == ["remove_conflicting_reward_coverage"]
+    assert "605<1000" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_unconfirmed_budget_floor_display_is_reduced_to_state_check() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-FLOOR-DISPLAY",
+            "source",
+            "预算底标未达展示",
+            "功能",
+            "P1",
+            "奖金池低于正式预算底标",
+            "正式配置",
+            "查看页面",
+            "页面显示未达底标提示文案",
+            "提示文本可见",
+            "展示位置待确认",
+        ]
+    )
+    source = "低于预算底标时标记未达成底标；具体展示位置和文案仍待确认。"
+
+    with pytest.raises(ValueError, match="UI location and copy"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert metadata["rules"] == ["remove_unsourced_budget_floor_display"]
+    assert "标记为未达成底标" in enriched
+    assert "展示位置和文案待确认" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_formal_unit_prices_are_not_treated_as_confirmed_ui_display() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-PRICE-DISPLAY",
+            "source",
+            "新老玩家单价展示",
+            "功能",
+            "P1",
+            "正式配置存在",
+            "第1场新老玩家",
+            "查看页面",
+            "页面正确显示新老玩家不同单价",
+            "新玩家显示X元，老玩家显示Y元",
+            "展示规则待确认",
+        ]
+    )
+    source = "| 1 | 20元 | 0元 | 300元 | 10人 |"
+
+    with pytest.raises(ValueError, match="not a confirmed UI display"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases",
+        content,
+        source_corpus=source,
+    )
+    assert metadata is not None
+    assert "remove_unsourced_reward_config_display" in metadata["rules"]
+    assert "不使用示意金额或展示假设" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
 
 
 def test_requirement_quality_gate_rejects_embedded_testcases() -> None:
@@ -1332,3 +2271,278 @@ def test_requirement_quality_gate_preserves_approximate_suggestion_status() -> N
 
     with pytest.raises(ValueError, match="non-final suggestions"):
         _quality_check("requirement_analysis", content, source_corpus=source)
+
+
+def test_reward_stage_after_last_configured_stage_must_reuse_last_prices() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-STAGE-11",
+            "source",
+            "第11场沿用第10场配置",
+            "功能",
+            "P0",
+            "已完成10场",
+            "第11场",
+            "核对奖励配置",
+            "新玩家500元，老玩家200元，底标2000元",
+            "配置快照",
+            "无",
+        ]
+    )
+    source = "\n".join(
+        [
+            "| 10 | 65元 | 56元 | 840元 | 10人 |",
+            "第 10 场及以后使用新玩家 65 元、老玩家 56 元。",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="conflict with the formal"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "remove_conflicting_reward_example" in metadata["rules"]
+    assert "500元" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_unlimited_growth_ranking_scenario_is_non_executable() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-GROWTH-RANK",
+            "成长金同档排序",
+            "模拟同档超额排序",
+            "功能",
+            "P2",
+            "修改配置，将名额设为1",
+            "两个达标圈子",
+            "系统排序发放",
+            "参与玩家多的圈子优先获得成长金",
+            "发放结果",
+            "当前名额不限",
+        ]
+    )
+    source = "三个档位当前均不限名额，因此同档超额排序在当前配置下不会实际触发。"
+
+    with pytest.raises(ValueError, match="unlimited growth-fund configuration"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "block_untriggerable_growth_ranking" in metadata["rules"]
+    assert "不执行" in enriched
+    assert "修改配置" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_rounding_suggestion_with_arrow_example_remains_conditional() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-ROUND",
+            "获奖人数取整",
+            "验证取整计算",
+            "功能",
+            "P1",
+            "参与人数为5人",
+            "2.5→3人",
+            "查看预计获奖人数",
+            "展示3人，符合≥0.5向上、<0.5向下",
+            "显示与计算一致",
+            "无",
+        ]
+    )
+    source = "每场活动获奖人数按实际参与人数的约 50%测算。开发计算建议；取整规则建议。"
+
+    with pytest.raises(ValueError, match="calculation/rounding suggestions"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "condition_approximate_suggestion" in metadata["rules"]
+    assert "最终比例及取整规则待确认" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_budget_floor_shorthand_does_not_assert_unconfirmed_display() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-FLOOR",
+            "奖励底标",
+            "验证低于底标",
+            "功能",
+            "P1",
+            "奖金池低于底标",
+            "正式配置",
+            "查看奖金池",
+            "标记并展示底标",
+            "展示正确",
+            "无",
+        ]
+    )
+    source = "低于预算底标时标记未达成底标；具体展示位置和文案仍待确认。"
+
+    with pytest.raises(ValueError, match="UI location and copy"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "remove_unsourced_budget_floor_display" in metadata["rules"]
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_effective_activity_definition_does_not_invent_product_observation() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-EFFECTIVE",
+            "奖励有效活动定义",
+            "核对奖励有效活动四条件",
+            "功能",
+            "P0",
+            "App发布、报名7人、活动完成、有核销记录",
+            "活动A",
+            "检查奖励模块中的有效性标记",
+            "系统标记活动A有效",
+            "奖励模块计数增加",
+            "无",
+        ]
+    )
+    source = "有到场核销 / 签到 / 平台确认记录；App内发布｜报名人数大于5人｜活动实际完成"
+
+    with pytest.raises(ValueError, match="do not establish a product module"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "condition_effective_activity_observation" in metadata["rules"]
+    assert "产品标记、计数入口与观察点待确认" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_partial_combat_condition_cannot_assert_displayed_result() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-COMBAT-PARTIAL",
+            "对抗类条件2",
+            "核对胜负规则",
+            "功能",
+            "P1",
+            "活动有胜负规则",
+            "比分多者胜",
+            "结束后查看结果",
+            "系统显示胜队",
+            "胜队展示正确",
+            "无",
+        ]
+    )
+    source = "明确的对抗关系；明确胜负或排名规则；活动结束后能确认获胜结果"
+
+    with pytest.raises(ValueError, match="single combat condition"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "condition_partial_combat_evidence" in metadata["rules"]
+    assert "单项输入不能推导最终分类或展示结果" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_reward_rule_numbered_condition_alias_is_source_limited() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-R02",
+            "奖励规则.md #01 条件1",
+            "缺少报名",
+            "功能",
+            "P0",
+            "用户未报名但满足其他条件",
+            "用户A",
+            "检查奖励入口",
+            "不发放奖励",
+            "按钮不可领取",
+            "无",
+        ]
+    )
+    source = "领取奖励条件：用户需同时满足六项条件"
+
+    with pytest.raises(ValueError, match="sourced condition failure"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "condition_partial_reward_evidence" in metadata["rules"]
+    assert "不满足来源中要求同时成立的全部领取条件" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_growth_amount_shorthand_is_reduced_to_tier_selection() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-G02",
+            "成长金档位2",
+            "满足档位2",
+            "功能",
+            "P0",
+            "满足5场、60人、30条内容",
+            "圈子A",
+            "核对结果",
+            "触发档位2，得1000元",
+            "界面显示档位2",
+            "成长金发放时机待确认",
+        ]
+    )
+    source = "同一圈子只领取最高一档成长金，不叠加；成长金发放时机待确认。"
+
+    with pytest.raises(ValueError, match="payout timing is unconfirmed"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "remove_unconfirmed_growth_payout" in metadata["rules"]
+    assert "仅核对满足条件时选择的最高成长金档位" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_complete_combat_evidence_cannot_be_rewritten_as_negative() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-COMBAT-COMPLETE",
+            "对抗类与奖励",
+            "完整对抗条件",
+            "功能",
+            "P0",
+            "同一活动满足三对抗条件",
+            "两队对抗，胜负规则明确，结束后结果可确认",
+            "核对三条件",
+            "缺少任一条件时不按对抗类归类",
+            "三类来源证据",
+            "无",
+        ]
+    )
+    source = "明确的对抗关系；明确胜负或排名规则；活动结束后能确认获胜结果"
+
+    with pytest.raises(ValueError, match="cannot yield a negative classification"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "correct_complete_combat_classification" in metadata["rules"]
+    assert "按来源定义归类为对抗类" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
