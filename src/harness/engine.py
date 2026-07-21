@@ -1193,10 +1193,21 @@ def _deterministically_enrich_artifact(
             changed = True
         if "最低核销人数" in source_corpus and "10人" in source_corpus:
             non_executable = " ".join((row[2], row[7], row[8], row[10]))
+            if (
+                LOW_PARTICIPANT_PATTERN.search(scenario)
+                and row[7].strip() in {"-", "无", "不执行"}
+                and "来源最低核销人数为10人" not in row[5]
+            ):
+                row[5] = "来源最低核销人数为10人；当前样例低于正式门槛"
+                row[6] = "仅保留低人数作为数学说明，不构造可执行奖励场景"
+                rules.append("normalize_low_participant_note")
+                changed = True
             if LOW_PARTICIPANT_PATTERN.search(scenario) and not (
                 any(term in non_executable for term in ("不可执行", "不执行", "仅作数学说明"))
                 and row[7].strip() in {"-", "无", "不执行"}
             ):
+                row[5] = "来源最低核销人数为10人；当前样例低于正式门槛"
+                row[6] = "仅保留低人数作为数学说明，不构造可执行奖励场景"
                 row[7] = "不执行"
                 row[8] = "不可执行：仅确认低于最低核销人数，后续产品行为待确认"
                 row[9] = "来源配置中的最低核销人数；不产生产品结果断言"
@@ -1254,7 +1265,10 @@ def _deterministically_enrich_artifact(
                 rules.append("block_unconfirmed_content_judgment")
                 changed = True
             if (
-                "内容条件" in " ".join((row[1], row[2]))
+                (
+                    "内容条件" in " ".join((row[1], row[2]))
+                    or ("#6.3" in row[1] and "条件" in row[1])
+                )
                 and not _has_content_four_conditions(row)
                 and not _requires_unconfirmed_content_judgment(row)
                 and _asserts_content_count_or_validity(row)
@@ -1267,18 +1281,39 @@ def _deterministically_enrich_artifact(
                 row[10] = _append_pending(row[10], "内容计数入口与观察点待确认")
                 rules.append("condition_missing_content_evidence")
                 changed = True
+        if (
+            _source_has_combat_definition(source_corpus)
+            and _is_missing_combat_condition_case(row)
+            and "缺少任一来源条件时，不按来源定义归类为对抗类" not in row[8]
+        ):
+            row[2] = "核对缺失的对抗类来源条件（产品标识待确认）"
+            row[7] = "核对该活动明确缺失的对抗关系、胜负或排名规则、结束结果之一"
+            row[8] = "缺少任一来源条件时，不按来源定义归类为对抗类"
+            row[9] = "保存缺失条件证据，不断言未定义的前端标识、提示或分类入口"
+            row[10] = _append_pending(row[10], "产品分类入口与展示方式待确认")
+            rules.append("condition_missing_combat_evidence")
+            changed = True
         if "前端展示建议" in source_corpus or "可以展示为" in source_corpus:
             if (
                 "对抗" in scenario
+                and (
+                    not _source_has_combat_definition(source_corpus)
+                    or _has_complete_combat_evidence(row)
+                )
                 and any(term in result for term in ("显示", "展示"))
                 and any(term in result for term in ("胜队", "胜者", "排名"))
                 and not any(
                     term in result for term in ("若采用", "按建议", "待确认", "不可执行", "阻塞")
                 )
             ):
-                row[8] = "来源中的对抗类展示仅为建议；最终展示规则待确认"
                 row[7] = "核对同一活动的对抗关系、胜负或排名规则及结束结果"
-                row[9] = "仅核对对抗类三条件分类，不固定断言展示文案"
+                if _source_has_combat_definition(source_corpus):
+                    row[2] = "按来源三条件核对对抗类分类（展示待确认）"
+                    row[8] = "同一活动同时满足来源三条件时，按来源定义归类为对抗类"
+                    row[9] = "保存同一活动的对抗关系、胜负或排名规则和结束结果三类证据"
+                else:
+                    row[8] = "来源中的对抗类展示仅为建议；最终展示规则待确认"
+                    row[9] = "仅核对展示建议，不作为已确认固定界面断言"
                 row[10] = _append_pending(row[10], "对抗类展示规则待确认")
                 rules.append("condition_combat_display_suggestion")
                 changed = True
@@ -1394,6 +1429,17 @@ def _deterministically_enrich_artifact(
         if (
             _source_has_combat_definition(source_corpus)
             and _has_complete_combat_evidence(row)
+            and "来源中的对抗类展示仅为建议" in row[8]
+        ):
+            row[2] = "按来源三条件核对对抗类分类（展示待确认）"
+            row[8] = "同一活动同时满足来源三条件时，按来源定义归类为对抗类"
+            row[9] = "保存同一活动的对抗关系、胜负或排名规则和结束结果三类证据"
+            row[10] = _append_pending(row[10], "对抗类展示规则待确认")
+            rules.append("restore_source_backed_combat_classification")
+            changed = True
+        if (
+            _source_has_combat_definition(source_corpus)
+            and _has_complete_combat_evidence(row)
             and any(
                 term in row[8]
                 for term in (
@@ -1450,17 +1496,37 @@ def _deterministically_enrich_artifact(
             rules.append("remove_unsourced_budget_floor_display")
             changed = True
         if (
-            "同一用户在同一圈子内参加多场有效活动，只算 1 人" in source_corpus
-            and any(term in " ".join((row[1], row[2])) for term in ("玩家人数去重", "只计1人"))
+            "成长金发放时机" in source_corpus
+            and _is_growth_fund_case(row)
+            and "有效活动列表" in row[6]
+        ):
+            row[6] = row[6].replace("有效活动列表", "有效活动来源证据")
+            rules.append("remove_unconfirmed_growth_activity_list")
+            changed = True
+        if (
+            (
+                "同一用户在同一圈子内参加多场有效活动，只算 1 人" in source_corpus
+                or "同一用户在同一场活动内只能计算一次" in source_corpus
+            )
+            and any(
+                term in " ".join((row[1], row[2]))
+                for term in ("玩家人数去重", "玩家统计去重", "只计1人", "计为1名")
+            )
             and any(
                 term in " ".join((row[7], row[8], row[9]))
                 for term in ("统计", "查询", "展示", "计数")
             )
             and "参与玩家统计入口与观察点待确认" not in row[10]
         ):
-            row[7] = "核对同一用户、同一圈子和多场有效活动的来源输入证据"
-            row[8] = "按来源去重规则，该用户在该圈子的参与玩家统计中只计 1 人"
-            row[9] = "用户标识、圈子标识及各场有效参与证据；不依赖未确认展示入口"
+            dedup_scenario = " ".join((row[1], row[2], row[5], row[6]))
+            if any(term in dedup_scenario for term in ("同一活动", "同一场活动")):
+                row[7] = "核对同一用户和同一场活动内的报名、核销来源输入证据"
+                row[8] = "按来源规则，同一用户在同一场活动内只计算一次"
+                row[9] = "用户标识、活动标识及有效参与证据；不依赖未确认展示入口"
+            else:
+                row[7] = "核对同一用户、同一圈子和多场有效活动的来源输入证据"
+                row[8] = "按来源规则，该用户在同一圈子的参与玩家统计中只计 1 人"
+                row[9] = "用户标识、圈子标识及各场有效参与证据；不依赖未确认展示入口"
             row[10] = _append_pending(row[10], "参与玩家统计入口与观察点待确认")
             rules.append("condition_participant_dedup_observation")
             changed = True
@@ -1515,6 +1581,10 @@ def _deterministically_enrich_artifact(
         if len(row) != 3:
             continue
         original_coverage_row = list(row)
+        expanded_case_ids = _expand_coverage_case_id_range(row[1])
+        if expanded_case_ids != row[1]:
+            row[1] = expanded_case_ids
+            rules.append("expand_coverage_case_id_range")
         unsupported_terms = _unsupported_implementation_terms(" ".join(row), source_corpus)
         if unsupported_terms:
             row = [_replace_unsupported_terms(cell, unsupported_terms) for cell in row]
@@ -1578,12 +1648,12 @@ def _deterministically_enrich_artifact(
             normalized_case_ids.append(row[1])
         if (
             "领取奖励条件" in source_corpus
-            and "奖励条件" in row[0]
+            and any(term in row[0] for term in ("奖励条件", "奖励领取六条件"))
             and row[2] != "核对当前来源条件输入；最终资格需同时满足六项领取条件"
         ):
             row[2] = "核对当前来源条件输入；最终资格需同时满足六项领取条件"
             rules.append("condition_partial_reward_coverage")
-        if "内容条件" in row[0] and row[2] not in {
+        if any(term in row[0] for term in ("内容条件", "内容四条件")) and row[2] not in {
             "真实性判定机制待确认；仅映射阻塞用例，不断言内容计数结果",
             "核对当前来源条件输入；内容计数需同时满足四项条件",
         }:
@@ -1650,6 +1720,35 @@ def _deterministically_enrich_artifact(
             and row[2] != "按来源核对同圈用户去重规则；统计入口与观察点待确认"
         ):
             row[2] = "按来源核对同圈用户去重规则；统计入口与观察点待确认"
+            rules.append("condition_participant_dedup_coverage")
+        if (
+            formal_config
+            and ("场次单价映射" in row[0] or "主理人场次规则与单价映射" in row[0])
+            and (
+                row[1] != "TC-CONFIG-SOURCE"
+                or row[2] != "由正式来源表核对全部场次字段及第10场以后沿用规则"
+            )
+        ):
+            row[1] = "TC-CONFIG-SOURCE"
+            row[2] = "由正式来源表核对全部场次字段及第10场以后沿用规则"
+            rules.append("align_formal_config_coverage")
+        if (
+            "最低核销人数" in source_corpus
+            and "10人" in source_corpus
+            and any(term in row[0] for term in ("获奖人数计算", "获奖人数计算与取整"))
+            and row[2] != "仅作不可执行数学说明；比例与取整均为来源建议，产品结果待确认"
+        ):
+            row[2] = "仅作不可执行数学说明；比例与取整均为来源建议，产品结果待确认"
+            rules.append("condition_low_count_rounding_coverage")
+        if (
+            (
+                "同一用户在同一圈子内参加多场有效活动，只算 1 人" in source_corpus
+                or "同一用户在同一场活动内只能计算一次" in source_corpus
+            )
+            and any(term in row[0] for term in ("玩家统计去重", "新老玩家统计与去重"))
+            and row[2] != "按适用来源范围核对去重规则；统计入口与观察点待确认"
+        ):
+            row[2] = "按适用来源范围核对去重规则；统计入口与观察点待确认"
             rules.append("condition_participant_dedup_coverage")
         if row != original_coverage_row:
             lines[index] = "| " + " | ".join(row) + " |"
@@ -1869,6 +1968,9 @@ def _asserts_content_count_or_validity(row: list[str]) -> bool:
             "不计入",
             "计数不增加",
             "数量不变",
+            "内容数未增加",
+            "内容数不变",
+            "计数保持不变",
             "标记为无效",
             "计入",
             "计为",
@@ -2079,6 +2181,28 @@ def _is_combat_case(row: list[str]) -> bool:
     return "对抗" in " ".join((row[1], row[2], row[5], row[6], row[7], row[8], row[9]))
 
 
+def _is_missing_combat_condition_case(row: list[str]) -> bool:
+    if not _is_combat_case(row):
+        return False
+    scenario = " ".join((row[1], row[2], row[5], row[6]))
+    return any(
+        term in scenario
+        for term in (
+            "缺少对抗关系",
+            "无对抗关系",
+            "无对手",
+            "缺少胜负规则",
+            "无胜负规则",
+            "规则未定义胜负",
+            "无法确认结果",
+            "无法确认胜负",
+            "结果数据丢失",
+            "无可靠结果",
+            "无有效结果",
+        )
+    )
+
+
 def _asserts_partial_combat_product_outcome(row: list[str]) -> bool:
     if len(row) != len(TESTCASE_HEADERS):
         return False
@@ -2118,7 +2242,16 @@ def _has_complete_combat_evidence(row: list[str]) -> bool:
     scenario = " ".join((row[2], row[5], row[6], row[7]))
     if any(
         term in scenario
-        for term in ("无法确认结果", "结果无法确认", "结果丢失", "无结果记录", "未记录成绩")
+        for term in (
+            "无法确认结果",
+            "无法确认胜负",
+            "结果无法确认",
+            "结果丢失",
+            "无结果记录",
+            "无可靠结果",
+            "无有效结果",
+            "未记录成绩",
+        )
     ):
         return False
     if "对抗" in scenario and any(
@@ -2274,6 +2407,16 @@ def _quality_check(
         if incomplete_coverage:
             raise ValueError(
                 f"coverage matrix contains incomplete placeholder mappings: {incomplete_coverage}"
+            )
+        ranged_coverage_ids = [
+            row[1]
+            for row in coverage_rows[2:]
+            if len(row) == 3 and re.search(r"TC-[A-Za-z0-9-]*\d+\s*[~～]\s*\d+", row[1])
+        ]
+        if ranged_coverage_ids:
+            raise ValueError(
+                "coverage matrix must enumerate actual testcase IDs instead of range shorthand: "
+                f"{ranged_coverage_ids}"
             )
         if source_corpus is not None:
             semantic_errors: list[str] = []
@@ -2459,6 +2602,18 @@ def _quality_check(
                         "explicit new/old player examples below the confirmed minimum must be "
                         f"non-executable: {low_new_old_examples}"
                     )
+                unsafe_low_count_coverage = [
+                    row[0]
+                    for row in coverage_rows[2:]
+                    if len(row) == 3
+                    and any(term in row[0] for term in ("获奖人数计算", "获奖人数计算与取整"))
+                    and "不可执行数学说明" not in row[2]
+                ]
+                if unsafe_low_count_coverage:
+                    semantic_errors.append(
+                        "coverage for below-minimum rounding examples must identify them as "
+                        f"non-executable suggestion notes: {unsafe_low_count_coverage}"
+                    )
             normalized_source = source_corpus.replace(" ", "")
             if "约50%" in normalized_source and "开发计算建议" in normalized_source:
                 fixed_suggestion_cases = []
@@ -2610,6 +2765,20 @@ def _quality_check(
                         "content-authenticity coverage must map a blocked case without fixed "
                         f"count outcomes: {fixed_authenticity_coverage}"
                     )
+                unsafe_missing_content_coverage = [
+                    row[0]
+                    for row in coverage_rows[2:]
+                    if len(row) == 3
+                    and any(term in row[0] for term in ("内容条件", "内容四条件"))
+                    and any(term in row[2] for term in ("不计入", "未增加", "保持不变"))
+                    and "完整" not in row[2]
+                    and "判定机制待确认" not in row[2]
+                ]
+                if unsafe_missing_content_coverage:
+                    semantic_errors.append(
+                        "content-condition coverage must map source evidence without assuming a "
+                        f"count observation: {unsafe_missing_content_coverage}"
+                    )
                 incomplete_content_cases = [
                     row[0]
                     for row in data_rows
@@ -2638,7 +2807,10 @@ def _quality_check(
                 unsafe_missing_content_cases = [
                     row[0]
                     for row in data_rows
-                    if "内容条件" in " ".join((row[1], row[2]))
+                    if (
+                        "内容条件" in " ".join((row[1], row[2]))
+                        or ("#6.3" in row[1] and "条件" in row[1])
+                    )
                     and not _has_content_four_conditions(row)
                     and not _requires_unconfirmed_content_judgment(row)
                     and _asserts_content_count_or_validity(row)
@@ -2829,6 +3001,16 @@ def _quality_check(
                         "growth-fund coverage must map tier selection without fixed display or "
                         f"payout outcomes: {invented_growth_coverage}"
                     )
+                unconfirmed_growth_activity_lists = [
+                    row[0]
+                    for row in data_rows
+                    if _is_growth_fund_case(row) and "有效活动列表" in row[6]
+                ]
+                if unconfirmed_growth_activity_lists:
+                    semantic_errors.append(
+                        "growth tier inputs may reference source evidence but cannot assume an "
+                        f"unconfirmed effective-activity list: {unconfirmed_growth_activity_lists}"
+                    )
             if "成长金非个人奖励，仅用于主理人运营的圈子发展使用" in source_corpus:
                 growth_copy_payout_preconditions = [
                     row[0]
@@ -2843,12 +3025,16 @@ def _quality_check(
                         "growth-fund explanatory copy must not require an unconfirmed payout "
                         f"fact as its precondition: {growth_copy_payout_preconditions}"
                     )
-            if "同一用户在同一圈子内参加多场有效活动，只算 1 人" in source_corpus:
+            if (
+                "同一用户在同一圈子内参加多场有效活动，只算 1 人" in source_corpus
+                or "同一用户在同一场活动内只能计算一次" in source_corpus
+            ):
                 unsafe_participant_dedup_observations = [
                     row[0]
                     for row in data_rows
                     if any(
-                        term in " ".join((row[1], row[2])) for term in ("玩家人数去重", "只计1人")
+                        term in " ".join((row[1], row[2]))
+                        for term in ("玩家人数去重", "玩家统计去重", "只计1人", "计为1名")
                     )
                     and any(
                         term in " ".join((row[7], row[8], row[9]))
@@ -2893,16 +3079,38 @@ def _markdown_cells(line: str) -> list[str]:
     return [cell.strip() for cell in stripped[1:-1].split("|")]
 
 
+def _expand_coverage_case_id_range(value: str) -> str:
+    match = re.fullmatch(r"(TC-[A-Za-z0-9-]*?)(\d+)\s*[~～]\s*(\d+)", value.strip())
+    if not match:
+        return value
+    prefix, start_text, end_text = match.groups()
+    start = int(start_text)
+    end = int(end_text)
+    if end < start or end - start > 100:
+        return value
+    width = max(len(start_text), len(end_text))
+    return ", ".join(f"{prefix}{number:0{width}d}" for number in range(start, end + 1))
+
+
 def _unsupported_implementation_terms(content: str, source: str) -> list[str]:
     unsupported: list[str] = []
     negations = ("不得", "禁止", "未定义", "不应", "不能", "不使用", "删除")
     for term in IMPLEMENTATION_OBSERVATION_TERMS:
         if term in source:
             continue
-        claimed = any(
-            term in line and not any(negation in line for negation in negations)
-            for line in content.splitlines()
-        )
+        claimed = False
+        for line in content.splitlines():
+            start = 0
+            while (position := line.find(term, start)) >= 0:
+                local_context = line[
+                    max(0, position - 10) : min(len(line), position + len(term) + 10)
+                ]
+                if not any(negation in local_context for negation in negations):
+                    claimed = True
+                    break
+                start = position + len(term)
+            if claimed:
+                break
         if claimed:
             unsupported.append(term)
     return unsupported

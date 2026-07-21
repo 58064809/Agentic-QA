@@ -2603,7 +2603,7 @@ def test_negative_combat_case_does_not_invent_frontend_marker() -> None:
         "testcases", content, source_corpus=source
     )
     assert metadata is not None
-    assert "remove_unsourced_combat_ui" in metadata["rules"]
+    assert "condition_missing_combat_evidence" in metadata["rules"]
     assert "不断言未定义的前端标识" in enriched
     _quality_check("testcases", enriched, source_corpus=source)
 
@@ -2696,4 +2696,160 @@ def test_participant_dedup_does_not_assume_query_or_display() -> None:
     assert metadata is not None
     assert "condition_participant_dedup_observation" in metadata["rules"]
     assert "参与玩家统计入口与观察点待确认" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_coverage_range_shorthand_is_expanded_to_actual_ids() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-RANGE-01",
+            "source",
+            "range",
+            "功能",
+            "P1",
+            "前置",
+            "数据",
+            "步骤",
+            "结果",
+            "证据",
+            "无",
+        ]
+    ).replace(
+        "| source rule | TC-RANGE-01 | source mapping |",
+        "| 风险覆盖 | TC-RANGE-01 ~ 03 | 枚举用例 |",
+    )
+
+    with pytest.raises(ValueError, match="enumerate actual testcase IDs"):
+        _quality_check("testcases", content)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus="source"
+    )
+    assert metadata is not None
+    assert "expand_coverage_case_id_range" in metadata["rules"]
+    assert "TC-RANGE-01, TC-RANGE-02, TC-RANGE-03" in enriched
+    _quality_check("testcases", enriched)
+
+
+def test_numbered_content_condition_is_reduced_to_source_evidence() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CONTENT-D01",
+            "H5规则 #6.3 条件1",
+            "内容未在对应圈子",
+            "功能",
+            "P1",
+            "发布到其他圈子",
+            "动态A",
+            "查看内容计数",
+            "内容数未增加",
+            "计数保持不变",
+            "观察点待确认",
+        ]
+    )
+    source = "内容“真实有效”的具体判定方式待确认"
+
+    with pytest.raises(ValueError, match="unconfirmed count UI"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "condition_missing_content_evidence" in metadata["rules"]
+    assert "单项条件缺失不足以满足来源中的完整内容定义" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_missing_combat_result_wins_over_display_suggestion() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-COMBAT-NO-RESULT",
+            "对抗类定义",
+            "结束后无法确认胜负",
+            "功能",
+            "P0",
+            "有两队对抗和胜负规则，但结果数据丢失",
+            "无可靠结果",
+            "查看是否显示胜队",
+            "显示结果不存在",
+            "前端提示待确认",
+            "可能需要后台确认；不断言前端标识",
+        ]
+    )
+    source = (
+        "明确的对抗关系；明确胜负或排名规则；活动结束后能确认获胜结果；"
+        "前端展示建议：胜队预计人均可领"
+    )
+
+    with pytest.raises(ValueError, match="implementation observations absent"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "condition_missing_combat_evidence" in metadata["rules"]
+    assert "condition_combat_display_suggestion" not in metadata["rules"]
+    assert "缺少任一来源条件时，不按来源定义归类为对抗类" in enriched
+    assert "后台" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_same_activity_dedup_preserves_source_scope() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-DEDUP-ACTIVITY",
+            "玩家统计去重",
+            "同一用户在同一活动内多次报名计为1名",
+            "功能",
+            "P1",
+            "用户A在同一活动内报名核销多次",
+            "两条报名记录",
+            "查看参与玩家计数",
+            "参与玩家计数为1",
+            "列表只出现一次",
+            "观察点待确认",
+        ]
+    )
+    source = "同一用户在同一场活动内只能计算一次"
+
+    with pytest.raises(ValueError, match="observation point is not"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "condition_participant_dedup_observation" in metadata["rules"]
+    assert "同一用户在同一场活动内只计算一次" in enriched
+    assert "同一圈子和多场" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_already_blocked_low_count_case_gets_source_backed_note() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-LOW-NOTE",
+            "获奖人数建议",
+            "3人取整示例",
+            "说明",
+            "P2",
+            "核销人数3人，预算充足",
+            "3人",
+            "不执行",
+            "不可执行：低于最低核销人数",
+            "来源门槛",
+            "取整待确认",
+        ]
+    )
+    source = "最低核销人数为10人"
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "normalize_low_participant_note" in metadata["rules"]
+    assert "来源最低核销人数为10人；当前样例低于正式门槛" in enriched
+    assert "预算充足" not in enriched
     _quality_check("testcases", enriched, source_corpus=source)
