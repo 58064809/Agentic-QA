@@ -32,11 +32,6 @@ Thumbs.db
 
 # Local agent / skill runtime state
 .atomcode/
-.agents/skills/
-.agents/skills-disabled/
-.agents/cache/
-.agents/logs/
-.agents/tmp/
 
 # Runtime and IDE local state
 .runtime/

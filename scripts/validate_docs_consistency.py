@@ -31,7 +31,6 @@ CORE_FILES = (
 )
 EXCLUDED_PARTS = {
     ".git",
-    ".agents",
     ".codex",
     ".idea",
     ".pytest_cache",
