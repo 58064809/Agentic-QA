@@ -34,6 +34,12 @@ Agentic-QA 采用测试主管与专家 Agent 分层。公开协议不依赖 Lang
 不可越出该目录、文件必须存在且非空，再合并进对应专家的系统指令。workspace source 与 MCP
 结果仍是不可信运行输入，不能通过知识文件扩大工具权限或越过 Review Gate。
 
+Playwright MCP 只从 `workspaces/<id>/workspace.yml` 的显式配置启用。stdio 模式固定使用官方
+`@playwright/mcp@latest` 包，不提供任意命令执行入口；也可配置明确的 streamable HTTP URL。
+每个新 run 都会 initialize、list tools，并将 allowlist 过滤后的名称和输入 Schema 冻结到
+`tool-calls/mcp-playwright-snapshot.json`。同一 run 崩溃恢复时重新连接，但实时清单必须与冻结
+快照完全一致，否则保持可恢复错误，不在权限或 Schema 漂移后继续执行。
+
 专家返回 artifact 后，Engine 在候选写入前执行确定性契约检查。失败原因以
 `artifact_validation_failed` 事件记录并反馈给同一专家，最多修复五次；只有通过检查的完整
 内容才能写入 candidate。该局部修复仍计入模型调用预算，不扩大主管的重规划上限。

@@ -75,6 +75,27 @@ agentic-qa resume <run_id> approve --artifact all --reason "人工审核通过" 
 
 workspace 名称可以使用安全的中文、英文、数字、空格、点、下划线和连字符，但必须是单层目录名。
 
+需要浏览器专家时，在对应的 `workspaces/<id>/workspace.yml` 中显式启用 Playwright MCP：
+
+```yaml
+mcp:
+  playwright:
+    schema_version: agentic-qa.harness.playwright-mcp.v1
+    transport: stdio
+    command: npx
+    args: [-y, "@playwright/mcp@latest", --headless, --isolated]
+    allowlist: [browser_navigate, browser_snapshot, browser_click, browser_type]
+```
+
+该入口只允许官方 `@playwright/mcp@latest` stdio 包或明确的 streamable HTTP URL，不接受
+任意本地命令。Harness 会在每个新 run 开始时 initialize、list tools，并把 allowlist 过滤后的
+Schema 快照写入该 run；崩溃恢复时实时清单必须与原快照一致。执行 UI 工具还必须在
+`TaskRequest.execution_profile` 中明确测试环境并设置 `allow_ui_mutations=True`。本机需要
+Node.js 18+；启动方式遵循 [Playwright MCP 官方配置](https://github.com/microsoft/playwright-mcp)。
+通过 CLI 执行时使用例如
+`agentic-qa run demo "验证测试站点" --artifact ui_test_draft --environment staging
+--allow-ui-mutations`；没有这两个显式执行参数时，Playwright 调用仍会被安全门拒绝。
+
 运行中断后，使用 `agentic-qa resume <run_id>` 从同一 checkpoint 恢复。没有配置模型时，
 `run` 会在创建候选前明确失败；离线评测使用录制响应，不会伪装成真实模型输出。
 
@@ -104,7 +125,7 @@ agentic-qa eval run
 
 通用测试方法位于 `src/harness/knowledge/` 并由 Skill manifest 显式引用；项目需求、
 OpenAPI 和历史证据应放入 `workspaces/<id>/sources/`。根 `knowledge/` 仅保留本地旧资料，
-不会被 Harness 读取。当前配置来源为 `.env.example`、声明式 manifest 和
+不会被 Harness 读取。当前配置来源为 `.env.example`、`workspace.yml`、声明式 manifest 和
 `TaskRequest.execution_profile`，不设置无效的顶层配置目录。
 
 ## 文档

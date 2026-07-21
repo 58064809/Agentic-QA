@@ -303,7 +303,13 @@ class HarnessEngine:
         self.tool_handlers = tool_handlers or {}
         self._event_lock = Lock()
 
-    def execute(self, request: TaskRequest, emit: Any | None = None) -> RunSnapshot:
+    def execute(
+        self,
+        request: TaskRequest,
+        emit: Any | None = None,
+        *,
+        tool_handlers: dict[str, Any] | None = None,
+    ) -> RunSnapshot:
         if self.model is None:
             raise RuntimeError(
                 "未配置模型；设置 DEEPSEEK_API_KEY，"
@@ -318,7 +324,8 @@ class HarnessEngine:
             request=request,
         )
         self.store.create_run(snapshot)
-        self._freeze_external_tool_snapshots(snapshot)
+        active_handlers = self.tool_handlers if tool_handlers is None else tool_handlers
+        self._freeze_external_tool_snapshots(snapshot, active_handlers)
         initial: HarnessState = {
             "run_id": run_id,
             "request": request.model_dump(mode="json"),
@@ -333,10 +340,14 @@ class HarnessEngine:
             "errors": [],
             "status": "planning",
         }
-        return self._invoke(snapshot, initial, emit=emit)
+        return self._invoke(snapshot, initial, emit=emit, tool_handlers=active_handlers)
 
-    def _freeze_external_tool_snapshots(self, snapshot: RunSnapshot) -> None:
-        for name, handler in self.tool_handlers.items():
+    def _freeze_external_tool_snapshots(
+        self,
+        snapshot: RunSnapshot,
+        tool_handlers: dict[str, Any],
+    ) -> None:
+        for name, handler in tool_handlers.items():
             owner = getattr(handler, "__self__", None)
             tool_snapshot = getattr(owner, "snapshot", None)
             if tool_snapshot is None:
@@ -357,6 +368,8 @@ class HarnessEngine:
         snapshot: RunSnapshot,
         decision: ReviewDecision | None = None,
         emit: Any | None = None,
+        *,
+        tool_handlers: dict[str, Any] | None = None,
     ) -> RunSnapshot:
         if snapshot.status == "partial":
             if decision is None:
@@ -370,7 +383,13 @@ class HarnessEngine:
         if decision is not None:
             validate_review_decision(snapshot, decision)
             command = Command(resume=decision.model_dump(mode="json"))
-        return self._invoke(snapshot, command, emit=emit)
+        active_handlers = self.tool_handlers if tool_handlers is None else tool_handlers
+        return self._invoke(
+            snapshot,
+            command,
+            emit=emit,
+            tool_handlers=active_handlers,
+        )
 
     def _invoke(
         self,
@@ -378,6 +397,7 @@ class HarnessEngine:
         graph_input: HarnessState | Command[Any] | None,
         *,
         emit: Any | None,
+        tool_handlers: dict[str, Any],
     ) -> RunSnapshot:
         budget = Budget(self.limits, snapshot.budget.model_copy(deep=True))
         model_usage_before = dict(getattr(self.model, "last_usage", {}))
@@ -406,7 +426,7 @@ class HarnessEngine:
             agents=self.agents,
             tools=self.tools,
             budget=budget,
-            handlers=self.tool_handlers,
+            handlers=tool_handlers,
             on_call=lambda payload: event(
                 "tool_called",
                 agent=payload.get("agent"),

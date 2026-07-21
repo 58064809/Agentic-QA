@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from harness import Harness, PlanTask, QAPlan, ReviewDecision, TaskRequest
+from harness import ExecutionProfile, Harness, PlanTask, QAPlan, ReviewDecision, TaskRequest
 from harness.budget import BudgetLimits
 from harness.engine import (
     AgentOutput,
@@ -17,6 +17,7 @@ from harness.engine import (
     default_recorded_artifact,
 )
 from harness.evals import recorded_model_gateway
+from harness.mcp import MCPToolSnapshot
 from harness.model import CallableModelGateway
 
 
@@ -42,6 +43,78 @@ def test_model_usage_merge_does_not_subtract_after_gateway_reset() -> None:
         {"total_tokens": 1_500},
         {"total_tokens": 25},
     ) == {"total_tokens": 150}
+
+
+def test_workspace_playwright_mcp_is_initialized_and_frozen_per_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = Harness(tmp_path, model_gateway=recorded_model_gateway(use_fake_mcp=True))
+    workspace = harness.init_workspace("demo")
+    workspace.joinpath("workspace.yml").write_text(
+        """schema_version: agentic-qa.harness.workspace.v1
+id: demo
+mcp:
+  playwright:
+    schema_version: agentic-qa.harness.playwright-mcp.v1
+    transport: stdio
+    command: npx
+    args: [-y, '@playwright/mcp@latest']
+    allowlist: [browser_snapshot]
+""",
+        encoding="utf-8",
+    )
+    lifecycle: list[str] = []
+
+    class FakeClient:
+        def __init__(self, _config) -> None:
+            self.snapshot = MCPToolSnapshot.freeze(
+                server="playwright",
+                transport="stdio",
+                listed_tools=[{"name": "browser_snapshot", "inputSchema": {"type": "object"}}],
+                allowlist={"browser_snapshot"},
+            )
+
+        def __enter__(self):
+            lifecycle.append("enter")
+            return self
+
+        def tool_handler(self, _payload):
+            return {"page": "recorded"}
+
+        def __exit__(self, *_exc_info) -> None:
+            lifecycle.append("exit")
+
+    monkeypatch.setattr("harness.harness.SynchronousOfficialMCPClient", FakeClient)
+    snapshot = harness.run(
+        TaskRequest(
+            workspace="demo",
+            goal="inspect the test UI",
+            expected_artifacts=["ui_test_draft"],
+            execution_profile=ExecutionProfile(
+                environment="local-test",
+                allow_ui_mutations=True,
+            ),
+        )
+    )
+
+    assert snapshot.status == "needs_human_review"
+    assert lifecycle == ["enter", "exit"]
+    frozen = workspace / "runs" / snapshot.run_id / "tool-calls" / "mcp-playwright-snapshot.json"
+    assert frozen.is_file()
+    changed = MCPToolSnapshot.freeze(
+        server="playwright",
+        transport="stdio",
+        listed_tools=[
+            {
+                "name": "browser_snapshot",
+                "inputSchema": {"type": "object", "required": ["unexpected"]},
+            }
+        ],
+        allowlist={"browser_snapshot"},
+    )
+    with pytest.raises(RuntimeError, match="changed since this run was frozen"):
+        harness._validate_frozen_mcp_snapshot("demo", snapshot.run_id, changed)
 
 
 def test_missing_model_fails_before_creating_a_run(tmp_path: Path, monkeypatch) -> None:

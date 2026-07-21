@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from harness import Harness, ReviewDecision, ReviewIntent, TaskRequest
+from harness import ExecutionProfile, Harness, ReviewDecision, ReviewIntent, TaskRequest
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -27,6 +27,11 @@ def _parser() -> argparse.ArgumentParser:
         dest="artifacts",
         help="Expected artifact; may be repeated (default: testcases)",
     )
+    run.add_argument("--environment", default="analysis-only")
+    run.add_argument("--base-url-env")
+    run.add_argument("--allow-http-method", action="append", dest="allowed_http_methods")
+    run.add_argument("--allow-ui-mutations", action="store_true")
+    run.add_argument("--request-timeout-seconds", type=int, default=10)
 
     inspect = commands.add_parser("inspect")
     inspect.add_argument("run_id")
@@ -57,6 +62,18 @@ def _print(value: object) -> None:
     print(json.dumps(value, ensure_ascii=False, indent=2))
 
 
+def _execution_profile(args: argparse.Namespace) -> ExecutionProfile:
+    profile: dict[str, object] = {
+        "environment": args.environment,
+        "base_url_env": args.base_url_env,
+        "allow_ui_mutations": args.allow_ui_mutations,
+        "request_timeout_seconds": args.request_timeout_seconds,
+    }
+    if args.allowed_http_methods:
+        profile["allowed_http_methods"] = args.allowed_http_methods
+    return ExecutionProfile.model_validate(profile)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     harness = Harness(Path(args.repo_root))
@@ -70,6 +87,7 @@ def main(argv: list[str] | None = None) -> int:
                         workspace=args.workspace,
                         goal=args.goal,
                         expected_artifacts=args.artifacts or ["testcases"],
+                        execution_profile=_execution_profile(args),
                     )
                 )
             )

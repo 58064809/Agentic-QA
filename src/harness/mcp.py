@@ -1,13 +1,67 @@
 from __future__ import annotations
 
+import asyncio
+import re
 from collections.abc import Callable
 from contextlib import AsyncExitStack
-from typing import Any
+from queue import Queue
+from threading import Thread
+from typing import Any, Literal
 
+from anyio import fail_after
 from jsonschema import ValidationError, validate
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 from harness.security import sanitize_untrusted
+
+
+class PlaywrightMCPConfig(BaseModel):
+    """Workspace-owned configuration for the only supported live MCP provider."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["agentic-qa.harness.playwright-mcp.v1"] = (
+        "agentic-qa.harness.playwright-mcp.v1"
+    )
+    transport: Literal["stdio", "streamable_http"] = "stdio"
+    command: Literal["npx", "npx.cmd"] | None = "npx"
+    args: tuple[str, ...] = ("-y", "@playwright/mcp@latest")
+    url: HttpUrl | None = None
+    allowlist: frozenset[str] = Field(min_length=1)
+    request_timeout_seconds: int = Field(default=60, ge=1, le=300)
+
+    @model_validator(mode="before")
+    @classmethod
+    def apply_transport_defaults(cls, value: Any) -> Any:
+        if isinstance(value, dict) and value.get("transport") == "streamable_http":
+            normalized = dict(value)
+            normalized.setdefault("command", None)
+            normalized.setdefault("args", ())
+            return normalized
+        return value
+
+    @field_validator("allowlist")
+    @classmethod
+    def validate_allowlist(cls, value: frozenset[str]) -> frozenset[str]:
+        if any(not re.fullmatch(r"[a-z][a-z0-9_-]{0,127}", name) for name in value):
+            raise ValueError("Playwright MCP allowlist contains an invalid tool name")
+        return value
+
+    @model_validator(mode="after")
+    def validate_transport(self) -> PlaywrightMCPConfig:
+        if self.transport == "stdio":
+            if self.command is None or "@playwright/mcp@latest" not in self.args:
+                raise ValueError("Playwright stdio MCP requires npx and @playwright/mcp@latest")
+            if self.url is not None:
+                raise ValueError("Playwright stdio MCP cannot define url")
+        else:
+            if self.url is None:
+                raise ValueError("Playwright streamable_http MCP requires url")
+            if self.url.username is not None or self.url.password is not None:
+                raise ValueError("Playwright MCP URL must not contain credentials")
+            if self.command is not None or self.args:
+                raise ValueError("Playwright streamable_http MCP cannot define command or args")
+        return self
 
 
 class MCPTool(BaseModel):
@@ -128,6 +182,13 @@ class OfficialMCPClient:
 
     async def __aenter__(self) -> OfficialMCPClient:
         try:
+            return await self._open()
+        except BaseException:
+            await self._stack.aclose()
+            raise
+
+    async def _open(self) -> OfficialMCPClient:
+        try:
             from mcp import ClientSession, StdioServerParameters
             from mcp.client.stdio import stdio_client
             from mcp.client.streamable_http import streamablehttp_client
@@ -186,3 +247,87 @@ class OfficialMCPClient:
 
     async def __aexit__(self, *exc_info: Any) -> None:
         await self._stack.__aexit__(*exc_info)
+
+
+class SynchronousOfficialMCPClient:
+    """Synchronous, thread-safe facade that keeps one SDK session alive per run segment."""
+
+    def __init__(self, config: PlaywrightMCPConfig) -> None:
+        self.config = config
+        self.snapshot: MCPToolSnapshot | None = None
+        self._requests: Queue[tuple[str, dict[str, Any], Queue[tuple[bool, Any]]] | None] = Queue()
+        self._ready: Queue[BaseException | None] = Queue(maxsize=1)
+        self._thread: Thread | None = None
+        self._shutdown_error: BaseException | None = None
+
+    def __enter__(self) -> SynchronousOfficialMCPClient:
+        self._thread = Thread(
+            target=lambda: asyncio.run(self._serve()),
+            name="agentic-qa-playwright-mcp",
+            daemon=True,
+        )
+        self._thread.start()
+        ready = self._ready.get()
+        if ready is not None:
+            self._thread.join()
+            self._thread = None
+            raise ready
+        return self
+
+    def call(self, name: str, arguments: dict[str, Any]) -> Any:
+        if self._thread is None or not self._thread.is_alive():
+            raise RuntimeError("MCP client is not initialized")
+        response: Queue[tuple[bool, Any]] = Queue(maxsize=1)
+        self._requests.put((name, arguments, response))
+        succeeded, value = response.get()
+        if succeeded:
+            return value
+        raise value
+
+    def tool_handler(self, payload: dict[str, Any]) -> Any:
+        name = str(payload.get("tool") or "")
+        arguments = payload.get("arguments") or {}
+        if not isinstance(arguments, dict):
+            raise ValueError("MCP arguments must be an object")
+        return self.call(name, arguments)
+
+    def __exit__(self, *exc_info: Any) -> None:
+        if self._thread is None:
+            return
+        self._requests.put(None)
+        self._thread.join()
+        self._thread = None
+        if self._shutdown_error is not None and exc_info[0] is None:
+            raise RuntimeError("Playwright MCP shutdown failed") from self._shutdown_error
+
+    async def _serve(self) -> None:
+        ready = False
+        client = OfficialMCPClient(
+            server="playwright",
+            transport=self.config.transport,
+            allowlist=set(self.config.allowlist),
+            command=self.config.command,
+            args=list(self.config.args),
+            url=str(self.config.url) if self.config.url is not None else None,
+        )
+        try:
+            async with client:
+                self.snapshot = client.snapshot
+                ready = True
+                self._ready.put(None)
+                while True:
+                    request = await asyncio.to_thread(self._requests.get)
+                    if request is None:
+                        return
+                    name, arguments, response = request
+                    try:
+                        with fail_after(self.config.request_timeout_seconds):
+                            result = await client.call(name, arguments)
+                        response.put((True, result))
+                    except BaseException as exc:
+                        response.put((False, exc))
+        except BaseException as exc:
+            if not ready:
+                self._ready.put(exc)
+            else:
+                self._shutdown_error = exc

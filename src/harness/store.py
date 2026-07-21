@@ -114,6 +114,17 @@ class WorkspaceStore:
             )
         return path
 
+    def workspace_config(self, workspace: str) -> dict[str, Any]:
+        path = self.require_workspace(workspace) / "workspace.yml"
+        payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("workspace.yml must contain an object")
+        if payload.get("schema_version") != "agentic-qa.harness.workspace.v1":
+            raise ValueError("unsupported workspace.yml schema_version")
+        if payload.get("id") != normalize_workspace_id(workspace):
+            raise ValueError("workspace.yml id does not match its directory")
+        return payload
+
     def create_run(self, snapshot: RunSnapshot) -> None:
         workspace = self.require_workspace(snapshot.workspace)
         run = workspace / "runs" / snapshot.run_id
