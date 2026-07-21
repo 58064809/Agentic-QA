@@ -1176,8 +1176,10 @@ def _deterministically_enrich_artifact(
                     "计数",
                     "统计",
                     "场次+",
+                    "场次数增加",
                     "数字不变",
                     "活动数增加",
+                    "前端展示为有效活动",
                 )
             )
             and "产品标记、计数入口与观察点待确认" not in row[10]
@@ -1251,6 +1253,20 @@ def _deterministically_enrich_artifact(
                 row[10] = _append_pending(row[10], "内容真实性判定方式待确认")
                 rules.append("block_unconfirmed_content_judgment")
                 changed = True
+            if (
+                "内容条件" in " ".join((row[1], row[2]))
+                and not _has_content_four_conditions(row)
+                and not _requires_unconfirmed_content_judgment(row)
+                and _asserts_content_count_or_validity(row)
+                and "单项条件缺失不足以满足来源中的完整内容定义" not in row[8]
+            ):
+                row[2] = "核对缺失的单项内容条件（计数观察点待确认）"
+                row[7] = "核对当前缺失条件的输入证据；不依赖未确认的内容计数入口"
+                row[8] = "单项条件缺失不足以满足来源中的完整内容定义"
+                row[9] = "保存缺失条件证据，不断言未定义的内容计数界面或数值变化"
+                row[10] = _append_pending(row[10], "内容计数入口与观察点待确认")
+                rules.append("condition_missing_content_evidence")
+                changed = True
         if "前端展示建议" in source_corpus or "可以展示为" in source_corpus:
             if (
                 "对抗" in scenario
@@ -1314,6 +1330,19 @@ def _deterministically_enrich_artifact(
                 row[10] = _append_pending(row[10], "成长金发放时机待确认")
                 rules.append("remove_unconfirmed_growth_payout")
                 changed = True
+        if (
+            "成长金非个人奖励，仅用于主理人运营的圈子发展使用" in source_corpus
+            and "非个人奖励" in " ".join(row)
+            and any(term in " ".join((row[5], row[6])) for term in ("已获得", "已发放", "到账"))
+        ):
+            row[5] = "可访问来源定义的成长金说明内容"
+            row[6] = "来源中的成长金用途说明文案"
+            row[7] = "核对来源明确的成长金非个人奖励说明"
+            row[8] = "文案表达成长金非个人奖励，仅用于主理人运营的圈子发展"
+            row[9] = "来源文案与候选内容的对照结果；不使用发放结果作为证据"
+            row[10] = _append_pending(row[10], "具体展示位置与最终视觉样式待确认")
+            rules.append("remove_growth_copy_payout_precondition")
+            changed = True
         if _is_untriggerable_growth_ranking(row, source_corpus):
             row[2] = "记录同档超额排序规则（当前配置不可触发）"
             row[5] = "当前三个成长金档位均不限名额"
@@ -1394,6 +1423,19 @@ def _deterministically_enrich_artifact(
             rules.append("condition_partial_combat_evidence")
             changed = True
         if (
+            _source_has_combat_definition(source_corpus)
+            and _is_combat_case(row)
+            and not _has_complete_combat_evidence(row)
+            and _asserts_unsourced_combat_ui(row)
+        ):
+            row[2] = "核对缺失的对抗类来源条件（产品标识待确认）"
+            row[7] = "核对该活动缺失的对抗关系、胜负或排名规则、结束结果之一"
+            row[8] = "缺少任一来源条件时，不按来源定义归类为对抗类"
+            row[9] = "保存缺失条件证据，不断言未定义的前端标识、提示或分类入口"
+            row[10] = _append_pending(row[10], "产品分类入口与展示方式待确认")
+            rules.append("remove_unsourced_combat_ui")
+            changed = True
+        if (
             "低于预算底标时标记未达成底标" in source_corpus
             and "底标" in " ".join(row)
             and any(term in result for term in ("页面", "提示", "文案", "显示", "展示"))
@@ -1406,6 +1448,21 @@ def _deterministically_enrich_artifact(
             row[9] = "正式配置快照、人数输入、计算过程和未达成状态证据"
             row[10] = "未达成底标的展示位置、文案与观察点待确认"
             rules.append("remove_unsourced_budget_floor_display")
+            changed = True
+        if (
+            "同一用户在同一圈子内参加多场有效活动，只算 1 人" in source_corpus
+            and any(term in " ".join((row[1], row[2])) for term in ("玩家人数去重", "只计1人"))
+            and any(
+                term in " ".join((row[7], row[8], row[9]))
+                for term in ("统计", "查询", "展示", "计数")
+            )
+            and "参与玩家统计入口与观察点待确认" not in row[10]
+        ):
+            row[7] = "核对同一用户、同一圈子和多场有效活动的来源输入证据"
+            row[8] = "按来源去重规则，该用户在该圈子的参与玩家统计中只计 1 人"
+            row[9] = "用户标识、圈子标识及各场有效参与证据；不依赖未确认展示入口"
+            row[10] = _append_pending(row[10], "参与玩家统计入口与观察点待确认")
+            rules.append("condition_participant_dedup_observation")
             changed = True
         if formal_config:
             participant_count = _explicit_new_old_player_count(row)
@@ -1554,11 +1611,46 @@ def _deterministically_enrich_artifact(
             rules.append("condition_unlimited_tier_coverage")
         if (
             _source_has_distinct_activity_scopes(source_corpus)
-            and "有效活动定义" in row[0]
+            and "有效活动" in row[0]
             and row[2] != "按来源核对对应条件输入；产品标记、计数入口与观察点待确认"
         ):
             row[2] = "按来源核对对应条件输入；产品标记、计数入口与观察点待确认"
             rules.append("condition_effective_activity_coverage")
+        if (
+            "成长金发放时机" in source_corpus
+            and any(term in row[0] for term in ("成长金第一档", "成长金第二档", "成长金第三档"))
+            and row[2] != "核对来源门槛与最高满足档位；不映射产品结果"
+        ):
+            row[2] = "核对来源门槛与最高满足档位；不映射产品结果"
+            rules.append("condition_growth_tier_coverage")
+        if (
+            _source_has_combat_definition(source_corpus)
+            and "对抗类" in row[0]
+            and any(term in row[0] for term in ("缺少", "无法确认"))
+            and row[2] != "按缺失的来源条件核对负向分类；产品标识待确认"
+        ):
+            row[2] = "按缺失的来源条件核对负向分类；产品标识待确认"
+            rules.append("condition_negative_combat_coverage")
+        if formal_config and "奖金池计算与人均" in row[0]:
+            row[0] = "正式奖励配置与来源计算公式"
+            row[1] = "TC-CONFIG-SOURCE"
+            row[2] = "核对正式逐场配置与来源公式；比例和取整建议另作条件式核对"
+            rules.append("align_reward_calculation_coverage")
+        if (
+            formal_config
+            and "第10场以后" in row[0]
+            and (row[1] != "TC-CONFIG-SOURCE" or row[2] != "正式来源确认第10场及以后沿用第10场配置")
+        ):
+            row[1] = "TC-CONFIG-SOURCE"
+            row[2] = "正式来源确认第10场及以后沿用第10场配置"
+            rules.append("align_post_max_stage_coverage")
+        if (
+            "同一用户在同一圈子内参加多场有效活动，只算 1 人" in source_corpus
+            and "玩家去重" in row[0]
+            and row[2] != "按来源核对同圈用户去重规则；统计入口与观察点待确认"
+        ):
+            row[2] = "按来源核对同圈用户去重规则；统计入口与观察点待确认"
+            rules.append("condition_participant_dedup_coverage")
         if row != original_coverage_row:
             lines[index] = "| " + " | ".join(row) + " |"
             normalized_case_ids.append(row[1])
@@ -1806,6 +1898,7 @@ def _asserts_positive_content_count(row: list[str]) -> bool:
             "不变",
             "无变化",
             "不产生",
+            "不断言",
             "不可执行",
         )
     ):
@@ -1962,6 +2055,8 @@ def _asserts_combat_classification(row: list[str]) -> bool:
             "不属对抗类",
             "非对抗类",
             "不标记为对抗类",
+            "不按来源定义归类为对抗类",
+            "不按对抗类定义归类",
         )
     ):
         return False
@@ -1995,6 +2090,8 @@ def _asserts_partial_combat_product_outcome(row: list[str]) -> bool:
             "未归类为对抗类",
             "不被识别为对抗类",
             "非对抗类",
+            "不按来源定义归类为对抗类",
+            "不按对抗类定义归类",
         )
     ):
         return False
@@ -2003,10 +2100,27 @@ def _asserts_partial_combat_product_outcome(row: list[str]) -> bool:
     )
 
 
+def _asserts_unsourced_combat_ui(row: list[str]) -> bool:
+    if len(row) != len(TESTCASE_HEADERS):
+        return False
+    if "单项输入不能推导最终分类或展示结果" in row[8]:
+        return False
+    observation = " ".join((row[7], row[8], row[9]))
+    return (
+        any(term in observation for term in ("前端", "标识", "提示", "检查是否被标记", "分类入口"))
+        and "不断言未定义的前端标识" not in row[9]
+    )
+
+
 def _has_complete_combat_evidence(row: list[str]) -> bool:
     if len(row) != len(TESTCASE_HEADERS):
         return False
     scenario = " ".join((row[2], row[5], row[6], row[7]))
+    if any(
+        term in scenario
+        for term in ("无法确认结果", "结果无法确认", "结果丢失", "无结果记录", "未记录成绩")
+    ):
+        return False
     if "对抗" in scenario and any(
         term in scenario for term in ("满足三对抗条件", "满足三项对抗条件", "满足三条件")
     ):
@@ -2299,8 +2413,10 @@ def _quality_check(
                             "计数",
                             "统计",
                             "场次+",
+                            "场次数增加",
                             "数字不变",
                             "活动数增加",
+                            "前端展示为有效活动",
                         )
                     )
                     and "产品标记、计数入口与观察点待确认" not in row[10]
@@ -2446,6 +2562,19 @@ def _quality_check(
                         "a single combat condition cannot imply classification or a displayed "
                         f"result: {unsafe_partial_combat_cases}"
                     )
+                unsourced_negative_combat_ui = [
+                    row[0]
+                    for row in data_rows
+                    if _is_combat_case(row)
+                    and not _has_complete_combat_evidence(row)
+                    and _asserts_unsourced_combat_ui(row)
+                ]
+                if unsourced_negative_combat_ui:
+                    semantic_errors.append(
+                        "negative combat cases may use missing source conditions but cannot "
+                        "invent a frontend marker, prompt, or classification entry point: "
+                        f"{unsourced_negative_combat_ui}"
+                    )
             if "内容“真实有效”" in source_corpus and "具体判定方式" in source_corpus:
                 content_coverage_requirements = (
                     ("对应圈子", ("对应圈子", "圈子内")),
@@ -2505,6 +2634,21 @@ def _quality_check(
                     semantic_errors.append(
                         "content authenticity has no confirmed decision mechanism; do not assert "
                         f"automatic invalidation outcomes: {invented_content_judgments}"
+                    )
+                unsafe_missing_content_cases = [
+                    row[0]
+                    for row in data_rows
+                    if "内容条件" in " ".join((row[1], row[2]))
+                    and not _has_content_four_conditions(row)
+                    and not _requires_unconfirmed_content_judgment(row)
+                    and _asserts_content_count_or_validity(row)
+                    and "单项条件缺失不足以满足来源中的完整内容定义" not in row[8]
+                ]
+                if unsafe_missing_content_cases:
+                    semantic_errors.append(
+                        "a missing content condition proves only that the complete source "
+                        "definition is unmet; it does not establish an unconfirmed count UI: "
+                        f"{unsafe_missing_content_cases}"
                     )
             if "前端展示建议" in source_corpus or "可以展示为" in source_corpus:
                 fixed_display_suggestions = []
@@ -2684,6 +2828,38 @@ def _quality_check(
                     semantic_errors.append(
                         "growth-fund coverage must map tier selection without fixed display or "
                         f"payout outcomes: {invented_growth_coverage}"
+                    )
+            if "成长金非个人奖励，仅用于主理人运营的圈子发展使用" in source_corpus:
+                growth_copy_payout_preconditions = [
+                    row[0]
+                    for row in data_rows
+                    if "非个人奖励" in " ".join(row)
+                    and any(
+                        term in " ".join((row[5], row[6])) for term in ("已获得", "已发放", "到账")
+                    )
+                ]
+                if growth_copy_payout_preconditions:
+                    semantic_errors.append(
+                        "growth-fund explanatory copy must not require an unconfirmed payout "
+                        f"fact as its precondition: {growth_copy_payout_preconditions}"
+                    )
+            if "同一用户在同一圈子内参加多场有效活动，只算 1 人" in source_corpus:
+                unsafe_participant_dedup_observations = [
+                    row[0]
+                    for row in data_rows
+                    if any(
+                        term in " ".join((row[1], row[2])) for term in ("玩家人数去重", "只计1人")
+                    )
+                    and any(
+                        term in " ".join((row[7], row[8], row[9]))
+                        for term in ("统计", "查询", "展示", "计数")
+                    )
+                    and "参与玩家统计入口与观察点待确认" not in row[10]
+                ]
+                if unsafe_participant_dedup_observations:
+                    semantic_errors.append(
+                        "participant deduplication is source-defined but its product observation "
+                        f"point is not: {unsafe_participant_dedup_observations}"
                     )
             untriggerable_growth_rankings = [
                 row[0] for row in data_rows if _is_untriggerable_growth_ranking(row, source_corpus)

@@ -2546,3 +2546,154 @@ def test_complete_combat_evidence_cannot_be_rewritten_as_negative() -> None:
     assert "correct_complete_combat_classification" in metadata["rules"]
     assert "按来源定义归类为对抗类" in enriched
     _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_effective_activity_count_increment_requires_confirmed_observation() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-ACTIVITY",
+            "奖励有效活动定义",
+            "满足四条件",
+            "功能",
+            "P0",
+            "App发布、报名6人、活动完成、有核销",
+            "活动A",
+            "完成活动并查看结果",
+            "计为主理人有效活动",
+            "主理人场次数增加，前端展示为有效活动",
+            "无",
+        ]
+    )
+    source = "有到场核销 / 签到 / 平台确认记录；App内发布｜报名人数大于5人｜活动实际完成"
+
+    with pytest.raises(ValueError, match="do not establish a product module"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "condition_effective_activity_observation" in metadata["rules"]
+    assert "产品标记、计数入口与观察点待确认" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_negative_combat_case_does_not_invent_frontend_marker() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-COMBAT-NEG-UI",
+            "对抗类缺少胜负规则",
+            "无规则不属于对抗类",
+            "功能",
+            "P1",
+            "活动有两队对抗但没有胜负规则",
+            "活动A",
+            "检查是否被标记为对抗类",
+            "不被识别为对抗类",
+            "前端无对抗类标识",
+            "无",
+        ]
+    )
+    source = "明确的对抗关系；明确胜负或排名规则；活动结束后能确认获胜结果"
+
+    with pytest.raises(ValueError, match="cannot invent a frontend marker"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "remove_unsourced_combat_ui" in metadata["rules"]
+    assert "不断言未定义的前端标识" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_missing_content_condition_does_not_invent_count_observation() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CONTENT-MISSING",
+            "内容条件D01缺失",
+            "发布在其他圈子",
+            "功能",
+            "P1",
+            "动态不在对应圈子",
+            "动态A",
+            "发布后查看内容数",
+            "不计入有效内容数",
+            "内容数不变",
+            "无",
+        ]
+    )
+    source = "内容条件D01：对应圈子；内容“真实有效”的具体判定方式待确认"
+
+    with pytest.raises(ValueError, match="unconfirmed count UI"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "condition_missing_content_evidence" in metadata["rules"]
+    assert "单项条件缺失不足以满足来源中的完整内容定义" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_growth_copy_does_not_require_prior_payout() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-GROWTH-COPY",
+            "成长金说明",
+            "成长金为非个人奖励",
+            "功能",
+            "P1",
+            "圈子已获得成长金",
+            "已获得500元成长金",
+            "查看说明",
+            "显示成长金非个人奖励",
+            "文案可见",
+            "展示位置待确认",
+        ]
+    )
+    source = "成长金非个人奖励，仅用于主理人运营的圈子发展使用"
+
+    with pytest.raises(ValueError, match="must not require an unconfirmed payout"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "remove_growth_copy_payout_precondition" in metadata["rules"]
+    assert "可访问来源定义的成长金说明内容" in enriched
+    assert "已获得500元" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_participant_dedup_does_not_assume_query_or_display() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-DEDUP",
+            "玩家人数去重",
+            "同一用户多场只计1人",
+            "功能",
+            "P1",
+            "用户参加同圈两场活动",
+            "用户A、圈子A",
+            "查询参与玩家统计",
+            "玩家数只增加1",
+            "前端展示1人",
+            "无",
+        ]
+    )
+    source = "同一用户在同一圈子内参加多场有效活动，只算 1 人"
+
+    with pytest.raises(ValueError, match="observation point is not"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "condition_participant_dedup_observation" in metadata["rules"]
+    assert "参与玩家统计入口与观察点待确认" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
