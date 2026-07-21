@@ -13,6 +13,8 @@ import yaml
 
 from harness.contracts import (
     ArtifactCandidate,
+    ExecutionEnvironmentPolicy,
+    ExecutionProfile,
     HarnessEvent,
     RunSnapshot,
     normalize_workspace_id,
@@ -99,6 +101,7 @@ class WorkspaceStore:
                     "schema_version": "agentic-qa.harness.workspace.v1",
                     "id": workspace,
                     "created_at": datetime.now(tz=UTC).isoformat(),
+                    "execution": {"environments": {}},
                 },
                 allow_unicode=True,
                 sort_keys=False,
@@ -124,6 +127,39 @@ class WorkspaceStore:
         if payload.get("id") != normalize_workspace_id(workspace):
             raise ValueError("workspace.yml id does not match its directory")
         return payload
+
+    def validate_execution_profile(
+        self,
+        workspace: str,
+        profile: ExecutionProfile,
+    ) -> ExecutionEnvironmentPolicy | None:
+        if profile.environment == "analysis-only":
+            return None
+        payload = self.workspace_config(workspace)
+        execution = payload.get("execution") or {}
+        if not isinstance(execution, dict):
+            raise ValueError("workspace.yml execution must be an object")
+        environments = execution.get("environments") or {}
+        if not isinstance(environments, dict):
+            raise ValueError("workspace.yml execution.environments must be an object")
+        raw_policy = environments.get(profile.environment)
+        if raw_policy is None:
+            raise PermissionError(
+                f"execution environment is not configured in workspace.yml: {profile.environment}"
+            )
+        policy = ExecutionEnvironmentPolicy.model_validate(raw_policy)
+        if profile.base_url_env != policy.base_url_env:
+            raise PermissionError("execution profile base_url_env does not match workspace policy")
+        disallowed = sorted(set(profile.allowed_http_methods) - set(policy.allowed_http_methods))
+        if disallowed:
+            raise PermissionError(
+                f"execution profile requests disallowed HTTP methods: {', '.join(disallowed)}"
+            )
+        if profile.allow_ui_mutations and not policy.allow_ui_mutations:
+            raise PermissionError("workspace policy does not allow UI mutations")
+        if profile.request_timeout_seconds > policy.max_request_timeout_seconds:
+            raise PermissionError("execution profile timeout exceeds workspace policy")
+        return policy
 
     def create_run(self, snapshot: RunSnapshot) -> None:
         workspace = self.require_workspace(snapshot.workspace)

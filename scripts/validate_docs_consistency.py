@@ -81,7 +81,7 @@ def _validate_markdown_paths(root: Path, errors: list[str]) -> None:
 def validate_docs_consistency(repo_root: Path) -> list[str]:
     root = repo_root.resolve()
     errors = [f"缺少核心文件: {path}" for path in CORE_FILES if not (root / path).is_file()]
-    for legacy_root in ("runtime", "rag", "apps", "integrations"):
+    for legacy_root in (".runtime", "runtime", "rag", "apps", "integrations", "knowledge"):
         path = root / legacy_root
         if path.exists() and any(path.rglob("*.py")):
             errors.append(f"旧可执行链路仍存在: {legacy_root}/")
@@ -90,8 +90,7 @@ def validate_docs_consistency(repo_root: Path) -> list[str]:
     api_doc = root / "docs/api-test-generation.md"
     if api_doc.is_file() and API_CASES_SCHEMA_VERSION not in _read(api_doc):
         errors.append(
-            "docs/api-test-generation.md 未声明当前 API Cases Schema: "
-            f"{API_CASES_SCHEMA_VERSION}"
+            f"docs/api-test-generation.md 未声明当前 API Cases Schema: {API_CASES_SCHEMA_VERSION}"
         )
     return errors
 

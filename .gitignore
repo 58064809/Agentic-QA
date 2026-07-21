@@ -24,17 +24,13 @@ Thumbs.db
 # Legacy data and runtime workspaces stay local
 /prd/
 /workspaces/
-
-# Root knowledge files are local migration leftovers. Canonical built-in
-# knowledge lives in src/harness/knowledge.
-/knowledge/*
-!/knowledge/README.md
+/knowledge/
+/.runtime/
 
 # Local agent / skill runtime state
 .atomcode/
 
-# Runtime and IDE local state
-.runtime/
+# IDE local state
 /.idea/
 
 # MkDocs build output

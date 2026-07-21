@@ -439,7 +439,11 @@ class HarnessEngine:
         checkpoint_path = self.store.checkpoint_path(snapshot.workspace, snapshot.run_id)
         try:
             with SqliteSaver.from_conn_string(str(checkpoint_path)) as checkpointer:
-                graph = compile_harness_graph(checkpointer=checkpointer, **nodes)
+                graph = compile_harness_graph(
+                    checkpointer=checkpointer,
+                    max_concurrent_agents=self.limits.max_concurrent_agents,
+                    **nodes,
+                )
                 graph.invoke(graph_input, config)
                 state_view = graph.get_state(config)
                 result = self._project(
@@ -552,7 +556,12 @@ class HarnessEngine:
                         raise
                     continue
                 break
-            ready = _ready_task_ids(plan, [task.id for task in plan.tasks], [])
+            pending_task_ids = [task.id for task in plan.tasks]
+            ready = _ready_task_ids(
+                plan,
+                pending_task_ids,
+                [],
+            )[: self.limits.max_concurrent_agents]
             delegations = [{"task_ids": ready, "revision": plan.revision}]
             event("plan_created", task_count=len(plan.tasks), revision=plan.revision)
             event("tasks_delegated", task_ids=ready)
@@ -661,7 +670,7 @@ class HarnessEngine:
                         revision=plan.revision,
                         reason=result["error"],
                     )
-            ready = _ready_task_ids(plan, pending, completed)
+            ready = _ready_task_ids(plan, pending, completed)[: self.limits.max_concurrent_agents]
             delegations = list(state.get("delegations", []))
             if ready:
                 delegations.append({"task_ids": ready, "revision": plan.revision})
@@ -763,6 +772,8 @@ class HarnessEngine:
             raise RuntimeError("model is not configured")
         manifest = self.agents.get(task.agent)
         skill_text = "\n\n".join(self.skills.instructions(name) for name in manifest.skills)
+        model_tools = runtime.model_tools(manifest.tool_allowlist)
+        available_tool_names = {item["name"] for item in model_tools}
         tool_results: list[dict[str, Any]] = []
         validation_feedback: list[dict[str, str]] = []
         artifact_repair_attempts = 0
@@ -833,10 +844,7 @@ class HarnessEngine:
                         ensure_ascii=False,
                     ),
                     response_model=AgentOutput,
-                    tools=[
-                        self.tools.get(name).model_dump(mode="json")
-                        for name in manifest.tool_allowlist
-                    ],
+                    tools=model_tools,
                     route=route,
                 )
             except RuntimeError as exc:
@@ -864,9 +872,9 @@ class HarnessEngine:
                 continue
             if result.tool_requests:
                 for call in result.tool_requests:
-                    if call.tool not in manifest.tool_allowlist:
+                    if call.tool not in available_tool_names:
                         raise PermissionError(
-                            f"{manifest.name} requested undeclared tool: {call.tool}"
+                            f"{manifest.name} requested unavailable tool: {call.tool}"
                         )
                     key = call.idempotency_key or _tool_key(
                         run_id, task.id, step, call.tool, call.arguments

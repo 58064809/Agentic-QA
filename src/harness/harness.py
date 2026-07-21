@@ -48,6 +48,7 @@ class Harness:
         )
 
     def run(self, request: TaskRequest) -> RunSnapshot:
+        self.store.validate_execution_profile(request.workspace, request.execution_profile)
         with self._configured_tool_handlers(request.workspace) as handlers:
             return self._engine.execute(request, tool_handlers=handlers)
 
@@ -56,6 +57,10 @@ class Harness:
 
         def worker() -> None:
             try:
+                self.store.validate_execution_profile(
+                    request.workspace,
+                    request.execution_profile,
+                )
                 with self._configured_tool_handlers(request.workspace) as handlers:
                     self._engine.execute(request, emit=queue.put, tool_handlers=handlers)
             except BaseException as exc:
@@ -80,6 +85,10 @@ class Harness:
         decision: ReviewDecision | None = None,
     ) -> RunSnapshot:
         snapshot = self.store.load_snapshot(run_id)
+        self.store.validate_execution_profile(
+            snapshot.workspace,
+            snapshot.request.execution_profile,
+        )
         if snapshot.status in {"partial", "needs_human_review"}:
             return self._engine.resume(snapshot, decision)
         with self._configured_tool_handlers(

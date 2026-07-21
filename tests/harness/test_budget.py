@@ -32,3 +32,8 @@ def test_restored_elapsed_runtime_cannot_bypass_limit(monkeypatch: pytest.Monkey
 
     assert budget.usage.model_calls == 0
     assert budget.usage.elapsed_seconds == 11.0
+
+
+def test_concurrent_agent_limit_must_be_positive() -> None:
+    with pytest.raises(ValueError, match="max_concurrent_agents"):
+        BudgetLimits(max_concurrent_agents=0)

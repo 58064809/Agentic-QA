@@ -46,6 +46,44 @@ class ToolRuntime:
         self.handlers = handlers or {}
         self.on_call = on_call
 
+    def model_tools(self, names: list[str]) -> list[dict[str, Any]]:
+        visible: list[dict[str, Any]] = []
+        for name in names:
+            manifest = self.tools.get(name)
+            if manifest.provider != "mcp":
+                visible.append(manifest.model_dump(mode="json"))
+                continue
+            handler = self.handlers.get(name)
+            owner = getattr(handler, "__self__", None)
+            snapshot = getattr(owner, "snapshot", None)
+            if snapshot is None:
+                continue
+            variants = [
+                {
+                    "type": "object",
+                    "required": ["tool", "arguments"],
+                    "properties": {
+                        "tool": {"const": tool.name},
+                        "arguments": tool.input_schema or {"type": "object"},
+                    },
+                    "additionalProperties": False,
+                }
+                for tool in snapshot.tools
+            ]
+            if not variants:
+                continue
+            projected = manifest.model_copy(
+                update={
+                    "description": (
+                        f"{manifest.description}；本 run 可用子工具："
+                        + ", ".join(tool.name for tool in snapshot.tools)
+                    ),
+                    "input_schema": {"oneOf": variants},
+                }
+            )
+            visible.append(projected.model_dump(mode="json"))
+        return visible
+
     def call(
         self,
         *,

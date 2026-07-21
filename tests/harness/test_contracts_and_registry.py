@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from harness import Harness, PlanTask, QAPlan, TaskRequest
+from harness import ExecutionProfile, Harness, PlanTask, QAPlan, TaskRequest
 from harness.contracts import SkillManifest
 from harness.evals import recorded_model_gateway
 from harness.registry import AgentRegistry, SkillRegistry, ToolRegistry
@@ -14,6 +14,11 @@ from harness.registry import AgentRegistry, SkillRegistry, ToolRegistry
 def test_task_request_rejects_legacy_prd_path() -> None:
     with pytest.raises(ValidationError, match="旧工作区不受 Harness 支持"):
         TaskRequest(workspace="prd/demo", goal="test")
+
+
+def test_task_request_rejects_likely_secrets_before_run_persistence() -> None:
+    with pytest.raises(ValidationError, match="likely secret"):
+        TaskRequest(workspace="demo", goal="test with API_KEY=abcdefgh")
 
 
 def test_workspace_accepts_safe_unicode_name_with_spaces(tmp_path: Path) -> None:
@@ -31,6 +36,17 @@ def test_workspace_accepts_safe_unicode_name_with_spaces(tmp_path: Path) -> None
 def test_workspace_rejects_unsafe_directory_name(name: str) -> None:
     with pytest.raises(ValidationError, match="安全目录名"):
         TaskRequest(workspace=name, goal="test")
+
+
+@pytest.mark.parametrize("environment", ["prod", "production", "eu-live"])
+def test_execution_profile_rejects_production_like_environments(environment: str) -> None:
+    with pytest.raises(ValidationError, match="production-like"):
+        ExecutionProfile(environment=environment)
+
+
+def test_analysis_only_profile_cannot_enable_ui_mutations() -> None:
+    with pytest.raises(ValidationError, match="analysis-only"):
+        ExecutionProfile(allow_ui_mutations=True)
 
 
 def test_plan_rejects_cycles() -> None:

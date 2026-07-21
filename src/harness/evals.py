@@ -96,7 +96,18 @@ def run_offline_eval() -> dict[str, Any]:
             model_gateway=recorded_model_gateway(use_fake_mcp=True),
             tool_handlers={"mcp.playwright": bridge.tool_handler},
         )
-        harness.init_workspace("offline-eval")
+        workspace = harness.init_workspace("offline-eval")
+        workspace.joinpath("workspace.yml").write_text(
+            """schema_version: agentic-qa.harness.workspace.v1
+id: offline-eval
+execution:
+  environments:
+    recorded-test:
+      allow_ui_mutations: true
+      max_request_timeout_seconds: 10
+""",
+            encoding="utf-8",
+        )
         snapshot = harness.run(
             TaskRequest(
                 workspace="offline-eval",

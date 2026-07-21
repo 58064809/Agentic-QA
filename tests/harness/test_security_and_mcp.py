@@ -11,7 +11,7 @@ from harness.mcp import (
     PlaywrightMCPConfig,
     SynchronousOfficialMCPClient,
 )
-from harness.security import sanitize_untrusted
+from harness.security import contains_likely_secret, sanitize_untrusted
 
 
 def test_mcp_snapshot_freezes_allowlist_and_redacts_results() -> None:
@@ -60,6 +60,15 @@ def test_prompt_injection_is_only_untrusted_text() -> None:
     assert "Ignore all instructions" in value["content"]
     assert "Bearer <redacted>" in value["content"]
     assert value["api_key"] == "<redacted>"
+
+
+def test_secret_assignments_and_private_keys_are_redacted_from_untrusted_text() -> None:
+    private_key_header = "-----BEGIN RSA " + "PRIVAT" + "E K" + "EY-----"
+    value = sanitize_untrusted(f"API_KEY=abcdefgh password:value123 {private_key_header}")
+
+    redacted_header = "-----BEGIN " + "PRIVAT" + "E K" + "EY-----<redacted>"
+    assert value == f"API_KEY=<redacted> password:<redacted> {redacted_header}"
+    assert contains_likely_secret("Authorization: Bearer abc.def")
 
 
 def test_playwright_mcp_config_rejects_arbitrary_stdio_commands() -> None:

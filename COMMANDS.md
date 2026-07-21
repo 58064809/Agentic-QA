@@ -19,4 +19,6 @@ agentic-qa eval run
 
 多候选的 `approve`、`reject` 或 `revise` 必须通过 `--artifact` 指定单个产物或 `all`。
 无审核决定的 `resume` 用于恢复崩溃执行；只有 `approve` 会触发确定性 promote。
+所有非 `analysis-only` 执行环境必须先在对应 `workspace.yml` 的
+`execution.environments` 中登记；CLI 参数只能收窄该策略，不能扩大权限。
 旧 Runtime CLI 和 `prd/...` 参数不受支持。

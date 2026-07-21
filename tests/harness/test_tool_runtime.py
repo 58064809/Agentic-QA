@@ -8,6 +8,7 @@ from harness import Harness, TaskRequest
 from harness.budget import Budget
 from harness.contracts import ExecutionProfile
 from harness.evals import recorded_model_gateway
+from harness.mcp import MCPBridge, MCPToolSnapshot
 from harness.tools import ToolRuntime
 
 
@@ -122,3 +123,54 @@ def test_read_tool_result_is_reused_for_same_idempotency_key(tmp_path: Path) -> 
     assert first == second
     assert budget.snapshot().tool_calls == 1
     assert len(events) == 1
+
+
+def test_model_only_sees_run_frozen_mcp_tools(tmp_path: Path) -> None:
+    harness = Harness(tmp_path, model_gateway=recorded_model_gateway())
+    harness.init_workspace("demo")
+    runtime_without_mcp = ToolRuntime(
+        store=harness.store,
+        agents=harness.agents,
+        tools=harness.tools,
+        budget=Budget(),
+    )
+
+    assert [
+        item["name"]
+        for item in runtime_without_mcp.model_tools(
+            harness.agents.get("ui_test_engineer").tool_allowlist
+        )
+    ] == ["workspace.read"]
+
+    bridge = MCPBridge(
+        MCPToolSnapshot.freeze(
+            server="playwright",
+            transport="stdio",
+            listed_tools=[
+                {
+                    "name": "browser_snapshot",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": False,
+                    },
+                },
+                {"name": "browser_click", "inputSchema": {"type": "object"}},
+            ],
+            allowlist={"browser_snapshot"},
+        ),
+        lambda _name, _arguments: {},
+    )
+    runtime = ToolRuntime(
+        store=harness.store,
+        agents=harness.agents,
+        tools=harness.tools,
+        budget=Budget(),
+        handlers={"mcp.playwright": bridge.tool_handler},
+    )
+
+    visible = runtime.model_tools(harness.agents.get("ui_test_engineer").tool_allowlist)
+    mcp = next(item for item in visible if item["name"] == "mcp.playwright")
+    variants = mcp["input_schema"]["oneOf"]
+    assert [item["properties"]["tool"]["const"] for item in variants] == ["browser_snapshot"]
+    assert variants[0]["properties"]["arguments"]["additionalProperties"] is False

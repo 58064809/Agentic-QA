@@ -19,6 +19,14 @@ class BudgetLimits:
     max_concurrent_agents: int = 3
     max_runtime_seconds: int = 30 * 60
 
+    def __post_init__(self) -> None:
+        if min(self.max_model_calls, self.max_tool_calls, self.max_replans) < 0:
+            raise ValueError("call and replan budgets cannot be negative")
+        if self.max_concurrent_agents < 1:
+            raise ValueError("max_concurrent_agents must be at least 1")
+        if self.max_runtime_seconds < 1:
+            raise ValueError("max_runtime_seconds must be at least 1")
+
 
 class Budget:
     def __init__(

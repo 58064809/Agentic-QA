@@ -42,10 +42,14 @@ def _ready(state: HarnessState) -> list[dict[str, Any]]:
     ]
 
 
-def _route_tasks(state: HarnessState) -> list[Send] | str:
+def _route_tasks(
+    state: HarnessState,
+    *,
+    max_concurrent_agents: int,
+) -> list[Send] | str:
     if not state.get("pending_tasks"):
         return "prepare_review"
-    ready = _ready(state)
+    ready = _ready(state)[:max_concurrent_agents]
     if not ready:
         return "prepare_review"
     results = state.get("results_by_task", {})
@@ -80,6 +84,7 @@ def compile_harness_graph(
     prepare_review: Callable[..., Any],
     review_gate: Callable[..., Any],
     apply_review: Callable[..., Any],
+    max_concurrent_agents: int,
 ) -> Any:
     builder = StateGraph(HarnessState)
     builder.add_node("planner", planner)
@@ -89,9 +94,13 @@ def compile_harness_graph(
     builder.add_node("review_gate", review_gate)
     builder.add_node("apply_review", apply_review)
     builder.add_edge(START, "planner")
-    builder.add_conditional_edges("planner", _route_tasks)
+
+    def route_tasks(state: HarnessState) -> list[Send] | str:
+        return _route_tasks(state, max_concurrent_agents=max_concurrent_agents)
+
+    builder.add_conditional_edges("planner", route_tasks)
     builder.add_edge("expert_agent", "qa_supervisor")
-    builder.add_conditional_edges("qa_supervisor", _route_tasks)
+    builder.add_conditional_edges("qa_supervisor", route_tasks)
     builder.add_edge("prepare_review", "review_gate")
     builder.add_edge("review_gate", "apply_review")
     builder.add_conditional_edges("apply_review", _route_review)

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from harness.security import contains_likely_secret
 
 CONTRACT_PREFIX = "agentic-qa.harness"
 UTC = timezone.utc
@@ -58,11 +61,35 @@ class ExecutionProfile(StrictModel):
     schema_version: Literal["agentic-qa.harness.execution-profile.v1"] = (
         "agentic-qa.harness.execution-profile.v1"
     )
-    environment: str = "analysis-only"
-    base_url_env: str | None = None
+    environment: str = Field(default="analysis-only", min_length=1)
+    base_url_env: str | None = Field(default=None, pattern=r"^[A-Z_][A-Z0-9_]*$")
     allowed_http_methods: list[str] = Field(default_factory=lambda: ["GET", "HEAD", "OPTIONS"])
     allow_ui_mutations: bool = False
     request_timeout_seconds: int = Field(default=10, ge=1, le=60)
+
+    @field_validator("allowed_http_methods")
+    @classmethod
+    def normalize_methods(cls, value: list[str]) -> list[str]:
+        methods = list(dict.fromkeys(item.strip().upper() for item in value if item.strip()))
+        if not methods:
+            raise ValueError("allowed_http_methods cannot be empty")
+        return methods
+
+    @model_validator(mode="after")
+    def validate_environment_safety(self) -> ExecutionProfile:
+        segments = set(re.split(r"[^a-z0-9]+", self.environment.strip().lower()))
+        if segments & {"prod", "production", "live"}:
+            raise ValueError("production-like environments are not supported")
+        if self.environment == "analysis-only" and self.allow_ui_mutations:
+            raise ValueError("analysis-only cannot allow UI mutations")
+        return self
+
+
+class ExecutionEnvironmentPolicy(StrictModel):
+    base_url_env: str | None = Field(default=None, pattern=r"^[A-Z_][A-Z0-9_]*$")
+    allowed_http_methods: list[str] = Field(default_factory=lambda: ["GET", "HEAD", "OPTIONS"])
+    allow_ui_mutations: bool = False
+    max_request_timeout_seconds: int = Field(default=10, ge=1, le=60)
 
     @field_validator("allowed_http_methods")
     @classmethod
@@ -86,6 +113,13 @@ class TaskRequest(StrictModel):
     @classmethod
     def reject_legacy_workspace(cls, value: str) -> str:
         return normalize_workspace_id(value)
+
+    @field_validator("goal")
+    @classmethod
+    def reject_secrets_in_goal(cls, value: str) -> str:
+        if contains_likely_secret(value):
+            raise ValueError("goal contains a likely secret; use environment variables instead")
+        return value
 
     @field_validator("expected_artifacts")
     @classmethod

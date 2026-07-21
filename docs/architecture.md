@@ -17,6 +17,8 @@ Agentic-QA 采用测试主管与专家 Agent 分层。公开协议不依赖 Lang
 `src/harness/backend.py` 定义 reducer-safe `HarnessState` 和真实 `StateGraph`。主管通过
 `Send` 派发无依赖任务，专家只追加任务级结果，再由主管单点合并。Review Gate 使用
 `interrupt()`；`resume` 以同一 run_id/thread_id 恢复。公开 `RunSnapshot` 不含 LangGraph 类型。
+每轮 ready 任务只派发 `max_concurrent_agents` 个，完成并由主管合并后才派发下一批；并发上限
+是实际调度约束，不是仅记录在配置中的提示值。
 
 默认硬预算为 24 次模型调用、50 次工具调用、3 次重规划、3 个并发 Agent 和 30 分钟。
 超限时生成明确标记为 partial 的可审核候选，不伪造完成。`elapsed_seconds` 只累计 Agent
@@ -38,7 +40,13 @@ Playwright MCP 只从 `workspaces/<id>/workspace.yml` 的显式配置启用。st
 `@playwright/mcp@latest` 包，不提供任意命令执行入口；也可配置明确的 streamable HTTP URL。
 每个新 run 都会 initialize、list tools，并将 allowlist 过滤后的名称和输入 Schema 冻结到
 `tool-calls/mcp-playwright-snapshot.json`。同一 run 崩溃恢复时重新连接，但实时清单必须与冻结
-快照完全一致，否则保持可恢复错误，不在权限或 Schema 漂移后继续执行。
+快照完全一致，否则保持可恢复错误，不在权限或 Schema 漂移后继续执行。模型只看到本 run
+实际配置且冻结后的 MCP 子工具与参数 Schema；未配置的 MCP provider 不进入模型工具目录。
+
+状态变更采用双重显式授权：`workspace.yml` 的 `execution.environments` 先登记测试环境的
+base URL 环境变量、HTTP 方法、UI mutation 和最大请求超时，`TaskRequest.execution_profile`
+再请求其中的权限子集。未登记环境、越权方法/超时/UI mutation 以及 production-like 环境名称
+都在创建 run 前拒绝；`analysis-only` 不允许 UI mutation。
 
 专家返回 artifact 后，Engine 在候选写入前执行确定性契约检查。失败原因以
 `artifact_validation_failed` 事件记录并反馈给同一专家，最多修复五次；只有通过检查的完整

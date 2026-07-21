@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from threading import Lock
+from time import sleep
 
 import pytest
 from pydantic import ValidationError
@@ -54,6 +56,11 @@ def test_workspace_playwright_mcp_is_initialized_and_frozen_per_run(
     workspace.joinpath("workspace.yml").write_text(
         """schema_version: agentic-qa.harness.workspace.v1
 id: demo
+execution:
+  environments:
+    local-test:
+      allow_ui_mutations: true
+      max_request_timeout_seconds: 10
 mcp:
   playwright:
     schema_version: agentic-qa.harness.playwright-mcp.v1
@@ -115,6 +122,126 @@ mcp:
     )
     with pytest.raises(RuntimeError, match="changed since this run was frozen"):
         harness._validate_frozen_mcp_snapshot("demo", snapshot.run_id, changed)
+
+
+def test_non_analysis_execution_requires_workspace_policy(tmp_path: Path) -> None:
+    harness = _harness(tmp_path)
+    workspace = harness.init_workspace("demo")
+
+    with pytest.raises(PermissionError, match="not configured in workspace.yml"):
+        harness.run(
+            TaskRequest(
+                workspace="demo",
+                goal="execute API tests",
+                execution_profile=ExecutionProfile(environment="staging"),
+            )
+        )
+
+    assert not list((workspace / "runs").iterdir())
+
+
+def test_workspace_policy_rejects_execution_profile_privilege_expansion(
+    tmp_path: Path,
+) -> None:
+    harness = _harness(tmp_path)
+    workspace = harness.init_workspace("demo")
+    workspace.joinpath("workspace.yml").write_text(
+        """schema_version: agentic-qa.harness.workspace.v1
+id: demo
+execution:
+  environments:
+    staging:
+      base_url_env: AGENTIC_QA_BASE_URL
+      allowed_http_methods: [GET]
+      allow_ui_mutations: false
+      max_request_timeout_seconds: 10
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PermissionError, match="disallowed HTTP methods"):
+        harness.run(
+            TaskRequest(
+                workspace="demo",
+                goal="execute API tests",
+                execution_profile=ExecutionProfile(
+                    environment="staging",
+                    base_url_env="AGENTIC_QA_BASE_URL",
+                    allowed_http_methods=["GET", "POST"],
+                ),
+            )
+        )
+
+
+def test_concurrency_budget_batches_ready_agents(tmp_path: Path) -> None:
+    active = 0
+    max_active = 0
+    lock = Lock()
+
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        nonlocal active, max_active
+        if response_model.__name__ == "QAPlan":
+            context_ids = [f"context_{index}" for index in range(4)]
+            return QAPlan(
+                tasks=[
+                    *[
+                        PlanTask(
+                            id=task_id,
+                            objective="analyze context",
+                            agent="risk_strategist",
+                        )
+                        for task_id in context_ids
+                    ],
+                    PlanTask(
+                        id="produce_testcases",
+                        objective="produce testcases",
+                        agent="test_designer",
+                        dependencies=context_ids,
+                        expected_outputs=["testcases"],
+                    ),
+                ]
+            )
+        context = json.loads(prompt)
+        with lock:
+            active += 1
+            max_active = max(max_active, active)
+        try:
+            sleep(0.05)
+            artifacts = {}
+            if "testcases" in context["task"]["expected_outputs"]:
+                artifacts["testcases"] = default_recorded_artifact("testcases", context["goal"])
+            return AgentOutput(summary="recorded", artifacts=artifacts)
+        finally:
+            with lock:
+                active -= 1
+
+    harness = Harness(
+        tmp_path,
+        model_gateway=CallableModelGateway(respond),
+        budget_limits=BudgetLimits(max_concurrent_agents=2),
+    )
+    harness.init_workspace("demo")
+    snapshot = harness.run(TaskRequest(workspace="demo", goal="test concurrency"))
+
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "workspaces/demo/runs" / snapshot.run_id / "events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    delegated = [
+        event["data"]["task_ids"] for event in events if event["type"] == "tasks_delegated"
+    ]
+    assert snapshot.status == "needs_human_review"
+    assert max_active == 2
+    assert all(len(batch) <= 2 for batch in delegated)
+    assert {task_id for batch in delegated for task_id in batch} == {
+        "context_0",
+        "context_1",
+        "context_2",
+        "context_3",
+        "produce_testcases",
+    }
 
 
 def test_missing_model_fails_before_creating_a_run(tmp_path: Path, monkeypatch) -> None:
