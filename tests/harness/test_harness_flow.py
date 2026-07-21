@@ -11,6 +11,7 @@ from harness.budget import BudgetLimits
 from harness.engine import (
     AgentOutput,
     _deterministically_enrich_artifact,
+    _merge_model_usage,
     _quality_check,
     build_default_plan,
     default_recorded_artifact,
@@ -21,6 +22,26 @@ from harness.model import CallableModelGateway
 
 def _harness(path: Path) -> Harness:
     return Harness(path, model_gateway=recorded_model_gateway())
+
+
+def test_model_usage_merge_adds_only_current_run_delta() -> None:
+    assert _merge_model_usage(
+        {"input_tokens": 100, "output_tokens": 50, "total_tokens": 150},
+        {"input_tokens": 1_000, "output_tokens": 500, "total_tokens": 1_500},
+        {"input_tokens": 1_020, "output_tokens": 510, "total_tokens": 1_530},
+    ) == {
+        "input_tokens": 120,
+        "output_tokens": 60,
+        "total_tokens": 180,
+    }
+
+
+def test_model_usage_merge_does_not_subtract_after_gateway_reset() -> None:
+    assert _merge_model_usage(
+        {"total_tokens": 150},
+        {"total_tokens": 1_500},
+        {"total_tokens": 25},
+    ) == {"total_tokens": 150}
 
 
 def test_missing_model_fails_before_creating_a_run(tmp_path: Path, monkeypatch) -> None:

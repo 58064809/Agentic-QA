@@ -19,13 +19,16 @@ Agentic-QA 采用测试主管与专家 Agent 分层。公开协议不依赖 Lang
 `interrupt()`；`resume` 以同一 run_id/thread_id 恢复。公开 `RunSnapshot` 不含 LangGraph 类型。
 
 默认硬预算为 24 次模型调用、50 次工具调用、3 次重规划、3 个并发 Agent 和 30 分钟。
-超限时生成明确标记为 partial 的可审核候选，不伪造完成。
+超限时生成明确标记为 partial 的可审核候选，不伪造完成。`elapsed_seconds` 只累计 Agent
+实际执行区间，不计人工审核等待时间；崩溃恢复和 Review Gate 恢复会继承已消耗时间，不能通过
+重复 resume 重置 30 分钟上限。
 
 `ModelPolicy` 是模型选择的单一入口。Flash 是常规结构化任务的默认档；Pro 用于复杂主管、
 风险策略、长篇测试设计和失败分诊。思考模式只用于规划和高推理任务；测试设计使用 Pro
 但关闭思考模式。单次模型请求默认 180 秒超时且禁用 SDK 隐式重试，后续显式重试由 Harness
 预算约束。`reasoning_content` 不进入事件、checkpoint 或产物。一个 run 的模型、档位和
-思考开关记录在 `model_routes`。
+思考开关记录在 `model_routes`。模型 usage 按 run 记录增量，恢复执行时在原 run 上累加，
+不得混入同一 Gateway 先前运行的累计值。
 
 `src/harness/knowledge/` 只存放无项目数据的通用 QA 方法。`SkillRegistry` 校验 reference
 不可越出该目录、文件必须存在且非空，再合并进对应专家的系统指令。workspace source 与 MCP

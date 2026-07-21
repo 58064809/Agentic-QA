@@ -26,6 +26,7 @@ class Budget:
     ) -> None:
         self.limits = limits or BudgetLimits()
         self.usage = usage or BudgetUsage()
+        self._elapsed_offset = self.usage.elapsed_seconds
         self._started = monotonic()
         self._lock = Lock()
 
@@ -51,12 +52,15 @@ class Budget:
             self.usage.replans += 1
 
     def _check_time(self) -> None:
-        elapsed = monotonic() - self._started
+        elapsed = self._elapsed()
         self.usage.elapsed_seconds = elapsed
         if elapsed > self.limits.max_runtime_seconds:
             raise BudgetExceeded("runtime budget exceeded")
 
+    def _elapsed(self) -> float:
+        return self._elapsed_offset + (monotonic() - self._started)
+
     def snapshot(self) -> BudgetUsage:
         with self._lock:
-            self.usage.elapsed_seconds = monotonic() - self._started
+            self.usage.elapsed_seconds = self._elapsed()
             return self.usage.model_copy(deep=True)

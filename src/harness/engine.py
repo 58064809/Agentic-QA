@@ -380,6 +380,7 @@ class HarnessEngine:
         emit: Any | None,
     ) -> RunSnapshot:
         budget = Budget(self.limits, snapshot.budget.model_copy(deep=True))
+        model_usage_before = dict(getattr(self.model, "last_usage", {}))
         sequence = self.store.next_event_sequence(snapshot.workspace, snapshot.run_id)
 
         def event(event_type: str, **kwargs: Any) -> None:
@@ -421,12 +422,23 @@ class HarnessEngine:
                 graph = compile_harness_graph(checkpointer=checkpointer, **nodes)
                 graph.invoke(graph_input, config)
                 state_view = graph.get_state(config)
-                result = self._project(snapshot, state_view.values, budget, state_view.interrupts)
+                result = self._project(
+                    snapshot,
+                    state_view.values,
+                    budget,
+                    state_view.interrupts,
+                    model_usage_before=model_usage_before,
+                )
         except BudgetExceeded as exc:
             snapshot.errors.append(str(exc))
             snapshot.status = "partial"
             self._ensure_partial_candidates(snapshot)
             snapshot.budget = budget.snapshot()
+            snapshot.model_usage = _merge_model_usage(
+                snapshot.model_usage,
+                model_usage_before,
+                dict(getattr(self.model, "last_usage", {})),
+            )
             self.store.save_snapshot(snapshot)
             event("budget_exceeded", error=str(exc))
             return snapshot
@@ -436,6 +448,11 @@ class HarnessEngine:
             if message not in snapshot.errors:
                 snapshot.errors.append(message)
             snapshot.budget = budget.snapshot()
+            snapshot.model_usage = _merge_model_usage(
+                snapshot.model_usage,
+                model_usage_before,
+                dict(getattr(self.model, "last_usage", {})),
+            )
             self.store.save_snapshot(snapshot)
             event("run_recoverable", error=message)
             return snapshot
@@ -921,9 +938,17 @@ class HarnessEngine:
         state: HarnessState,
         budget: Budget,
         interrupts: tuple[Any, ...],
+        *,
+        model_usage_before: dict[str, int],
     ) -> RunSnapshot:
         interrupt_value = interrupts[0].value if interrupts else None
-        return self._snapshot_from_state(snapshot, state, budget, interrupt_value=interrupt_value)
+        return self._snapshot_from_state(
+            snapshot,
+            state,
+            budget,
+            interrupt_value=interrupt_value,
+            model_usage_before=model_usage_before,
+        )
 
     def _snapshot_from_state(
         self,
@@ -932,8 +957,16 @@ class HarnessEngine:
         budget: Budget,
         *,
         interrupt_value: dict[str, Any] | None,
+        model_usage_before: dict[str, int] | None = None,
     ) -> RunSnapshot:
         plan = QAPlan.model_validate(state["plan"]) if state.get("plan") else snapshot.plan
+        model_usage = snapshot.model_usage
+        if model_usage_before is not None:
+            model_usage = _merge_model_usage(
+                snapshot.model_usage,
+                model_usage_before,
+                dict(getattr(self.model, "last_usage", {})),
+            )
         return snapshot.model_copy(
             deep=True,
             update={
@@ -947,7 +980,7 @@ class HarnessEngine:
                 "review_status": state.get("review_status", {}),
                 "delegations": state.get("delegations", []),
                 "tool_calls": self.store.tool_records(snapshot.workspace, snapshot.run_id),
-                "model_usage": dict(getattr(self.model, "last_usage", {})),
+                "model_usage": model_usage,
                 "model_routes": snapshot.model_routes,
                 "interrupt": interrupt_value,
                 "errors": list(dict.fromkeys([*snapshot.errors, *state.get("errors", [])])),
@@ -1016,6 +1049,20 @@ def _tool_key(
     payload = json.dumps(arguments, ensure_ascii=False, sort_keys=True, default=str)
     digest = hashlib.sha256(payload.encode()).hexdigest()[:16]
     return f"{run_id}:{task_id}:{step}:{tool}:{digest}"
+
+
+def _merge_model_usage(
+    previous: dict[str, int],
+    gateway_before: dict[str, int],
+    gateway_after: dict[str, int],
+) -> dict[str, int]:
+    merged = dict(previous)
+    for key, after in gateway_after.items():
+        before = gateway_before.get(key, 0)
+        delta = max(int(after) - int(before), 0)
+        if delta:
+            merged[key] = merged.get(key, 0) + delta
+    return merged
 
 
 def _deterministically_enrich_artifact(
