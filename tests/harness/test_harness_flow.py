@@ -1770,6 +1770,34 @@ def test_missing_reward_condition_does_not_assert_no_payout() -> None:
     _quality_check("testcases", enriched, source_corpus=source)
 
 
+def test_missing_at_condition_with_whitespace_stays_negative() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-REWARD-NO-AT",
+            "323: 动态必须 @交子立方官方号",
+            "动态未 @官方号",
+            "异常",
+            "P1",
+            "动态包含话题但未 @官方号",
+            "活动动态",
+            "核对当前来源条件的输入证据；最终资格仍需完整核对六项条件",
+            "仅确认当前来源条件满足；不单独推导最终奖励资格或处理结果",
+            "保留当前条件的输入证据，不断言未定义界面、提示或发放记录",
+            "处理入口待确认",
+        ]
+    )
+    source = "## 领取奖励条件\n323. 动态必须 @交子立方官方号"
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "restore_missing_reward_condition_semantics" in metadata["rules"]
+    assert "不满足来源中要求同时成立的全部领取条件" in enriched
+    assert "当前条件满足" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
 def test_positive_reward_requires_all_six_condition_evidence() -> None:
     content = _testcase_artifact(
         [
@@ -2394,6 +2422,34 @@ def test_growth_tier_failure_does_not_invent_display_outcome() -> None:
     _quality_check("testcases", enriched, source_corpus=source)
 
 
+def test_growth_tier_selection_does_not_assert_lit_or_visible_ui() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-GROWTH-VISIBLE",
+            "成长金档位1",
+            "仅满足档位1",
+            "功能",
+            "P1",
+            "圈子达到档位1门槛",
+            "3场、30人、15条",
+            "查看成长金",
+            "仅显示档位1",
+            "档位1点亮或激活",
+            "展示方式待确认",
+        ]
+    )
+    source = "档位1要求3场、30人、15条；成长金发放时机待确认。"
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "remove_unconfirmed_growth_payout" in metadata["rules"]
+    assert "仅显示档位1" not in enriched
+    assert "点亮或激活" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
 def test_reward_config_filename_does_not_turn_reward_case_into_growth_case() -> None:
     content = _testcase_artifact(
         [
@@ -2787,6 +2843,41 @@ def test_formal_unit_prices_are_not_treated_as_confirmed_ui_display() -> None:
     assert metadata is not None
     assert "remove_unsourced_reward_config_display" in metadata["rules"]
     assert "不使用示意金额或展示假设" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_prestart_estimate_display_remains_a_conditional_suggestion() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-PRESTART-ESTIMATE",
+            "展示口径：活动未开始预估",
+            "活动未开始前展示预计奖金池",
+            "功能",
+            "P1",
+            "活动报名中但未完成",
+            "当前报名数据",
+            "查看奖金池预估",
+            "展示文案带预计字样",
+            "前端展示预计关键词",
+            "计算逻辑待确认",
+        ]
+    ).replace(
+        "| source rule | TC-PRESTART-ESTIMATE | source mapping |",
+        "| 展示口径预估 | TC-PRESTART-ESTIMATE | 活动未开始时展示预计文案 |",
+    )
+    source = "H5 展示阶段可按当前报名人数做预估；前端展示建议使用预计口径。"
+
+    with pytest.raises(ValueError, match="not a fixed UI assertion"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "condition_prestart_estimate_display" in metadata["rules"]
+    assert "condition_prestart_estimate_coverage" in metadata["rules"]
+    assert "若采用来源建议" in enriched
+    assert "展示建议待确认" in enriched
     _quality_check("testcases", enriched, source_corpus=source)
 
 
@@ -3306,6 +3397,46 @@ def test_participant_dedup_coverage_must_map_a_substantive_case() -> None:
         _quality_check("testcases", content, source_corpus=source)
 
 
+def test_participant_dedup_survives_effective_activity_normalization() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-DEDUP-EFFECTIVE",
+            "参与玩家去重统计",
+            "同一用户在同一圈子的多场有效活动中仅计为1人",
+            "功能",
+            "P0",
+            "圈子C有两场有效活动，同一用户均报名并核销",
+            "同一用户U、同一圈子C、两场有效活动",
+            "查询参与玩家统计",
+            "参与玩家只计1人",
+            "前端计数为1",
+            "统计入口待确认",
+        ]
+    ).replace(
+        "| source rule | TC-DEDUP-EFFECTIVE | source mapping |",
+        "| 参与玩家去重统计 | TC-DEDUP-EFFECTIVE | 同圈用户去重规则 |",
+    )
+    source = "\n".join(
+        [
+            "奖励场次有效活动同时满足：在 App 内发布、报名人数大于5人、活动实际完成、"
+            "有到场核销 / 签到 / 平台确认记录。",
+            "成长金有效活动：App内发布｜报名人数大于5人｜活动实际完成。",
+            "同一用户在同一圈子内参加多场有效活动，只算 1 人",
+        ]
+    )
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "condition_effective_activity_observation" in metadata["rules"]
+    assert "condition_participant_dedup_observation" in metadata["rules"]
+    assert "同一用户、同一圈子和多场有效活动" in enriched
+    assert "只计 1 人" in enriched
+    assert "不依赖未确认展示入口" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
 def test_coverage_range_shorthand_is_expanded_to_actual_ids() -> None:
     content = _testcase_artifact(
         [
@@ -3521,4 +3652,35 @@ def test_already_blocked_low_count_case_gets_source_backed_note() -> None:
     assert "normalize_low_participant_note" in metadata["rules"]
     assert "来源最低核销人数为10人；当前样例低于正式门槛" in enriched
     assert "预算充足" not in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_below_minimum_note_does_not_assert_hidden_reward_ui() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-LOW-HIDDEN",
+            "最低核销人数",
+            "低于最低核销人数不计算奖励",
+            "说明",
+            "P1",
+            "活动核销人数低于10人",
+            "正式配置最低核销10人",
+            "N/A",
+            "不显示预估奖金池",
+            "N/A",
+            "仅作不可执行说明",
+        ]
+    )
+    source = "正式配置最低核销人数为10人。"
+
+    with pytest.raises(ValueError, match="undefined product display"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "remove_low_participant_product_outcome" in metadata["rules"]
+    assert "不显示预估奖金池" not in enriched
+    assert "不产生产品结果断言" in enriched
     _quality_check("testcases", enriched, source_corpus=source)

@@ -1209,14 +1209,22 @@ def _deterministically_enrich_artifact(
             and _is_reward_condition_case(row)
             and not _has_reward_six_conditions(row)
         ):
+            missing_condition = _is_missing_reward_condition_case(row)
             desired_title = (
                 "核对缺失单项领取条件（具体处理待确认）"
-                if _is_missing_reward_condition_case(row)
+                if missing_condition
                 else "核对单项领取条件输入（最终资格待完整核对）"
             )
             if desired_title not in row[2]:
                 row[2] = desired_title
                 rules.append("align_partial_reward_case_title")
+                changed = True
+            if missing_condition and "不满足来源中要求同时成立的全部领取条件" not in row[8]:
+                row[7] = "核对该用例中缺失的来源条件；具体产品处理入口待确认"
+                row[8] = "不满足来源中要求同时成立的全部领取条件；具体产品处理待确认"
+                row[9] = "保留当前条件的输入证据，不断言未定义界面、提示或发放记录"
+                row[10] = _append_pending(row[10], "六项领取条件的完整证据与处理入口待确认")
+                rules.append("restore_missing_reward_condition_semantics")
                 changed = True
         if (
             "领取奖励条件" in source_corpus
@@ -1298,8 +1306,12 @@ def _deterministically_enrich_artifact(
             changed = True
         if "最低核销人数" in source_corpus and "10人" in source_corpus:
             non_executable = " ".join((row[2], row[7], row[8], row[10]))
+            low_participant_case = bool(LOW_PARTICIPANT_PATTERN.search(scenario)) or (
+                "低于最低核销人数" in scenario
+                or ("核销" in scenario and any(term in scenario for term in ("低于10", "<10")))
+            )
             if (
-                LOW_PARTICIPANT_PATTERN.search(scenario)
+                low_participant_case
                 and row[7].strip() in {"-", "无", "不执行"}
                 and "来源最低核销人数为10人" not in row[5]
             ):
@@ -1307,7 +1319,21 @@ def _deterministically_enrich_artifact(
                 row[6] = "仅保留低人数作为数学说明，不构造可执行奖励场景"
                 rules.append("normalize_low_participant_note")
                 changed = True
-            if LOW_PARTICIPANT_PATTERN.search(scenario) and not (
+            if (
+                low_participant_case
+                and row[7].strip() in {"-", "无", "不执行", "N/A"}
+                and any(
+                    term in " ".join((row[8], row[9]))
+                    for term in ("显示", "提示", "不计入", "不触发", "奖励结果")
+                )
+            ):
+                row[7] = "不执行"
+                row[8] = "不可执行：仅确认低于最低核销人数，后续产品行为待确认"
+                row[9] = "来源配置中的最低核销人数；不产生产品结果断言"
+                row[10] = _append_pending(row[10], "低于门槛后的资格、提示与奖励处理待确认")
+                rules.append("remove_low_participant_product_outcome")
+                changed = True
+            if low_participant_case and not (
                 any(term in non_executable for term in ("不可执行", "不执行", "仅作数学说明"))
                 and row[7].strip() in {"-", "无", "不执行"}
             ):
@@ -1348,6 +1374,18 @@ def _deterministically_enrich_artifact(
                 row[10] = _append_pending(row[10], "获奖比例及取整规则待确认")
                 rules.append("condition_approximate_suggestion")
                 changed = True
+        if (
+            "H5 展示阶段可按当前报名人数做预估" in source_corpus
+            and any(term in scenario for term in ("未开始", "报名中"))
+            and any(term in result for term in ("显示", "展示", "文案", "关键词"))
+            and not any(term in result for term in ("若采用", "按建议", "待确认"))
+        ):
+            row[7] = "若采用来源中的预估展示建议，核对未开始活动的预估信息"
+            row[8] = "若采用来源建议，预估信息使用“预计”口径；最终展示规则待确认"
+            row[9] = "仅记录来源建议的条件式对照，不作为已确认固定界面断言"
+            row[10] = _append_pending(row[10], "预估展示位置、文案与计算规则待确认")
+            rules.append("condition_prestart_estimate_display")
+            changed = True
         if "内容“真实有效”" in source_corpus and "具体判定方式" in source_corpus:
             if _asserts_positive_content_count(row) and not _has_content_four_conditions(row):
                 row[7] = "仅核对当前内容条件；完整有效性与计数需同时满足来源四条件"
@@ -1481,6 +1519,9 @@ def _deterministically_enrich_artifact(
                         "无成长金",
                         "可领取",
                         "只显示",
+                        "仅显示",
+                        "点亮",
+                        "激活",
                         "金额为",
                         "界面显示",
                     )
@@ -1653,13 +1694,16 @@ def _deterministically_enrich_artifact(
             )
             and any(
                 term in " ".join((row[1], row[2]))
-                for term in ("玩家人数去重", "玩家统计去重", "只计1人", "计为1名")
+                for term in (
+                    "玩家人数去重",
+                    "玩家统计去重",
+                    "参与玩家去重",
+                    "只计1人",
+                    "仅计为1人",
+                    "计为1名",
+                )
             )
-            and any(
-                term in " ".join((row[7], row[8], row[9]))
-                for term in ("统计", "查询", "展示", "计数")
-            )
-            and "参与玩家统计入口与观察点待确认" not in row[10]
+            and "不依赖未确认展示入口" not in row[9]
         ):
             dedup_scenario = " ".join((row[1], row[2], row[5], row[6]))
             if any(term in dedup_scenario for term in ("同一活动", "同一场活动")):
@@ -1674,6 +1718,11 @@ def _deterministically_enrich_artifact(
             rules.append("condition_participant_dedup_observation")
             changed = True
         if formal_config:
+            if "第11场" in " ".join(row) and "成长金" in row[1] and "奖金池" in " ".join(row):
+                row[1] = "奖励场次第10场以后沿用正式配置"
+                row[2] = "第11场沿用第10场正式奖励配置"
+                rules.append("correct_post_max_stage_scope")
+                changed = True
             participant_count = _explicit_new_old_player_count(row)
             if participant_count is not None and participant_count < min(
                 item[4] for item in formal_config
@@ -1760,6 +1809,16 @@ def _deterministically_enrich_artifact(
             row[2] = "核对六项领取条件映射；奖励处理与时机待确认"
             lines[index] = "| " + " | ".join(row) + " |"
             rules.append("condition_reward_payout_coverage")
+            normalized_case_ids.append(row[1])
+        if (
+            "H5 展示阶段可按当前报名人数做预估" in source_corpus
+            and any(term in " ".join(row) for term in ("未开始", "预估", "预计"))
+            and any(term in row[2] for term in ("显示", "展示", "文案", "关键词"))
+            and "展示建议待确认" not in row[2]
+        ):
+            row[2] = "若采用来源中的预估展示建议，使用“预计”口径；展示建议待确认"
+            lines[index] = "| " + " | ".join(row) + " |"
+            rules.append("condition_prestart_estimate_coverage")
             normalized_case_ids.append(row[1])
         if (
             "内容“真实有效”" in source_corpus
@@ -2228,12 +2287,13 @@ def _is_growth_tier_case(row: list[str]) -> bool:
 def _has_circle_participant_dedup_evidence(row: list[str]) -> bool:
     if len(row) != len(TESTCASE_HEADERS):
         return False
-    descriptor = " ".join(row)
+    scenario = " ".join((row[2], row[5], row[6], row[7]))
     return (
-        "同一用户" in descriptor
-        and "同一圈" in descriptor
-        and any(term in descriptor for term in ("多场", "两场", "2场"))
-        and any(term in descriptor for term in ("只计 1", "只计1", "计为 1", "计为1", "去重"))
+        "同一用户" in scenario
+        and "同一圈" in scenario
+        and any(term in scenario for term in ("多场", "两场", "2场"))
+        and any(term in row[8] for term in ("只计 1", "只计1", "计为 1", "计为1"))
+        and "不依赖未确认展示入口" in row[9]
     )
 
 
@@ -2253,7 +2313,7 @@ def _is_untriggerable_growth_ranking(row: list[str], source: str) -> bool:
 def _is_missing_reward_condition_case(row: list[str]) -> bool:
     if not _is_reward_condition_case(row):
         return False
-    descriptor = " ".join((row[1], row[2], row[5], row[6]))
+    descriptor = re.sub(r"\s+", "", " ".join((row[1], row[2], row[5], row[6])))
     return any(
         term in descriptor
         for term in (
@@ -2698,6 +2758,17 @@ def _quality_check(
                         "cannot imply full eligibility or UI behavior: "
                         f"{unsafe_partial_reward_cases}"
                     )
+                misclassified_missing_reward_cases = [
+                    row[0]
+                    for row in data_rows
+                    if _is_missing_reward_condition_case(row)
+                    and "不满足来源中要求同时成立的全部领取条件" not in row[8]
+                ]
+                if misclassified_missing_reward_cases:
+                    semantic_errors.append(
+                        "a missing reward condition cannot be normalized as a satisfied input "
+                        f"fact: {misclassified_missing_reward_cases}"
+                    )
                 incomplete_reward_evidence = [
                     row[0]
                     for row in data_rows
@@ -2755,7 +2826,14 @@ def _quality_check(
                 for row in data_rows:
                     scenario = " ".join((row[2], row[5], row[6], row[7]))
                     non_executable = " ".join((row[2], row[7], row[8], row[10]))
-                    if LOW_PARTICIPANT_PATTERN.search(scenario) and not (
+                    low_participant_case = bool(LOW_PARTICIPANT_PATTERN.search(scenario)) or (
+                        "低于最低核销人数" in scenario
+                        or (
+                            "核销" in scenario
+                            and any(term in scenario for term in ("低于10", "<10"))
+                        )
+                    )
+                    if low_participant_case and not (
                         any(
                             term in non_executable
                             for term in ("不可执行", "不执行", "仅作数学说明")
@@ -2768,6 +2846,34 @@ def _quality_check(
                         "low-count cases below the confirmed minimum verification count "
                         "must be non-executable notes without product steps or outcomes: "
                         f"{invalid_low_count_cases}"
+                    )
+                unsafe_low_count_outcomes = [
+                    row[0]
+                    for row in data_rows
+                    if (
+                        bool(LOW_PARTICIPANT_PATTERN.search(" ".join(row)))
+                        or "低于最低核销人数" in " ".join(row)
+                        or (
+                            "核销" in " ".join(row)
+                            and any(term in " ".join(row) for term in ("低于10", "<10"))
+                        )
+                    )
+                    and any(
+                        term in " ".join((row[8], row[9]))
+                        for term in ("显示", "提示", "不计入", "不触发", "奖励结果")
+                    )
+                    and not any(
+                        term in row[9]
+                        for term in (
+                            "不产生产品结果断言",
+                            "不产生奖金池或奖励结果断言",
+                        )
+                    )
+                ]
+                if unsafe_low_count_outcomes:
+                    semantic_errors.append(
+                        "below-minimum notes cannot assert an undefined product display or "
+                        f"reward outcome: {unsafe_low_count_outcomes}"
                     )
                 low_new_old_examples = [
                     row[0]
@@ -3018,6 +3124,41 @@ def _quality_check(
                         "definition is unmet; it does not establish an unconfirmed count UI: "
                         f"{unsafe_missing_content_cases}"
                     )
+            if "H5 展示阶段可按当前报名人数做预估" in source_corpus:
+                fixed_prestart_estimates = [
+                    row[0]
+                    for row in data_rows
+                    if any(
+                        term in " ".join((row[2], row[5], row[6], row[7]))
+                        for term in ("未开始", "报名中")
+                    )
+                    and any(
+                        term in " ".join((row[8], row[9]))
+                        for term in ("显示", "展示", "文案", "关键词")
+                    )
+                    and not any(
+                        term in " ".join((row[8], row[9], row[10]))
+                        for term in ("若采用", "按建议", "展示规则待确认")
+                    )
+                ]
+                if fixed_prestart_estimates:
+                    semantic_errors.append(
+                        "pre-start estimate display is a source suggestion, not a fixed UI "
+                        f"assertion: {fixed_prestart_estimates}"
+                    )
+                fixed_prestart_coverage = [
+                    row[0]
+                    for row in coverage_rows[2:]
+                    if len(row) == 3
+                    and any(term in " ".join(row) for term in ("未开始", "预估", "预计"))
+                    and any(term in row[2] for term in ("显示", "展示", "文案", "关键词"))
+                    and "展示建议待确认" not in row[2]
+                ]
+                if fixed_prestart_coverage:
+                    semantic_errors.append(
+                        "pre-start estimate coverage must remain conditional on the source "
+                        f"display suggestion: {fixed_prestart_coverage}"
+                    )
             if "前端展示建议" in source_corpus or "可以展示为" in source_corpus:
                 fixed_display_suggestions = []
                 for row in data_rows:
@@ -3157,6 +3298,9 @@ def _quality_check(
                                 "无成长金",
                                 "可领取",
                                 "只显示",
+                                "仅显示",
+                                "点亮",
+                                "激活",
                                 "金额为",
                                 "界面显示",
                             )
