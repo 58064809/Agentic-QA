@@ -309,10 +309,33 @@ class SourceBundleFilesystemRepository:
         if not path.is_file():
             raise FileNotFoundError(f"run 缺少 source bundle: {run_id}")
         bundle = SourceBundle.model_validate_json(path.read_text(encoding="utf-8"))
+        snapshot_root = run_root / "source-snapshot"
+        expected_snapshots = {
+            f"{index:04}.txt": document
+            for index, document in enumerate(bundle.documents)
+            if document.parsed_sha256 is not None
+            or document.completeness in {SourceCompleteness.COMPLETE, SourceCompleteness.PARTIAL}
+        }
+        actual_snapshots: set[str] = set()
+        if snapshot_root.exists():
+            if snapshot_root.is_symlink() or not snapshot_root.is_dir():
+                raise ValueError("source snapshot 目录无效: source-snapshot")
+            actual_snapshots = {entry.name for entry in snapshot_root.iterdir()}
+        unexpected = sorted(actual_snapshots - set(expected_snapshots))
+        if unexpected:
+            raise ValueError(f"source snapshot 存在未声明文件: {unexpected[0]}")
         documents: list[SourceDocument] = []
         for index, document in enumerate(bundle.documents):
-            snapshot = run_root / "source-snapshot" / f"{index:04}.txt"
-            text = snapshot.read_bytes().decode("utf-8") if snapshot.is_file() else None
+            name = f"{index:04}.txt"
+            snapshot = snapshot_root / name
+            requires_snapshot = name in expected_snapshots
+            if requires_snapshot and name not in actual_snapshots:
+                raise ValueError(f"source snapshot 缺失: {document.path}")
+            if requires_snapshot and (snapshot.is_symlink() or not snapshot.is_file()):
+                raise ValueError(f"source snapshot 文件无效: {document.path}")
+            text = snapshot.read_bytes().decode("utf-8") if requires_snapshot else None
+            if text is not None and _sha256(text.encode("utf-8")) != document.parsed_sha256:
+                raise ValueError(f"source snapshot hash 校验失败: {document.path}")
             documents.append(document.model_copy(update={"text": text}))
         loaded = bundle.model_copy(update={"documents": tuple(documents)})
         expected = _canonical_hash(
@@ -325,12 +348,6 @@ class SourceBundleFilesystemRepository:
         )
         if expected != loaded.bundle_hash:
             raise ValueError("source bundle hash 校验失败")
-        for document in loaded.documents:
-            if (
-                document.text is not None
-                and _sha256(document.text.encode("utf-8")) != document.parsed_sha256
-            ):
-                raise ValueError(f"source snapshot hash 校验失败: {document.path}")
         return loaded
 
     def _read_document(

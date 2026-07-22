@@ -19,6 +19,7 @@ from harness.application.quality import (
 from harness.application.source import (
     SourceBundle,
     SourceCompleteness,
+    SourceDocument,
     SourceIngestionLimits,
 )
 from harness.domain.models import ArtifactCandidate, RunSnapshot, StartRunCommand
@@ -94,6 +95,46 @@ def test_source_bundle_preserves_warnings_hashes_and_run_snapshot(tmp_path: Path
     restored_text = next(item.text for item in restored.documents if item.path == "sources/good.md")
     assert restored_text == original_text
     assert restored.bundle_hash == bundle.bundle_hash
+
+
+def test_load_source_bundle_rejects_missing_snapshot(tmp_path: Path) -> None:
+    store, workspace = _workspace_store(tmp_path)
+    (workspace / "sources/prd.md").write_text("# PRD\n\n正文", encoding="utf-8")
+    store.create_source_bundle("demo", "run-1")
+    (workspace / "runs/run-1/source-snapshot/0000.txt").unlink()
+
+    with pytest.raises(ValueError, match=r"source snapshot 缺失: sources/prd\.md"):
+        store.load_source_bundle("demo", "run-1")
+
+
+def test_load_source_bundle_rejects_tampered_snapshot(tmp_path: Path) -> None:
+    store, workspace = _workspace_store(tmp_path)
+    (workspace / "sources/prd.md").write_text("# PRD\n\n正文", encoding="utf-8")
+    store.create_source_bundle("demo", "run-1")
+    (workspace / "runs/run-1/source-snapshot/0000.txt").write_text("tampered", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"source snapshot hash 校验失败: sources/prd\.md"):
+        store.load_source_bundle("demo", "run-1")
+
+
+def test_load_source_bundle_rejects_unexpected_snapshot(tmp_path: Path) -> None:
+    store, workspace = _workspace_store(tmp_path)
+    store.create_source_bundle("demo", "run-1")
+    snapshot = workspace / "runs/run-1/source-snapshot"
+    snapshot.mkdir(exist_ok=True)
+    (snapshot / "0003.txt").write_text("unexpected", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="source snapshot 存在未声明文件: 0003.txt"):
+        store.load_source_bundle("demo", "run-1")
+
+
+def test_unavailable_document_cannot_have_parsed_hash() -> None:
+    with pytest.raises(ValueError, match="unavailable.*parsed_sha256"):
+        SourceDocument(
+            path="sources/prd.md",
+            parsed_sha256="sha256:" + "0" * 64,
+            completeness=SourceCompleteness.UNAVAILABLE,
+        )
 
 
 def test_critical_empty_section_is_blocker_but_valid_table_is_not(tmp_path: Path) -> None:

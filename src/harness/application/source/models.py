@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class FrozenModel(BaseModel):
@@ -47,6 +47,17 @@ class SourceDocument(FrozenModel):
     completeness: SourceCompleteness
     truncated: bool = False
     issues: tuple[SourceIssue, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_snapshot_identity(self) -> SourceDocument:
+        if self.completeness == SourceCompleteness.UNAVAILABLE and self.parsed_sha256 is not None:
+            raise ValueError("unavailable source document cannot have parsed_sha256")
+        if self.completeness in {SourceCompleteness.COMPLETE, SourceCompleteness.PARTIAL}:
+            if self.parsed_sha256 is None:
+                raise ValueError("complete or partial source document requires parsed_sha256")
+        if self.text is not None and self.parsed_sha256 is None:
+            raise ValueError("source document text requires parsed_sha256")
+        return self
 
 
 class SourceBundle(FrozenModel):
