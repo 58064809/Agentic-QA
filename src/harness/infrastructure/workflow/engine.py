@@ -1101,7 +1101,6 @@ class HarnessEngine:
                 artifact=artifact,
             )
             if stored is not None:
-                stored = stored.model_copy(update={"status": "partial"})
                 snapshot.candidates.append(stored)
                 snapshot.review_status[artifact] = "needs_human_review"
                 existing.add(artifact)

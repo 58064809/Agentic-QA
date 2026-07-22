@@ -97,6 +97,7 @@ class QualityReport(FrozenModel):
 
 class CandidateAssessment(FrozenModel):
     raw_content: str
+    raw_media_type: str = "text/markdown"
     normalized_content: str | None = None
     normalization_patch: str | None = None
     remediation_patch: str | None = None

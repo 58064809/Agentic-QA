@@ -106,7 +106,7 @@ class ArtifactReviewFilesystemRepository:
         extension = ARTIFACT_EXTENSIONS[artifact]
         with _exclusive_file_lock(lock):
             if final.exists():
-                return self._load_committed(final, artifact, partial, evidence, assessment)
+                return self._load_committed(final, artifact, assessment)
             staging_root = run_root / ".staging"
             staging_root.mkdir(parents=True, exist_ok=True)
             staging = Path(tempfile.mkdtemp(prefix=f"{artifact}.", dir=staging_root))
@@ -127,21 +127,29 @@ class ArtifactReviewFilesystemRepository:
                     hashes[name] = _sha256_bytes(content)
                 manifest = {
                     "schema_version": "agentic-qa.harness.candidate-manifest.v2",
+                    "workspace_id": workspace,
+                    "run_id": run_id,
                     "artifact": artifact,
+                    "media_type": assessment.raw_media_type,
+                    "status": "partial" if partial else "needs_human_review",
+                    "partial": partial,
+                    "evidence": evidence or [],
                     "assessment_key": assessment.report.assessment_key,
                     "source_bundle_hash": assessment.report.source_bundle_hash,
+                    "policy_versions": assessment.report.policy_versions,
+                    "created_at": datetime.now(tz=UTC).isoformat(),
                     "files": hashes,
                 }
                 _write_fsynced(staging / "manifest.json", _json_bytes(manifest))
                 self._sync_directory(staging)
                 if final.exists():
-                    return self._load_committed(final, artifact, partial, evidence, assessment)
+                    return self._load_committed(final, artifact, assessment)
                 os.rename(staging, final)
                 self._sync_directory(run_root)
             finally:
                 if staging.exists():
                     shutil.rmtree(staging)
-            candidate = self._candidate(final, artifact, partial, evidence)
+            candidate = self._candidate(final, artifact)
             return candidate, True
 
     def load_candidate(
@@ -150,13 +158,11 @@ class ArtifactReviewFilesystemRepository:
         workspace: str,
         run_id: str,
         artifact: str,
-        partial: bool = False,
-        evidence: list[str] | None = None,
     ) -> ArtifactCandidate | None:
         final = self.workspaces.require_workspace(workspace) / "candidates" / run_id / artifact
         if not (final / "manifest.json").is_file():
             return None
-        return self._candidate(final, artifact, partial, evidence)
+        return self._candidate(final, artifact)
 
     def load_quality_report(self, candidate: ArtifactCandidate) -> QualityReport:
         if not candidate.quality_report_path:
@@ -252,14 +258,12 @@ class ArtifactReviewFilesystemRepository:
         )
         if projected is None:
             raise PermissionError(f"artifact 不在当前候选中: {version.artifact}")
-        if projected.status == "partial":
+        if projected.status == "partial" or projected.partial is not False:
             raise PermissionError(f"partial candidate 不可发布: {version.artifact}")
         candidate = self.load_candidate(
             workspace=snapshot.workspace_id,
             run_id=snapshot.run_id,
             artifact=version.artifact,
-            partial=projected.status == "partial",
-            evidence=projected.evidence,
         )
         if candidate is None:
             raise ValueError("candidate bundle 不存在或缺少 manifest")
@@ -269,8 +273,9 @@ class ArtifactReviewFilesystemRepository:
                 candidate.quality_report_path,
                 candidate.quality_report_sha256,
                 candidate.source_bundle_hash,
-                candidate.policy_versions,
+                candidate.policy_versions is not None,
                 candidate.versions,
+                candidate.provenance_complete,
             )
         ):
             raise PermissionError("candidate 缺少完整质量 provenance，不能发布")
@@ -343,21 +348,17 @@ class ArtifactReviewFilesystemRepository:
         self,
         final: Path,
         artifact: str,
-        partial: bool,
-        evidence: list[str] | None,
         assessment: CandidateAssessment,
     ) -> tuple[ArtifactCandidate, bool]:
         manifest = self._validated_manifest(final)
         if manifest["assessment_key"] != assessment.report.assessment_key:
             raise FileExistsError("candidate 已存在且 assessment key 不同，不允许覆盖")
-        return self._candidate(final, artifact, partial, evidence), False
+        return self._candidate(final, artifact), False
 
     def _candidate(
         self,
         final: Path,
         artifact: str,
-        partial: bool,
-        evidence: list[str] | None,
     ) -> ArtifactCandidate:
         manifest = self._validated_manifest(final)
         if manifest.get("artifact") != artifact:
@@ -381,17 +382,44 @@ class ArtifactReviewFilesystemRepository:
             )
         report_path = final / "quality-report.json"
         report = QualityReport.model_validate_json(report_path.read_text(encoding="utf-8"))
+        required = {
+            "workspace_id",
+            "run_id",
+            "media_type",
+            "status",
+            "partial",
+            "evidence",
+            "policy_versions",
+            "created_at",
+        }
+        complete = required <= set(manifest)
+        if complete and manifest["policy_versions"] != report.policy_versions:
+            raise ValueError("candidate manifest policy_versions 与质量报告不匹配")
+        if complete:
+            if manifest["workspace_id"] != final.parents[2].name:
+                raise ValueError("candidate manifest workspace_id 不匹配")
+            if manifest["run_id"] != final.parent.name:
+                raise ValueError("candidate manifest run_id 不匹配")
+            if manifest["assessment_key"] != report.assessment_key:
+                raise ValueError("candidate manifest assessment key 与质量报告不匹配")
+            if manifest["source_bundle_hash"] != report.source_bundle_hash:
+                raise ValueError("candidate manifest source bundle hash 与质量报告不匹配")
+            if report.artifact != artifact:
+                raise ValueError("candidate manifest artifact 与质量报告不匹配")
         return ArtifactCandidate(
             artifact=artifact,
             path=versions[0].path,
-            status="partial" if partial else "needs_human_review",
-            evidence=evidence or [],
+            media_type=manifest.get("media_type") if complete else None,
+            status=manifest["status"] if complete else "provenance_incomplete",
+            partial=manifest.get("partial") if complete else None,
+            evidence=manifest.get("evidence") if complete else None,
+            provenance_complete=complete,
             versions=versions,
             assessment_key=manifest["assessment_key"],
             quality_report_path=report_path.relative_to(self.repo_root).as_posix(),
             quality_report_sha256=manifest["files"]["quality-report.json"],
             source_bundle_hash=manifest["source_bundle_hash"],
-            policy_versions=report.policy_versions,
+            policy_versions=manifest.get("policy_versions", report.policy_versions),
         )
 
     @staticmethod
@@ -402,7 +430,18 @@ class ArtifactReviewFilesystemRepository:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if manifest.get("schema_version") != "agentic-qa.harness.candidate-manifest.v2":
             raise ValueError("candidate manifest schema 不受支持")
-        for name, expected in manifest.get("files", {}).items():
+        files = manifest.get("files")
+        if not isinstance(files, dict) or not files:
+            raise ValueError("candidate manifest files 无效")
+        declared = {"manifest.json", *files}
+        actual = {item.name for item in final.iterdir()}
+        if actual != declared:
+            unexpected = sorted(actual - declared)
+            missing = sorted(declared - actual)
+            raise ValueError(
+                f"candidate bundle 文件集合不匹配: extra={unexpected}, missing={missing}"
+            )
+        for name, expected in files.items():
             path = (final / name).resolve()
             if path.parent != final.resolve() or not path.is_file():
                 raise ValueError("candidate manifest 文件路径无效")

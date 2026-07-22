@@ -163,6 +163,7 @@ class CandidateAssessmentService:
         )
         return CandidateAssessment(
             raw_content=content,
+            raw_media_type=media_type,
             normalized_content=normalized_content,
             normalization_patch=normalization_patch,
             remediation_patch="\n".join(dict.fromkeys(remediation_patches)) or None,

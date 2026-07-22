@@ -249,9 +249,11 @@ class ApprovedArtifactVersion(ArtifactVersionRef):
 class ArtifactCandidate(StrictModel):
     artifact: str
     path: str
-    media_type: str = "text/markdown"
-    status: Literal["needs_human_review", "partial"] = "needs_human_review"
-    evidence: list[str] = Field(default_factory=list)
+    media_type: str | None = "text/markdown"
+    status: Literal["needs_human_review", "partial", "provenance_incomplete"] = "needs_human_review"
+    partial: bool | None = False
+    evidence: list[str] | None = Field(default_factory=list)
+    provenance_complete: bool = True
     versions: list[ArtifactVersion] = Field(default_factory=list)
     assessment_key: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     quality_report_path: str | None = None

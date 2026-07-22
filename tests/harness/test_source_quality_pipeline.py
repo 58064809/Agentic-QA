@@ -327,6 +327,62 @@ def test_candidate_bundle_commit_is_create_only_and_idempotent(tmp_path: Path) -
         )
 
 
+def test_candidate_restores_evidence_and_partial_status_from_manifest(tmp_path: Path) -> None:
+    store, _ = _workspace_store(tmp_path)
+    bundle = store.create_source_bundle("demo", "run-1")
+    assessment = CandidateAssessmentService(_registry()).assess(
+        context=QualityContext(
+            workspace_id="demo", run_id="run-1", artifact="qa_report", source_bundle=bundle
+        ),
+        content="report",
+        media_type="text/markdown",
+        strategy_names=["generic-artifact-contracts"],
+    )
+    store.commit_candidate(
+        workspace="demo",
+        run_id="run-1",
+        artifact="qa_report",
+        assessment=assessment,
+        partial=True,
+        evidence=["evidence/a.json"],
+    )
+
+    restored = store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
+
+    assert restored is not None
+    assert restored.partial is True and restored.status == "partial"
+    assert restored.evidence == ["evidence/a.json"]
+    assert restored.provenance_complete
+
+
+def test_candidate_manifest_policy_versions_must_match_report(tmp_path: Path) -> None:
+    store, _, candidate = _direct_promotion_fixture(tmp_path)
+    manifest_path = tmp_path / candidate.path
+    manifest_path = manifest_path.parent / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["policy_versions"] = {"tampered": "9"}
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="policy_versions"):
+        store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
+
+
+def test_candidate_manifest_media_type_is_restored(tmp_path: Path) -> None:
+    store, _, candidate = _direct_promotion_fixture(tmp_path)
+    restored = store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
+    assert restored is not None
+    assert restored.media_type == "text/markdown"
+    assert restored.media_type == candidate.media_type
+
+
+def test_candidate_load_does_not_require_external_partial_or_evidence(tmp_path: Path) -> None:
+    store, _, _ = _direct_promotion_fixture(tmp_path, partial=True)
+    restored = store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
+    assert restored is not None and restored.partial is True
+
+
 def test_candidate_bundle_is_invisible_when_staging_write_fails(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -440,7 +496,7 @@ def _approved(candidate: ArtifactCandidate, variant: ArtifactVariant) -> Approve
     return ApprovedArtifactVersion(**reference.model_dump(), path=version.path)
 
 
-def _rewrite_candidate_report(tmp_path: Path, candidate: ArtifactCandidate, mutate) -> None:
+def _rewrite_candidate_report(tmp_path: Path, candidate: ArtifactCandidate, mutate) -> str:
     report_path = tmp_path / (candidate.quality_report_path or "")
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     mutate(payload)
@@ -448,10 +504,12 @@ def _rewrite_candidate_report(tmp_path: Path, candidate: ArtifactCandidate, muta
     report_path.write_bytes(content)
     manifest_path = report_path.parent / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["files"]["quality-report.json"] = "sha256:" + hashlib.sha256(content).hexdigest()
+    report_hash = "sha256:" + hashlib.sha256(content).hexdigest()
+    manifest["files"]["quality-report.json"] = report_hash
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+    return report_hash
 
 
 def test_direct_promote_rejects_blocked_raw_variant(tmp_path: Path) -> None:
@@ -474,11 +532,10 @@ def test_direct_promote_rejects_partial_candidate(tmp_path: Path) -> None:
 
 def test_direct_promote_rejects_report_source_bundle_hash_mismatch(tmp_path: Path) -> None:
     store, snapshot, candidate = _direct_promotion_fixture(tmp_path)
-    _rewrite_candidate_report(
+    report_hash = _rewrite_candidate_report(
         tmp_path, candidate, lambda payload: payload.update(source_bundle_hash="sha256:" + "f" * 64)
     )
-    reloaded = store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
-    assert reloaded is not None
+    reloaded = candidate.model_copy(update={"quality_report_sha256": report_hash})
     snapshot.candidates = [reloaded]
     with pytest.raises(ValueError, match="source bundle hash"):
         store.promote_many(snapshot, [_approved(reloaded, ArtifactVariant.RAW)])
@@ -486,11 +543,10 @@ def test_direct_promote_rejects_report_source_bundle_hash_mismatch(tmp_path: Pat
 
 def test_direct_promote_rejects_report_assessment_key_mismatch(tmp_path: Path) -> None:
     store, snapshot, candidate = _direct_promotion_fixture(tmp_path)
-    _rewrite_candidate_report(
+    report_hash = _rewrite_candidate_report(
         tmp_path, candidate, lambda payload: payload.update(assessment_key="sha256:" + "f" * 64)
     )
-    reloaded = store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
-    assert reloaded is not None
+    reloaded = candidate.model_copy(update={"quality_report_sha256": report_hash})
     snapshot.candidates = [reloaded]
     with pytest.raises(ValueError, match="assessment key"):
         store.promote_many(snapshot, [_approved(reloaded, ArtifactVariant.RAW)])

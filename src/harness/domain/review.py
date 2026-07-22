@@ -21,6 +21,6 @@ def validate_review_decision(snapshot: RunSnapshot, decision: ReviewDecision) ->
             raise ValueError("approve 必须为每个目标 artifact 提供且仅提供一个强类型版本")
         for artifact in targets:
             candidate = next(item for item in snapshot.candidates if item.artifact == artifact)
-            if candidate.status == "partial":
+            if candidate.status == "partial" or candidate.partial is not False:
                 raise PermissionError(f"partial candidate 不可发布: {artifact}")
     return targets
