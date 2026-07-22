@@ -32,6 +32,7 @@ from harness.domain.models import (
 )
 from harness.infrastructure.persistence import artifact_repository
 from harness.infrastructure.persistence.filesystem import FilesystemStore
+from harness.infrastructure.persistence.source_bundle_repository import _critical_structure_issues
 from harness.infrastructure.quality.assessment import CandidateAssessmentService
 from harness.infrastructure.quality.generic import GenericArtifactStrategy
 from harness.infrastructure.quality.normalization import (
@@ -189,6 +190,42 @@ def test_truncated_critical_section_is_inconclusive_not_blocker(tmp_path: Path) 
         "source_truncated",
         "structure_check_inconclusive",
     }
+
+
+def _structure_codes(text: str) -> set[str]:
+    return {issue.code for issue in _critical_structure_issues("sources/prd.md", text, False)}
+
+
+def test_heading_inside_fenced_code_is_ignored() -> None:
+    assert not _structure_codes("```markdown\n# 配置\n```")
+
+
+def test_heading_inside_blockquote_is_ignored() -> None:
+    assert not _structure_codes("> # 配置")
+
+
+def test_hashtag_text_is_not_heading() -> None:
+    assert not _structure_codes("#配置")
+
+
+def test_numbered_list_is_not_misclassified_as_heading() -> None:
+    assert not _structure_codes("1. 配置")
+
+
+def test_table_without_data_row_is_missing_structure() -> None:
+    assert "suspected_missing_structure" in _structure_codes("# 配置\n\n| 档位 | 奖励 |\n|---|---|")
+
+
+def test_html_comment_does_not_count_as_section_content() -> None:
+    assert "suspected_missing_structure" in _structure_codes("# 配置\n<!-- 假正文 -->")
+
+
+def test_valid_setext_heading_is_detected() -> None:
+    assert "suspected_missing_structure" in _structure_codes("奖励配置\n====")
+
+
+def test_valid_numbered_colon_heading_is_detected() -> None:
+    assert "suspected_missing_structure" in _structure_codes("1. 奖励配置：")
 
 
 def test_hard_limit_does_not_publish_a_partial_file_hash(tmp_path: Path) -> None:

@@ -24,8 +24,12 @@ PARSER_VERSION = "2.1.0"
 HASH_CHUNK_BYTES = 1024 * 1024
 KEYWORDS = ("配置", "档位", "对应关系", "规则表", "枚举")
 REPARSE_POINT = 0x400
-NUMBERED_HEADING = re.compile(r"^(?:\d+|[一二三四五六七八九十]+)[、.)）]\s*\S.{0,78}$")
 TABLE_DELIMITER = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$")
+ATX_HEADING = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+|$)(.*?)(?:[ \t]+#+[ \t]*)?$")
+SETEXT_MARKER = re.compile(r"^ {0,3}(?:=+|-+)\s*$")
+NUMBERED_COLON_HEADING = re.compile(
+    r"^ {0,3}(?:\d+(?:\.\d+)*|[一二三四五六七八九十百]+)[、.)）]\s*\S.{0,76}[：:]\s*$"
+)
 
 
 def _sha256(data: bytes) -> str:
@@ -49,21 +53,56 @@ def _issue_payload(issue: SourceIssue) -> dict[str, Any]:
 
 
 def _is_heading(lines: list[str], index: int) -> tuple[bool, str, int]:
-    line = lines[index].strip()
-    if line.startswith("#"):
-        title = line.lstrip("#").strip()
+    line = lines[index]
+    atx = ATX_HEADING.fullmatch(line)
+    if atx:
+        title = atx.group(2).strip()
         return bool(title), title, 1
     if index + 1 < len(lines):
-        marker = lines[index + 1].strip()
-        if line and len(marker) >= 3 and set(marker) in ({"="}, {"-"}):
-            return True, line, 2
-    if len(line) <= 80 and (line.endswith(("：", ":")) or NUMBERED_HEADING.fullmatch(line)):
-        return True, line.rstrip("：:"), 1
+        marker = lines[index + 1]
+        if line.strip() and SETEXT_MARKER.fullmatch(marker):
+            return True, line.strip(), 2
+    stripped = line.strip()
+    if len(stripped) <= 80 and stripped.endswith(("：", ":")):
+        if NUMBERED_COLON_HEADING.fullmatch(line) or not stripped[0].isdigit():
+            return True, stripped.rstrip("：:"), 1
     return False, "", 1
 
 
+def _visible_markdown_lines(text: str) -> list[str]:
+    visible: list[str] = []
+    fence: str | None = None
+    in_comment = False
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if fence is not None:
+            if stripped.startswith(fence):
+                fence = None
+            visible.append("")
+            continue
+        if stripped.startswith(("```", "~~~")):
+            fence = stripped[:3]
+            visible.append("")
+            continue
+        if in_comment:
+            if "-->" in line:
+                in_comment = False
+            visible.append("")
+            continue
+        if "<!--" in line:
+            if "-->" not in line.split("<!--", 1)[1]:
+                in_comment = True
+            visible.append("")
+            continue
+        if stripped.startswith(">"):
+            visible.append("")
+            continue
+        visible.append(line)
+    return visible
+
+
 def _critical_structure_issues(path: str, text: str, truncated: bool) -> list[SourceIssue]:
-    lines = text.splitlines()
+    lines = _visible_markdown_lines(text)
     headings: list[tuple[int, str, int]] = []
     index = 0
     while index < len(lines):
@@ -94,7 +133,7 @@ def _critical_structure_issues(path: str, text: str, truncated: bool) -> list[So
                     code="suspected_missing_structure",
                     severity=SourceIssueSeverity.BLOCKER,
                     path=path,
-                    message="关键章节标题后缺少正文、列表或表格",
+                    message="关键章节标题后缺少正文、列表或有效表格数据",
                     details={"heading": title, "line": start + 1},
                 )
             )
@@ -102,12 +141,17 @@ def _critical_structure_issues(path: str, text: str, truncated: bool) -> list[So
 
 
 def _has_section_content(lines: list[str]) -> bool:
-    visible = [line for line in lines if not line.startswith("<!--") and line != "---"]
+    visible = [line for line in lines if line and line != "---"]
     non_table = [line for line in visible if "|" not in line]
     if non_table:
         return True
-    table_rows = [line for line in visible if "|" in line and not TABLE_DELIMITER.fullmatch(line)]
-    return len(table_rows) >= 2
+    for index in range(1, len(visible) - 1):
+        if TABLE_DELIMITER.fullmatch(visible[index]):
+            header = visible[index - 1]
+            data = visible[index + 1]
+            if "|" in header and "|" in data and not TABLE_DELIMITER.fullmatch(data):
+                return True
+    return False
 
 
 class SourceBundleFilesystemRepository:
