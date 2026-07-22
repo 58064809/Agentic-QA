@@ -329,6 +329,42 @@ def test_normalizer_failure_is_recorded_in_quality_report() -> None:
     assert "semantic projection changed" in (assessment.report.normalization.error or "")
 
 
+def test_quality_report_records_normalizer_provenance_and_recomputes_key() -> None:
+    registry = _registry()
+    registry.register_normalizer(SafeMarkdownNormalizer())
+    assessment = CandidateAssessmentService(registry).assess(
+        context=QualityContext(
+            workspace_id="demo",
+            run_id="run-1",
+            artifact="qa_report",
+            source_bundle=_empty_bundle(),
+        ),
+        content="report  ",
+        media_type="text/markdown",
+        strategy_names=["generic-artifact-contracts"],
+    )
+
+    component = assessment.report.normalization.components[0]
+    assert component.name == "safe-markdown-representation"
+    assert component.configuration_sha256.startswith("sha256:")
+    assert component.operations
+    assert assessment.report.normalization.status.value == "applied"
+    assert assessment.report.recompute_assessment_key() == assessment.report.assessment_key
+
+
+def test_quality_report_normalizer_identity_tampering_changes_assessment_key() -> None:
+    assessment = _unsafe_normalization_assessment()
+    component = assessment.report.normalization.components[0]
+    tampered = assessment.report.model_copy(
+        update={
+            "normalization": assessment.report.normalization.model_copy(
+                update={"components": (component.model_copy(update={"version": "9.9.9"}),)}
+            )
+        }
+    )
+    assert tampered.recompute_assessment_key() != assessment.report.assessment_key
+
+
 def test_candidate_bundle_commit_is_create_only_and_idempotent(tmp_path: Path) -> None:
     store, _workspace = _workspace_store(tmp_path)
     bundle = store.create_source_bundle("demo", "run-1")
@@ -597,17 +633,17 @@ def test_direct_promote_rejects_report_assessment_key_mismatch(tmp_path: Path) -
 
 
 def test_direct_promote_rejects_variant_hash_mismatch(tmp_path: Path) -> None:
-    store, snapshot, candidate = _direct_promotion_fixture(tmp_path)
+    store, snapshot, candidate = _direct_promotion_fixture(tmp_path, normalized=True)
 
     def mutate(payload):
-        payload["variants"][0]["content_sha256"] = "sha256:" + "f" * 64
+        payload["variants"][1]["content_sha256"] = "sha256:" + "f" * 64
+        payload["normalization"]["normalized_sha256"] = "sha256:" + "f" * 64
 
-    _rewrite_candidate_report(tmp_path, candidate, mutate)
-    reloaded = store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
-    assert reloaded is not None
+    report_hash = _rewrite_candidate_report(tmp_path, candidate, mutate)
+    reloaded = candidate.model_copy(update={"quality_report_sha256": report_hash})
     snapshot.candidates = [reloaded]
-    with pytest.raises(ValueError, match="variant hash"):
-        store.promote_many(snapshot, [_approved(reloaded, ArtifactVariant.RAW)])
+    with pytest.raises(ValueError, match="hash"):
+        store.promote_many(snapshot, [_approved(reloaded, ArtifactVariant.NORMALIZED)])
 
 
 @pytest.mark.skipif(os.name == "nt", reason="创建 symlink 通常需要 Windows 开发者权限")

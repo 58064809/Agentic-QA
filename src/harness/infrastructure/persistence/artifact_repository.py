@@ -406,6 +406,14 @@ class ArtifactReviewFilesystemRepository:
                 raise ValueError("candidate manifest source bundle hash 与质量报告不匹配")
             if report.artifact != artifact:
                 raise ValueError("candidate manifest artifact 与质量报告不匹配")
+            if report.recompute_assessment_key() != report.assessment_key:
+                raise ValueError("quality report assessment key 无法由 provenance 重算")
+            raw_hash = manifest["files"][f"raw{extension}"]
+            if report.normalization.raw_sha256 != raw_hash:
+                raise ValueError("quality report raw normalization hash 不匹配")
+            normalized_hash = manifest["files"].get(normalized_name)
+            if report.normalization.normalized_sha256 != normalized_hash:
+                raise ValueError("quality report normalized hash 与 Candidate 不匹配")
         return ArtifactCandidate(
             artifact=artifact,
             path=versions[0].path,

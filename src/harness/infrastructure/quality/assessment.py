@@ -9,6 +9,7 @@ from harness.application.quality import (
     ArtifactVariant,
     CandidateAssessment,
     NormalizationAudit,
+    NormalizationComponentAudit,
     NormalizationStatus,
     QualityContext,
     QualityIssue,
@@ -98,14 +99,51 @@ class CandidateAssessmentService:
         normalized = content
         normalization_error: str | None = None
         normalizers = self.registry.normalizers()
-        for normalizer in self.registry.normalizers():
+        normalization_components: list[NormalizationComponentAudit] = []
+        for index, normalizer in enumerate(normalizers):
+            configuration_sha256 = canonical_sha256(
+                normalizer.configuration.model_dump(mode="json")
+            )
             try:
-                normalized = apply_safe_normalization(
-                    normalized, normalizer.propose(context, normalized)
+                before = normalized
+                proposal = normalizer.propose(context, normalized)
+                normalized = apply_safe_normalization(normalized, proposal)
+                normalization_components.append(
+                    NormalizationComponentAudit(
+                        name=normalizer.name,
+                        version=normalizer.version,
+                        configuration_sha256=configuration_sha256,
+                        operations=tuple(item.kind for item in proposal.operations),
+                        status=(
+                            NormalizationStatus.APPLIED
+                            if normalized != before
+                            else NormalizationStatus.UNCHANGED
+                        ),
+                    )
                 )
             except Exception as exc:
                 normalized = content
                 normalization_error = f"{normalizer.name}: {type(exc).__name__}: {exc}"
+                normalization_components.append(
+                    NormalizationComponentAudit(
+                        name=normalizer.name,
+                        version=normalizer.version,
+                        configuration_sha256=configuration_sha256,
+                        status=NormalizationStatus.FAILED,
+                        error=str(exc),
+                    )
+                )
+                for skipped in normalizers[index + 1 :]:
+                    normalization_components.append(
+                        NormalizationComponentAudit(
+                            name=skipped.name,
+                            version=skipped.version,
+                            configuration_sha256=canonical_sha256(
+                                skipped.configuration.model_dump(mode="json")
+                            ),
+                            status=NormalizationStatus.NOT_APPLICABLE,
+                        )
+                    )
                 break
         normalized_content = (
             normalized if normalization_error is None and normalized != content else None
@@ -134,6 +172,9 @@ class CandidateAssessmentService:
                     StrategyAudit(
                         name=strategy.name,
                         version=strategy.version,
+                        configuration_sha256=canonical_sha256(
+                            strategy.configuration.model_dump(mode="json")
+                        ),
                         requirements=strategy.requirements,
                         actions=result.actions,
                         issues=result.issues,
@@ -152,6 +193,8 @@ class CandidateAssessmentService:
             )
         report = QualityReport(
             assessment_key=key,
+            assessment_pipeline_version=PIPELINE_VERSION,
+            raw_media_type=media_type,
             workspace_id=context.workspace_id,
             run_id=context.run_id,
             artifact=context.artifact,
@@ -168,6 +211,7 @@ class CandidateAssessmentService:
                     if normalized_content is not None
                     else NormalizationStatus.UNCHANGED
                 ),
+                components=tuple(normalization_components),
                 raw_sha256=sha256_text(content),
                 normalized_sha256=(
                     sha256_text(normalized_content) if normalized_content is not None else None
@@ -175,6 +219,8 @@ class CandidateAssessmentService:
                 error=normalization_error,
             ),
         )
+        if report.recompute_assessment_key() != key:
+            raise RuntimeError("quality report provenance 与 assessment key 不一致")
         return CandidateAssessment(
             raw_content=content,
             raw_media_type=media_type,
