@@ -401,7 +401,12 @@ class HarnessEngine:
             return apply_review(self.store, snapshot, decision)
         if snapshot.status == "needs_human_review" and decision is None:
             return snapshot
-        if snapshot.status not in {"recoverable", "running", "needs_human_review"}:
+        if snapshot.status not in {
+            "planning",
+            "recoverable",
+            "running",
+            "needs_human_review",
+        }:
             raise ValueError(f"run 当前状态不可恢复: {snapshot.status}")
         command: Command[Any] | None = None
         if decision is not None:
@@ -1247,6 +1252,11 @@ def _deterministically_enrich_artifact(
                     "奖励到账",
                     "到账通知",
                     "可领奖状态",
+                    "领取成功",
+                    "领取失败",
+                    "领取状态",
+                    "已领取",
+                    "错误码",
                     "奖励入口",
                     "按钮文案",
                     "不可领取",
@@ -1259,7 +1269,10 @@ def _deterministically_enrich_artifact(
                 row[8] = "不满足来源中要求同时成立的全部领取条件；具体产品处理待确认"
             else:
                 row[2] = "核对六项领取条件输入（奖励处理待确认）"
-                row[7] = "核对六项领取条件的输入证据；具体产品处理入口待确认"
+                row[7] = (
+                    "核对报名、核销、获奖名单、趣看动态、#今天一起开局话题和"
+                    "@交子立方官方号六项输入证据；具体产品处理入口待确认"
+                )
                 row[8] = "满足来源中的六项领取条件；具体奖励处理与时机待确认"
             row[9] = "保留六项条件的输入证据，不断言未定义界面、提示或发放记录"
             row[10] = _append_pending(row[10], "奖励处理入口、时机与观察点待确认")
@@ -1277,24 +1290,7 @@ def _deterministically_enrich_artifact(
             changed = True
         if (
             _source_has_distinct_activity_scopes(source_corpus)
-            and "有效活动" in " ".join((row[1], row[2]))
-            and any(
-                term in " ".join((row[7], row[8], row[9]))
-                for term in (
-                    "系统",
-                    "模块",
-                    "列表",
-                    "标记",
-                    "两处",
-                    "计数",
-                    "统计",
-                    "场次+",
-                    "场次数增加",
-                    "数字不变",
-                    "活动数增加",
-                    "前端展示为有效活动",
-                )
-            )
+            and _asserts_effective_activity_observation(row)
             and "产品标记、计数入口与观察点待确认" not in row[10]
             and "奖励场次四条件与成长金三条件分别按来源执行" not in row[10]
         ):
@@ -1498,6 +1494,9 @@ def _deterministically_enrich_artifact(
                 term in " ".join((row[5], row[6]))
                 for term in ("已领", "领取", "已获得", "已发放", "到账", "可替换")
             )
+            unconfirmed_growth_description = any(
+                term in row[2] for term in ("领取成长金", "获得成长金", "成长金到账")
+            ) or bool(re.search(r"成长金\s*\d+\s*元", row[2]))
             unconfirmed_growth_result = "不使用发放结果作为证据" not in growth_result and (
                 any(
                     term in growth_result
@@ -1535,7 +1534,11 @@ def _deterministically_enrich_artifact(
                 )
                 or bool(re.search(r"(?:得|最终)\s*\d+\s*元", growth_result))
             )
-            if unconfirmed_growth_result or unconfirmed_growth_precondition:
+            if (
+                unconfirmed_growth_result
+                or unconfirmed_growth_precondition
+                or unconfirmed_growth_description
+            ):
                 if _is_no_growth_tier_case(row):
                     row[2] = "核对未满足任何成长金档位（发放与展示待确认）"
                     row[8] = "仅核对未满足任何已确认成长金档位；发放与展示行为待确认"
@@ -1701,6 +1704,8 @@ def _deterministically_enrich_artifact(
                     "只计1人",
                     "仅计为1人",
                     "计为1名",
+                    "只算1人",
+                    "只计算1人",
                 )
             )
             and "不依赖未确认展示入口" not in row[9]
@@ -2138,6 +2143,34 @@ def _source_has_distinct_activity_scopes(source: str) -> bool:
     )
 
 
+def _asserts_effective_activity_observation(row: list[str]) -> bool:
+    if len(row) != len(TESTCASE_HEADERS):
+        return False
+    result = " ".join((row[8], row[9]))
+    explicit_outcome = any(
+        term in result
+        for term in (
+            "计为有效活动",
+            "计为主理人有效活动",
+            "计入有效活动",
+            "计入奖励有效活动",
+            "计入成长金有效活动",
+            "不计为有效活动",
+            "不计入有效活动",
+            "不计入奖励有效活动",
+            "不计入成长金有效活动",
+            "场次计数",
+            "场次数增加",
+            "活动数增加",
+            "前端展示为有效活动",
+        )
+    )
+    product_observation = "有效活动" in " ".join((row[1], row[2])) and any(
+        term in result for term in ("系统", "模块", "列表", "标记", "计数", "统计", "展示")
+    )
+    return explicit_outcome or product_observation
+
+
 def _is_reward_condition_case(row: list[str]) -> bool:
     if len(row) != len(TESTCASE_HEADERS):
         return False
@@ -2148,6 +2181,10 @@ def _is_reward_condition_case(row: list[str]) -> bool:
         or "奖励条件" in row[1]
         or bool(re.search(r"奖励规则[^#]*#01.*(?:六条件|条件\s*[1-6]|多条件)", row[1]))
         or bool(re.search(r"(?<!\d)3(?:18|19|20|21|22|23)(?!\d)", row[1]))
+        or (
+            "成长金" not in descriptor
+            and any(term in descriptor for term in ("领取奖励", "无法领取", "领取失败", "领取成功"))
+        )
     )
 
 
@@ -2292,7 +2329,19 @@ def _has_circle_participant_dedup_evidence(row: list[str]) -> bool:
         "同一用户" in scenario
         and "同一圈" in scenario
         and any(term in scenario for term in ("多场", "两场", "2场"))
-        and any(term in row[8] for term in ("只计 1", "只计1", "计为 1", "计为1"))
+        and any(
+            term in row[8]
+            for term in (
+                "只计 1",
+                "只计1",
+                "计为 1",
+                "计为1",
+                "只算 1",
+                "只算1",
+                "只计算 1",
+                "只计算1",
+            )
+        )
         and "不依赖未确认展示入口" in row[9]
     )
 
@@ -2726,6 +2775,11 @@ def _quality_check(
                             "奖励到账",
                             "到账通知",
                             "可领奖状态",
+                            "领取成功",
+                            "领取失败",
+                            "领取状态",
+                            "已领取",
+                            "错误码",
                             "奖励入口",
                             "按钮文案",
                             "不可领取",
@@ -2794,24 +2848,7 @@ def _quality_check(
                 invented_activity_observations = [
                     row[0]
                     for row in data_rows
-                    if "有效活动" in " ".join((row[1], row[2]))
-                    and any(
-                        term in " ".join((row[7], row[8], row[9]))
-                        for term in (
-                            "系统",
-                            "模块",
-                            "列表",
-                            "标记",
-                            "两处",
-                            "计数",
-                            "统计",
-                            "场次+",
-                            "场次数增加",
-                            "数字不变",
-                            "活动数增加",
-                            "前端展示为有效活动",
-                        )
-                    )
+                    if _asserts_effective_activity_observation(row)
                     and "产品标记、计数入口与观察点待确认" not in row[10]
                     and "奖励场次四条件与成长金三条件分别按来源执行" not in row[10]
                 ]
@@ -3329,6 +3366,10 @@ def _quality_check(
                                 "可替换",
                             )
                         )
+                        or any(
+                            term in row[2] for term in ("领取成长金", "获得成长金", "成长金到账")
+                        )
+                        or bool(re.search(r"成长金\s*\d+\s*元", row[2]))
                     )
                 ]
                 if invented_growth_payouts:

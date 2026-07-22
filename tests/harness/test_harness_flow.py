@@ -504,6 +504,42 @@ def test_recover_retries_same_langgraph_thread_after_planner_crash(tmp_path: Pat
     assert (tmp_path / f"workspaces/demo/runs/{failed.run_id}/checkpoints/graph.sqlite").is_file()
 
 
+def test_resume_accepts_stale_planning_projection_when_checkpoint_exists(tmp_path: Path) -> None:
+    failures = 1
+
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        nonlocal failures
+        if response_model.__name__ == "QAPlan":
+            if failures:
+                failures -= 1
+                raise RuntimeError("simulated process interruption")
+            request = TaskRequest.model_validate_json(prompt.splitlines()[-1])
+            return build_default_plan(request).model_dump(mode="json")
+        context = json.loads(prompt)
+        return AgentOutput(
+            summary="recorded",
+            artifacts={
+                artifact: default_recorded_artifact(artifact, context["goal"])
+                for artifact in context["task"]["expected_outputs"]
+                if artifact == "testcases"
+            },
+            evidence=["user_goal"],
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    harness.init_workspace("demo")
+    interrupted = harness.run(TaskRequest(workspace="demo", goal="test stale projection"))
+    assert interrupted.status == "recoverable"
+    interrupted.status = "planning"
+    interrupted.errors = []
+    harness.store.save_snapshot(interrupted)
+
+    recovered = harness.resume(interrupted.run_id)
+
+    assert recovered.status == "needs_human_review"
+    assert recovered.run_id == interrupted.run_id
+
+
 def test_planner_repairs_semantically_invalid_plan_in_same_run(tmp_path: Path) -> None:
     plans = 0
 
@@ -2427,7 +2463,7 @@ def test_growth_tier_selection_does_not_assert_lit_or_visible_ui() -> None:
         [
             "TC-GROWTH-VISIBLE",
             "成长金档位1",
-            "仅满足档位1",
+            "满足档位1条件，领取成长金500元",
             "功能",
             "P1",
             "圈子达到档位1门槛",
@@ -2447,6 +2483,7 @@ def test_growth_tier_selection_does_not_assert_lit_or_visible_ui() -> None:
     assert "remove_unconfirmed_growth_payout" in metadata["rules"]
     assert "仅显示档位1" not in enriched
     assert "点亮或激活" not in enriched
+    assert "领取成长金500元" not in enriched
     _quality_check("testcases", enriched, source_corpus=source)
 
 
@@ -3225,8 +3262,8 @@ def test_effective_activity_count_increment_requires_confirmed_observation() -> 
     content = _testcase_artifact(
         [
             "TC-ACTIVITY",
-            "奖励有效活动定义",
-            "满足四条件",
+            "[规则.md] 报名人数>5",
+            "报名人数=6，场次计数增加",
             "功能",
             "P0",
             "App发布、报名6人、活动完成、有核销",
@@ -3402,13 +3439,13 @@ def test_participant_dedup_survives_effective_activity_normalization() -> None:
         [
             "TC-DEDUP-EFFECTIVE",
             "参与玩家去重统计",
-            "同一用户在同一圈子的多场有效活动中仅计为1人",
+            "同一用户在同一圈子的多场有效活动中只算1人",
             "功能",
             "P0",
             "圈子C有两场有效活动，同一用户均报名并核销",
             "同一用户U、同一圈子C、两场有效活动",
             "查询参与玩家统计",
-            "参与玩家只计1人",
+            "参与玩家只算1人",
             "前端计数为1",
             "统计入口待确认",
         ]

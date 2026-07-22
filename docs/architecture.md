@@ -17,6 +17,8 @@ Agentic-QA 采用测试主管与专家 Agent 分层。公开协议不依赖 Lang
 `src/harness/backend.py` 定义 reducer-safe `HarnessState` 和真实 `StateGraph`。主管通过
 `Send` 派发无依赖任务，专家只追加任务级结果，再由主管单点合并。Review Gate 使用
 `interrupt()`；`resume` 以同一 run_id/thread_id 恢复。公开 `RunSnapshot` 不含 LangGraph 类型。
+若进程在投影状态写回前被外部终止，显式 `resume(run_id)` 也可从仍标记为 `planning` 的同一
+SQLite checkpoint 恢复；该路径不接受 ReviewDecision，不能借此绕过 Review Gate。
 每轮 ready 任务只派发 `max_concurrent_agents` 个，完成并由主管合并后才派发下一批；并发上限
 是实际调度约束，不是仅记录在配置中的提示值。
 
