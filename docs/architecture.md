@@ -20,6 +20,10 @@ Agentic-QA 采用测试主管与专家 Agent 分层。公开协议不依赖 Lang
 每轮 ready 任务只派发 `max_concurrent_agents` 个，完成并由主管合并后才派发下一批；并发上限
 是实际调度约束，不是仅记录在配置中的提示值。
 
+测试设计类产物采用强制的分析扇入：`requirement_analyst` 与 `risk_strategist` 先作为无依赖任务
+并行执行，`test_designer`、`api_test_engineer` 或 `ui_test_engineer` 的对应产物任务必须直接依赖
+两者。该关系由计划语义校验强制执行，模型遗漏时返回主管重规划，不由执行引擎静默补齐。
+
 默认硬预算为 24 次模型调用、50 次工具调用、3 次重规划、3 个并发 Agent 和 30 分钟。
 超限时生成明确标记为 partial 的可审核候选，不伪造完成。`elapsed_seconds` 只累计 Agent
 实际执行区间，不计人工审核等待时间；崩溃恢复和 Review Gate 恢复会继承已消耗时间，不能通过

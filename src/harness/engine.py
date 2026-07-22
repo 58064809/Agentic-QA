@@ -64,6 +64,8 @@ ARTIFACT_AGENT = {
     "bug_draft": "failure_triager",
 }
 
+DESIGN_ARTIFACTS = frozenset({"testcases", "api_test_draft", "ui_test_draft"})
+
 TESTCASE_HEADERS = (
     "用例ID",
     "需求/规则来源",
@@ -161,7 +163,7 @@ def build_default_plan(request: TaskRequest) -> QAPlan:
     """Deterministic recorded-model fixture; production planning still uses the model."""
     tasks: list[PlanTask] = []
     expected = set(request.expected_artifacts)
-    design_artifacts = expected & {"testcases", "api_test_draft", "ui_test_draft"}
+    design_artifacts = expected & DESIGN_ARTIFACTS
     if design_artifacts:
         tasks.extend(
             [
@@ -778,6 +780,30 @@ class HarnessEngine:
                 raise ValueError(
                     f"{artifact} 必须由 {expected_agent} 生成，不能委派给 {producers[0].agent}"
                 )
+            if artifact in DESIGN_ARTIFACTS:
+                analysis_tasks = {
+                    agent: [
+                        task
+                        for task in plan.tasks
+                        if task.agent == agent and not task.dependencies and task.expected_outputs
+                    ]
+                    for agent in ("requirement_analyst", "risk_strategist")
+                }
+                missing_analysis = [agent for agent, tasks in analysis_tasks.items() if not tasks]
+                if missing_analysis:
+                    raise ValueError(
+                        f"{artifact} 生成前必须安排无依赖且声明输出的分析任务: {missing_analysis}"
+                    )
+                dependencies = set(producers[0].dependencies)
+                missing_dependencies = [
+                    agent
+                    for agent, tasks in analysis_tasks.items()
+                    if not any(task.id in dependencies for task in tasks)
+                ]
+                if missing_dependencies:
+                    raise ValueError(
+                        f"{artifact} 生产任务必须直接依赖需求与风险分析: {missing_dependencies}"
+                    )
 
     def _run_task(
         self,

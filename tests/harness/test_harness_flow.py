@@ -42,6 +42,26 @@ def PlanTask(*args, **kwargs) -> ContractPlanTask:
     return ContractPlanTask(*args, **kwargs)
 
 
+DESIGN_DEPENDENCIES = ["analyze_requirements", "analyze_risks"]
+
+
+def design_analysis_tasks() -> list[ContractPlanTask]:
+    return [
+        PlanTask(
+            id="analyze_requirements",
+            objective="analyze requirements",
+            agent="requirement_analyst",
+            expected_outputs=["analysis_context"],
+        ),
+        PlanTask(
+            id="analyze_risks",
+            objective="analyze risks",
+            agent="risk_strategist",
+            expected_outputs=["risk_context"],
+        ),
+    ]
+
+
 def _harness(path: Path) -> Harness:
     return Harness(path, model_gateway=recorded_model_gateway())
 
@@ -245,19 +265,26 @@ def test_concurrency_budget_batches_ready_agents(tmp_path: Path) -> None:
             context_ids = [f"context_{index}" for index in range(4)]
             return QAPlan(
                 tasks=[
+                    PlanTask(
+                        id="analyze_requirements",
+                        objective="analyze requirements",
+                        agent="requirement_analyst",
+                        expected_outputs=["analysis_context"],
+                    ),
                     *[
                         PlanTask(
                             id=task_id,
                             objective="analyze context",
                             agent="risk_strategist",
+                            expected_outputs=[f"risk_context_{index}"],
                         )
-                        for task_id in context_ids
+                        for index, task_id in enumerate(context_ids)
                     ],
                     PlanTask(
                         id="produce_testcases",
                         objective="produce testcases",
                         agent="test_designer",
-                        dependencies=context_ids,
+                        dependencies=["analyze_requirements", *context_ids],
                         expected_outputs=["testcases"],
                     ),
                 ]
@@ -301,6 +328,7 @@ def test_concurrency_budget_batches_ready_agents(tmp_path: Path) -> None:
         "context_1",
         "context_2",
         "context_3",
+        "analyze_requirements",
         "produce_testcases",
     }
 
@@ -488,14 +516,14 @@ def test_planner_repairs_semantically_invalid_plan_in_same_run(tmp_path: Path) -
                 return QAPlan(
                     tasks=[
                         PlanTask(
-                            id="analyze_risks",
-                            objective="analyze risks",
-                            agent="risk_strategist",
-                            expected_outputs=["risk_context"],
+                            id="produce_testcases",
+                            objective="produce testcases",
+                            agent="test_designer",
+                            expected_outputs=["testcases"],
                         )
                     ]
                 )
-            assert "QAPlan 未覆盖期望产物" in prompt
+            assert "生成前必须安排无依赖且声明输出的分析任务" in prompt
             return build_default_plan(request).model_dump(mode="json")
         context = json.loads(prompt)
         return AgentOutput(
@@ -524,6 +552,51 @@ def test_planner_repairs_semantically_invalid_plan_in_same_run(tmp_path: Path) -
         .splitlines()
     ]
     assert [event["type"] for event in events].count("plan_validation_failed") == 1
+
+
+def test_planner_repairs_design_task_missing_analysis_dependency(tmp_path: Path) -> None:
+    plans = 0
+
+    def respond(*, prompt: str, response_model: type, **_kwargs):
+        nonlocal plans
+        if response_model.__name__ == "QAPlan":
+            plans += 1
+            request = TaskRequest.model_validate_json(prompt.splitlines()[-1])
+            if plans == 1:
+                return QAPlan(
+                    tasks=[
+                        *design_analysis_tasks(),
+                        PlanTask(
+                            id="produce_testcases",
+                            objective="produce testcases",
+                            agent="test_designer",
+                            dependencies=["analyze_requirements"],
+                            expected_outputs=["testcases"],
+                        ),
+                    ]
+                )
+            assert "生产任务必须直接依赖需求与风险分析" in prompt
+            return build_default_plan(request).model_dump(mode="json")
+        context = json.loads(prompt)
+        return AgentOutput(
+            summary="recorded",
+            artifacts={
+                artifact: default_recorded_artifact(artifact, context["goal"])
+                for artifact in context["task"]["expected_outputs"]
+                if artifact == "testcases"
+            },
+            evidence=["user_goal"],
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    harness.init_workspace("demo")
+    snapshot = harness.run(TaskRequest(workspace="demo", goal="test login"))
+
+    assert snapshot.status == "needs_human_review"
+    assert plans == 2
+    assert snapshot.plan is not None
+    producer = next(task for task in snapshot.plan.tasks if "testcases" in task.expected_outputs)
+    assert set(producer.dependencies) == set(DESIGN_DEPENDENCIES)
 
 
 def test_planner_repairs_public_artifact_assigned_to_wrong_agent(tmp_path: Path) -> None:
@@ -631,16 +704,20 @@ def test_agent_repairs_undelegated_artifact_without_supervisor_replan(tmp_path: 
         if response_model.__name__ == "QAPlan":
             return QAPlan(
                 tasks=[
+                    *design_analysis_tasks(),
                     PlanTask(
                         id="produce-testcases",
                         objective="produce testcases",
                         agent="test_designer",
+                        dependencies=DESIGN_DEPENDENCIES,
                         expected_outputs=["testcases"],
-                    )
+                    ),
                 ]
             )
-        outputs += 1
         context = json.loads(prompt)
+        if context["task"]["agent"] != "test_designer":
+            return AgentOutput(summary="analysis complete")
+        outputs += 1
         if outputs == 1:
             return AgentOutput(
                 summary="split output",
@@ -678,15 +755,19 @@ def test_agent_tool_request_is_executed_and_recorded(tmp_path: Path) -> None:
         if response_model.__name__ == "QAPlan":
             return QAPlan(
                 tasks=[
+                    *design_analysis_tasks(),
                     PlanTask(
                         id="produce_testcases",
                         objective="produce testcases",
                         agent="test_designer",
+                        dependencies=DESIGN_DEPENDENCIES,
                         expected_outputs=["testcases"],
-                    )
+                    ),
                 ]
             )
         context = json.loads(prompt)
+        if context["task"]["agent"] != "test_designer":
+            return AgentOutput(summary="analysis complete")
         if not context["tool_results"]:
             return AgentOutput(
                 summary="need source",
@@ -703,9 +784,17 @@ def test_agent_tool_request_is_executed_and_recorded(tmp_path: Path) -> None:
             evidence=["sources/requirement.md"],
         )
 
-    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
-    workspace = harness.init_workspace("demo")
-    (workspace / "sources/requirement.md").write_text("登录必须校验密码", encoding="utf-8")
+    harness = Harness(
+        tmp_path,
+        model_gateway=CallableModelGateway(respond),
+        tool_handlers={
+            "workspace.read": lambda arguments: {
+                "path": arguments["path"],
+                "content": "登录必须校验密码",
+            }
+        },
+    )
+    harness.init_workspace("demo")
     snapshot = harness.run(
         TaskRequest(
             workspace="demo",
@@ -733,15 +822,19 @@ def test_agent_retry_reuses_completed_tool_call_after_model_crash(tmp_path: Path
         if response_model.__name__ == "QAPlan":
             return QAPlan(
                 tasks=[
+                    *design_analysis_tasks(),
                     PlanTask(
                         id="produce_testcases",
                         objective="produce testcases",
                         agent="test_designer",
+                        dependencies=DESIGN_DEPENDENCIES,
                         expected_outputs=["testcases"],
-                    )
+                    ),
                 ]
             )
         context = json.loads(prompt)
+        if context["task"]["agent"] != "test_designer":
+            return AgentOutput(summary="analysis complete")
         if not context["tool_results"]:
             return AgentOutput(
                 summary="read source",
@@ -833,18 +926,22 @@ def test_invalid_structured_agent_output_is_retried_without_replan(tmp_path: Pat
         if response_model.__name__ == "QAPlan":
             return QAPlan(
                 tasks=[
+                    *design_analysis_tasks(),
                     PlanTask(
                         id="produce_testcases",
                         objective="produce testcases",
                         agent="test_designer",
+                        dependencies=DESIGN_DEPENDENCIES,
                         expected_outputs=["testcases"],
-                    )
+                    ),
                 ]
             )
+        context = json.loads(prompt)
+        if context["task"]["agent"] != "test_designer":
+            return AgentOutput(summary="analysis complete")
         expert_attempts += 1
         if expert_attempts == 1:
             raise RuntimeError("model_gateway_error:ValidationError:json_invalid")
-        context = json.loads(prompt)
         assert context["validation_feedback"][0]["kind"] == "structured_output"
         return AgentOutput(
             summary="valid retry",
@@ -858,7 +955,7 @@ def test_invalid_structured_agent_output_is_retried_without_replan(tmp_path: Pat
 
     assert snapshot.status == "needs_human_review"
     assert expert_attempts == 2
-    assert snapshot.budget.model_calls == 3
+    assert snapshot.budget.model_calls == 5
     assert snapshot.budget.replans == 0
     events = [
         json.loads(line)
@@ -883,15 +980,23 @@ def test_partial_preserves_candidate_already_written_before_budget_exhaustion(
                         expected_outputs=["requirement_analysis"],
                     ),
                     PlanTask(
+                        id="analyze_risks",
+                        objective="analyze risks",
+                        agent="risk_strategist",
+                        expected_outputs=["risk_context"],
+                    ),
+                    PlanTask(
                         id="produce_testcases",
                         objective="produce testcases",
                         agent="test_designer",
-                        dependencies=["analyze_requirements"],
+                        dependencies=DESIGN_DEPENDENCIES,
                         expected_outputs=["testcases"],
                     ),
                 ]
             )
         context = json.loads(prompt)
+        if context["task"]["agent"] == "risk_strategist":
+            return AgentOutput(summary="risk analysis")
         return AgentOutput(
             summary="requirement",
             artifacts={
@@ -905,7 +1010,7 @@ def test_partial_preserves_candidate_already_written_before_budget_exhaustion(
     harness = Harness(
         tmp_path,
         model_gateway=CallableModelGateway(respond),
-        budget_limits=BudgetLimits(max_model_calls=2),
+        budget_limits=BudgetLimits(max_model_calls=3),
     )
     harness.init_workspace("demo")
     snapshot = harness.run(
@@ -952,15 +1057,19 @@ def test_invalid_artifact_is_repaired_before_candidate_write(tmp_path: Path) -> 
         if response_model.__name__ == "QAPlan":
             return QAPlan(
                 tasks=[
+                    *design_analysis_tasks(),
                     PlanTask(
                         id="produce_testcases",
                         objective="produce testcases",
                         agent="test_designer",
+                        dependencies=DESIGN_DEPENDENCIES,
                         expected_outputs=["testcases"],
-                    )
+                    ),
                 ]
             )
         context = json.loads(prompt)
+        if context["task"]["agent"] != "test_designer":
+            return AgentOutput(summary="analysis complete")
         feedback_seen.append(context["validation_feedback"])
         return AgentOutput(
             summary="candidate",
@@ -975,7 +1084,7 @@ def test_invalid_artifact_is_repaired_before_candidate_write(tmp_path: Path) -> 
     assert snapshot.status == "needs_human_review"
     assert feedback_seen[0] == []
     assert "exact ordered 11-column" in feedback_seen[1][0]["error"]
-    assert snapshot.budget.model_calls == 3
+    assert snapshot.budget.model_calls == 5
     candidate = tmp_path / snapshot.candidates[0].path
     assert candidate.read_text(encoding="utf-8") == valid
     events = [
@@ -998,14 +1107,19 @@ def test_source_absent_implementation_prose_is_removed_without_model_retry(
         if response_model.__name__ == "QAPlan":
             return QAPlan(
                 tasks=[
+                    *design_analysis_tasks(),
                     PlanTask(
                         id="produce_testcases",
                         objective="produce testcases",
                         agent="test_designer",
+                        dependencies=DESIGN_DEPENDENCIES,
                         expected_outputs=["testcases"],
-                    )
+                    ),
                 ]
             )
+        context = json.loads(prompt)
+        if context["task"]["agent"] != "test_designer":
+            return AgentOutput(summary="analysis complete")
         attempts += 1
         content = valid + "\n\n证据来自后台、数据库和日志。"
         return AgentOutput(
@@ -1039,14 +1153,19 @@ def test_artifact_repair_stops_after_five_attempts(tmp_path: Path) -> None:
         if response_model.__name__ == "QAPlan":
             return QAPlan(
                 tasks=[
+                    *design_analysis_tasks(),
                     PlanTask(
                         id="produce_testcases",
                         objective="produce testcases",
                         agent="test_designer",
+                        dependencies=DESIGN_DEPENDENCIES,
                         expected_outputs=["testcases"],
-                    )
+                    ),
                 ]
             )
+        context = json.loads(_kwargs["prompt"])
+        if context["task"]["agent"] != "test_designer":
+            return AgentOutput(summary="analysis complete")
         return AgentOutput(
             summary="still invalid",
             artifacts={"testcases": invalid},
@@ -1062,7 +1181,7 @@ def test_artifact_repair_stops_after_five_attempts(tmp_path: Path) -> None:
     snapshot = harness.run(TaskRequest(workspace="demo", goal="test login"))
 
     assert snapshot.status == "partial"
-    assert snapshot.budget.model_calls == 6
+    assert snapshot.budget.model_calls == 8
     assert snapshot.candidates[0].status == "partial"
     events = [
         json.loads(line)
@@ -1079,6 +1198,12 @@ def test_internal_task_output_is_not_written_as_public_candidate(tmp_path: Path)
             return QAPlan(
                 tasks=[
                     PlanTask(
+                        id="requirement_analysis",
+                        objective="analyze requirements",
+                        agent="requirement_analyst",
+                        expected_outputs=["requirement_context"],
+                    ),
+                    PlanTask(
                         id="risk_analysis",
                         objective="analyze risks",
                         agent="risk_strategist",
@@ -1088,7 +1213,7 @@ def test_internal_task_output_is_not_written_as_public_candidate(tmp_path: Path)
                         id="produce_testcases",
                         objective="produce testcases",
                         agent="test_designer",
-                        dependencies=["risk_analysis"],
+                        dependencies=["requirement_analysis", "risk_analysis"],
                         expected_outputs=["testcases"],
                     ),
                 ]
@@ -1100,6 +1225,8 @@ def test_internal_task_output_is_not_written_as_public_candidate(tmp_path: Path)
                 artifacts={"risk_analysis": "High risk: authentication"},
                 evidence=["user_goal"],
             )
+        if context["task"]["agent"] == "requirement_analyst":
+            return AgentOutput(summary="requirement context", evidence=["user_goal"])
         return AgentOutput(
             summary="testcases",
             artifacts={"testcases": default_recorded_artifact("testcases", context["goal"])},
@@ -1899,18 +2026,23 @@ def test_complete_combat_synonyms_are_recognized() -> None:
 
 
 def test_source_config_enrichment_is_recorded_in_run_events(tmp_path: Path) -> None:
-    def respond(*, response_model: type, **_kwargs):
+    def respond(*, prompt: str, response_model: type, **_kwargs):
         if response_model.__name__ == "QAPlan":
             return QAPlan(
                 tasks=[
+                    *design_analysis_tasks(),
                     PlanTask(
                         id="produce_testcases",
                         objective="produce testcases",
                         agent="test_designer",
+                        dependencies=DESIGN_DEPENDENCIES,
                         expected_outputs=["testcases"],
-                    )
+                    ),
                 ]
             )
+        context = json.loads(prompt)
+        if context["task"]["agent"] != "test_designer":
+            return AgentOutput(summary="analysis complete")
         return AgentOutput(
             summary="candidate",
             artifacts={"testcases": default_recorded_artifact("testcases", "核对配置")},
