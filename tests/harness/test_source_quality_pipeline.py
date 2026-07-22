@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -22,12 +24,20 @@ from harness.application.source import (
     SourceDocument,
     SourceIngestionLimits,
 )
-from harness.domain.models import ArtifactCandidate, RunSnapshot, StartRunCommand
+from harness.domain.models import (
+    ApprovedArtifactVersion,
+    ArtifactCandidate,
+    RunSnapshot,
+    StartRunCommand,
+)
 from harness.infrastructure.persistence import artifact_repository
 from harness.infrastructure.persistence.filesystem import FilesystemStore
 from harness.infrastructure.quality.assessment import CandidateAssessmentService
 from harness.infrastructure.quality.generic import GenericArtifactStrategy
-from harness.infrastructure.quality.normalization import apply_safe_normalization
+from harness.infrastructure.quality.normalization import (
+    SafeMarkdownNormalizer,
+    apply_safe_normalization,
+)
 from harness.infrastructure.quality.registry import QualityStrategyRegistry
 
 
@@ -382,6 +392,122 @@ def test_concurrent_candidate_commit_has_one_visible_winner(tmp_path: Path) -> N
     assert sorted(results) == [False, True]
     candidate = store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
     assert candidate is not None
+
+
+def _direct_promotion_fixture(
+    tmp_path: Path, *, blocked: bool = False, normalized: bool = False, partial: bool = False
+):
+    store, _ = _workspace_store(tmp_path)
+    bundle = store.create_source_bundle("demo", "run-1")
+    registry = _registry(requires_sources=blocked)
+    if normalized:
+        registry.register_normalizer(SafeMarkdownNormalizer())
+    assessment = CandidateAssessmentService(registry).assess(
+        context=QualityContext(
+            workspace_id="demo",
+            run_id="run-1",
+            artifact="qa_report",
+            source_bundle=bundle,
+        ),
+        content="report  " if normalized else "report",
+        media_type="text/markdown",
+        strategy_names=(
+            ["generic-artifact-contracts", "requires-sources"]
+            if blocked
+            else ["generic-artifact-contracts"]
+        ),
+    )
+    candidate, _ = store.commit_candidate(
+        workspace="demo",
+        run_id="run-1",
+        artifact="qa_report",
+        assessment=assessment,
+        partial=partial,
+    )
+    snapshot = RunSnapshot(
+        run_id="run-1",
+        workspace_id="demo",
+        status="partial" if partial else "needs_human_review",
+        request=StartRunCommand(workspace_id="demo", goal="test"),
+        candidates=[candidate],
+    )
+    return store, snapshot, candidate
+
+
+def _approved(candidate: ArtifactCandidate, variant: ArtifactVariant) -> ApprovedArtifactVersion:
+    reference = candidate.version_ref(variant)
+    version = next(item for item in candidate.versions if item.variant == variant)
+    return ApprovedArtifactVersion(**reference.model_dump(), path=version.path)
+
+
+def _rewrite_candidate_report(tmp_path: Path, candidate: ArtifactCandidate, mutate) -> None:
+    report_path = tmp_path / (candidate.quality_report_path or "")
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    mutate(payload)
+    content = (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode()
+    report_path.write_bytes(content)
+    manifest_path = report_path.parent / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"]["quality-report.json"] = "sha256:" + hashlib.sha256(content).hexdigest()
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def test_direct_promote_rejects_blocked_raw_variant(tmp_path: Path) -> None:
+    store, snapshot, candidate = _direct_promotion_fixture(tmp_path, blocked=True)
+    with pytest.raises(PermissionError, match="未通过质量门"):
+        store.promote_many(snapshot, [_approved(candidate, ArtifactVariant.RAW)])
+
+
+def test_direct_promote_rejects_blocked_normalized_variant(tmp_path: Path) -> None:
+    store, snapshot, candidate = _direct_promotion_fixture(tmp_path, blocked=True, normalized=True)
+    with pytest.raises(PermissionError, match="未通过质量门"):
+        store.promote_many(snapshot, [_approved(candidate, ArtifactVariant.NORMALIZED)])
+
+
+def test_direct_promote_rejects_partial_candidate(tmp_path: Path) -> None:
+    store, snapshot, candidate = _direct_promotion_fixture(tmp_path, partial=True)
+    with pytest.raises(PermissionError, match="partial candidate"):
+        store.promote_many(snapshot, [_approved(candidate, ArtifactVariant.RAW)])
+
+
+def test_direct_promote_rejects_report_source_bundle_hash_mismatch(tmp_path: Path) -> None:
+    store, snapshot, candidate = _direct_promotion_fixture(tmp_path)
+    _rewrite_candidate_report(
+        tmp_path, candidate, lambda payload: payload.update(source_bundle_hash="sha256:" + "f" * 64)
+    )
+    reloaded = store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
+    assert reloaded is not None
+    snapshot.candidates = [reloaded]
+    with pytest.raises(ValueError, match="source bundle hash"):
+        store.promote_many(snapshot, [_approved(reloaded, ArtifactVariant.RAW)])
+
+
+def test_direct_promote_rejects_report_assessment_key_mismatch(tmp_path: Path) -> None:
+    store, snapshot, candidate = _direct_promotion_fixture(tmp_path)
+    _rewrite_candidate_report(
+        tmp_path, candidate, lambda payload: payload.update(assessment_key="sha256:" + "f" * 64)
+    )
+    reloaded = store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
+    assert reloaded is not None
+    snapshot.candidates = [reloaded]
+    with pytest.raises(ValueError, match="assessment key"):
+        store.promote_many(snapshot, [_approved(reloaded, ArtifactVariant.RAW)])
+
+
+def test_direct_promote_rejects_variant_hash_mismatch(tmp_path: Path) -> None:
+    store, snapshot, candidate = _direct_promotion_fixture(tmp_path)
+
+    def mutate(payload):
+        payload["variants"][0]["content_sha256"] = "sha256:" + "f" * 64
+
+    _rewrite_candidate_report(tmp_path, candidate, mutate)
+    reloaded = store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
+    assert reloaded is not None
+    snapshot.candidates = [reloaded]
+    with pytest.raises(ValueError, match="variant hash"):
+        store.promote_many(snapshot, [_approved(reloaded, ArtifactVariant.RAW)])
 
 
 @pytest.mark.skipif(os.name == "nt", reason="创建 symlink 通常需要 Windows 开发者权限")

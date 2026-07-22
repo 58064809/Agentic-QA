@@ -247,11 +247,33 @@ class ArtifactReviewFilesystemRepository:
     def _verified_approved_source(
         self, snapshot: RunSnapshot, version: ApprovedArtifactVersion
     ) -> Path:
-        candidate = next(
+        projected = next(
             (item for item in snapshot.candidates if item.artifact == version.artifact), None
         )
-        if candidate is None:
+        if projected is None:
             raise PermissionError(f"artifact 不在当前候选中: {version.artifact}")
+        if projected.status == "partial":
+            raise PermissionError(f"partial candidate 不可发布: {version.artifact}")
+        candidate = self.load_candidate(
+            workspace=snapshot.workspace_id,
+            run_id=snapshot.run_id,
+            artifact=version.artifact,
+            partial=projected.status == "partial",
+            evidence=projected.evidence,
+        )
+        if candidate is None:
+            raise ValueError("candidate bundle 不存在或缺少 manifest")
+        if not all(
+            (
+                candidate.assessment_key,
+                candidate.quality_report_path,
+                candidate.quality_report_sha256,
+                candidate.source_bundle_hash,
+                candidate.policy_versions,
+                candidate.versions,
+            )
+        ):
+            raise PermissionError("candidate 缺少完整质量 provenance，不能发布")
         if candidate.assessment_key != version.assessment_key:
             raise ValueError("approved assessment key 与 candidate 不匹配")
         if candidate.quality_report_sha256 != version.quality_report_sha256:
@@ -271,6 +293,17 @@ class ArtifactReviewFilesystemRepository:
             or _sha256_bytes(report_path.read_bytes()) != version.quality_report_sha256
         ):
             raise ValueError("approved quality report 内容 hash 已变化")
+        report = QualityReport.model_validate_json(report_path.read_text(encoding="utf-8"))
+        if report.workspace_id != snapshot.workspace_id or report.run_id != snapshot.run_id:
+            raise ValueError("quality report run provenance 不匹配")
+        if report.artifact != version.artifact:
+            raise ValueError("quality report artifact provenance 不匹配")
+        if report.assessment_key != candidate.assessment_key:
+            raise ValueError("quality report assessment key 与 candidate 不匹配")
+        if report.source_bundle_hash != candidate.source_bundle_hash:
+            raise ValueError("quality report source bundle hash 与 candidate 不匹配")
+        if report.policy_versions != candidate.policy_versions:
+            raise ValueError("quality report policy versions 与 candidate 不匹配")
         expected = next(
             (
                 item
@@ -283,6 +316,16 @@ class ArtifactReviewFilesystemRepository:
         )
         if expected is None:
             raise ValueError("approved artifact version 与 candidate manifest 不匹配")
+        report_versions = [item for item in report.variants if item.variant == version.variant]
+        if len(report_versions) != 1:
+            raise ValueError("quality report 缺少或重复所选 variant")
+        report_version = report_versions[0]
+        if not report_version.passed:
+            raise PermissionError(
+                f"所选版本未通过质量门: {version.artifact}/{version.variant.value}"
+            )
+        if report_version.content_sha256 != version.content_sha256:
+            raise ValueError("quality report variant hash 与批准版本不匹配")
         source = (self.repo_root / version.path).resolve()
         candidate_root = (
             self.workspaces.require_workspace(snapshot.workspace_id)

@@ -22,9 +22,11 @@ def _runtime_dependencies(tmp_path: Path):
     return store, agents, tools
 
 
-def _started_run(tmp_path: Path):
+def _started_run(tmp_path: Path, *, source_content: str | None = None):
     harness = Harness(tmp_path, model_gateway=recorded_model_gateway())
     workspace = harness.create_workspace(CreateWorkspaceCommand(workspace_id="demo"))
+    if source_content is not None:
+        (workspace / "sources/requirement.md").write_text(source_content, encoding="utf-8")
     snapshot = harness.start_run(StartRunCommand(workspace_id="demo", goal="test"))
     return workspace, snapshot
 
@@ -102,8 +104,7 @@ def test_tool_allowlist_profile_and_idempotency(tmp_path: Path) -> None:
 
 
 def test_read_tool_result_is_reused_for_same_idempotency_key(tmp_path: Path) -> None:
-    workspace, snapshot = _started_run(tmp_path)
-    (workspace / "sources/requirement.md").write_text("requirement", encoding="utf-8")
+    workspace, snapshot = _started_run(tmp_path, source_content="requirement")
     store, agents, tools = _runtime_dependencies(tmp_path)
     budget = Budget()
     events: list[dict[str, object]] = []
