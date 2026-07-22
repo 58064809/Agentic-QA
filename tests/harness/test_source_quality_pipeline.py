@@ -1,0 +1,355 @@
+from __future__ import annotations
+
+import os
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+import pytest
+
+from harness.application.quality import (
+    ArtifactVariant,
+    NormalizationOperation,
+    NormalizationOperationKind,
+    NormalizationProposal,
+    QualityComponentConfiguration,
+    QualityContext,
+    StrategyRequirements,
+    StrategyResult,
+)
+from harness.application.source import (
+    SourceBundle,
+    SourceCompleteness,
+    SourceIngestionLimits,
+)
+from harness.domain.models import ArtifactCandidate, RunSnapshot, StartRunCommand
+from harness.infrastructure.persistence import artifact_repository
+from harness.infrastructure.persistence.filesystem import FilesystemStore
+from harness.infrastructure.quality.assessment import CandidateAssessmentService
+from harness.infrastructure.quality.generic import GenericArtifactStrategy
+from harness.infrastructure.quality.normalization import apply_safe_normalization
+from harness.infrastructure.quality.registry import QualityStrategyRegistry
+
+
+class RequiresSourcesStrategy:
+    name = "requires-sources"
+    version = "1.0.0"
+    requirements = StrategyRequirements(requires_sources=True, requires_complete_sources=True)
+    configuration = QualityComponentConfiguration()
+
+    def evaluate(self, context: QualityContext, content: str) -> StrategyResult:
+        del context, content
+        return StrategyResult()
+
+
+def _empty_bundle(value: str = "0") -> SourceBundle:
+    return SourceBundle(
+        parser_version="test",
+        limits=SourceIngestionLimits(),
+        completeness=SourceCompleteness.EMPTY,
+        bundle_hash="sha256:" + value * 64,
+    )
+
+
+def _registry(*, requires_sources: bool = False) -> QualityStrategyRegistry:
+    registry = QualityStrategyRegistry()
+    registry.register(GenericArtifactStrategy())
+    if requires_sources:
+        registry.register(RequiresSourcesStrategy())
+    return registry
+
+
+def _workspace_store(tmp_path: Path, limits: SourceIngestionLimits | None = None):
+    store = FilesystemStore(tmp_path, source_limits=limits)
+    workspace = store.init_workspace("demo", quality_policies=[])
+    snapshot = RunSnapshot(
+        run_id="run-1",
+        workspace_id="demo",
+        status="planning",
+        request=StartRunCommand(workspace_id="demo", goal="test"),
+    )
+    store.create_run(snapshot)
+    return store, workspace
+
+
+def test_source_bundle_preserves_warnings_hashes_and_run_snapshot(tmp_path: Path) -> None:
+    limits = SourceIngestionLimits(max_parsed_characters=10)
+    store, workspace = _workspace_store(tmp_path, limits)
+    (workspace / "sources/good.md").write_text(
+        "# 说明\n\n这是完整正文，并且会被解析。", encoding="utf-8"
+    )
+    (workspace / "sources/non-utf8.bin").write_bytes(b"\xff\xfe")
+
+    bundle = store.create_source_bundle("demo", "run-1")
+    original_text = next(item.text for item in bundle.documents if item.path == "sources/good.md")
+    non_utf8 = next(item for item in bundle.documents if item.path.endswith("non-utf8.bin"))
+
+    assert bundle.bundle_hash.startswith("sha256:")
+    assert non_utf8.raw_sha256 is not None
+    assert non_utf8.parsed_sha256 is None
+    assert {issue.code for issue in non_utf8.issues} == {"source_non_utf8"}
+    assert any(item.truncated for item in bundle.documents)
+
+    (workspace / "sources/good.md").write_text("changed after run start", encoding="utf-8")
+    restored = store.load_source_bundle("demo", "run-1")
+    restored_text = next(item.text for item in restored.documents if item.path == "sources/good.md")
+    assert restored_text == original_text
+    assert restored.bundle_hash == bundle.bundle_hash
+
+
+def test_critical_empty_section_is_blocker_but_valid_table_is_not(tmp_path: Path) -> None:
+    store, workspace = _workspace_store(tmp_path)
+    (workspace / "sources/empty.md").write_text(
+        "# 奖励配置\n\n# 其他说明\n\n正文。\n", encoding="utf-8"
+    )
+    (workspace / "sources/table.md").write_text(
+        "规则表：\n\n| 档位 | 奖励 |\n|---|---|\n| 1 | 10 |\n", encoding="utf-8"
+    )
+
+    bundle = store.create_source_bundle("demo", "run-1")
+    issues = [issue for document in bundle.documents for issue in document.issues]
+
+    assert any(issue.code == "suspected_missing_structure" for issue in issues)
+    assert not any(
+        issue.code == "suspected_missing_structure" and issue.path == "sources/table.md"
+        for issue in issues
+    )
+
+
+def test_truncated_critical_section_is_inconclusive_not_blocker(tmp_path: Path) -> None:
+    prefix = "# 奖励配置\n"
+    limits = SourceIngestionLimits(max_parsed_characters=len(prefix))
+    store, workspace = _workspace_store(tmp_path, limits)
+    (workspace / "sources/rules.md").write_text(prefix + "正文位于截断范围之后", encoding="utf-8")
+
+    bundle = store.create_source_bundle("demo", "run-1")
+    issues = [issue for document in bundle.documents for issue in document.issues]
+
+    assert {issue.code for issue in issues} == {
+        "source_truncated",
+        "structure_check_inconclusive",
+    }
+
+
+def test_hard_limit_does_not_publish_a_partial_file_hash(tmp_path: Path) -> None:
+    limits = SourceIngestionLimits(max_file_bytes=1024, max_total_bytes=2048)
+    store, workspace = _workspace_store(tmp_path, limits)
+    (workspace / "sources/oversized.md").write_bytes(b"x" * 1025)
+
+    bundle = store.create_source_bundle("demo", "run-1")
+    document = bundle.documents[0]
+
+    assert document.raw_sha256 is None
+    assert document.text is None
+    assert document.completeness == SourceCompleteness.UNAVAILABLE
+    assert {issue.code for issue in document.issues} == {"source_hard_limit_exceeded"}
+
+
+def test_empty_sources_only_block_strategies_that_require_them() -> None:
+    context = QualityContext(
+        workspace_id="demo",
+        run_id="run-1",
+        artifact="qa_report",
+        source_bundle=_empty_bundle(),
+    )
+    generic = CandidateAssessmentService(_registry()).assess(
+        context=context,
+        content="report",
+        media_type="text/markdown",
+        strategy_names=["generic-artifact-contracts"],
+    )
+    required = CandidateAssessmentService(_registry(requires_sources=True)).assess(
+        context=context,
+        content="report",
+        media_type="text/markdown",
+        strategy_names=["generic-artifact-contracts", "requires-sources"],
+    )
+
+    assert generic.report.verdict_for(ArtifactVariant.RAW)
+    assert not required.report.verdict_for(ArtifactVariant.RAW)
+    assert any(
+        issue.code == "required_source_unavailable" for issue in required.report.variants[0].issues
+    )
+
+
+def test_legacy_candidate_quality_flag_is_query_only_and_not_persisted() -> None:
+    candidate = ArtifactCandidate.model_validate(
+        {
+            "artifact": "qa_report",
+            "path": "legacy.md",
+            "quality_passed": True,
+        }
+    )
+
+    assert "quality_passed" not in candidate.model_dump()
+    with pytest.raises(ValueError, match="provenance"):
+        candidate.version_ref(ArtifactVariant.RAW)
+
+
+def test_assessment_key_is_canonical_sensitive_and_excludes_environment(monkeypatch) -> None:
+    service = CandidateAssessmentService(_registry())
+    context = QualityContext(
+        workspace_id="demo",
+        run_id="run-1",
+        artifact="qa_report",
+        source_bundle=_empty_bundle(),
+    )
+    arguments = {
+        "context": context,
+        "content": "report",
+        "media_type": "text/markdown",
+        "strategy_names": ["generic-artifact-contracts"],
+    }
+    first = service.assessment_key(**arguments)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "must-not-affect-assessment")
+    assert service.assessment_key(**arguments) == first
+    assert service.assessment_key(**{**arguments, "content": "changed"}) != first
+    assert (
+        service.assessment_key(
+            **{
+                **arguments,
+                "context": context.model_copy(update={"source_bundle": _empty_bundle("1")}),
+            }
+        )
+        != first
+    )
+
+
+def test_normalization_is_representation_only() -> None:
+    proposal = NormalizationProposal(
+        operations=(
+            NormalizationOperation(kind=NormalizationOperationKind.NORMALIZE_LINE_ENDINGS),
+            NormalizationOperation(kind=NormalizationOperationKind.TRIM_TRAILING_WHITESPACE),
+            NormalizationOperation(kind=NormalizationOperationKind.ENSURE_FINAL_NEWLINE),
+            NormalizationOperation(
+                kind=NormalizationOperationKind.NORMALIZE_MARKDOWN_TABLE_DELIMITER_SPACING
+            ),
+        )
+    )
+    raw = "| 字段 | 值 |  \r\n|---|---|\r\n| 档位 | 1 |"
+
+    normalized = apply_safe_normalization(raw, proposal)
+
+    assert "档位" in normalized and "1" in normalized
+    assert normalized.endswith("\n")
+    assert "\r" not in normalized
+
+
+def test_candidate_bundle_commit_is_create_only_and_idempotent(tmp_path: Path) -> None:
+    store, _workspace = _workspace_store(tmp_path)
+    bundle = store.create_source_bundle("demo", "run-1")
+    context = QualityContext(
+        workspace_id="demo",
+        run_id="run-1",
+        artifact="qa_report",
+        source_bundle=bundle,
+    )
+    service = CandidateAssessmentService(_registry())
+    assessment = service.assess(
+        context=context,
+        content="report",
+        media_type="text/markdown",
+        strategy_names=["generic-artifact-contracts"],
+    )
+
+    candidate, created = store.commit_candidate(
+        workspace="demo", run_id="run-1", artifact="qa_report", assessment=assessment
+    )
+    repeated, repeated_created = store.commit_candidate(
+        workspace="demo", run_id="run-1", artifact="qa_report", assessment=assessment
+    )
+
+    assert created and not repeated_created
+    assert repeated == candidate
+    assert not hasattr(candidate, "quality_passed")
+    assert (tmp_path / candidate.quality_report_path).is_file()
+    assert not list((tmp_path / "workspaces/demo/candidates/run-1/.staging").glob("*"))
+
+    different = service.assess(
+        context=context,
+        content="different report",
+        media_type="text/markdown",
+        strategy_names=["generic-artifact-contracts"],
+    )
+    with pytest.raises(FileExistsError, match="assessment key"):
+        store.commit_candidate(
+            workspace="demo", run_id="run-1", artifact="qa_report", assessment=different
+        )
+
+
+def test_candidate_bundle_is_invisible_when_staging_write_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    store, _workspace = _workspace_store(tmp_path)
+    bundle = store.create_source_bundle("demo", "run-1")
+    context = QualityContext(
+        workspace_id="demo",
+        run_id="run-1",
+        artifact="qa_report",
+        source_bundle=bundle,
+    )
+    assessment = CandidateAssessmentService(_registry()).assess(
+        context=context,
+        content="report",
+        media_type="text/markdown",
+        strategy_names=["generic-artifact-contracts"],
+    )
+    original = artifact_repository._write_fsynced
+    calls = 0
+
+    def fail_second_write(path: Path, content: bytes) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("fault injection")
+        original(path, content)
+
+    monkeypatch.setattr(artifact_repository, "_write_fsynced", fail_second_write)
+    with pytest.raises(OSError, match="fault injection"):
+        store.commit_candidate(
+            workspace="demo", run_id="run-1", artifact="qa_report", assessment=assessment
+        )
+
+    candidate_root = tmp_path / "workspaces/demo/candidates/run-1"
+    assert not (candidate_root / "qa_report").exists()
+    assert not list((candidate_root / ".staging").glob("*"))
+
+
+def test_concurrent_candidate_commit_has_one_visible_winner(tmp_path: Path) -> None:
+    store, _workspace = _workspace_store(tmp_path)
+    bundle = store.create_source_bundle("demo", "run-1")
+    context = QualityContext(
+        workspace_id="demo",
+        run_id="run-1",
+        artifact="qa_report",
+        source_bundle=bundle,
+    )
+    assessment = CandidateAssessmentService(_registry()).assess(
+        context=context,
+        content="report",
+        media_type="text/markdown",
+        strategy_names=["generic-artifact-contracts"],
+    )
+
+    def commit() -> bool:
+        return store.commit_candidate(
+            workspace="demo", run_id="run-1", artifact="qa_report", assessment=assessment
+        )[1]
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _index: commit(), range(2)))
+
+    assert sorted(results) == [False, True]
+    candidate = store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
+    assert candidate is not None
+
+
+@pytest.mark.skipif(os.name == "nt", reason="创建 symlink 通常需要 Windows 开发者权限")
+def test_source_symlink_is_rejected(tmp_path: Path) -> None:
+    store, workspace = _workspace_store(tmp_path)
+    outside = tmp_path / "outside.md"
+    outside.write_text("secret", encoding="utf-8")
+    (workspace / "sources/link.md").symlink_to(outside)
+
+    bundle = store.create_source_bundle("demo", "run-1")
+
+    assert any(issue.code == "source_link_rejected" for issue in bundle.issues)

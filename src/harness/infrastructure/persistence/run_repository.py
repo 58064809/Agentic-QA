@@ -48,6 +48,24 @@ class RunEventFilesystemRepository:
         with path.open("a", encoding="utf-8", newline="\n") as handle:
             handle.write(event.model_dump_json() + "\n")
 
+    def has_assessment_event(self, workspace: str, run_id: str, assessment_key: str) -> bool:
+        path = self.workspaces.require_workspace(workspace) / "runs" / run_id / "events.jsonl"
+        if not path.is_file():
+            return False
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (
+                payload.get("type") == "artifact_quality_evaluated"
+                and (payload.get("data") or {}).get("assessment_key") == assessment_key
+            ):
+                return True
+        return False
+
     def write_tool_record(
         self,
         workspace: str,

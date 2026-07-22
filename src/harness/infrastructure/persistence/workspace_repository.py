@@ -103,22 +103,3 @@ class WorkspaceFilesystemRepository:
         if profile.request_timeout_seconds > policy.max_request_timeout_seconds:
             raise PermissionError("execution profile timeout exceeds workspace policy")
         return policy
-
-    def source_texts(self, workspace: str, limit: int = 100_000) -> list[tuple[str, str]]:
-        root = self.require_workspace(workspace)
-        result: list[tuple[str, str]] = []
-        total = 0
-        for path in sorted((root / "sources").rglob("*")):
-            if not path.is_file() or path.is_symlink():
-                continue
-            try:
-                content = path.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
-                continue
-            remaining = limit - total
-            if remaining <= 0:
-                break
-            content = content[:remaining]
-            total += len(content)
-            result.append((path.relative_to(root).as_posix(), content))
-        return result

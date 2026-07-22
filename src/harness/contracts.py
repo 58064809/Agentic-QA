@@ -2,7 +2,11 @@
 
 from harness.domain.models import (
     AgentManifest,
+    ApprovedArtifactVersion,
     ArtifactCandidate,
+    ArtifactVariant,
+    ArtifactVersion,
+    ArtifactVersionRef,
     BudgetUsage,
     CreateWorkspaceCommand,
     EvidenceRequirement,
@@ -24,7 +28,11 @@ from harness.domain.models import (
 
 __all__ = [
     "AgentManifest",
+    "ApprovedArtifactVersion",
     "ArtifactCandidate",
+    "ArtifactVariant",
+    "ArtifactVersion",
+    "ArtifactVersionRef",
     "BudgetUsage",
     "CreateWorkspaceCommand",
     "EvidenceRequirement",

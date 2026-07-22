@@ -18,6 +18,7 @@ Copy-Item .env.example .env
 
 ```python
 from harness import (
+    ArtifactVariant,
     CreateWorkspaceCommand,
     Harness,
     ReviewDecision,
@@ -40,6 +41,10 @@ published = harness.review_run(
             target_artifact="all",
             reason="人工审核通过",
             reviewed_by="qa-owner",
+            versions=[
+                candidate.version_ref(ArtifactVariant.RAW)
+                for candidate in snapshot.candidates
+            ],
         ),
     )
 )

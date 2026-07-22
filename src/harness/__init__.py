@@ -2,6 +2,8 @@
 
 from harness.contracts import (
     AgentManifest,
+    ArtifactVariant,
+    ArtifactVersionRef,
     CreateWorkspaceCommand,
     EvidenceRequirement,
     ExecutionProfile,
@@ -22,6 +24,8 @@ from harness.harness import Harness
 
 __all__ = [
     "AgentManifest",
+    "ArtifactVariant",
+    "ArtifactVersionRef",
     "CreateWorkspaceCommand",
     "EvidenceRequirement",
     "ExecutionProfile",

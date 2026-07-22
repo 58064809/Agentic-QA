@@ -41,3 +41,40 @@ def test_public_package_does_not_export_v1_task_request() -> None:
     contracts = (PACKAGE_ROOT / "contracts.py").read_text(encoding="utf-8")
     assert "TaskRequest" not in public_init
     assert "TaskRequest" not in contracts
+
+
+def test_quality_adapters_do_not_live_in_domain() -> None:
+    quality_root = PACKAGE_ROOT / "domain" / "quality"
+    assert not any(quality_root.glob("*.py"))
+    ports = (PACKAGE_ROOT / "application" / "ports.py").read_text(encoding="utf-8")
+    assert "class QualityStrategy(Protocol)" in ports
+    assert "class ArtifactNormalizer(Protocol)" in ports
+    assert (PACKAGE_ROOT / "application" / "source" / "models.py").is_file()
+
+
+def test_city_quality_pack_stays_split() -> None:
+    root = PACKAGE_ROOT / "infrastructure" / "quality" / "packs" / "city_opening_rewards"
+    required = {"parser.py", "rules.py", "validators.py", "normalizer.py", "strategy.py"}
+    assert required.issubset({path.name for path in root.glob("*.py")})
+    oversized = {
+        path.name: len(path.read_text(encoding="utf-8").splitlines())
+        for path in root.glob("*.py")
+        if len(path.read_text(encoding="utf-8").splitlines()) > 1100
+    }
+    assert not oversized, f"city quality pack 出现新的单文件聚合实现: {oversized}"
+
+
+def test_candidate_has_no_persisted_quality_passed_field() -> None:
+    models = (PACKAGE_ROOT / "domain" / "models.py").read_text(encoding="utf-8")
+    tree = ast.parse(models)
+    candidate = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "ArtifactCandidate"
+    )
+    fields = {
+        node.target.id
+        for node in candidate.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+    }
+    assert "quality_passed" not in fields

@@ -1,5 +1,16 @@
 # 配置说明
 
+## Source 摄取限制
+
+每个 run 启动时建立不可变 SourceBundle。默认最多读取 256 个 regular files；相对路径最多
+1024 UTF-8 bytes；单文件完整读取/哈希上限 16 MiB；总读取/哈希预算 64 MiB；解析文本总量
+100,000 characters。链接、junction 和 Windows reparse point 不会被跟随，archive 不会解压，
+Markdown、HTML 和 YAML 内容不会执行。
+
+读取失败、非 UTF-8 和解析截断产生结构化 warning。是否要求来源由质量策略声明：通用策略允许
+空 sources；`city-opening-rewards` 要求来源存在且完整。关键的配置、档位、对应关系、规则表或枚举
+章节为空时产生 `suspected_missing_structure` blocker。
+
 复制 `.env.example` 后只在本机环境或密钥管理服务中填写真实值。代码、workspace、Prompt、事件
 和产物都不得保存 Token、API Key、Cookie 或数据库密码。
 

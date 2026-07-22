@@ -13,7 +13,7 @@ from harness.domain.models import (
     RunSnapshot,
     StartRunCommand,
 )
-from harness.domain.quality import QualityPolicyRegistry
+from harness.infrastructure.quality import QualityStrategyRegistry
 
 
 @dataclass
@@ -64,7 +64,7 @@ def _application(tmp_path: Path):
         workspaces=repositories,
         runs=repositories,
         workflow=workflow,
-        quality_policies=QualityPolicyRegistry(),
+        quality_policies=QualityStrategyRegistry(),
     )
     return application, repositories, workflow
 

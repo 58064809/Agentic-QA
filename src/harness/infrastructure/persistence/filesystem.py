@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from harness.application.quality import QualityReport
+from harness.application.source import SourceBundle, SourceIngestionLimits
 from harness.domain.models import (
+    ApprovedArtifactVersion,
     ArtifactCandidate,
     ExecutionEnvironmentPolicy,
     ExecutionProfile,
@@ -14,16 +17,25 @@ from harness.infrastructure.persistence.artifact_repository import (
     ArtifactReviewFilesystemRepository,
 )
 from harness.infrastructure.persistence.run_repository import RunEventFilesystemRepository
+from harness.infrastructure.persistence.source_bundle_repository import (
+    SourceBundleFilesystemRepository,
+)
 from harness.infrastructure.persistence.workspace_repository import WorkspaceFilesystemRepository
 
 
 class FilesystemStore:
     """组合三个独立文件仓储，供基础设施工作流统一注入。"""
 
-    def __init__(self, repo_root: Path | str) -> None:
+    def __init__(
+        self,
+        repo_root: Path | str,
+        *,
+        source_limits: SourceIngestionLimits | None = None,
+    ) -> None:
         self.workspaces = WorkspaceFilesystemRepository(repo_root)
         self.runs = RunEventFilesystemRepository(self.workspaces)
         self.artifacts = ArtifactReviewFilesystemRepository(self.workspaces)
+        self.sources = SourceBundleFilesystemRepository(self.workspaces, source_limits)
         self.repo_root = self.workspaces.repo_root
         self.root = self.workspaces.root
 
@@ -44,8 +56,11 @@ class FilesystemStore:
     ) -> ExecutionEnvironmentPolicy | None:
         return self.workspaces.validate_execution_profile(workspace, profile)
 
-    def source_texts(self, workspace: str, limit: int = 100_000) -> list[tuple[str, str]]:
-        return self.workspaces.source_texts(workspace, limit)
+    def create_source_bundle(self, workspace: str, run_id: str) -> SourceBundle:
+        return self.sources.create_source_bundle(workspace, run_id)
+
+    def load_source_bundle(self, workspace: str, run_id: str) -> SourceBundle:
+        return self.sources.load_source_bundle(workspace, run_id)
 
     def create_run(self, snapshot: RunSnapshot) -> None:
         self.runs.create_run(snapshot)
@@ -59,6 +74,9 @@ class FilesystemStore:
     def append_event(self, workspace: str, event: HarnessEvent) -> None:
         self.runs.append_event(workspace, event)
 
+    def has_assessment_event(self, workspace: str, run_id: str, assessment_key: str) -> bool:
+        return self.runs.has_assessment_event(workspace, run_id, assessment_key)
+
     def write_tool_record(
         self, workspace: str, run_id: str, name: str, payload: dict[str, Any]
     ) -> Path:
@@ -70,20 +88,19 @@ class FilesystemStore:
     def load_snapshot(self, workspace: str, run_id: str) -> RunSnapshot:
         return self.runs.load_snapshot(workspace, run_id)
 
-    def write_candidate(self, **kwargs: Any) -> ArtifactCandidate:
-        return self.artifacts.write_candidate(**kwargs)
-
-    def ensure_candidate(self, **kwargs: Any) -> ArtifactCandidate:
-        return self.artifacts.ensure_candidate(**kwargs)
+    def commit_candidate(self, **kwargs: Any) -> tuple[ArtifactCandidate, bool]:
+        return self.artifacts.commit_candidate(**kwargs)
 
     def load_candidate(self, **kwargs: Any) -> ArtifactCandidate | None:
         return self.artifacts.load_candidate(**kwargs)
 
+    def load_quality_report(self, candidate: ArtifactCandidate) -> QualityReport:
+        return self.artifacts.load_quality_report(candidate)
+
     def write_review(self, snapshot: RunSnapshot, artifact: str, payload: dict[str, Any]) -> None:
         self.artifacts.write_review(snapshot, artifact, payload)
 
-    def promote(self, snapshot: RunSnapshot, artifact: str) -> str:
-        return self.artifacts.promote(snapshot, artifact)
-
-    def promote_many(self, snapshot: RunSnapshot, artifacts: list[str]) -> dict[str, str]:
-        return self.artifacts.promote_many(snapshot, artifacts)
+    def promote_many(
+        self, snapshot: RunSnapshot, versions: list[ApprovedArtifactVersion]
+    ) -> dict[str, str]:
+        return self.artifacts.promote_many(snapshot, versions)

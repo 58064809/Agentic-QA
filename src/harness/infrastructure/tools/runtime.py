@@ -51,11 +51,11 @@ class ToolRuntime:
         self._builtin_handlers: dict[
             str, Callable[[str, str, dict[str, Any], ExecutionProfile], Any]
         ] = {
-            "workspace.read": lambda workspace, _run, arguments, _profile: self._workspace_read(
-                workspace, arguments
+            "workspace.read": lambda workspace, run, arguments, _profile: self._workspace_read(
+                workspace, run, arguments
             ),
-            "rag.retrieve": lambda workspace, _run, arguments, _profile: self._rag_retrieve(
-                workspace, arguments
+            "rag.retrieve": lambda workspace, run, arguments, _profile: self._rag_retrieve(
+                workspace, run, arguments
             ),
             "openapi.inspect": lambda workspace, _run, arguments, _profile: (
                 self._openapi_inspect(workspace, arguments)
@@ -234,8 +234,17 @@ class ToolRuntime:
             raise ValueError("tool path is outside the workspace")
         return root, target
 
-    def _workspace_read(self, workspace: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        _, target = self._safe_path(workspace, arguments.get("path"))
+    def _workspace_read(
+        self, workspace: str, run_id: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        requested = str(arguments.get("path") or "").replace("\\", "/")
+        bundle = self.store.load_source_bundle(workspace, run_id)
+        document = next((item for item in bundle.documents if item.path == requested), None)
+        if document is not None:
+            if document.text is None:
+                raise ValueError("workspace.read source is unavailable in the run snapshot")
+            return {"path": document.path, "content": document.text}
+        _, target = self._safe_path(workspace, requested)
         if not target.is_file():
             raise ValueError("workspace.read path is not a file")
         return {
@@ -243,12 +252,15 @@ class ToolRuntime:
             "content": target.read_text(encoding="utf-8")[:100_000],
         }
 
-    def _rag_retrieve(self, workspace: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    def _rag_retrieve(
+        self, workspace: str, run_id: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
         raw_config = self.store.workspace_config(workspace).get("rag")
         config = RagProviderConfig.from_workspace(raw_config)
         max_chunks = min(max(int(arguments.get("max_chunks") or 8), 1), 20)
         return RagRetriever(self.store, config).retrieve(
             workspace,
+            run_id,
             str(arguments.get("query") or ""),
             max_chunks,
         )

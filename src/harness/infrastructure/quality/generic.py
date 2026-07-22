@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from harness.domain.quality.models import PolicyResult, QualityContext, QualityIssue
+from harness.application.quality import (
+    QualityComponentConfiguration,
+    QualityContext,
+    QualityIssue,
+    StrategyRequirements,
+    StrategyResult,
+)
 
 TESTCASE_HEADERS = (
     "用例ID",
@@ -17,11 +23,13 @@ TESTCASE_HEADERS = (
 )
 
 
-class GenericArtifactPolicy:
+class GenericArtifactStrategy:
     name = "generic-artifact-contracts"
-    version = "2.0.0"
+    version = "3.0.0"
+    requirements = StrategyRequirements()
+    configuration = QualityComponentConfiguration()
 
-    def evaluate(self, context: QualityContext, content: str) -> PolicyResult:
+    def evaluate(self, context: QualityContext, content: str) -> StrategyResult:
         issues: list[QualityIssue] = []
         if not content.strip():
             issues.append(self._issue("empty_artifact", "artifact content cannot be empty"))
@@ -31,7 +39,12 @@ class GenericArtifactPolicy:
                 issues.append(self._issue("testcase_headers", "测试用例必须使用固定 11 列表头"))
             if "覆盖矩阵" not in content:
                 issues.append(self._issue("coverage_matrix", "测试用例必须包含覆盖矩阵"))
-        return PolicyResult(content=content, issues=tuple(issues))
+        return StrategyResult(issues=tuple(issues))
 
     def _issue(self, code: str, message: str) -> QualityIssue:
-        return QualityIssue(policy=self.name, version=self.version, code=code, message=message)
+        return QualityIssue(
+            policy=self.name,
+            version=self.version,
+            code=code,
+            message=message,
+        )

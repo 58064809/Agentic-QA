@@ -18,8 +18,8 @@ from harness.domain.models import (
     RunSnapshot,
     StartRunCommand,
 )
-from harness.domain.quality import QualityPolicyRegistry
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
+from harness.infrastructure.quality import QualityStrategyRegistry
 
 
 class Harness:
@@ -34,7 +34,7 @@ class Harness:
         agent_registry: AgentRegistry | None = None,
         skill_registry: SkillRegistry | None = None,
         tool_registry: ToolRegistry | None = None,
-        quality_policy_registry: QualityPolicyRegistry | None = None,
+        quality_strategy_registry: QualityStrategyRegistry | None = None,
         checkpoint_provider: CheckpointProvider | None = None,
         tool_handlers: dict[str, Any] | None = None,
         application: HarnessApplication | None = None,
@@ -46,7 +46,7 @@ class Harness:
             agent_registry=agent_registry,
             skill_registry=skill_registry,
             tool_registry=tool_registry,
-            quality_policy_registry=quality_policy_registry,
+            quality_strategy_registry=quality_strategy_registry,
             checkpoint_provider=checkpoint_provider,
             tool_handlers=tool_handlers,
         )

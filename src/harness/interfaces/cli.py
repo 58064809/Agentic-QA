@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 from harness import (
+    ArtifactVariant,
+    ArtifactVersionRef,
     CreateWorkspaceCommand,
     ExecutionProfile,
     Harness,
@@ -57,6 +59,12 @@ def _parser() -> argparse.ArgumentParser:
     review.add_argument("--reason", required=True)
     review.add_argument("--revision-request")
     review.add_argument("--reviewed-by", required=True)
+    review.add_argument(
+        "--variant",
+        action="append",
+        dest="variants",
+        help="要批准的版本，格式为 artifact=raw 或 artifact=normalized",
+    )
 
     evaluate = commands.add_parser("eval")
     evaluate.add_subparsers(dest="eval_command", required=True).add_parser("run")
@@ -79,6 +87,45 @@ def _execution_profile(args: argparse.Namespace) -> ExecutionProfile:
     if args.allowed_http_methods:
         profile["allowed_http_methods"] = args.allowed_http_methods
     return ExecutionProfile.model_validate(profile)
+
+
+def _review_versions(harness: Harness, args: argparse.Namespace) -> list[ArtifactVersionRef]:
+    if args.decision != ReviewIntent.APPROVE.value:
+        return []
+    snapshot = harness.get_run(RunRef(workspace_id=args.workspace_id, run_id=args.run_id))
+    requested: dict[str, ArtifactVariant] = {}
+    for value in args.variants or []:
+        artifact, separator, variant = value.partition("=")
+        if not separator:
+            raise ValueError("--variant 必须使用 artifact=raw|normalized 格式")
+        requested[artifact] = ArtifactVariant(variant)
+    targets = (
+        [item.artifact for item in snapshot.candidates]
+        if args.artifact == "all" or (not args.artifact and len(snapshot.candidates) == 1)
+        else [args.artifact]
+    )
+    refs: list[ArtifactVersionRef] = []
+    for artifact in targets:
+        candidate = next(item for item in snapshot.candidates if item.artifact == artifact)
+        available = {item.variant: item for item in candidate.versions}
+        if ArtifactVariant.NORMALIZED in available and artifact not in requested:
+            raise ValueError(f"candidate 存在 normalized 版本，必须显式指定 --variant: {artifact}")
+        variant = requested.get(artifact, ArtifactVariant.RAW)
+        version = available.get(variant)
+        if version is None or not candidate.assessment_key or not candidate.quality_report_sha256:
+            raise ValueError(
+                f"candidate 版本不可用或缺少质量 provenance: {artifact}/{variant.value}"
+            )
+        refs.append(
+            ArtifactVersionRef(
+                artifact=artifact,
+                variant=variant,
+                content_sha256=version.content_sha256,
+                assessment_key=candidate.assessment_key,
+                quality_report_sha256=candidate.quality_report_sha256,
+            )
+        )
+    return refs
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -125,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
                             reason=args.reason,
                             revision_request=args.revision_request,
                             reviewed_by=args.reviewed_by,
+                            versions=_review_versions(harness, args),
                         ),
                     )
                 )

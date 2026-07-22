@@ -1,6 +1,6 @@
 # Harness v2 架构
 
-Agentic-QA 是单 Python distribution 的整洁模块化单体，依赖只能由外向内：
+Agentic-QA 是单 Python distribution 的模块化单体，依赖方向为：
 
 ```text
 interfaces -> application -> domain
@@ -9,31 +9,28 @@ interfaces -> application -> domain
 bootstrap -> infrastructure
 ```
 
-| 层 | 职责 |
-|---|---|
-| `domain/` | 领域模型、Review Gate 规则、Artifact 规则和质量策略协议 |
-| `application/` | 创建、启动、查询、恢复、审核用例，以及 Repository、Workflow、Model、Tool、Checkpoint 端口 |
-| `infrastructure/` | 文件仓储、PostgreSQL、LangGraph、模型、MCP、RAG、HTTP/API 与 manifest 适配器 |
-| `interfaces/` | `Harness` v2 门面和薄 CLI |
-| `bootstrap.py` | 唯一组合根，实例化端口、策略和适配器 |
+`domain/` 只保存公开领域模型和 Review Gate 的纯规则。`application/` 保存用例、端口、
+Source Bundle 输入模型和质量评估模型。`infrastructure/` 实现文件仓储、PostgreSQL、
+LangGraph、模型、MCP、RAG、来源摄取以及质量策略。`interfaces/` 提供 Harness 门面和 CLI，
+`bootstrap.py` 是唯一组合根。
 
-AST 架构测试禁止 `domain` 和 `application` 导入 LangGraph、psycopg、OpenAI、MCP、
-`infrastructure`、`interfaces` 或组合根；`domain` 也不得依赖 `application`。LangGraph 只存在于
-workflow adapter，公开模型不泄露其状态类型。
+SourceDocument、SourceBundle、SourceIssue 和 SourceCompleteness 位于
+`application/source/`，不属于质量领域。QualityStrategy 和 ArtifactNormalizer 是 application
+port；策略注册表、通用策略和 `city-opening-rewards` pack 位于 infrastructure。业务 pack 拆分为
+parser、rules、validators、remediation、normalizer 和 strategy，domain/application 不导入具体 pack。
 
-文件持久化分为 Workspace Repository、Run/Event Repository、Artifact/Review Repository。
-`FilesystemStore` 只是基础设施组合对象。`state.json` 是公开投影，PostgreSQL checkpoint 才是
-恢复执行的事实来源；生产运行没有 SQLite 或内存 fallback。thread ID 由
-`workspace_id + run_id` 组成，恢复必须使用同一个 thread。
+来源在 run 创建时按安全限制摄取一次，生成 `source-bundle.json` 和不可变文本快照。RAG、
+workspace.read、Agent prefetch 和质量评估都读取该快照，恢复时不重新读取已经变化的 workspace
+source。来源内容始终是不可信上下文，不能改变权限、预算或 Review Gate。
 
-主管通过 LangGraph `Send` 派发无依赖任务，专家仅追加任务结果，主管单点合并。每批最多运行
-`max_concurrent_agents` 个专家。计划、工具、模型和修订均受预算约束；超限只生成明确标记为
-partial 的审核材料，不伪造完成。
+Agent 输出先作为 raw artifact 保留。表示层 Normalizer 只能处理换行、行尾空白、末尾换行和
+Markdown 表格分隔行空格；业务内容修改只能成为 advisory remediation patch。质量策略对 raw 和
+可选 normalized 版本分别只读校验，结果写入 `quality-report.json`。
 
-Tool Runtime 负责授权、预算、参数 Schema、幂等记录和 Handler 注册。内置工具与 MCP Handler
-通过注册表选择，不使用中央条件分发。Playwright MCP 清单按 run 冻结，恢复时若实时清单与
-冻结快照不同则保持可恢复错误。
+每个 artifact 以 assessment key 标识一次逻辑评估。Candidate 已提交时，checkpoint 恢复复用
+manifest 和质量报告，不重复执行策略；提交前崩溃可以重算纯策略，但同一 key 只能形成一份可见
+Candidate 和一组质量事件。
 
-质量策略注册表始终执行通用产物契约，并按 `workspace.yml.quality_policies` 追加命名策略。
-通用策略校验固定 11 列、覆盖矩阵、证据真实性和 Schema；`city-opening-rewards` 独立承载
-城市开局奖励业务规则。每次校验、修订或拒绝都记录策略名、版本、原因和动作。
+AST 架构测试禁止 domain/application 导入 LangGraph、psycopg、OpenAI、MCP、基础设施实现或
+具体策略。LangGraph 只存在于 workflow adapter。PostgreSQL 是唯一 checkpoint；文件系统只保存
+workspace、run 投影、来源快照、Candidate、Review 和 published artifact。

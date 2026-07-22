@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from harness import (
+    ArtifactVariant,
     CreateWorkspaceCommand,
     Harness,
     ResumeRunCommand,
@@ -44,6 +45,9 @@ def test_v2_start_get_review_and_promote(tmp_path: Path) -> None:
                 target_artifact="all",
                 reason="human approval",
                 reviewed_by="qa_owner",
+                versions=[
+                    candidate.version_ref(ArtifactVariant.RAW) for candidate in snapshot.candidates
+                ],
             ),
         )
     )
@@ -117,11 +121,63 @@ def test_policy_actions_are_audited(tmp_path: Path) -> None:
         .splitlines()
     ]
 
-    policy_events = [item for item in events if item["type"] == "artifact_quality_policy_applied"]
+    policy_events = [item for item in events if item["type"] == "artifact_quality_evaluated"]
     assert policy_events
-    city_event = next(
-        item for item in policy_events if item["data"]["policy"] == "city-opening-rewards"
-    )
-    assert city_event["data"]["policy_version"] == "1.0.0"
-    assert city_event["data"]["action"] in {"validate", "revise"}
-    assert isinstance(city_event["data"]["reasons"], list)
+    city_event = policy_events[0]
+    assert city_event["data"]["policy_versions"]["city-opening-rewards"] == "2.0.0"
+    assert city_event["data"]["assessment_key"].startswith("sha256:")
+    assert city_event["data"]["source_bundle_hash"].startswith("sha256:")
+
+
+def test_source_blocker_prevents_approve_without_changing_run_state(tmp_path: Path) -> None:
+    harness = _harness(tmp_path)
+    workspace = _create(harness)
+    (workspace / "sources/rules.md").write_text("# 奖励配置\n", encoding="utf-8")
+    snapshot = harness.start_run(StartRunCommand(workspace_id="demo", goal="test login"))
+    candidate = snapshot.candidates[0]
+
+    with pytest.raises(PermissionError, match="未通过质量门"):
+        harness.review_run(
+            ReviewRunCommand(
+                workspace_id="demo",
+                run_id=snapshot.run_id,
+                decision=ReviewDecision(
+                    intent="approve",
+                    target_artifact="testcases",
+                    reason="attempt invalid approval",
+                    reviewed_by="qa_owner",
+                    versions=[candidate.version_ref(ArtifactVariant.RAW)],
+                ),
+            )
+        )
+
+    current = harness.get_run(RunRef(workspace_id="demo", run_id=snapshot.run_id))
+    assert current.status == "needs_human_review"
+    assert current.review_status == {"testcases": "needs_human_review"}
+
+
+def test_promote_rechecks_selected_content_hash(tmp_path: Path) -> None:
+    harness = _harness(tmp_path)
+    _create(harness)
+    snapshot = harness.start_run(StartRunCommand(workspace_id="demo", goal="test login"))
+    candidate = snapshot.candidates[0]
+    (tmp_path / candidate.path).write_text("tampered", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="hash"):
+        harness.review_run(
+            ReviewRunCommand(
+                workspace_id="demo",
+                run_id=snapshot.run_id,
+                decision=ReviewDecision(
+                    intent="approve",
+                    target_artifact="testcases",
+                    reason="attempt tampered publish",
+                    reviewed_by="qa_owner",
+                    versions=[candidate.version_ref(ArtifactVariant.RAW)],
+                ),
+            )
+        )
+
+    current = harness.get_run(RunRef(workspace_id="demo", run_id=snapshot.run_id))
+    assert current.status == "needs_human_review"
+    assert not (tmp_path / "workspaces/demo/published/testcases/current.md").exists()

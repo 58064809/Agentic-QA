@@ -19,5 +19,6 @@
 标记待确认，不能伪造成已实现能力。
 
 通用质量策略始终校验 11 列、覆盖矩阵、证据真实性与 Schema；命名业务策略在 workspace
-显式选择后追加执行。候选写入 `workspaces/<id>/candidates/<run_id>/testcases.md`，人工批准和
+显式选择后追加执行。原始候选写入
+`workspaces/<id>/candidates/<run_id>/testcases/raw.md`，人工批准和
 确定性 promote 成功后才发布。

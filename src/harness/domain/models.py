@@ -223,13 +223,61 @@ class ToolManifest(StrictModel):
     idempotency: Literal["read", "keyed", "none"]
 
 
+class ArtifactVariant(str, Enum):
+    RAW = "raw"
+    NORMALIZED = "normalized"
+
+
+class ArtifactVersion(StrictModel):
+    variant: ArtifactVariant
+    path: str
+    content_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class ArtifactVersionRef(StrictModel):
+    artifact: str
+    variant: ArtifactVariant
+    content_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    assessment_key: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    quality_report_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class ApprovedArtifactVersion(ArtifactVersionRef):
+    path: str
+
+
 class ArtifactCandidate(StrictModel):
     artifact: str
     path: str
     media_type: str = "text/markdown"
     status: Literal["needs_human_review", "partial"] = "needs_human_review"
-    quality_passed: bool = True
     evidence: list[str] = Field(default_factory=list)
+    versions: list[ArtifactVersion] = Field(default_factory=list)
+    assessment_key: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    quality_report_path: str | None = None
+    quality_report_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    source_bundle_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    policy_versions: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def discard_legacy_quality_flag(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "quality_passed" in value:
+            value = dict(value)
+            value.pop("quality_passed", None)
+        return value
+
+    def version_ref(self, variant: ArtifactVariant) -> ArtifactVersionRef:
+        version = next((item for item in self.versions if item.variant == variant), None)
+        if version is None or self.assessment_key is None or self.quality_report_sha256 is None:
+            raise ValueError(f"candidate version 或质量 provenance 不可用: {variant.value}")
+        return ArtifactVersionRef(
+            artifact=self.artifact,
+            variant=variant,
+            content_sha256=version.content_sha256,
+            assessment_key=self.assessment_key,
+            quality_report_sha256=self.quality_report_sha256,
+        )
 
 
 class BudgetUsage(StrictModel):
@@ -304,11 +352,16 @@ class ReviewDecision(StrictModel):
     reason: str = Field(min_length=1)
     revision_request: str | None = None
     reviewed_by: str = Field(min_length=1)
+    versions: list[ArtifactVersionRef] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_revision(self) -> ReviewDecision:
         if self.intent == ReviewIntent.REVISE and not self.revision_request:
             raise ValueError("revise requires revision_request")
+        if self.intent != ReviewIntent.APPROVE and self.versions:
+            raise ValueError("versions are only allowed for approve decisions")
+        if len({item.artifact for item in self.versions}) != len(self.versions):
+            raise ValueError("approve versions must contain each artifact at most once")
         return self
 
 

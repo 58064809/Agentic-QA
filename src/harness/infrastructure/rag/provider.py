@@ -7,11 +7,13 @@ from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from harness.application.source import SourceBundle
+
 TOKEN = re.compile(r"[\w\u4e00-\u9fff-]{2,}")
 
 
 class SourceRepository(Protocol):
-    def source_texts(self, workspace: str, limit: int = 100_000) -> list[tuple[str, str]]: ...
+    def load_source_bundle(self, workspace: str, run_id: str) -> SourceBundle: ...
 
 
 class RagProviderConfig(BaseModel):
@@ -42,11 +44,11 @@ class RagRetriever:
         self.sources = sources
         self.config = config
 
-    def retrieve(self, workspace: str, query: str, max_chunks: int) -> dict[str, Any]:
+    def retrieve(self, workspace: str, run_id: str, query: str, max_chunks: int) -> dict[str, Any]:
         query = query.strip()
         if not query:
             raise ValueError("rag.retrieve requires query")
-        chunks = self._chunks(workspace)
+        chunks = self._chunks(workspace, run_id)
         if self.config.provider == "openai-compatible":
             selected = self._semantic(query, chunks, max_chunks)
         else:
@@ -65,10 +67,12 @@ class RagRetriever:
             ],
         }
 
-    def _chunks(self, workspace: str) -> list[tuple[str, int, str]]:
+    def _chunks(self, workspace: str, run_id: str) -> list[tuple[str, int, str]]:
         step = max(self.config.chunk_size - self.config.chunk_overlap, 1)
         chunks: list[tuple[str, int, str]] = []
-        for source, content in self.sources.source_texts(workspace):
+        bundle = self.sources.load_source_bundle(workspace, run_id)
+        for document in bundle.readable_documents:
+            source, content = document.path, document.text or ""
             for index, start in enumerate(range(0, len(content), step)):
                 chunks.append((source, index, content[start : start + self.config.chunk_size]))
         return chunks

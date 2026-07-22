@@ -5,7 +5,17 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any, Protocol
 
+from harness.application.quality import (
+    NormalizationProposal,
+    QualityComponentConfiguration,
+    QualityContext,
+    StrategyRequirements,
+    StrategyResult,
+)
+from harness.application.source import SourceBundle
 from harness.domain.models import (
+    ApprovedArtifactVersion,
+    ArtifactCandidate,
     ExecutionProfile,
     HarnessEvent,
     ReviewDecision,
@@ -29,7 +39,11 @@ class RunEventRepository(Protocol):
 
 
 class ArtifactReviewRepository(Protocol):
-    def promote_many(self, snapshot: RunSnapshot, artifacts: list[str]) -> dict[str, str]: ...
+    def promote_many(
+        self, snapshot: RunSnapshot, versions: list[ApprovedArtifactVersion]
+    ) -> dict[str, str]: ...
+
+    def load_quality_report(self, candidate: ArtifactCandidate) -> object: ...
 
     def write_review(
         self, snapshot: RunSnapshot, artifact: str, payload: dict[str, object]
@@ -41,6 +55,35 @@ class CheckpointProvider(Protocol):
 
 
 ToolHandler = Callable[[dict[str, Any]], Any]
+
+
+class SourceBundleRepository(Protocol):
+    def create_source_bundle(self, workspace: str, run_id: str) -> SourceBundle: ...
+
+    def load_source_bundle(self, workspace: str, run_id: str) -> SourceBundle: ...
+
+
+class QualityStrategy(Protocol):
+    name: str
+    version: str
+    requirements: StrategyRequirements
+    configuration: QualityComponentConfiguration
+
+    def evaluate(self, context: QualityContext, content: str) -> StrategyResult: ...
+
+
+class ArtifactNormalizer(Protocol):
+    name: str
+    version: str
+    configuration: QualityComponentConfiguration
+
+    def propose(self, context: QualityContext, content: str) -> NormalizationProposal: ...
+
+
+class QualityStrategyCatalog(Protocol):
+    def require(self, names: list[str]) -> tuple[QualityStrategy, ...]: ...
+
+    def normalizers(self) -> tuple[ArtifactNormalizer, ...]: ...
 
 
 class WorkflowRunner(Protocol):

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from harness.domain.quality.city_opening_rewards import (
+from harness.infrastructure.quality.packs.city_opening_rewards.remediation import (
     _deterministically_enrich_artifact,
+)
+from harness.infrastructure.quality.packs.city_opening_rewards.validators import (
     _quality_check,
 )
 from harness.infrastructure.workflow.engine import default_recorded_artifact

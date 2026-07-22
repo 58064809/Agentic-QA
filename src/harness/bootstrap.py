@@ -7,13 +7,16 @@ from harness.application.model_port import ModelGateway
 from harness.application.ports import CheckpointProvider
 from harness.application.use_cases import HarnessApplication
 from harness.domain.budget import BudgetLimits
-from harness.domain.quality import QualityPolicyRegistry
-from harness.domain.quality.city_policy import CityOpeningRewardsPolicy
-from harness.domain.quality.generic import GenericArtifactPolicy
 from harness.infrastructure.llm.gateway import model_gateway_from_env
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.persistence.filesystem import FilesystemStore
 from harness.infrastructure.persistence.postgres_checkpoint import PostgresCheckpointProvider
+from harness.infrastructure.quality import QualityStrategyRegistry
+from harness.infrastructure.quality.generic import GenericArtifactStrategy
+from harness.infrastructure.quality.normalization import SafeMarkdownNormalizer
+from harness.infrastructure.quality.packs.city_opening_rewards import (
+    CityOpeningRewardsStrategy,
+)
 from harness.infrastructure.workflow.engine import HarnessEngine
 from harness.infrastructure.workflow.runner import LangGraphWorkflowRunner
 
@@ -26,7 +29,7 @@ def build_application(
     agent_registry: AgentRegistry | None = None,
     skill_registry: SkillRegistry | None = None,
     tool_registry: ToolRegistry | None = None,
-    quality_policy_registry: QualityPolicyRegistry | None = None,
+    quality_strategy_registry: QualityStrategyRegistry | None = None,
     checkpoint_provider: CheckpointProvider | None = None,
     tool_handlers: dict[str, Any] | None = None,
 ) -> HarnessApplication:
@@ -34,11 +37,13 @@ def build_application(
     tools = tool_registry or ToolRegistry.builtin()
     skills = skill_registry or SkillRegistry.builtin()
     agents = agent_registry or AgentRegistry.builtin(skills=skills, tools=tools)
-    policies = quality_policy_registry or QualityPolicyRegistry()
-    if GenericArtifactPolicy.name not in policies.policies:
-        policies.register(GenericArtifactPolicy())
-    if CityOpeningRewardsPolicy.name not in policies.policies:
-        policies.register(CityOpeningRewardsPolicy())
+    policies = quality_strategy_registry or QualityStrategyRegistry()
+    if GenericArtifactStrategy.name not in policies.strategies:
+        policies.register(GenericArtifactStrategy())
+    if CityOpeningRewardsStrategy.name not in policies.strategies:
+        policies.register(CityOpeningRewardsStrategy())
+    if not policies.normalizers():
+        policies.register_normalizer(SafeMarkdownNormalizer())
     engine = HarnessEngine(
         store=store,
         agents=agents,

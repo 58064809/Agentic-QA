@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from typing import Any
 
 from harness.contracts import (
+    ArtifactVariant,
     CreateWorkspaceCommand,
     ExecutionProfile,
     ReviewDecision,
@@ -109,6 +110,10 @@ def run_offline_eval() -> dict[str, Any]:
                 quality_policies=["city-opening-rewards"],
             )
         )
+        (workspace / "sources/eval-scope.md").write_text(
+            "# 离线评测范围\n\n本来源仅用于验证完整的候选、审核和发布链路。\n",
+            encoding="utf-8",
+        )
         workspace.joinpath("workspace.yml").write_text(
             """schema_version: agentic-qa.harness.workspace.v2
 id: offline-eval
@@ -144,6 +149,10 @@ execution:
                     target_artifact="all",
                     reason="offline deterministic eval",
                     reviewed_by="recorded_qa_owner",
+                    versions=[
+                        candidate.version_ref(ArtifactVariant.RAW)
+                        for candidate in snapshot.candidates
+                    ],
                 ),
             ),
         )

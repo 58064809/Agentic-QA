@@ -12,7 +12,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from harness.application.model_port import ModelGateway, ModelPolicy
 from harness.application.ports import CheckpointProvider
+from harness.application.quality import QualityContext
 from harness.application.review_service import apply_review
+from harness.application.source import SourceBundle
 from harness.domain.budget import Budget, BudgetExceeded, BudgetLimits
 from harness.domain.models import (
     ArtifactCandidate,
@@ -24,21 +26,16 @@ from harness.domain.models import (
     RunSnapshot,
     StartRunCommand,
 )
-from harness.domain.quality import QualityContext, QualityPolicyRegistry
 from harness.domain.review import validate_review_decision
 from harness.domain.security import sanitize_untrusted
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.persistence.filesystem import FilesystemStore
+from harness.infrastructure.quality import QualityStrategyRegistry
+from harness.infrastructure.quality.assessment import CandidateAssessmentService
 from harness.infrastructure.tools.runtime import ToolRuntime
 from harness.infrastructure.workflow.graph import HarnessState, compile_harness_graph
 
 UTC = timezone.utc
-
-
-class QualityPolicyRejected(ValueError):
-    def __init__(self, message: str, audit: list[dict[str, Any]]) -> None:
-        super().__init__(message)
-        self.audit = audit
 
 
 class ToolRequest(BaseModel):
@@ -280,7 +277,7 @@ class HarnessEngine:
         agents: AgentRegistry,
         skills: SkillRegistry,
         tools: ToolRegistry,
-        quality_policies: QualityPolicyRegistry,
+        quality_policies: QualityStrategyRegistry,
         checkpoint_provider: CheckpointProvider,
         model: ModelGateway | None,
         limits: BudgetLimits | None = None,
@@ -291,6 +288,7 @@ class HarnessEngine:
         self.skills = skills
         self.tools = tools
         self.quality_policies = quality_policies
+        self.assessment = CandidateAssessmentService(quality_policies)
         self.checkpoint_provider = checkpoint_provider
         self.model = model
         self.model_policy = ModelPolicy()
@@ -319,6 +317,7 @@ class HarnessEngine:
             request=request,
         )
         self.store.create_run(snapshot)
+        self.store.create_source_bundle(snapshot.workspace_id, snapshot.run_id)
         active_handlers = self.tool_handlers if tool_handlers is None else tool_handlers
         self._freeze_external_tool_snapshots(snapshot, active_handlers)
         initial: HarnessState = {
@@ -434,7 +433,8 @@ class HarnessEngine:
                 status=payload.get("status"),
             ),
         )
-        nodes = self._nodes(snapshot, budget, runtime, model_usage, event)
+        source_bundle = self.store.load_source_bundle(snapshot.workspace_id, snapshot.run_id)
+        nodes = self._nodes(snapshot, budget, runtime, model_usage, event, source_bundle)
         config = {
             "configurable": {
                 "thread_id": f"{snapshot.workspace_id}:{snapshot.run_id}",
@@ -466,6 +466,12 @@ class HarnessEngine:
             event("budget_exceeded", error=str(exc))
             return snapshot
         except Exception as exc:
+            if isinstance(graph_input, Command) and snapshot.status == "needs_human_review":
+                event(
+                    "review_rejected",
+                    error=f"{type(exc).__name__}: {str(exc)[:500]}",
+                )
+                raise
             snapshot.status = "recoverable"
             message = f"{type(exc).__name__}: {str(exc)[:500]}"
             if message not in snapshot.errors:
@@ -485,6 +491,7 @@ class HarnessEngine:
         runtime: ToolRuntime,
         model_usage: _ModelUsageTracker,
         event: Any,
+        source_bundle: SourceBundle,
     ) -> dict[str, Any]:
         request = snapshot.request
 
@@ -585,6 +592,7 @@ class HarnessEngine:
                     runtime=runtime,
                     model_usage=model_usage,
                     event=event,
+                    source_bundle=source_bundle,
                 )
                 result = {
                     "task_id": task.id,
@@ -630,13 +638,6 @@ class HarnessEngine:
                     if task_id not in completed:
                         completed.append(task_id)
                     for artifact, content in output.artifacts.items():
-                        self._evaluate_quality(
-                            workspace_id=request.workspace_id,
-                            run_id=snapshot.run_id,
-                            artifact=artifact,
-                            content=content,
-                            source_corpus="",
-                        )
                         if artifact not in request.expected_artifacts:
                             event(
                                 "task_output_accepted",
@@ -645,23 +646,76 @@ class HarnessEngine:
                                 output=artifact,
                             )
                             continue
-                        candidate = self.store.ensure_candidate(
+                        configured = (
+                            self.store.workspace_config(request.workspace_id).get(
+                                "quality_policies"
+                            )
+                            or []
+                        )
+                        strategy_names = ["generic-artifact-contracts", *configured]
+                        context = QualityContext(
+                            workspace_id=request.workspace_id,
+                            run_id=snapshot.run_id,
+                            artifact=artifact,
+                            source_bundle=source_bundle,
+                        )
+                        assessment_key = self.assessment.assessment_key(
+                            context=context,
+                            content=content,
+                            media_type="text/markdown",
+                            strategy_names=strategy_names,
+                        )
+                        stored = self.store.load_candidate(
                             workspace=request.workspace_id,
                             run_id=snapshot.run_id,
                             artifact=artifact,
-                            content=content,
-                            evidence=output.evidence,
                         )
+                        if stored is not None and stored.assessment_key == assessment_key:
+                            candidate, created = stored, False
+                        else:
+                            assessment = self.assessment.assess(
+                                context=context,
+                                content=content,
+                                media_type="text/markdown",
+                                strategy_names=strategy_names,
+                            )
+                            candidate, created = self.store.commit_candidate(
+                                workspace=request.workspace_id,
+                                run_id=snapshot.run_id,
+                                artifact=artifact,
+                                assessment=assessment,
+                                evidence=output.evidence,
+                            )
                         if artifact not in {item["artifact"] for item in candidates}:
                             candidates.append(candidate.model_dump(mode="json"))
                         review_status[artifact] = "needs_human_review"
-                        event(
-                            "candidate_written",
-                            task_id=task_id,
-                            agent=result["agent"],
-                            artifact=artifact,
-                            path=candidate.path,
+                        needs_quality_event = created or not self.store.has_assessment_event(
+                            request.workspace_id,
+                            snapshot.run_id,
+                            candidate.assessment_key or "",
                         )
+                        if needs_quality_event:
+                            report = self.store.load_quality_report(candidate)
+                            event(
+                                "artifact_quality_evaluated",
+                                task_id=task_id,
+                                agent=result["agent"],
+                                artifact=artifact,
+                                assessment_key=candidate.assessment_key,
+                                source_bundle_hash=candidate.source_bundle_hash,
+                                policy_versions=candidate.policy_versions,
+                                publishable_variants=[
+                                    item.variant.value for item in report.variants if item.passed
+                                ],
+                            )
+                        if created:
+                            event(
+                                "candidate_written",
+                                task_id=task_id,
+                                agent=result["agent"],
+                                artifact=artifact,
+                                path=candidate.path,
+                            )
                 else:
                     budget.consume_replan()
                     plan = plan.model_copy(
@@ -712,7 +766,13 @@ class HarnessEngine:
                         {
                             "artifact": item["artifact"],
                             "path": item["path"],
-                            "quality_passed": item["quality_passed"],
+                            "publishable_variants": [
+                                version.variant.value
+                                for version in ArtifactCandidate.model_validate(item).versions
+                                if self.store.load_quality_report(
+                                    ArtifactCandidate.model_validate(item)
+                                ).verdict_for(version.variant)
+                            ],
                         }
                         for item in state.get("candidates", [])
                     ],
@@ -801,6 +861,7 @@ class HarnessEngine:
         runtime: ToolRuntime,
         model_usage: _ModelUsageTracker,
         event: Any,
+        source_bundle: SourceBundle,
     ) -> AgentOutput:
         if self.model is None:
             raise RuntimeError("model is not configured")
@@ -812,9 +873,7 @@ class HarnessEngine:
         validation_feedback: list[dict[str, str]] = []
         artifact_repair_attempts = 0
         structured_output_attempts = 0
-        source_items = self.store.source_texts(request.workspace_id)
-        source_files = [path for path, _content in source_items]
-        source_corpus = "\n".join(content for _path, content in source_items)
+        source_files = [document.path for document in source_bundle.readable_documents]
         if (
             source_files
             and manifest.name in SOURCE_PREFETCH_AGENTS
@@ -925,7 +984,6 @@ class HarnessEngine:
                     )
                     tool_results.append({"tool": call.tool, "result": value})
                 continue
-            enrichments: list[dict[str, Any]] = []
             try:
                 unexpected = set(result.artifacts) - set(task.expected_outputs)
                 if unexpected:
@@ -948,26 +1006,8 @@ class HarnessEngine:
                     raise ValueError(
                         "requirement_analyst must read or retrieve workspace sources before output"
                     )
-                for artifact, content in list(result.artifacts.items()):
-                    enriched, policy_audit = self._evaluate_quality(
-                        workspace_id=request.workspace_id,
-                        run_id=run_id,
-                        artifact=artifact,
-                        content=content,
-                        source_corpus=source_corpus,
-                    )
-                    result.artifacts[artifact] = enriched
-                    enrichments.extend(policy_audit)
             except ValueError as exc:
                 error = str(exc)[:500]
-                if isinstance(exc, QualityPolicyRejected):
-                    for item in exc.audit:
-                        event(
-                            "artifact_quality_policy_rejected",
-                            task_id=task.id,
-                            agent=manifest.name,
-                            **item,
-                        )
                 artifact_repair_attempts += 1
                 validation_feedback.append(
                     {
@@ -992,13 +1032,6 @@ class HarnessEngine:
                         f"artifact validation failed after {MAX_ARTIFACT_REPAIRS} attempts: {error}"
                     ) from exc
                 continue
-            for enrichment in enrichments:
-                event(
-                    "artifact_quality_policy_applied",
-                    task_id=task.id,
-                    agent=manifest.name,
-                    **enrichment,
-                )
             return result
         raise RuntimeError(f"agent step limit exceeded: {manifest.name}")
 
@@ -1054,6 +1087,11 @@ class HarnessEngine:
 
     def _ensure_partial_candidates(self, snapshot: RunSnapshot) -> None:
         existing = {candidate.artifact for candidate in snapshot.candidates}
+        source_bundle = self.store.load_source_bundle(snapshot.workspace_id, snapshot.run_id)
+        configured = (
+            self.store.workspace_config(snapshot.workspace_id).get("quality_policies") or []
+        )
+        strategy_names = ["generic-artifact-contracts", *configured]
         for artifact in snapshot.request.expected_artifacts:
             if artifact in existing:
                 continue
@@ -1063,75 +1101,34 @@ class HarnessEngine:
                 artifact=artifact,
             )
             if stored is not None:
-                content = (self.store.repo_root / stored.path).read_text(encoding="utf-8")
-                try:
-                    self._evaluate_quality(
-                        workspace_id=snapshot.workspace_id,
-                        run_id=snapshot.run_id,
-                        artifact=artifact,
-                        content=content,
-                        source_corpus="",
-                    )
-                except ValueError:
-                    stored = stored.model_copy(
-                        update={"status": "partial", "quality_passed": False}
-                    )
+                stored = stored.model_copy(update={"status": "partial"})
                 snapshot.candidates.append(stored)
                 snapshot.review_status[artifact] = "needs_human_review"
                 existing.add(artifact)
                 continue
-            candidate = self.store.ensure_candidate(
+            content = default_recorded_artifact(artifact, snapshot.request.goal)
+            context = QualityContext(
+                workspace_id=snapshot.workspace_id,
+                run_id=snapshot.run_id,
+                artifact=artifact,
+                source_bundle=source_bundle,
+            )
+            assessment = self.assessment.assess(
+                context=context,
+                content=content,
+                media_type="text/markdown",
+                strategy_names=strategy_names,
+            )
+            candidate, _created = self.store.commit_candidate(
                 workspace=snapshot.workspace_id,
                 run_id=snapshot.run_id,
                 artifact=artifact,
-                content=default_recorded_artifact(artifact, snapshot.request.goal),
+                assessment=assessment,
                 partial=True,
                 evidence=[],
             )
             snapshot.candidates.append(candidate)
             snapshot.review_status[artifact] = "needs_human_review"
-
-    def _evaluate_quality(
-        self,
-        *,
-        workspace_id: str,
-        run_id: str,
-        artifact: str,
-        content: str,
-        source_corpus: str,
-    ) -> tuple[str, list[dict[str, Any]]]:
-        configured = self.store.workspace_config(workspace_id).get("quality_policies") or []
-        policies = self.quality_policies.require(["generic-artifact-contracts", *configured])
-        current = content
-        audit: list[dict[str, Any]] = []
-        for policy in policies:
-            result = policy.evaluate(
-                QualityContext(
-                    workspace_id=workspace_id,
-                    run_id=run_id,
-                    artifact=artifact,
-                    source_corpus=source_corpus,
-                ),
-                current,
-            )
-            item = {
-                "policy": policy.name,
-                "policy_version": policy.version,
-                "action": "reject"
-                if result.issues
-                else ("revise" if result.content != current else "validate"),
-                "reasons": [issue.message for issue in result.issues],
-                "rules": list(result.actions),
-                "content_changed": result.content != current,
-            }
-            audit.append(item)
-            if result.issues:
-                raise QualityPolicyRejected(
-                    "; ".join(issue.message for issue in result.issues),
-                    audit,
-                )
-            current = result.content
-        return current, audit
 
 
 def _is_invalid_structured_output(exc: RuntimeError) -> bool:

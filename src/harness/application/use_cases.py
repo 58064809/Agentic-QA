@@ -3,7 +3,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
-from harness.application.ports import RunEventRepository, WorkflowRunner, WorkspaceRepository
+from harness.application.ports import (
+    QualityStrategyCatalog,
+    RunEventRepository,
+    WorkflowRunner,
+    WorkspaceRepository,
+)
 from harness.domain.models import (
     CreateWorkspaceCommand,
     HarnessEvent,
@@ -13,7 +18,6 @@ from harness.domain.models import (
     RunSnapshot,
     StartRunCommand,
 )
-from harness.domain.quality import QualityPolicyRegistry
 
 
 class HarnessApplication:
@@ -23,7 +27,7 @@ class HarnessApplication:
         workspaces: WorkspaceRepository,
         runs: RunEventRepository,
         workflow: WorkflowRunner,
-        quality_policies: QualityPolicyRegistry,
+        quality_policies: QualityStrategyCatalog,
     ) -> None:
         self._workspaces = workspaces
         self._runs = runs

@@ -17,6 +17,10 @@ from harness.testing.evals import recorded_model_gateway
 def _runtime(tmp_path: Path):
     harness = Harness(tmp_path, model_gateway=recorded_model_gateway())
     workspace = harness.create_workspace(CreateWorkspaceCommand(workspace_id="demo"))
+    (workspace / "sources/requirement.md").write_text(
+        "登录连续失败五次后锁定账号。",
+        encoding="utf-8",
+    )
     snapshot = harness.start_run(
         StartRunCommand(
             workspace_id="demo",
@@ -40,8 +44,7 @@ def _runtime(tmp_path: Path):
 def test_rag_returns_traceable_chunks_and_workspace_read_is_isolated(tmp_path: Path) -> None:
     _, workspace, snapshot, runtime = _runtime(tmp_path)
     (workspace / "sources/requirement.md").write_text(
-        "登录连续失败五次后锁定账号。",
-        encoding="utf-8",
+        "run 启动后被修改，不应进入已冻结的检索输入。", encoding="utf-8"
     )
     result = runtime.call(
         workspace="demo",
