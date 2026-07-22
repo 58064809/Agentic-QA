@@ -2,11 +2,14 @@
 
 from harness.contracts import (
     AgentManifest,
+    ArtifactDiffEndpoint,
+    ArtifactDiffResult,
     ArtifactVariant,
     ArtifactVersionRef,
     CreateWorkspaceCommand,
     EvidenceRequirement,
     ExecutionProfile,
+    GetArtifactDiffQuery,
     HarnessEvent,
     PlanTask,
     QAPlan,
@@ -24,6 +27,8 @@ from harness.harness import Harness
 
 __all__ = [
     "AgentManifest",
+    "ArtifactDiffEndpoint",
+    "ArtifactDiffResult",
     "ArtifactVariant",
     "ArtifactVersionRef",
     "CreateWorkspaceCommand",
@@ -31,6 +36,7 @@ __all__ = [
     "ExecutionProfile",
     "Harness",
     "HarnessEvent",
+    "GetArtifactDiffQuery",
     "PlanTask",
     "QAPlan",
     "ResumeRunCommand",

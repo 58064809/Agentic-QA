@@ -6,8 +6,10 @@ from pathlib import Path
 import pytest
 
 from harness import (
+    ArtifactDiffEndpoint,
     ArtifactVariant,
     CreateWorkspaceCommand,
+    GetArtifactDiffQuery,
     Harness,
     ResumeRunCommand,
     ReviewDecision,
@@ -181,3 +183,55 @@ def test_promote_rechecks_selected_content_hash(tmp_path: Path) -> None:
     current = harness.get_run(RunRef(workspace_id="demo", run_id=snapshot.run_id))
     assert current.status == "needs_human_review"
     assert not (tmp_path / "workspaces/demo/published/testcases/current.md").exists()
+
+
+def test_hold_writes_review_record_event_and_snapshot(tmp_path: Path) -> None:
+    harness = _harness(tmp_path)
+    workspace = _create(harness)
+    snapshot = harness.start_run(StartRunCommand(workspace_id="demo", goal="test hold"))
+
+    held = harness.review_run(
+        ReviewRunCommand(
+            workspace_id="demo",
+            run_id=snapshot.run_id,
+            decision=ReviewDecision(
+                intent="hold",
+                target_artifact="testcases",
+                reason="等待产品确认",
+                reviewed_by="qa_owner",
+            ),
+        )
+    )
+
+    assert held.status == "on_hold"
+    assert held.review_status["testcases"] == "on_hold"
+    record = json.loads(
+        (workspace / f"reviews/{snapshot.run_id}/testcases.review.json").read_text(encoding="utf-8")
+    )
+    assert record["status"] == "on_hold"
+    assert record["decision"]["reviewed_by"] == "qa_owner"
+    assert "review_held" in (workspace / f"runs/{snapshot.run_id}/events.jsonl").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_artifact_diff_query_has_no_review_side_effects(tmp_path: Path) -> None:
+    harness = _harness(tmp_path)
+    workspace = _create(harness)
+    snapshot = harness.start_run(StartRunCommand(workspace_id="demo", goal="test diff"))
+    before = (workspace / f"runs/{snapshot.run_id}/state.json").read_bytes()
+    review_root = workspace / f"reviews/{snapshot.run_id}"
+
+    result = harness.get_artifact_diff(
+        GetArtifactDiffQuery(
+            workspace_id="demo",
+            run_id=snapshot.run_id,
+            artifact="testcases",
+            before=ArtifactDiffEndpoint.RAW,
+            after=ArtifactDiffEndpoint.NORMALIZED,
+        )
+    )
+
+    assert result.before_sha256 != result.after_sha256
+    assert not list(review_root.glob("*.review.json"))
+    assert (workspace / f"runs/{snapshot.run_id}/state.json").read_bytes() == before

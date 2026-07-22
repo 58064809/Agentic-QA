@@ -10,7 +10,9 @@ from harness.application.use_cases import HarnessApplication
 from harness.bootstrap import build_application
 from harness.domain.budget import BudgetLimits
 from harness.domain.models import (
+    ArtifactDiffResult,
     CreateWorkspaceCommand,
+    GetArtifactDiffQuery,
     HarnessEvent,
     ResumeRunCommand,
     ReviewRunCommand,
@@ -62,6 +64,9 @@ class Harness:
 
     def get_run(self, ref: RunRef) -> RunSnapshot:
         return self._application.get_run(ref)
+
+    def get_artifact_diff(self, query: GetArtifactDiffQuery) -> ArtifactDiffResult:
+        return self._application.get_artifact_diff(query)
 
     def resume_run(self, command: ResumeRunCommand) -> RunSnapshot:
         return self._application.resume_run(command)

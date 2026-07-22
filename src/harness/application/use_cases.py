@@ -4,13 +4,16 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from harness.application.ports import (
+    ArtifactReviewRepository,
     QualityStrategyCatalog,
     RunEventRepository,
     WorkflowRunner,
     WorkspaceRepository,
 )
 from harness.domain.models import (
+    ArtifactDiffResult,
     CreateWorkspaceCommand,
+    GetArtifactDiffQuery,
     HarnessEvent,
     ResumeRunCommand,
     ReviewRunCommand,
@@ -28,11 +31,13 @@ class HarnessApplication:
         runs: RunEventRepository,
         workflow: WorkflowRunner,
         quality_policies: QualityStrategyCatalog,
+        artifacts: ArtifactReviewRepository | None = None,
     ) -> None:
         self._workspaces = workspaces
         self._runs = runs
         self._workflow = workflow
         self._quality_policies = quality_policies
+        self._artifacts = artifacts
 
     def create_workspace(self, command: CreateWorkspaceCommand) -> Path:
         self._quality_policies.require(command.quality_policies)
@@ -52,6 +57,11 @@ class HarnessApplication:
     def get_run(self, ref: RunRef) -> RunSnapshot:
         return self._runs.load_snapshot(ref.workspace_id, ref.run_id)
 
+    def get_artifact_diff(self, query: GetArtifactDiffQuery) -> ArtifactDiffResult:
+        if self._artifacts is None:
+            raise RuntimeError("artifact query repository is not configured")
+        return self._artifacts.get_artifact_diff(query)
+
     def resume_run(self, command: ResumeRunCommand) -> RunSnapshot:
         snapshot = self._runs.load_snapshot(command.workspace_id, command.run_id)
         if snapshot.status not in {"planning", "running", "recoverable"}:
@@ -63,6 +73,6 @@ class HarnessApplication:
 
     def review_run(self, command: ReviewRunCommand) -> RunSnapshot:
         snapshot = self._runs.load_snapshot(command.workspace_id, command.run_id)
-        if snapshot.status not in {"needs_human_review", "partial"}:
+        if snapshot.status not in {"needs_human_review", "partial", "on_hold"}:
             raise ValueError(f"run 当前状态不可审核: {snapshot.status}")
         return self._workflow.review(snapshot, command.decision)

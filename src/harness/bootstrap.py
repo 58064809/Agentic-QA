@@ -61,4 +61,5 @@ def build_application(
         runs=store,
         workflow=workflow,
         quality_policies=policies,
+        artifacts=store,
     )

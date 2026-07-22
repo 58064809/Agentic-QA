@@ -1,7 +1,8 @@
 # Harness v2 公开契约
 
-公开入口保持六个同步方法：`create_workspace`、`start_run`、`stream_run`、`get_run`、
-`resume_run` 和 `review_run`。所有 run 操作显式携带 `workspace_id + run_id`；控制面 Schema 使用
+公开入口包含七个同步方法：`create_workspace`、`start_run`、`stream_run`、`get_run`、
+`get_artifact_diff`、`resume_run` 和 `review_run`。Diff 是显式 before/after 的只读查询，不属于
+ReviewDecision。所有 run 操作显式携带 `workspace_id + run_id`；控制面 Schema 使用
 `agentic-qa.harness.*.v2`，API cases 独立保持 `agentic-qa.api-cases.v1.1`。
 
 `ArtifactCandidate` 保存 raw 主路径、可用 ArtifactVersion、assessment key、source bundle hash、

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 import os
@@ -17,7 +18,10 @@ from harness.application.quality import ArtifactVariant, CandidateAssessment, Qu
 from harness.domain.models import (
     ApprovedArtifactVersion,
     ArtifactCandidate,
+    ArtifactDiffEndpoint,
+    ArtifactDiffResult,
     ArtifactVersion,
+    GetArtifactDiffQuery,
     RunSnapshot,
 )
 from harness.infrastructure.persistence.common import atomic_bytes, atomic_json, atomic_text
@@ -181,6 +185,54 @@ class ArtifactReviewFilesystemRepository:
             / f"{artifact}.review.json"
         )
         atomic_json(path, payload)
+
+    def get_artifact_diff(self, query: GetArtifactDiffQuery) -> ArtifactDiffResult:
+        before_text, before_hash = self._resolve_diff_endpoint(query, query.before)
+        after_text, after_hash = self._resolve_diff_endpoint(query, query.after)
+        value = "\n".join(
+            difflib.unified_diff(
+                before_text.splitlines(),
+                after_text.splitlines(),
+                fromfile=query.before.value,
+                tofile=query.after.value,
+                lineterm="",
+            )
+        )
+        truncated = len(value) > 100_000
+        return ArtifactDiffResult(
+            artifact=query.artifact,
+            before=query.before,
+            after=query.after,
+            before_sha256=before_hash,
+            after_sha256=after_hash,
+            diff=value[:100_000],
+            truncated=truncated,
+        )
+
+    def _resolve_diff_endpoint(
+        self, query: GetArtifactDiffQuery, endpoint: ArtifactDiffEndpoint
+    ) -> tuple[str, str]:
+        workspace = self.workspaces.require_workspace(query.workspace_id)
+        if endpoint == ArtifactDiffEndpoint.PUBLISHED:
+            matches = list((workspace / "published" / query.artifact).glob("current.*"))
+            if len(matches) != 1 or not matches[0].is_file():
+                raise FileNotFoundError(f"published current 不存在: {query.artifact}")
+            content = matches[0].read_bytes()
+        else:
+            candidate = self.load_candidate(
+                workspace=query.workspace_id, run_id=query.run_id, artifact=query.artifact
+            )
+            if candidate is None:
+                raise FileNotFoundError(f"candidate 不存在: {query.artifact}")
+            variant = ArtifactVariant(endpoint.value)
+            selected = next((item for item in candidate.versions if item.variant == variant), None)
+            if selected is None:
+                raise ValueError(f"candidate variant 不存在: {endpoint.value}")
+            path = (self.repo_root / selected.path).resolve()
+            content = path.read_bytes()
+            if _sha256_bytes(content) != selected.content_sha256:
+                raise ValueError("candidate diff endpoint hash 不匹配")
+        return content.decode("utf-8"), _sha256_bytes(content)
 
     def promote_many(
         self,

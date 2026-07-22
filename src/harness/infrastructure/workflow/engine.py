@@ -365,7 +365,7 @@ class HarnessEngine:
         *,
         tool_handlers: dict[str, Any] | None = None,
     ) -> RunSnapshot:
-        if snapshot.status == "partial":
+        if snapshot.status in {"partial", "on_hold"}:
             if decision is None:
                 return snapshot
             return apply_review(self.store, snapshot, decision)
@@ -785,12 +785,6 @@ class HarnessEngine:
             current = self._snapshot_from_state(snapshot, state, budget, interrupt_value=None)
             decision = ReviewDecision.model_validate(state["review_decision"])
             reviewed = apply_review(self.store, current, decision)
-            event(
-                "review_applied",
-                decision=decision.intent.value,
-                target=decision.target_artifact,
-                status=reviewed.status,
-            )
             return {
                 "status": reviewed.status,
                 "review_status": reviewed.review_status,

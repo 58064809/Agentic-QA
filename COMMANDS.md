@@ -14,10 +14,13 @@ agentic-qa run start <workspace_id> "<测试目标>" `
 
 agentic-qa run get <workspace_id> <run_id>
 agentic-qa run resume <workspace_id> <run_id>
-agentic-qa run review <workspace_id> <run_id> <approve|reject|revise|hold|show_diff> `
+agentic-qa run review <workspace_id> <run_id> <approve|reject|revise|hold> `
   [--artifact <artifact|all>] [--variant <artifact=raw|artifact=normalized>] `
   --reason "<人工决定原因>" --reviewed-by <审核人> `
   [--revision-request "<修订要求>"]
+
+agentic-qa run diff <workspace_id> <run_id> <artifact> `
+  --before <published|raw|normalized> --after <published|raw|normalized>
 
 agentic-qa eval run
 ```

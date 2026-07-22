@@ -4,7 +4,7 @@ from harness.domain.models import ReviewDecision, ReviewIntent, RunSnapshot
 
 
 def validate_review_decision(snapshot: RunSnapshot, decision: ReviewDecision) -> list[str]:
-    if snapshot.status not in {"needs_human_review", "partial"}:
+    if snapshot.status not in {"needs_human_review", "partial", "on_hold"}:
         raise ValueError(f"run 当前状态不可审核: {snapshot.status}")
     artifacts = [candidate.artifact for candidate in snapshot.candidates]
     if len(artifacts) > 1 and not decision.target_artifact:

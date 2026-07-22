@@ -16,7 +16,9 @@ from harness.application.source import SourceBundle
 from harness.domain.models import (
     ApprovedArtifactVersion,
     ArtifactCandidate,
+    ArtifactDiffResult,
     ExecutionProfile,
+    GetArtifactDiffQuery,
     HarnessEvent,
     ReviewDecision,
     RunSnapshot,
@@ -37,8 +39,13 @@ class RunEventRepository(Protocol):
 
     def save_snapshot(self, snapshot: RunSnapshot) -> None: ...
 
+    def next_event_sequence(self, workspace: str, run_id: str) -> int: ...
+
+    def append_event(self, workspace: str, event: HarnessEvent) -> None: ...
+
 
 class ArtifactReviewRepository(Protocol):
+    def get_artifact_diff(self, query: GetArtifactDiffQuery) -> ArtifactDiffResult: ...
     def promote_many(
         self, snapshot: RunSnapshot, versions: list[ApprovedArtifactVersion]
     ) -> dict[str, str]: ...

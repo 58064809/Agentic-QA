@@ -6,6 +6,7 @@ from harness.application.ports import ArtifactReviewRepository, RunEventReposito
 from harness.application.quality import QualityReport
 from harness.domain.models import (
     ApprovedArtifactVersion,
+    HarnessEvent,
     ReviewDecision,
     ReviewIntent,
     RunSnapshot,
@@ -26,12 +27,14 @@ def apply_review(
 ) -> RunSnapshot:
     targets = validate_review_decision(snapshot, decision)
     artifacts = [candidate.artifact for candidate in snapshot.candidates]
-    if decision.intent in {ReviewIntent.HOLD, ReviewIntent.SHOW_DIFF}:
-        return snapshot
-
     reviewed_at = datetime.now(tz=UTC).isoformat()
     approved_by_artifact: dict[str, ApprovedArtifactVersion] = {}
-    if decision.intent == ReviewIntent.APPROVE:
+    if decision.intent == ReviewIntent.HOLD:
+        for artifact in targets:
+            snapshot.review_status[artifact] = "on_hold"
+        snapshot.status = "on_hold"
+        record_status = "on_hold"
+    elif decision.intent == ReviewIntent.APPROVE:
         requested = {item.artifact: item for item in decision.versions}
         for artifact in targets:
             candidate = next(item for item in snapshot.candidates if item.artifact == artifact)
@@ -95,4 +98,19 @@ def apply_review(
             },
         )
     store.save_snapshot(snapshot)
+    store.append_event(
+        snapshot.workspace_id,
+        HarnessEvent(
+            sequence=store.next_event_sequence(snapshot.workspace_id, snapshot.run_id),
+            run_id=snapshot.run_id,
+            type="review_held" if decision.intent == ReviewIntent.HOLD else "review_applied",
+            data={
+                "decision": decision.intent.value,
+                "target": decision.target_artifact,
+                "reviewed_by": decision.reviewed_by,
+                "reason": decision.reason,
+                "status": snapshot.status,
+            },
+        ),
+    )
     return snapshot

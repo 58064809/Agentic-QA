@@ -8,8 +8,10 @@ from harness.application.source import SourceBundle, SourceIngestionLimits
 from harness.domain.models import (
     ApprovedArtifactVersion,
     ArtifactCandidate,
+    ArtifactDiffResult,
     ExecutionEnvironmentPolicy,
     ExecutionProfile,
+    GetArtifactDiffQuery,
     HarnessEvent,
     RunSnapshot,
 )
@@ -96,6 +98,9 @@ class FilesystemStore:
 
     def load_quality_report(self, candidate: ArtifactCandidate) -> QualityReport:
         return self.artifacts.load_quality_report(candidate)
+
+    def get_artifact_diff(self, query: GetArtifactDiffQuery) -> ArtifactDiffResult:
+        return self.artifacts.get_artifact_diff(query)
 
     def write_review(self, snapshot: RunSnapshot, artifact: str, payload: dict[str, Any]) -> None:
         self.artifacts.write_review(snapshot, artifact, payload)

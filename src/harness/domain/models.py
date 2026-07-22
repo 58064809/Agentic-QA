@@ -310,6 +310,7 @@ RunStatus = Literal[
     "published",
     "failed",
     "recoverable",
+    "on_hold",
 ]
 
 
@@ -342,7 +343,22 @@ class ReviewIntent(str, Enum):
     REJECT = "reject"
     REVISE = "revise"
     HOLD = "hold"
-    SHOW_DIFF = "show_diff"
+
+
+class ArtifactDiffEndpoint(str, Enum):
+    PUBLISHED = "published"
+    RAW = "raw"
+    NORMALIZED = "normalized"
+
+
+class ArtifactDiffResult(StrictModel):
+    artifact: str
+    before: ArtifactDiffEndpoint
+    after: ArtifactDiffEndpoint
+    before_sha256: str
+    after_sha256: str
+    diff: str
+    truncated: bool = False
 
 
 class ReviewDecision(StrictModel):
@@ -396,6 +412,15 @@ class RunRef(StrictModel):
     @classmethod
     def normalize_id(cls, value: str) -> str:
         return normalize_workspace_id(value)
+
+
+class GetArtifactDiffQuery(RunRef):
+    schema_version: Literal["agentic-qa.harness.get-artifact-diff-query.v2"] = (
+        "agentic-qa.harness.get-artifact-diff-query.v2"
+    )
+    artifact: str
+    before: ArtifactDiffEndpoint
+    after: ArtifactDiffEndpoint
 
 
 class ResumeRunCommand(RunRef):

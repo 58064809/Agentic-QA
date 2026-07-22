@@ -6,10 +6,12 @@ import sys
 from pathlib import Path
 
 from harness import (
+    ArtifactDiffEndpoint,
     ArtifactVariant,
     ArtifactVersionRef,
     CreateWorkspaceCommand,
     ExecutionProfile,
+    GetArtifactDiffQuery,
     Harness,
     ResumeRunCommand,
     ReviewDecision,
@@ -64,6 +66,17 @@ def _parser() -> argparse.ArgumentParser:
         action="append",
         dest="variants",
         help="要批准的版本，格式为 artifact=raw 或 artifact=normalized",
+    )
+
+    diff = run_commands.add_parser("diff")
+    diff.add_argument("workspace_id")
+    diff.add_argument("run_id")
+    diff.add_argument("artifact")
+    diff.add_argument(
+        "--before", required=True, choices=[item.value for item in ArtifactDiffEndpoint]
+    )
+    diff.add_argument(
+        "--after", required=True, choices=[item.value for item in ArtifactDiffEndpoint]
     )
 
     evaluate = commands.add_parser("eval")
@@ -174,6 +187,18 @@ def main(argv: list[str] | None = None) -> int:
                             reviewed_by=args.reviewed_by,
                             versions=_review_versions(harness, args),
                         ),
+                    )
+                )
+            )
+        elif args.command == "run" and args.run_command == "diff":
+            _print(
+                harness.get_artifact_diff(
+                    GetArtifactDiffQuery(
+                        workspace_id=args.workspace_id,
+                        run_id=args.run_id,
+                        artifact=args.artifact,
+                        before=args.before,
+                        after=args.after,
                     )
                 )
             )
