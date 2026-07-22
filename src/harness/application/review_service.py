@@ -38,7 +38,11 @@ def apply_review(
         requested = {item.artifact: item for item in decision.versions}
         for artifact in targets:
             candidate = next(item for item in snapshot.candidates if item.artifact == artifact)
-            if not candidate.assessment_key or not candidate.quality_report_sha256:
+            if (
+                not candidate.provenance_complete
+                or not candidate.assessment_key
+                or not candidate.quality_report_sha256
+            ):
                 raise PermissionError("旧 candidate 缺少质量 provenance，不能批准")
             selected = requested[artifact]
             version = next(
@@ -62,7 +66,6 @@ def apply_review(
             approved_by_artifact[artifact] = ApprovedArtifactVersion(
                 **selected.model_dump(), path=version.path
             )
-        store.promote_many(snapshot, list(approved_by_artifact.values()))
         for artifact in targets:
             snapshot.review_status[artifact] = "confirmed"
         if all(snapshot.review_status.get(artifact) == "confirmed" for artifact in artifacts):
@@ -79,38 +82,42 @@ def apply_review(
         snapshot.status = "needs_revision"
         record_status = "needs_revision"
 
-    for artifact in targets:
-        store.write_review(
-            snapshot,
-            artifact,
-            {
-                "schema_version": "agentic-qa.harness.review-record.v2",
-                "run_id": snapshot.run_id,
-                "artifact": artifact,
-                "status": record_status,
-                "decision": decision.model_dump(mode="json"),
-                "approved_version": (
-                    approved_by_artifact[artifact].model_dump(mode="json")
-                    if artifact in approved_by_artifact
-                    else None
-                ),
-                "reviewed_at": reviewed_at,
-            },
+    review_records = {
+        artifact: {
+            "schema_version": "agentic-qa.harness.review-record.v2",
+            "run_id": snapshot.run_id,
+            "artifact": artifact,
+            "status": record_status,
+            "decision": decision.model_dump(mode="json"),
+            "approved_version": (
+                approved_by_artifact[artifact].model_dump(mode="json")
+                if artifact in approved_by_artifact
+                else None
+            ),
+            "reviewed_at": reviewed_at,
+        }
+        for artifact in targets
+    }
+    if decision.intent == ReviewIntent.APPROVE:
+        store.publish_review(snapshot, list(approved_by_artifact.values()), review_records)
+    else:
+        for artifact, payload in review_records.items():
+            store.write_review(snapshot, artifact, payload)
+        store.save_snapshot(snapshot)
+    if decision.intent != ReviewIntent.APPROVE:
+        store.append_event(
+            snapshot.workspace_id,
+            HarnessEvent(
+                sequence=store.next_event_sequence(snapshot.workspace_id, snapshot.run_id),
+                run_id=snapshot.run_id,
+                type="review_held" if decision.intent == ReviewIntent.HOLD else "review_applied",
+                data={
+                    "decision": decision.intent.value,
+                    "target": decision.target_artifact,
+                    "reviewed_by": decision.reviewed_by,
+                    "reason": decision.reason,
+                    "status": snapshot.status,
+                },
+            ),
         )
-    store.save_snapshot(snapshot)
-    store.append_event(
-        snapshot.workspace_id,
-        HarnessEvent(
-            sequence=store.next_event_sequence(snapshot.workspace_id, snapshot.run_id),
-            run_id=snapshot.run_id,
-            type="review_held" if decision.intent == ReviewIntent.HOLD else "review_applied",
-            data={
-                "decision": decision.intent.value,
-                "target": decision.target_artifact,
-                "reviewed_by": decision.reviewed_by,
-                "reason": decision.reason,
-                "status": snapshot.status,
-            },
-        ),
-    )
     return snapshot

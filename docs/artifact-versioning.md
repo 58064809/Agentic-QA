@@ -36,3 +36,7 @@ ArtifactCandidate 不保存 `quality_passed`。可发布性由质量报告针对
 
 PostgreSQL checkpoint 是执行恢复事实来源；state.json 是查询投影；source snapshot 冻结本 run 的
 实际输入；Candidate manifest 和 quality report 是审核与发布事实来源。这些职责不可互相替代。
+
+发布由 `reviews/<run_id>/publication-intent.json` 两阶段 Journal 协调。`preparing` 保存批准版本、
+Review Record、目标 Snapshot 和发布前备份；恢复时 provenance 有效则幂等补齐，无效则回滚。
+只有 history、current、Review Record 和 Snapshot 全部持久化后才标记 `committed`。

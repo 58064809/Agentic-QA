@@ -26,3 +26,6 @@ Reject 和 revise 不发布；修订必须创建新 run，不能覆盖原 Candid
 
 HOLD 写入审核记录和事件，Run 与目标审核投影进入 `on_hold`，但不改写不可变 Candidate。
 `show_diff` 不是审核意图；差异通过 `get_artifact_diff` 或 `run diff` 只读查询。
+
+Approve 使用 Publication Journal 协调 published history/current、Review Record 和 Run Snapshot；
+进程中断后会从 preparing 状态确定性完成或回滚，不会重复生成 history 条目。

@@ -557,6 +557,46 @@ def test_candidate_load_does_not_require_external_partial_or_evidence(tmp_path: 
     assert restored is not None and restored.partial is True
 
 
+def test_legacy_incomplete_v2_candidate_is_query_only(tmp_path: Path) -> None:
+    store, snapshot, candidate = _direct_promotion_fixture(tmp_path)
+    report_path = tmp_path / (candidate.quality_report_path or "")
+    legacy_report = {
+        "schema_version": "agentic-qa.harness.quality-report.v2",
+        "policy_versions": {"generic-artifact-contracts": "3.0.0"},
+    }
+    report_content = (json.dumps(legacy_report, ensure_ascii=False, indent=2) + "\n").encode()
+    report_path.write_bytes(report_content)
+    manifest_path = report_path.parent / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for field in (
+        "workspace_id",
+        "run_id",
+        "media_type",
+        "status",
+        "partial",
+        "evidence",
+        "policy_versions",
+        "created_at",
+    ):
+        manifest.pop(field)
+    manifest["files"]["quality-report.json"] = (
+        "sha256:" + hashlib.sha256(report_content).hexdigest()
+    )
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+    restored = store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
+
+    assert restored is not None
+    assert restored.status == "provenance_incomplete"
+    assert restored.partial is None and restored.evidence is None
+    assert not restored.provenance_complete
+    snapshot.candidates = [restored]
+    with pytest.raises(PermissionError):
+        store.promote_many(snapshot, [_approved(restored, ArtifactVariant.RAW)])
+
+
 def test_candidate_bundle_is_invisible_when_staging_write_fails(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -738,6 +778,105 @@ def test_direct_promote_rejects_variant_hash_mismatch(tmp_path: Path) -> None:
     snapshot.candidates = [reloaded]
     with pytest.raises(ValueError, match="hash"):
         store.promote_many(snapshot, [_approved(reloaded, ArtifactVariant.NORMALIZED)])
+
+
+def _publication_fixture(tmp_path: Path):
+    store, snapshot, candidate = _direct_promotion_fixture(tmp_path)
+    approved = _approved(candidate, ArtifactVariant.RAW)
+    snapshot.status = "published"
+    snapshot.review_status = {"qa_report": "confirmed"}
+    records = {
+        "qa_report": {
+            "schema_version": "agentic-qa.harness.review-record.v2",
+            "run_id": "run-1",
+            "artifact": "qa_report",
+            "status": "confirmed",
+        }
+    }
+    return store, snapshot, approved, records
+
+
+def test_publish_recovers_after_current_file_written(tmp_path: Path, monkeypatch) -> None:
+    store, snapshot, approved, records = _publication_fixture(tmp_path)
+    original = store.artifacts.promote_many
+
+    def fail_after_promote(*args, **kwargs):
+        original(*args, **kwargs)
+        raise OSError("after current")
+
+    monkeypatch.setattr(store.artifacts, "promote_many", fail_after_promote)
+    with pytest.raises(OSError, match="after current"):
+        store.publish_review(snapshot, [approved], records)
+    monkeypatch.setattr(store.artifacts, "promote_many", original)
+
+    restored = store.load_snapshot("demo", "run-1")
+    journal = json.loads(
+        (tmp_path / "workspaces/demo/reviews/run-1/publication-intent.json").read_text()
+    )
+    assert restored.status == "published" and journal["status"] == "committed"
+
+
+def test_publish_recovers_after_review_record_written(tmp_path: Path, monkeypatch) -> None:
+    store, snapshot, approved, records = _publication_fixture(tmp_path)
+    original = store.artifacts.write_review
+
+    def fail_after_review(*args, **kwargs):
+        original(*args, **kwargs)
+        raise OSError("after review")
+
+    monkeypatch.setattr(store.artifacts, "write_review", fail_after_review)
+    with pytest.raises(OSError, match="after review"):
+        store.publish_review(snapshot, [approved], records)
+    monkeypatch.setattr(store.artifacts, "write_review", original)
+    assert store.load_snapshot("demo", "run-1").status == "published"
+
+
+def test_publish_does_not_duplicate_history_entry(tmp_path: Path) -> None:
+    store, snapshot, approved, records = _publication_fixture(tmp_path)
+    store.publish_review(snapshot, [approved], records)
+    store.publish_review(snapshot, [approved], records)
+    index = (tmp_path / "workspaces/demo/published/qa_report/history/index.yml").read_text()
+    assert index.count("run_id: run-1") == 1
+
+
+def test_publish_journal_committed_only_after_snapshot_saved(tmp_path: Path, monkeypatch) -> None:
+    store, snapshot, approved, records = _publication_fixture(tmp_path)
+    original = store.runs.save_snapshot
+    observed: list[str] = []
+
+    def observe(target):
+        journal_path = tmp_path / "workspaces/demo/reviews/run-1/publication-intent.json"
+        observed.append(json.loads(journal_path.read_text())["status"])
+        original(target)
+
+    monkeypatch.setattr(store.runs, "save_snapshot", observe)
+    store.publish_review(snapshot, [approved], records)
+    assert observed == ["preparing"]
+
+
+def test_publish_rolls_back_when_recovery_provenance_is_invalid(
+    tmp_path: Path, monkeypatch
+) -> None:
+    store, snapshot, approved, records = _publication_fixture(tmp_path)
+    original = store.artifacts.promote_many
+
+    def fail_after_promote(*args, **kwargs):
+        original(*args, **kwargs)
+        raise OSError("crash after publish")
+
+    monkeypatch.setattr(store.artifacts, "promote_many", fail_after_promote)
+    with pytest.raises(OSError, match="crash after publish"):
+        store.publish_review(snapshot, [approved], records)
+    monkeypatch.setattr(store.artifacts, "promote_many", original)
+    (tmp_path / approved.path).write_text("tampered", encoding="utf-8")
+
+    restored = store.load_snapshot("demo", "run-1")
+    journal = json.loads(
+        (tmp_path / "workspaces/demo/reviews/run-1/publication-intent.json").read_text()
+    )
+    assert journal["status"] == "rolled_back"
+    assert restored.status == "planning"
+    assert not (tmp_path / "workspaces/demo/published/qa_report/current.md").exists()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="创建 symlink 通常需要 Windows 开发者权限")

@@ -56,6 +56,13 @@ class ArtifactReviewRepository(Protocol):
         self, snapshot: RunSnapshot, artifact: str, payload: dict[str, object]
     ) -> None: ...
 
+    def publish_review(
+        self,
+        snapshot: RunSnapshot,
+        versions: list[ApprovedArtifactVersion],
+        review_records: dict[str, dict[str, object]],
+    ) -> None: ...
+
 
 class CheckpointProvider(Protocol):
     def open(self) -> AbstractContextManager[Any]: ...

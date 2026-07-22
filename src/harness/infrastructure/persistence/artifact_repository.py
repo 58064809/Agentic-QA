@@ -264,6 +264,10 @@ class ArtifactReviewFilesystemRepository:
             raise
         return promoted
 
+    def verify_many(self, snapshot: RunSnapshot, versions: list[ApprovedArtifactVersion]) -> None:
+        for version in versions:
+            self._verified_approved_source(snapshot, version)
+
     def _promote(self, snapshot: RunSnapshot, version: ApprovedArtifactVersion) -> str:
         source = self._verified_approved_source(snapshot, version)
         workspace = self.workspaces.require_workspace(snapshot.workspace_id)
@@ -433,7 +437,6 @@ class ArtifactReviewFilesystemRepository:
                 )
             )
         report_path = final / "quality-report.json"
-        report = QualityReport.model_validate_json(report_path.read_text(encoding="utf-8"))
         required = {
             "workspace_id",
             "run_id",
@@ -445,41 +448,59 @@ class ArtifactReviewFilesystemRepository:
             "created_at",
         }
         complete = required <= set(manifest)
-        if complete and manifest["policy_versions"] != report.policy_versions:
+        if not complete:
+            report_payload = json.loads(report_path.read_text(encoding="utf-8"))
+            policy_versions = report_payload.get("policy_versions")
+            return ArtifactCandidate(
+                artifact=artifact,
+                path=versions[0].path,
+                media_type=None,
+                status="provenance_incomplete",
+                partial=None,
+                evidence=None,
+                provenance_complete=False,
+                versions=versions,
+                assessment_key=manifest.get("assessment_key"),
+                quality_report_path=report_path.relative_to(self.repo_root).as_posix(),
+                quality_report_sha256=manifest["files"].get("quality-report.json"),
+                source_bundle_hash=manifest.get("source_bundle_hash"),
+                policy_versions=policy_versions if isinstance(policy_versions, dict) else {},
+            )
+        report = QualityReport.model_validate_json(report_path.read_text(encoding="utf-8"))
+        if manifest["policy_versions"] != report.policy_versions:
             raise ValueError("candidate manifest policy_versions 与质量报告不匹配")
-        if complete:
-            if manifest["workspace_id"] != final.parents[2].name:
-                raise ValueError("candidate manifest workspace_id 不匹配")
-            if manifest["run_id"] != final.parent.name:
-                raise ValueError("candidate manifest run_id 不匹配")
-            if manifest["assessment_key"] != report.assessment_key:
-                raise ValueError("candidate manifest assessment key 与质量报告不匹配")
-            if manifest["source_bundle_hash"] != report.source_bundle_hash:
-                raise ValueError("candidate manifest source bundle hash 与质量报告不匹配")
-            if report.artifact != artifact:
-                raise ValueError("candidate manifest artifact 与质量报告不匹配")
-            if report.recompute_assessment_key() != report.assessment_key:
-                raise ValueError("quality report assessment key 无法由 provenance 重算")
-            raw_hash = manifest["files"][f"raw{extension}"]
-            if report.normalization.raw_sha256 != raw_hash:
-                raise ValueError("quality report raw normalization hash 不匹配")
-            normalized_hash = manifest["files"].get(normalized_name)
-            if report.normalization.normalized_sha256 != normalized_hash:
-                raise ValueError("quality report normalized hash 与 Candidate 不匹配")
+        if manifest["workspace_id"] != final.parents[2].name:
+            raise ValueError("candidate manifest workspace_id 不匹配")
+        if manifest["run_id"] != final.parent.name:
+            raise ValueError("candidate manifest run_id 不匹配")
+        if manifest["assessment_key"] != report.assessment_key:
+            raise ValueError("candidate manifest assessment key 与质量报告不匹配")
+        if manifest["source_bundle_hash"] != report.source_bundle_hash:
+            raise ValueError("candidate manifest source bundle hash 与质量报告不匹配")
+        if report.artifact != artifact:
+            raise ValueError("candidate manifest artifact 与质量报告不匹配")
+        if report.recompute_assessment_key() != report.assessment_key:
+            raise ValueError("quality report assessment key 无法由 provenance 重算")
+        raw_hash = manifest["files"][f"raw{extension}"]
+        if report.normalization.raw_sha256 != raw_hash:
+            raise ValueError("quality report raw normalization hash 不匹配")
+        normalized_hash = manifest["files"].get(normalized_name)
+        if report.normalization.normalized_sha256 != normalized_hash:
+            raise ValueError("quality report normalized hash 与 Candidate 不匹配")
         return ArtifactCandidate(
             artifact=artifact,
             path=versions[0].path,
-            media_type=manifest.get("media_type") if complete else None,
-            status=manifest["status"] if complete else "provenance_incomplete",
-            partial=manifest.get("partial") if complete else None,
-            evidence=manifest.get("evidence") if complete else None,
-            provenance_complete=complete,
+            media_type=manifest["media_type"],
+            status=manifest["status"],
+            partial=manifest["partial"],
+            evidence=manifest["evidence"],
+            provenance_complete=True,
             versions=versions,
             assessment_key=manifest["assessment_key"],
             quality_report_path=report_path.relative_to(self.repo_root).as_posix(),
             quality_report_sha256=manifest["files"]["quality-report.json"],
             source_bundle_hash=manifest["source_bundle_hash"],
-            policy_versions=manifest.get("policy_versions", report.policy_versions),
+            policy_versions=manifest["policy_versions"],
         )
 
     @staticmethod

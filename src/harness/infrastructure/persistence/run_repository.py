@@ -66,6 +66,22 @@ class RunEventFilesystemRepository:
                 return True
         return False
 
+    def has_publication_event(self, workspace: str, run_id: str, publication_id: str) -> bool:
+        path = self.workspaces.require_workspace(workspace) / "runs" / run_id / "events.jsonl"
+        if not path.is_file():
+            return False
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (
+                payload.get("type") == "review_applied"
+                and (payload.get("data") or {}).get("publication_id") == publication_id
+            ):
+                return True
+        return False
+
     def write_tool_record(
         self,
         workspace: str,
