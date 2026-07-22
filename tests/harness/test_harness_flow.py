@@ -2002,7 +2002,7 @@ def test_complete_combat_synonyms_are_recognized() -> None:
             "明确两队对抗，比分定胜负，结束后可获取比分",
             "比赛结果",
             "核对对抗关系、规则和赛后结果",
-            "活动类型标识为对抗类",
+            "同一活动满足三类来源证据时，按来源定义归类为对抗类",
             "三类活动证据",
             "分类入口待确认",
         ]
@@ -2327,6 +2327,38 @@ def test_testcase_quality_gate_rejects_unconfirmed_growth_payout_evidence() -> N
 
     with pytest.raises(ValueError, match="payout timing"):
         _quality_check("testcases", content, source_corpus=source)
+
+
+def test_growth_tier_amount_and_received_precondition_are_conditioned() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-GROWTH-TIER-2",
+            "成长金档位2",
+            "档位2达标",
+            "功能",
+            "P1",
+            "圈子已领取档位1，可替换为档位2",
+            "有效活动5场，参与玩家60人，内容30条",
+            "查看成长金达标状态",
+            "成长金达标为档位2，金额1000元",
+            "观察成长金档位为2，金额1000元",
+            "成长金发放时机待确认",
+        ]
+    )
+    source = "档位2要求5场、60人、30条；成长金发放时机待确认。"
+
+    with pytest.raises(ValueError, match="payout timing"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "remove_unconfirmed_growth_payout" in metadata["rules"]
+    assert "金额1000元" not in enriched
+    assert "已领取" not in enriched
+    assert "仅核对满足条件时选择的最高成长金档位" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
 
 
 def test_growth_tier_failure_does_not_invent_display_outcome() -> None:
@@ -2755,6 +2787,34 @@ def test_formal_unit_prices_are_not_treated_as_confirmed_ui_display() -> None:
     assert metadata is not None
     assert "remove_unsourced_reward_config_display" in metadata["rules"]
     assert "不使用示意金额或展示假设" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_reward_config_check_does_not_assume_a_calculation_view() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-STAGE-11",
+            "第10场以后标准",
+            "第11场沿用第10场单价",
+            "边界",
+            "P1",
+            "已有10场有效活动",
+            "第10场新玩家65元，老玩家56元",
+            "查看第11场奖金池计算中使用的单价",
+            "第11场新玩家65元，老玩家56元",
+            "对比页面计算单价",
+            "计算入口待确认",
+        ]
+    )
+    source = "| 10 | 65元 | 56元 | 840元 | 10人 |\n第10场以后沿用第10场标准。"
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "remove_unsourced_reward_config_display" in metadata["rules"]
+    assert "按来源公式核对计算输入与过程" in enriched
+    assert "查看第11场奖金池计算" not in enriched
     _quality_check("testcases", enriched, source_corpus=source)
 
 
@@ -3221,6 +3281,31 @@ def test_participant_dedup_does_not_assume_query_or_display() -> None:
     _quality_check("testcases", enriched, source_corpus=source)
 
 
+def test_participant_dedup_coverage_must_map_a_substantive_case() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-GROWTH-THRESHOLD",
+            "成长金档位1",
+            "成长金档位1达标",
+            "功能",
+            "P1",
+            "圈子有3场有效活动",
+            "参与玩家30人，内容15条",
+            "核对档位门槛",
+            "满足档位1门槛",
+            "来源规则",
+            "统计入口待确认",
+        ]
+    ).replace(
+        "| source rule | TC-GROWTH-THRESHOLD | source mapping |",
+        "| 参与玩家去重 | TC-GROWTH-THRESHOLD | 同圈用户去重规则 |",
+    )
+    source = "同一用户在同一圈子内参加多场有效活动，只算 1 人"
+
+    with pytest.raises(ValueError, match="coverage must map participant deduplication"):
+        _quality_check("testcases", content, source_corpus=source)
+
+
 def test_coverage_range_shorthand_is_expanded_to_actual_ids() -> None:
     content = _testcase_artifact(
         [
@@ -3280,6 +3365,68 @@ def test_numbered_content_condition_is_reduced_to_source_evidence() -> None:
     assert metadata is not None
     assert "condition_missing_content_evidence" in metadata["rules"]
     assert "单项条件缺失不足以满足来源中的完整内容定义" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_unconfirmed_activity_period_does_not_accept_invented_dates() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-CONTENT-PERIOD",
+            "内容四条件-活动期内",
+            "核对活动期内发布",
+            "功能",
+            "P1",
+            "活动期定义为2025-06-01至2025-07-31",
+            "发布时间2025-06-15与2025-08-01",
+            "核对发布时间",
+            "活动期内内容满足时间条件",
+            "内容发布时间",
+            "活动期具体起止时间待确认",
+        ]
+    )
+    source = "内容需在活动期内发布；活动期的起止时间或重置规则待确认。"
+
+    with pytest.raises(ValueError, match="activity-period dates are unconfirmed"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "remove_invented_activity_period_dates" in metadata["rules"]
+    assert "2025-06-01" not in enriched
+    assert "具体起止时间尚未确认" in enriched
+    _quality_check("testcases", enriched, source_corpus=source)
+
+
+def test_positive_combat_case_does_not_assume_classification_ui() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-COMBAT-POSITIVE",
+            "对抗类三条件",
+            "三条件满足",
+            "功能",
+            "P1",
+            "同一活动满足三条件",
+            "两队对抗，得分高者胜，结束后可确认获胜队伍",
+            "检查活动类型标识",
+            "活动标记为对抗类",
+            "观察分类标签",
+            "无",
+        ]
+    )
+    source = "活动有明确的对抗关系、明确胜负或排名规则，结束后能确认获胜队伍。"
+
+    with pytest.raises(ValueError, match="product classification marker"):
+        _quality_check("testcases", content, source_corpus=source)
+
+    enriched, metadata = _deterministically_enrich_artifact(
+        "testcases", content, source_corpus=source
+    )
+    assert metadata is not None
+    assert "remove_unsourced_combat_classification_ui" in metadata["rules"]
+    assert "系统分类入口与结果观察点待确认" in enriched
+    assert "观察分类标签" not in enriched
     _quality_check("testcases", enriched, source_corpus=source)
 
 

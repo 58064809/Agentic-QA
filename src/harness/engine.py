@@ -1387,6 +1387,19 @@ def _deterministically_enrich_artifact(
                 rules.append("condition_missing_content_evidence")
                 changed = True
         if (
+            "活动期的起止时间或重置规则" in source_corpus
+            and "活动期" in " ".join(row)
+            and re.search(r"20\d{2}-\d{2}-\d{2}", " ".join(row))
+        ):
+            row[5] = "已取得活动期规则来源；具体起止时间尚未确认"
+            row[6] = "活动期内与活动期外的来源证据（具体日期待确认）"
+            row[7] = "待活动期起止时间确认后，核对内容发布时间是否位于活动期内"
+            row[8] = "仅按已确认活动期边界核对；当前不使用示例日期作固定断言"
+            row[9] = "活动期配置与内容发布时间证据"
+            row[10] = _append_pending(row[10], "活动期的起止时间或重置规则待确认")
+            rules.append("remove_invented_activity_period_dates")
+            changed = True
+        if (
             _source_has_combat_definition(source_corpus)
             and _is_missing_combat_condition_case(row)
             and "缺少任一来源条件时，不按来源定义归类为对抗类" not in row[8]
@@ -1397,6 +1410,21 @@ def _deterministically_enrich_artifact(
             row[9] = "保存缺失条件证据，不断言未定义的前端标识、提示或分类入口"
             row[10] = _append_pending(row[10], "产品分类入口与展示方式待确认")
             rules.append("condition_missing_combat_evidence")
+            changed = True
+        if (
+            _source_has_combat_definition(source_corpus)
+            and _has_complete_combat_evidence(row)
+            and _asserts_combat_classification(row)
+            and any(
+                term in " ".join((row[7], row[8], row[9]))
+                for term in ("标记", "标识", "标签", "分类入口", "观察活动类型")
+            )
+        ):
+            row[7] = "核对同一活动的对抗关系、胜负或排名规则，以及活动结束后的可确认结果"
+            row[8] = "同一活动同时满足三个来源条件，可按来源定义归类为对抗类"
+            row[9] = "保存玩法规则、胜负或排名规则和活动结果三类证据"
+            row[10] = _append_pending(row[10], "系统分类入口与结果观察点待确认")
+            rules.append("remove_unsourced_combat_classification_ui")
             changed = True
         if "前端展示建议" in source_corpus or "可以展示为" in source_corpus:
             if (
@@ -1424,11 +1452,15 @@ def _deterministically_enrich_artifact(
                 changed = True
         if (
             "成长金发放时机" in source_corpus
-            and _is_growth_fund_case(row)
+            and _is_growth_tier_case(row)
             and "当前不限名额配置不会触发" not in row[8]
         ):
             growth_result = " ".join((row[8], row[9]))
-            if "不使用发放结果作为证据" not in growth_result and (
+            unconfirmed_growth_precondition = any(
+                term in " ".join((row[5], row[6]))
+                for term in ("已领", "领取", "已获得", "已发放", "到账", "可替换")
+            )
+            unconfirmed_growth_result = "不使用发放结果作为证据" not in growth_result and (
                 any(
                     term in growth_result
                     for term in (
@@ -1455,10 +1487,14 @@ def _deterministically_enrich_artifact(
                 )
                 or (
                     bool(re.search(r"\d+\s*元", growth_result))
-                    and any(term in growth_result for term in ("展示", "截图", "记录", "获得"))
+                    and any(
+                        term in growth_result
+                        for term in ("展示", "截图", "记录", "获得", "金额", "达标")
+                    )
                 )
                 or bool(re.search(r"(?:得|最终)\s*\d+\s*元", growth_result))
-            ):
+            )
+            if unconfirmed_growth_result or unconfirmed_growth_precondition:
                 if _is_no_growth_tier_case(row):
                     row[2] = "核对未满足任何成长金档位（发放与展示待确认）"
                     row[8] = "仅核对未满足任何已确认成长金档位；发放与展示行为待确认"
@@ -1467,6 +1503,8 @@ def _deterministically_enrich_artifact(
                     row[8] = "仅核对满足条件时选择的最高成长金档位；实际发放时机待确认"
                 row[9] = "来源中的档位和不叠加规则，不使用发放结果作为证据"
                 row[7] = "核对来源门槛与满足条件时的最高档位选择"
+                if unconfirmed_growth_precondition:
+                    row[5] = "已取得圈子的有效活动、去重参与玩家和内容数量来源证据"
                 row[10] = _append_pending(row[10], "成长金发放时机待确认")
                 rules.append("remove_unconfirmed_growth_payout")
                 changed = True
@@ -2002,7 +2040,10 @@ def _has_unsourced_reward_config_display(row: list[str]) -> bool:
     return (
         "单价" in text
         and any(term in text for term in ("新老玩家", "新玩家", "老玩家"))
-        and any(term in result for term in ("页面", "显示", "X元", "Y元"))
+        and (
+            any(term in result for term in ("页面", "显示", "X元", "Y元"))
+            or any(term in row[7] for term in ("查看", "观察", "读取界面"))
+        )
         and not any(term in result for term in ("不使用", "不展示", "展示待确认"))
     )
 
@@ -2177,6 +2218,25 @@ def _is_growth_fund_case(row: list[str]) -> bool:
     return "成长金" in descriptor or "档位" in descriptor
 
 
+def _is_growth_tier_case(row: list[str]) -> bool:
+    if not _is_growth_fund_case(row):
+        return False
+    descriptor = " ".join(row)
+    return any(term in descriptor for term in ("档位", "达标", "不叠加", "最高档"))
+
+
+def _has_circle_participant_dedup_evidence(row: list[str]) -> bool:
+    if len(row) != len(TESTCASE_HEADERS):
+        return False
+    descriptor = " ".join(row)
+    return (
+        "同一用户" in descriptor
+        and "同一圈" in descriptor
+        and any(term in descriptor for term in ("多场", "两场", "2场"))
+        and any(term in descriptor for term in ("只计 1", "只计1", "计为 1", "计为1", "去重"))
+    )
+
+
 def _is_untriggerable_growth_ranking(row: list[str], source: str) -> bool:
     if len(row) != len(TESTCASE_HEADERS):
         return False
@@ -2272,7 +2332,9 @@ def _asserts_combat_classification(row: list[str]) -> bool:
         for term in (
             "归类为对抗类",
             "标记为对抗类",
+            "标记为“对抗类”",
             "标识为对抗类",
+            "标识为“对抗类”",
             "活动类型为对抗类",
             "识别为对抗类",
             "判定为对抗类",
@@ -2533,6 +2595,18 @@ def _quality_check(
                 semantic_errors.append(
                     f"remove implementation observations absent from sources: {unsupported}"
                 )
+            if "活动期的起止时间或重置规则" in source_corpus:
+                invented_activity_periods = [
+                    row[0]
+                    for row in data_rows
+                    if "活动期" in " ".join(row)
+                    and re.search(r"20\d{2}-\d{2}-\d{2}", " ".join(row))
+                ]
+                if invented_activity_periods:
+                    semantic_errors.append(
+                        "activity-period dates are unconfirmed and cannot be invented as fixed "
+                        f"test data: {invented_activity_periods}"
+                    )
             if "领取奖励条件" in source_corpus:
                 reward_coverage_requirements = (
                     ("报名", ("报名",)),
@@ -2835,6 +2909,23 @@ def _quality_check(
                         "invent a frontend marker, prompt, or classification entry point: "
                         f"{unsourced_negative_combat_ui}"
                     )
+                unsourced_positive_combat_ui = [
+                    row[0]
+                    for row in data_rows
+                    if _has_complete_combat_evidence(row)
+                    and _asserts_combat_classification(row)
+                    and any(
+                        term in " ".join((row[7], row[8], row[9]))
+                        for term in ("标记", "标识", "标签", "分类入口", "观察活动类型")
+                    )
+                    and "系统分类入口与结果观察点待确认" not in row[10]
+                ]
+                if unsourced_positive_combat_ui:
+                    semantic_errors.append(
+                        "positive combat cases must use the three sourced facts without "
+                        "inventing a product classification marker or observation point: "
+                        f"{unsourced_positive_combat_ui}"
+                    )
             if "内容“真实有效”" in source_corpus and "具体判定方式" in source_corpus:
                 content_coverage_requirements = (
                     ("对应圈子", ("对应圈子", "圈子内")),
@@ -3044,7 +3135,7 @@ def _quality_check(
                 invented_growth_payouts = [
                     row[0]
                     for row in data_rows
-                    if _is_growth_fund_case(row)
+                    if _is_growth_tier_case(row)
                     and (
                         any(
                             term in " ".join((row[8], row[9]))
@@ -3074,13 +3165,24 @@ def _quality_check(
                             bool(re.search(r"\d+\s*元", " ".join((row[8], row[9]))))
                             and any(
                                 term in " ".join((row[8], row[9]))
-                                for term in ("展示", "截图", "记录", "获得")
+                                for term in ("展示", "截图", "记录", "获得", "金额", "达标")
                             )
                         )
                         or bool(
                             re.search(
                                 r"(?:得|最终)\s*\d+\s*元",
                                 " ".join((row[8], row[9])),
+                            )
+                        )
+                        or any(
+                            term in " ".join((row[5], row[6]))
+                            for term in (
+                                "已领",
+                                "领取",
+                                "已获得",
+                                "已发放",
+                                "到账",
+                                "可替换",
                             )
                         )
                     )
@@ -3152,6 +3254,33 @@ def _quality_check(
                         "participant deduplication is source-defined but its product observation "
                         f"point is not: {unsafe_participant_dedup_observations}"
                     )
+                if "同一用户在同一圈子内参加多场有效活动，只算 1 人" in source_corpus:
+                    dedup_coverage_rows = [
+                        coverage_row
+                        for coverage_row in coverage_rows[2:]
+                        if len(coverage_row) == 3
+                        and any(
+                            term in " ".join(coverage_row)
+                            for term in ("参与玩家去重", "参与玩家统计", "同圈用户去重")
+                        )
+                    ]
+                    mapped_case_ids = {
+                        case_id.strip()
+                        for coverage_row in dedup_coverage_rows
+                        for case_id in re.split(r"[,，、]", coverage_row[1])
+                        if case_id.strip()
+                    }
+                    mapped_dedup_cases = [
+                        row[0]
+                        for row in data_rows
+                        if row[0] in mapped_case_ids and _has_circle_participant_dedup_evidence(row)
+                    ]
+                    if dedup_coverage_rows and not mapped_dedup_cases:
+                        semantic_errors.append(
+                            "coverage must map participant deduplication to a testcase with the "
+                            "same user, same circle, multiple effective activities, and a "
+                            "source-level count-once assertion"
+                        )
             untriggerable_growth_rankings = [
                 row[0] for row in data_rows if _is_untriggerable_growth_ranking(row, source_corpus)
             ]
