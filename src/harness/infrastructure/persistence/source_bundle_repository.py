@@ -4,7 +4,9 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import stat
+import tempfile
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -17,7 +19,7 @@ from harness.application.source import (
     SourceIssue,
     SourceIssueSeverity,
 )
-from harness.infrastructure.persistence.common import atomic_json, atomic_text
+from harness.infrastructure.persistence.common import atomic_json, atomic_text, exclusive_file_lock
 from harness.infrastructure.persistence.workspace_repository import WorkspaceFilesystemRepository
 
 PARSER_VERSION = "2.1.0"
@@ -166,8 +168,18 @@ class SourceBundleFilesystemRepository:
     def create_source_bundle(self, workspace: str, run_id: str) -> SourceBundle:
         run_root = self.workspaces.require_workspace(workspace) / "runs" / run_id
         manifest_path = run_root / "source-bundle.json"
-        if manifest_path.exists():
-            return self.load_source_bundle(workspace, run_id)
+        with exclusive_file_lock(run_root / ".source-bundle.lock"):
+            if manifest_path.exists():
+                return self.load_source_bundle(workspace, run_id)
+            return self._create_source_bundle(workspace, run_id, run_root, manifest_path)
+
+    def _create_source_bundle(
+        self,
+        workspace: str,
+        run_id: str,
+        run_root: Path,
+        manifest_path: Path,
+    ) -> SourceBundle:
         source_root = self.workspaces.require_workspace(workspace) / "sources"
         documents: list[SourceDocument] = []
         candidates, scan_issues = self._scan_source_tree(source_root)
@@ -251,10 +263,6 @@ class SourceBundleFilesystemRepository:
             completeness=completeness,
             bundle_hash=bundle_hash,
         )
-        snapshot_root = run_root / "source-snapshot"
-        for index, document in enumerate(bundle.documents):
-            if document.text is not None:
-                atomic_text(snapshot_root / f"{index:04}.txt", document.text)
         persisted = bundle.model_copy(
             update={
                 "documents": tuple(
@@ -262,8 +270,55 @@ class SourceBundleFilesystemRepository:
                 )
             }
         )
-        atomic_json(manifest_path, persisted.model_dump(mode="json"))
-        return bundle
+        return self._commit_source_bundle(run_root, manifest_path, bundle, persisted)
+
+    def _commit_source_bundle(
+        self,
+        run_root: Path,
+        manifest_path: Path,
+        bundle: SourceBundle,
+        persisted: SourceBundle,
+    ) -> SourceBundle:
+        snapshot_root = run_root / "source-snapshot"
+        staging = Path(tempfile.mkdtemp(prefix=".source-bundle.", suffix=".staging", dir=run_root))
+        staging_snapshot = staging / "source-snapshot"
+        staging_snapshot.mkdir()
+        published_snapshot = False
+        try:
+            for index, document in enumerate(bundle.documents):
+                if document.text is not None:
+                    atomic_text(staging_snapshot / f"{index:04}.txt", document.text)
+            atomic_json(staging / "source-bundle.json", persisted.model_dump(mode="json"))
+            self._sync_directory(staging_snapshot)
+            self._sync_directory(staging)
+            if snapshot_root.exists():
+                if snapshot_root.is_symlink() or not snapshot_root.is_dir():
+                    raise ValueError("uncommitted source snapshot path is invalid")
+                shutil.rmtree(snapshot_root)
+            os.rename(staging_snapshot, snapshot_root)
+            published_snapshot = True
+            self._sync_directory(run_root)
+            atomic_json(manifest_path, persisted.model_dump(mode="json"))
+            self._sync_directory(run_root)
+            return bundle
+        except Exception:
+            if published_snapshot and not manifest_path.exists() and snapshot_root.is_dir():
+                shutil.rmtree(snapshot_root)
+                self._sync_directory(run_root)
+            raise
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging)
+
+    @staticmethod
+    def _sync_directory(path: Path) -> None:
+        if os.name == "nt":
+            return
+        descriptor = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
     def _scan_source_tree(self, source_root: Path) -> tuple[list[Path], list[SourceIssue]]:
         candidates: list[Path] = []
@@ -537,7 +592,7 @@ class SourceBundleFilesystemRepository:
         documents: list[SourceDocument], issues: list[SourceIssue]
     ) -> SourceCompleteness:
         if not documents:
-            return SourceCompleteness.PARTIAL if issues else SourceCompleteness.EMPTY
+            return SourceCompleteness.UNAVAILABLE if issues else SourceCompleteness.EMPTY
         all_complete = all(item.completeness == SourceCompleteness.COMPLETE for item in documents)
         if all_complete and not issues:
             return SourceCompleteness.COMPLETE

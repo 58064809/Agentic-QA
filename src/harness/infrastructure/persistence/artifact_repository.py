@@ -6,8 +6,6 @@ import json
 import os
 import shutil
 import tempfile
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,9 +20,16 @@ from harness.domain.models import (
     ArtifactDiffResult,
     ArtifactVersion,
     GetArtifactDiffQuery,
+    ReviewDecision,
+    ReviewIntent,
     RunSnapshot,
 )
-from harness.infrastructure.persistence.common import atomic_bytes, atomic_json, atomic_text
+from harness.infrastructure.persistence.common import (
+    atomic_bytes,
+    atomic_json,
+    atomic_text,
+    exclusive_file_lock,
+)
 from harness.infrastructure.persistence.workspace_repository import WorkspaceFilesystemRepository
 
 UTC = timezone.utc
@@ -47,38 +52,6 @@ def _sha256_bytes(content: bytes) -> str:
 
 def _json_bytes(payload: Any) -> bytes:
     return (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-
-
-@contextmanager
-def _exclusive_file_lock(path: Path) -> Iterator[None]:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle = path.open("a+b")
-    try:
-        handle.seek(0)
-        if handle.tell() == 0 and path.stat().st_size == 0:
-            handle.write(b"0")
-            handle.flush()
-        if os.name == "nt":
-            import msvcrt
-
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
-        else:
-            import fcntl
-
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        yield
-    finally:
-        if os.name == "nt":
-            import msvcrt
-
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
-            import fcntl
-
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-        handle.close()
 
 
 def _write_fsynced(path: Path, content: bytes) -> None:
@@ -108,7 +81,7 @@ class ArtifactReviewFilesystemRepository:
         final = run_root / artifact
         lock = run_root / ".locks" / f"{artifact}.lock"
         extension = ARTIFACT_EXTENSIONS[artifact]
-        with _exclusive_file_lock(lock):
+        with exclusive_file_lock(lock):
             if final.exists():
                 return self._load_committed(final, artifact, assessment)
             staging_root = run_root / ".staging"
@@ -238,7 +211,10 @@ class ArtifactReviewFilesystemRepository:
         self,
         snapshot: RunSnapshot,
         versions: list[ApprovedArtifactVersion],
+        *,
+        review_records: dict[str, dict[str, object]] | None = None,
     ) -> dict[str, str]:
+        self._verify_manual_review(snapshot, versions, review_records)
         tracked: dict[Path, bytes | None] = {}
         workspace = self.workspaces.require_workspace(snapshot.workspace_id)
         for version in versions:
@@ -263,6 +239,45 @@ class ArtifactReviewFilesystemRepository:
                     atomic_bytes(path, content)
             raise
         return promoted
+
+    @staticmethod
+    def _verify_manual_review(
+        snapshot: RunSnapshot,
+        versions: list[ApprovedArtifactVersion],
+        review_records: dict[str, dict[str, object]] | None,
+    ) -> None:
+        if not versions or review_records is None:
+            raise PermissionError("promote requires a validated manual review")
+        expected_artifacts = {version.artifact for version in versions}
+        if set(review_records) != expected_artifacts:
+            raise PermissionError("manual review records do not match promoted artifacts")
+        for version in versions:
+            record = review_records[version.artifact]
+            if (
+                record.get("schema_version") != "agentic-qa.harness.review-record.v2"
+                or record.get("run_id") != snapshot.run_id
+                or record.get("artifact") != version.artifact
+                or record.get("status") != "confirmed"
+                or not record.get("reviewed_at")
+                or record.get("approved_version") != version.model_dump(mode="json")
+            ):
+                raise PermissionError(f"manual review record is invalid: {version.artifact}")
+            try:
+                decision = ReviewDecision.model_validate(record.get("decision"))
+            except (TypeError, ValueError) as exc:
+                raise PermissionError(
+                    f"manual review decision is invalid: {version.artifact}"
+                ) from exc
+            reference = version.model_dump(mode="json", exclude={"path"})
+            selected = [
+                item.model_dump(mode="json")
+                for item in decision.versions
+                if item.artifact == version.artifact
+            ]
+            if decision.intent != ReviewIntent.APPROVE or selected != [reference]:
+                raise PermissionError(
+                    f"manual review did not approve selected version: {version.artifact}"
+                )
 
     def verify_many(self, snapshot: RunSnapshot, versions: list[ApprovedArtifactVersion]) -> None:
         for version in versions:
@@ -323,6 +338,8 @@ class ArtifactReviewFilesystemRepository:
         )
         if candidate is None:
             raise ValueError("candidate bundle 不存在或缺少 manifest")
+        if candidate.status == "partial" or candidate.partial is not False:
+            raise PermissionError(f"partial candidate 不可发布: {version.artifact}")
         if not all(
             (
                 candidate.assessment_key,

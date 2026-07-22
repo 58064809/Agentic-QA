@@ -46,10 +46,6 @@ class RunEventRepository(Protocol):
 
 class ArtifactReviewRepository(Protocol):
     def get_artifact_diff(self, query: GetArtifactDiffQuery) -> ArtifactDiffResult: ...
-    def promote_many(
-        self, snapshot: RunSnapshot, versions: list[ApprovedArtifactVersion]
-    ) -> dict[str, str]: ...
-
     def load_quality_report(self, candidate: ArtifactCandidate) -> object: ...
 
     def write_review(

@@ -21,9 +21,8 @@ from harness.domain.models import (
 )
 from harness.infrastructure.persistence.artifact_repository import (
     ArtifactReviewFilesystemRepository,
-    _exclusive_file_lock,
 )
-from harness.infrastructure.persistence.common import atomic_bytes, atomic_json
+from harness.infrastructure.persistence.common import atomic_bytes, atomic_json, exclusive_file_lock
 from harness.infrastructure.persistence.run_repository import RunEventFilesystemRepository
 from harness.infrastructure.persistence.source_bundle_repository import (
     SourceBundleFilesystemRepository,
@@ -113,11 +112,6 @@ class FilesystemStore:
     def write_review(self, snapshot: RunSnapshot, artifact: str, payload: dict[str, Any]) -> None:
         self.artifacts.write_review(snapshot, artifact, payload)
 
-    def promote_many(
-        self, snapshot: RunSnapshot, versions: list[ApprovedArtifactVersion]
-    ) -> dict[str, str]:
-        return self.artifacts.promote_many(snapshot, versions)
-
     def publish_review(
         self,
         snapshot: RunSnapshot,
@@ -127,7 +121,7 @@ class FilesystemStore:
         review_root = self.require_workspace(snapshot.workspace_id) / "reviews" / snapshot.run_id
         journal_path = review_root / "publication-intent.json"
         lock_path = review_root / ".publication.lock"
-        with _exclusive_file_lock(lock_path):
+        with exclusive_file_lock(lock_path):
             self._recover_publication(snapshot, locked=True)
             publication_id = self._publication_id(snapshot, versions)
             if journal_path.is_file():
@@ -165,7 +159,7 @@ class FilesystemStore:
         if journal.get("status") != "preparing":
             return
         if not locked:
-            with _exclusive_file_lock(review_root / ".publication.lock"):
+            with exclusive_file_lock(review_root / ".publication.lock"):
                 return self._recover_publication(snapshot, locked=True)
         try:
             self._complete_publication(journal_path, journal)
@@ -178,7 +172,11 @@ class FilesystemStore:
         snapshot = RunSnapshot.model_validate(journal["target_snapshot"])
         versions = [ApprovedArtifactVersion.model_validate(item) for item in journal["versions"]]
         self.artifacts.verify_many(snapshot, versions)
-        self.artifacts.promote_many(snapshot, versions)
+        self.artifacts.promote_many(
+            snapshot,
+            versions,
+            review_records=journal["review_records"],
+        )
         for artifact, payload in journal["review_records"].items():
             self.artifacts.write_review(snapshot, artifact, payload)
         self.runs.save_snapshot(snapshot)

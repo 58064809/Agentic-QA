@@ -27,10 +27,12 @@ from harness.application.source import (
 from harness.domain.models import (
     ApprovedArtifactVersion,
     ArtifactCandidate,
+    ReviewDecision,
+    ReviewIntent,
     RunSnapshot,
     StartRunCommand,
 )
-from harness.infrastructure.persistence import artifact_repository
+from harness.infrastructure.persistence import artifact_repository, source_bundle_repository
 from harness.infrastructure.persistence.filesystem import FilesystemStore
 from harness.infrastructure.persistence.source_bundle_repository import _critical_structure_issues
 from harness.infrastructure.quality.assessment import CandidateAssessmentService
@@ -156,6 +158,44 @@ def test_unavailable_document_cannot_have_parsed_hash() -> None:
             parsed_sha256="sha256:" + "0" * 64,
             completeness=SourceCompleteness.UNAVAILABLE,
         )
+
+
+def test_source_bundle_with_no_documents_and_scan_issues_is_unavailable(tmp_path: Path) -> None:
+    store, workspace = _workspace_store(tmp_path)
+    (workspace / "sources").rmdir()
+
+    bundle = store.create_source_bundle("demo", "run-1")
+
+    assert bundle.documents == ()
+    assert bundle.issues
+    assert bundle.completeness == SourceCompleteness.UNAVAILABLE
+
+
+def test_source_bundle_creation_rolls_back_before_manifest_commit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    store, workspace = _workspace_store(tmp_path)
+    (workspace / "sources/prd.md").write_text("# PRD\n\ncontent", encoding="utf-8")
+    repository = store.sources
+    run_root = workspace / "runs/run-1"
+    manifest_path = run_root / "source-bundle.json"
+    original = source_bundle_repository.atomic_json
+
+    def fail_manifest(path: Path, payload) -> None:
+        if path == manifest_path:
+            raise OSError("manifest commit failed")
+        original(path, payload)
+
+    monkeypatch.setattr(
+        "harness.infrastructure.persistence.source_bundle_repository.atomic_json",
+        fail_manifest,
+    )
+    with pytest.raises(OSError, match="manifest commit failed"):
+        repository.create_source_bundle("demo", "run-1")
+
+    assert not (run_root / "source-bundle.json").exists()
+    assert not (run_root / "source-snapshot").exists()
+    assert not list(run_root.glob(".source-bundle.*.staging"))
 
 
 def test_critical_empty_section_is_blocker_but_valid_table_is_not(tmp_path: Path) -> None:
@@ -594,7 +634,7 @@ def test_legacy_incomplete_v2_candidate_is_query_only(tmp_path: Path) -> None:
     assert not restored.provenance_complete
     snapshot.candidates = [restored]
     with pytest.raises(PermissionError):
-        store.promote_many(snapshot, [_approved(restored, ArtifactVariant.RAW)])
+        _promote_with_review(store, snapshot, [_approved(restored, ArtifactVariant.RAW)])
 
 
 def test_candidate_bundle_is_invisible_when_staging_write_fails(
@@ -710,6 +750,66 @@ def _approved(candidate: ArtifactCandidate, variant: ArtifactVariant) -> Approve
     return ApprovedArtifactVersion(**reference.model_dump(), path=version.path)
 
 
+def _approval_records(
+    snapshot: RunSnapshot, versions: list[ApprovedArtifactVersion]
+) -> dict[str, dict[str, object]]:
+    decision = ReviewDecision(
+        intent=ReviewIntent.APPROVE,
+        target_artifact="all" if len(versions) > 1 else versions[0].artifact,
+        reason="manual review passed",
+        reviewed_by="reviewer@example.com",
+        versions=[
+            item.model_copy(update={"path": None}).model_dump(exclude={"path"}) for item in versions
+        ],
+    )
+    return {
+        version.artifact: {
+            "schema_version": "agentic-qa.harness.review-record.v2",
+            "run_id": snapshot.run_id,
+            "artifact": version.artifact,
+            "status": "confirmed",
+            "decision": decision.model_dump(mode="json"),
+            "approved_version": version.model_dump(mode="json"),
+            "reviewed_at": "2026-01-01T00:00:00+00:00",
+        }
+        for version in versions
+    }
+
+
+def _promote_with_review(
+    store: FilesystemStore,
+    snapshot: RunSnapshot,
+    versions: list[ApprovedArtifactVersion],
+) -> dict[str, str]:
+    return store.artifacts.promote_many(
+        snapshot,
+        versions,
+        review_records=_approval_records(snapshot, versions),
+    )
+
+
+def test_promote_many_rejects_versions_without_manual_review(tmp_path: Path) -> None:
+    store, snapshot, candidate = _direct_promotion_fixture(tmp_path)
+
+    with pytest.raises(PermissionError, match="manual review"):
+        store.artifacts.promote_many(snapshot, [_approved(candidate, ArtifactVariant.RAW)])
+
+
+def test_promote_many_uses_manifest_partial_not_snapshot_projection(tmp_path: Path) -> None:
+    store, snapshot, candidate = _direct_promotion_fixture(tmp_path)
+    manifest_path = tmp_path / "workspaces/demo/candidates/run-1/qa_report/manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["partial"] = True
+    manifest["status"] = "partial"
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    approved = _approved(candidate, ArtifactVariant.RAW)
+
+    with pytest.raises(PermissionError, match="partial candidate"):
+        _promote_with_review(store, snapshot, [approved])
+
+
 def _rewrite_candidate_report(tmp_path: Path, candidate: ArtifactCandidate, mutate) -> str:
     report_path = tmp_path / (candidate.quality_report_path or "")
     payload = json.loads(report_path.read_text(encoding="utf-8"))
@@ -729,19 +829,19 @@ def _rewrite_candidate_report(tmp_path: Path, candidate: ArtifactCandidate, muta
 def test_direct_promote_rejects_blocked_raw_variant(tmp_path: Path) -> None:
     store, snapshot, candidate = _direct_promotion_fixture(tmp_path, blocked=True)
     with pytest.raises(PermissionError, match="未通过质量门"):
-        store.promote_many(snapshot, [_approved(candidate, ArtifactVariant.RAW)])
+        _promote_with_review(store, snapshot, [_approved(candidate, ArtifactVariant.RAW)])
 
 
 def test_direct_promote_rejects_blocked_normalized_variant(tmp_path: Path) -> None:
     store, snapshot, candidate = _direct_promotion_fixture(tmp_path, blocked=True, normalized=True)
     with pytest.raises(PermissionError, match="未通过质量门"):
-        store.promote_many(snapshot, [_approved(candidate, ArtifactVariant.NORMALIZED)])
+        _promote_with_review(store, snapshot, [_approved(candidate, ArtifactVariant.NORMALIZED)])
 
 
 def test_direct_promote_rejects_partial_candidate(tmp_path: Path) -> None:
     store, snapshot, candidate = _direct_promotion_fixture(tmp_path, partial=True)
     with pytest.raises(PermissionError, match="partial candidate"):
-        store.promote_many(snapshot, [_approved(candidate, ArtifactVariant.RAW)])
+        _promote_with_review(store, snapshot, [_approved(candidate, ArtifactVariant.RAW)])
 
 
 def test_direct_promote_rejects_report_source_bundle_hash_mismatch(tmp_path: Path) -> None:
@@ -752,7 +852,7 @@ def test_direct_promote_rejects_report_source_bundle_hash_mismatch(tmp_path: Pat
     reloaded = candidate.model_copy(update={"quality_report_sha256": report_hash})
     snapshot.candidates = [reloaded]
     with pytest.raises(ValueError, match="source bundle hash"):
-        store.promote_many(snapshot, [_approved(reloaded, ArtifactVariant.RAW)])
+        _promote_with_review(store, snapshot, [_approved(reloaded, ArtifactVariant.RAW)])
 
 
 def test_direct_promote_rejects_report_assessment_key_mismatch(tmp_path: Path) -> None:
@@ -763,7 +863,7 @@ def test_direct_promote_rejects_report_assessment_key_mismatch(tmp_path: Path) -
     reloaded = candidate.model_copy(update={"quality_report_sha256": report_hash})
     snapshot.candidates = [reloaded]
     with pytest.raises(ValueError, match="assessment key"):
-        store.promote_many(snapshot, [_approved(reloaded, ArtifactVariant.RAW)])
+        _promote_with_review(store, snapshot, [_approved(reloaded, ArtifactVariant.RAW)])
 
 
 def test_direct_promote_rejects_variant_hash_mismatch(tmp_path: Path) -> None:
@@ -777,7 +877,7 @@ def test_direct_promote_rejects_variant_hash_mismatch(tmp_path: Path) -> None:
     reloaded = candidate.model_copy(update={"quality_report_sha256": report_hash})
     snapshot.candidates = [reloaded]
     with pytest.raises(ValueError, match="hash"):
-        store.promote_many(snapshot, [_approved(reloaded, ArtifactVariant.NORMALIZED)])
+        _promote_with_review(store, snapshot, [_approved(reloaded, ArtifactVariant.NORMALIZED)])
 
 
 def _publication_fixture(tmp_path: Path):
@@ -785,14 +885,7 @@ def _publication_fixture(tmp_path: Path):
     approved = _approved(candidate, ArtifactVariant.RAW)
     snapshot.status = "published"
     snapshot.review_status = {"qa_report": "confirmed"}
-    records = {
-        "qa_report": {
-            "schema_version": "agentic-qa.harness.review-record.v2",
-            "run_id": "run-1",
-            "artifact": "qa_report",
-            "status": "confirmed",
-        }
-    }
+    records = _approval_records(snapshot, [approved])
     return store, snapshot, approved, records
 
 
