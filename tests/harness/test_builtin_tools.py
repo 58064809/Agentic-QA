@@ -21,6 +21,24 @@ def _runtime(tmp_path: Path):
         "登录连续失败五次后锁定账号。",
         encoding="utf-8",
     )
+    (workspace / "sources/openapi.json").write_text(
+        json.dumps(
+            {
+                "openapi": "3.1.0",
+                "info": {"title": "Demo", "version": "1"},
+                "paths": {
+                    "/health": {
+                        "get": {
+                            "operationId": "health",
+                            "responses": {"200": {"description": "ok"}},
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (workspace / "sources/unavailable.bin").write_bytes(b"\xff\xfe")
     snapshot = harness.start_run(
         StartRunCommand(
             workspace_id="demo",
@@ -41,7 +59,7 @@ def _runtime(tmp_path: Path):
     return harness, workspace, snapshot, runtime
 
 
-def test_rag_returns_traceable_chunks_and_workspace_read_is_isolated(tmp_path: Path) -> None:
+def test_rag_uses_frozen_source_bundle(tmp_path: Path) -> None:
     _, workspace, snapshot, runtime = _runtime(tmp_path)
     (workspace / "sources/requirement.md").write_text(
         "run 启动后被修改，不应进入已冻结的检索输入。", encoding="utf-8"
@@ -69,26 +87,57 @@ def test_rag_returns_traceable_chunks_and_workspace_read_is_isolated(tmp_path: P
         )
 
 
-def test_openapi_tool_only_confirms_complete_contract(tmp_path: Path) -> None:
+def test_workspace_read_rejects_source_added_after_run_start(tmp_path: Path) -> None:
+    _, workspace, snapshot, runtime = _runtime(tmp_path)
+    (workspace / "sources/new.md").write_text("new", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="不属于当前 Run"):
+        runtime.call(
+            workspace="demo",
+            run_id=snapshot.run_id,
+            agent="requirement_analyst",
+            tool="workspace.read",
+            arguments={"path": "sources/new.md"},
+            profile=ExecutionProfile(),
+        )
+
+
+def test_workspace_read_uses_original_snapshot_after_workspace_source_changes(
+    tmp_path: Path,
+) -> None:
+    _, workspace, snapshot, runtime = _runtime(tmp_path)
+    (workspace / "sources/requirement.md").write_text("changed", encoding="utf-8")
+
+    result = runtime.call(
+        workspace="demo",
+        run_id=snapshot.run_id,
+        agent="requirement_analyst",
+        tool="workspace.read",
+        arguments={"path": "sources/requirement.md"},
+        profile=ExecutionProfile(),
+    )
+
+    assert result["content"] == "登录连续失败五次后锁定账号。"
+
+
+def test_workspace_read_rejects_unavailable_frozen_source(tmp_path: Path) -> None:
+    _, _, snapshot, runtime = _runtime(tmp_path)
+
+    with pytest.raises(ValueError, match="冻结 source 不可用"):
+        runtime.call(
+            workspace="demo",
+            run_id=snapshot.run_id,
+            agent="requirement_analyst",
+            tool="workspace.read",
+            arguments={"path": "sources/unavailable.bin"},
+            profile=ExecutionProfile(),
+        )
+
+
+def test_openapi_inspect_uses_frozen_source_when_path_is_under_sources(tmp_path: Path) -> None:
     _, workspace, snapshot, runtime = _runtime(tmp_path)
     source = workspace / "sources/openapi.json"
-    source.write_text(
-        json.dumps(
-            {
-                "openapi": "3.1.0",
-                "info": {"title": "Demo", "version": "1"},
-                "paths": {
-                    "/health": {
-                        "get": {
-                            "operationId": "health",
-                            "responses": {"200": {"description": "ok"}},
-                        }
-                    }
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
+    source.write_text("# changed after run start", encoding="utf-8")
     result = runtime.call(
         workspace="demo",
         run_id=snapshot.run_id,
@@ -106,14 +155,3 @@ def test_openapi_tool_only_confirms_complete_contract(tmp_path: Path) -> None:
             "summary": "",
         }
     ]
-
-    source.write_text("# GET /health", encoding="utf-8")
-    with pytest.raises(ValueError, match="complete OpenAPI"):
-        runtime.call(
-            workspace="demo",
-            run_id=snapshot.run_id,
-            agent="api_test_engineer",
-            tool="openapi.inspect",
-            arguments={"path": "sources/openapi.json"},
-            profile=ExecutionProfile(),
-        )

@@ -4,8 +4,9 @@ import difflib
 import hashlib
 import json
 import os
+import unicodedata
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml
@@ -57,18 +58,18 @@ class ToolRuntime:
             "rag.retrieve": lambda workspace, run, arguments, _profile: self._rag_retrieve(
                 workspace, run, arguments
             ),
-            "openapi.inspect": lambda workspace, _run, arguments, _profile: (
-                self._openapi_inspect(workspace, arguments)
+            "openapi.inspect": lambda workspace, run, arguments, _profile: self._openapi_inspect(
+                workspace, run, arguments
             ),
             "api.execute": self._api_execute,
-            "postgres.query": lambda workspace, _run, arguments, profile: (
-                self._postgres_query(workspace, arguments, profile)
+            "postgres.query": lambda workspace, _run, arguments, profile: self._postgres_query(
+                workspace, arguments, profile
             ),
-            "evidence.read": lambda workspace, _run, arguments, _profile: (
-                self._evidence_read(workspace, arguments)
+            "evidence.read": lambda workspace, _run, arguments, _profile: self._evidence_read(
+                workspace, arguments
             ),
-            "artifact.diff": lambda workspace, _run, arguments, _profile: (
-                self._artifact_diff(workspace, arguments)
+            "artifact.diff": lambda workspace, _run, arguments, _profile: self._artifact_diff(
+                workspace, arguments
             ),
         }
 
@@ -237,13 +238,21 @@ class ToolRuntime:
     def _workspace_read(
         self, workspace: str, run_id: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        requested = str(arguments.get("path") or "").replace("\\", "/")
+        requested = self._normalized_tool_path(arguments.get("path"))
+        if self._is_source_path(requested):
+            return self._read_frozen_source(workspace, run_id, requested)
+        return self._read_workspace_runtime_file(workspace, requested)
+
+    def _read_frozen_source(self, workspace: str, run_id: str, requested: str) -> dict[str, Any]:
         bundle = self.store.load_source_bundle(workspace, run_id)
         document = next((item for item in bundle.documents if item.path == requested), None)
-        if document is not None:
-            if document.text is None:
-                raise ValueError("workspace.read source is unavailable in the run snapshot")
-            return {"path": document.path, "content": document.text}
+        if document is None:
+            raise ValueError(f"source 不属于当前 Run 的冻结 SourceBundle: {requested}")
+        if document.text is None:
+            raise ValueError(f"冻结 source 不可用: {document.path}")
+        return {"path": document.path, "content": document.text}
+
+    def _read_workspace_runtime_file(self, workspace: str, requested: str) -> dict[str, Any]:
         _, target = self._safe_path(workspace, requested)
         if not target.is_file():
             raise ValueError("workspace.read path is not a file")
@@ -251,6 +260,22 @@ class ToolRuntime:
             "path": target.relative_to(self.store.require_workspace(workspace)).as_posix(),
             "content": target.read_text(encoding="utf-8")[:100_000],
         }
+
+    @staticmethod
+    def _normalized_tool_path(value: Any) -> str:
+        requested = unicodedata.normalize("NFC", str(value or "").replace("\\", "/"))
+        path = PurePosixPath(requested)
+        if (
+            path.is_absolute()
+            or not requested
+            or any(part in {"", ".", ".."} for part in path.parts)
+        ):
+            raise ValueError("tool path is outside the workspace")
+        return path.as_posix()
+
+    @staticmethod
+    def _is_source_path(requested: str) -> bool:
+        return PurePosixPath(requested).parts[0].casefold() == "sources"
 
     def _rag_retrieve(
         self, workspace: str, run_id: str, arguments: dict[str, Any]
@@ -265,13 +290,24 @@ class ToolRuntime:
             max_chunks,
         )
 
-    def _openapi_inspect(self, workspace: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        root, target = self._safe_path(workspace, arguments.get("path"))
-        if not target.is_file():
-            raise ValueError("OpenAPI source does not exist")
-        text = target.read_text(encoding="utf-8")
+    def _openapi_inspect(
+        self, workspace: str, run_id: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        requested = self._normalized_tool_path(arguments.get("path"))
+        if self._is_source_path(requested):
+            frozen = self._read_frozen_source(workspace, run_id, requested)
+            source = frozen["path"]
+            text = frozen["content"]
+            suffix = PurePosixPath(source).suffix
+        else:
+            root, target = self._safe_path(workspace, requested)
+            if not target.is_file():
+                raise ValueError("OpenAPI source does not exist")
+            source = target.relative_to(root).as_posix()
+            text = target.read_text(encoding="utf-8")
+            suffix = target.suffix
         try:
-            payload = json.loads(text) if target.suffix.lower() == ".json" else yaml.safe_load(text)
+            payload = json.loads(text) if suffix.lower() == ".json" else yaml.safe_load(text)
         except (json.JSONDecodeError, yaml.YAMLError) as exc:
             raise ValueError("source is not a complete OpenAPI/Swagger document") from exc
         if not isinstance(payload, dict) or not (payload.get("openapi") or payload.get("swagger")):
@@ -296,7 +332,7 @@ class ToolRuntime:
         if not endpoints:
             raise ValueError("OpenAPI document has no HTTP operations")
         return {
-            "source": target.relative_to(root).as_posix(),
+            "source": source,
             "contract_status": "confirmed",
             "endpoint_count": len(endpoints),
             "endpoints": endpoints[:500],
