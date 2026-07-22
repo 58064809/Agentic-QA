@@ -33,9 +33,12 @@ class SourceIssue(FrozenModel):
 class SourceIngestionLimits(FrozenModel):
     max_files: int = Field(default=256, ge=1)
     max_path_bytes: int = Field(default=1024, ge=64)
-    max_file_bytes: int = Field(default=16 * 1024 * 1024, ge=1024)
-    max_total_bytes: int = Field(default=64 * 1024 * 1024, ge=1024)
+    max_parse_bytes: int = Field(default=16 * 1024 * 1024, ge=1024)
+    max_hash_bytes: int = Field(default=64 * 1024 * 1024, ge=1024)
+    max_total_hash_bytes: int = Field(default=64 * 1024 * 1024, ge=1024)
     max_parsed_characters: int = Field(default=100_000, ge=1)
+    max_file_bytes: int | None = Field(default=None, ge=1024)
+    max_total_bytes: int | None = Field(default=None, ge=1024)
 
 
 class SourceDocument(FrozenModel):

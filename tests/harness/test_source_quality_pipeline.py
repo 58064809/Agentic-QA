@@ -192,7 +192,7 @@ def test_truncated_critical_section_is_inconclusive_not_blocker(tmp_path: Path) 
 
 
 def test_hard_limit_does_not_publish_a_partial_file_hash(tmp_path: Path) -> None:
-    limits = SourceIngestionLimits(max_file_bytes=1024, max_total_bytes=2048)
+    limits = SourceIngestionLimits(max_parse_bytes=1024, max_hash_bytes=1024)
     store, workspace = _workspace_store(tmp_path, limits)
     (workspace / "sources/oversized.md").write_bytes(b"x" * 1025)
 
@@ -202,7 +202,64 @@ def test_hard_limit_does_not_publish_a_partial_file_hash(tmp_path: Path) -> None
     assert document.raw_sha256 is None
     assert document.text is None
     assert document.completeness == SourceCompleteness.UNAVAILABLE
-    assert {issue.code for issue in document.issues} == {"source_hard_limit_exceeded"}
+    assert {issue.code for issue in document.issues} == {"source_unhashed_due_to_limit"}
+
+
+def test_oversized_unparsed_source_still_has_streamed_raw_hash(tmp_path: Path) -> None:
+    limits = SourceIngestionLimits(max_parse_bytes=1024, max_hash_bytes=4096)
+    store, workspace = _workspace_store(tmp_path, limits)
+    (workspace / "sources/oversized.md").write_bytes(b"x" * 2048)
+
+    document = store.create_source_bundle("demo", "run-1").documents[0]
+
+    assert document.raw_sha256 == "sha256:" + hashlib.sha256(b"x" * 2048).hexdigest()
+    assert document.parsed_sha256 is None and document.text is None
+    assert {issue.code for issue in document.issues} == {"source_unparsed_due_to_limit"}
+
+
+def test_source_content_change_changes_bundle_hash_even_when_not_parsed(tmp_path: Path) -> None:
+    limits = SourceIngestionLimits(max_parse_bytes=1024, max_hash_bytes=4096)
+    first_store, first_workspace = _workspace_store(tmp_path / "first", limits)
+    second_store, second_workspace = _workspace_store(tmp_path / "second", limits)
+    (first_workspace / "sources/large.md").write_bytes(b"a" * 2048)
+    (second_workspace / "sources/large.md").write_bytes(b"b" * 2048)
+
+    assert first_store.create_source_bundle("demo", "run-1").bundle_hash != (
+        second_store.create_source_bundle("demo", "run-1").bundle_hash
+    )
+
+
+def test_unhashed_source_blocks_complete_source_strategy(tmp_path: Path) -> None:
+    limits = SourceIngestionLimits(max_parse_bytes=1024, max_hash_bytes=1024)
+    store, workspace = _workspace_store(tmp_path, limits)
+    (workspace / "sources/large.md").write_bytes(b"a" * 2048)
+    bundle = store.create_source_bundle("demo", "run-1")
+    assessment = CandidateAssessmentService(_registry(requires_sources=True)).assess(
+        context=QualityContext(
+            workspace_id="demo", run_id="run-1", artifact="qa_report", source_bundle=bundle
+        ),
+        content="report",
+        media_type="text/markdown",
+        strategy_names=["generic-artifact-contracts", "requires-sources"],
+    )
+    assert not assessment.report.verdict_for(ArtifactVariant.RAW)
+    assert any(
+        issue.code == "required_source_unavailable"
+        for issue in assessment.report.variants[0].issues
+    )
+
+
+def test_stream_hash_does_not_load_entire_file_into_memory(tmp_path: Path, monkeypatch) -> None:
+    from harness.infrastructure.persistence import source_bundle_repository as source_repository
+
+    monkeypatch.setattr(source_repository, "HASH_CHUNK_BYTES", 128)
+    limits = SourceIngestionLimits(max_parse_bytes=1024, max_hash_bytes=4096)
+    store, workspace = _workspace_store(tmp_path, limits)
+    (workspace / "sources/large.md").write_bytes(b"a" * 2048)
+
+    document = store.create_source_bundle("demo", "run-1").documents[0]
+    assert document.raw_sha256 is not None
+    assert source_repository.HASH_CHUNK_BYTES < (document.byte_size or 0)
 
 
 def test_empty_sources_only_block_strategies_that_require_them() -> None:

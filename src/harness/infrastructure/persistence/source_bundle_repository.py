@@ -20,7 +20,8 @@ from harness.application.source import (
 from harness.infrastructure.persistence.common import atomic_json, atomic_text
 from harness.infrastructure.persistence.workspace_repository import WorkspaceFilesystemRepository
 
-PARSER_VERSION = "2.0.0"
+PARSER_VERSION = "2.1.0"
+HASH_CHUNK_BYTES = 1024 * 1024
 KEYWORDS = ("配置", "档位", "对应关系", "规则表", "枚举")
 REPARSE_POINT = 0x400
 NUMBERED_HEADING = re.compile(r"^(?:\d+|[一二三四五六七八九十]+)[、.)）]\s*\S.{0,78}$")
@@ -128,7 +129,7 @@ class SourceBundleFilesystemRepository:
         candidates, scan_issues = self._scan_source_tree(source_root)
         bundle_issues: list[SourceIssue] = list(scan_issues)
         parsed_remaining = self.limits.max_parsed_characters
-        raw_remaining = self.limits.max_total_bytes
+        hash_remaining = self.limits.max_total_hash_bytes
         seen_paths: set[str] = set()
         regular_count = 0
         for candidate in candidates:
@@ -189,9 +190,9 @@ class SourceBundleFilesystemRepository:
                 continue
             seen_paths.add(folded)
             document, consumed = self._read_document(
-                candidate, relative, raw_remaining, parsed_remaining
+                candidate, relative, hash_remaining, parsed_remaining
             )
-            raw_remaining -= consumed
+            hash_remaining -= consumed
             if document.text is not None:
                 parsed_remaining -= len(document.text)
             documents.append(document)
@@ -344,6 +345,7 @@ class SourceBundleFilesystemRepository:
                 list(loaded.issues),
                 loaded.completeness,
                 loaded.limits,
+                loaded.parser_version,
             )
         )
         if expected != loaded.bundle_hash:
@@ -351,13 +353,13 @@ class SourceBundleFilesystemRepository:
         return loaded
 
     def _read_document(
-        self, path: Path, relative: str, raw_remaining: int, parsed_remaining: int
+        self, path: Path, relative: str, hash_remaining: int, parsed_remaining: int
     ) -> tuple[SourceDocument, int]:
         issues: list[SourceIssue] = []
         try:
             before = path.stat()
             size = before.st_size
-            if size > self.limits.max_file_bytes or size > raw_remaining:
+            if size > self.limits.max_hash_bytes or size > hash_remaining:
                 return (
                     SourceDocument(
                         path=relative,
@@ -365,12 +367,12 @@ class SourceBundleFilesystemRepository:
                         completeness=SourceCompleteness.UNAVAILABLE,
                         issues=(
                             SourceIssue(
-                                code="source_hard_limit_exceeded",
+                                code="source_unhashed_due_to_limit",
                                 path=relative,
                                 message="来源文件超过安全读取或总哈希预算",
                                 details={
-                                    "file_limit": self.limits.max_file_bytes,
-                                    "remaining_total": max(raw_remaining, 0),
+                                    "hash_limit": self.limits.max_hash_bytes,
+                                    "remaining_total_hash": max(hash_remaining, 0),
                                     "size": size,
                                 },
                             ),
@@ -386,10 +388,17 @@ class SourceBundleFilesystemRepository:
                     raise OSError("source is no longer a regular file")
                 if (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino):
                     raise OSError("source changed before it was opened")
+                hasher = hashlib.sha256()
+                chunks: list[bytes] | None = [] if size <= self.limits.max_parse_bytes else None
+                bytes_read = 0
                 with os.fdopen(descriptor, "rb", closefd=False) as handle:
-                    data = handle.read(self.limits.max_file_bytes + 1)
+                    while chunk := handle.read(HASH_CHUNK_BYTES):
+                        bytes_read += len(chunk)
+                        hasher.update(chunk)
+                        if chunks is not None:
+                            chunks.append(chunk)
                 after = os.fstat(descriptor)
-                if len(data) > self.limits.max_file_bytes or (after.st_size, after.st_mtime_ns) != (
+                if bytes_read != size or (after.st_size, after.st_mtime_ns) != (
                     before.st_size,
                     before.st_mtime_ns,
                 ):
@@ -412,7 +421,26 @@ class SourceBundleFilesystemRepository:
                 ),
                 0,
             )
-        raw_hash = _sha256(data)
+        raw_hash = f"sha256:{hasher.hexdigest()}"
+        if chunks is None:
+            return (
+                SourceDocument(
+                    path=relative,
+                    raw_sha256=raw_hash,
+                    byte_size=size,
+                    completeness=SourceCompleteness.UNAVAILABLE,
+                    issues=(
+                        SourceIssue(
+                            code="source_unparsed_due_to_limit",
+                            path=relative,
+                            message="来源文件已完整计算哈希，但超过解析预算",
+                            details={"parse_limit": self.limits.max_parse_bytes, "size": size},
+                        ),
+                    ),
+                ),
+                size,
+            )
+        data = b"".join(chunks)
         try:
             decoded = data.decode("utf-8", errors="strict")
         except UnicodeDecodeError as exc:
@@ -479,11 +507,22 @@ class SourceBundleFilesystemRepository:
         issues: list[SourceIssue],
         completeness: SourceCompleteness,
         limits: SourceIngestionLimits,
+        parser_version: str = PARSER_VERSION,
     ) -> dict[str, Any]:
+        if parser_version == "2.0.0" and limits.max_file_bytes and limits.max_total_bytes:
+            limits_payload = {
+                "max_files": limits.max_files,
+                "max_path_bytes": limits.max_path_bytes,
+                "max_file_bytes": limits.max_file_bytes,
+                "max_total_bytes": limits.max_total_bytes,
+                "max_parsed_characters": limits.max_parsed_characters,
+            }
+        else:
+            limits_payload = limits.model_dump(mode="json", exclude_none=True)
         return {
             "schema": "agentic-qa.harness.source-bundle-hash.v2",
-            "parser_version": PARSER_VERSION,
-            "limits": limits.model_dump(mode="json"),
+            "parser_version": parser_version,
+            "limits": limits_payload,
             "completeness": completeness.value,
             "documents": [
                 {
