@@ -52,6 +52,16 @@ class RequiresSourcesStrategy:
         return StrategyResult()
 
 
+class UnsafeNormalizer:
+    name = "unsafe-test-normalizer"
+    version = "1.0.0"
+    configuration = QualityComponentConfiguration()
+
+    def propose(self, context: QualityContext, content: str) -> NormalizationProposal:
+        del context, content
+        raise ValueError("semantic projection changed")
+
+
 def _empty_bundle(value: str = "0") -> SourceBundle:
     return SourceBundle(
         parser_version="test",
@@ -283,6 +293,40 @@ def test_normalization_is_representation_only() -> None:
     assert "档位" in normalized and "1" in normalized
     assert normalized.endswith("\n")
     assert "\r" not in normalized
+
+
+def _unsafe_normalization_assessment():
+    registry = _registry()
+    registry.register_normalizer(UnsafeNormalizer())
+    return CandidateAssessmentService(registry).assess(
+        context=QualityContext(
+            workspace_id="demo",
+            run_id="run-1",
+            artifact="qa_report",
+            source_bundle=_empty_bundle(),
+        ),
+        content="valid raw report",
+        media_type="text/markdown",
+        strategy_names=["generic-artifact-contracts"],
+    )
+
+
+def test_unsafe_normalizer_does_not_block_valid_raw() -> None:
+    assessment = _unsafe_normalization_assessment()
+    assert assessment.report.verdict_for(ArtifactVariant.RAW)
+    assert not assessment.report.variants[0].issues
+
+
+def test_unsafe_normalizer_does_not_create_normalized_variant() -> None:
+    assessment = _unsafe_normalization_assessment()
+    assert assessment.normalized_content is None
+    assert {item.variant for item in assessment.report.variants} == {ArtifactVariant.RAW}
+
+
+def test_normalizer_failure_is_recorded_in_quality_report() -> None:
+    assessment = _unsafe_normalization_assessment()
+    assert assessment.report.normalization.status.value == "failed"
+    assert "semantic projection changed" in (assessment.report.normalization.error or "")
 
 
 def test_candidate_bundle_commit_is_create_only_and_idempotent(tmp_path: Path) -> None:

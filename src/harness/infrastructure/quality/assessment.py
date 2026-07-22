@@ -8,6 +8,8 @@ from typing import Any
 from harness.application.quality import (
     ArtifactVariant,
     CandidateAssessment,
+    NormalizationAudit,
+    NormalizationStatus,
     QualityContext,
     QualityIssue,
     QualityReport,
@@ -94,22 +96,20 @@ class CandidateAssessmentService:
             strategy_names=strategy_names,
         )
         normalized = content
-        normalization_issue: QualityIssue | None = None
+        normalization_error: str | None = None
+        normalizers = self.registry.normalizers()
         for normalizer in self.registry.normalizers():
             try:
                 normalized = apply_safe_normalization(
                     normalized, normalizer.propose(context, normalized)
                 )
-            except ValueError as exc:
+            except Exception as exc:
                 normalized = content
-                normalization_issue = QualityIssue(
-                    policy=normalizer.name,
-                    version=normalizer.version,
-                    code="unsafe_normalization",
-                    message=str(exc),
-                )
+                normalization_error = f"{normalizer.name}: {type(exc).__name__}: {exc}"
                 break
-        normalized_content = normalized if normalized != content else None
+        normalized_content = (
+            normalized if normalization_error is None and normalized != content else None
+        )
         normalization_patch = None
         if normalized_content is not None:
             normalization_patch = "".join(
@@ -128,8 +128,6 @@ class CandidateAssessmentService:
         for variant, variant_content in contents:
             audits: list[StrategyAudit] = []
             issues = self._source_issues(context, strategies)
-            if normalization_issue is not None:
-                issues.append(normalization_issue)
             for strategy in strategies:
                 result = strategy.evaluate(context, variant_content)
                 audits.append(
@@ -160,6 +158,22 @@ class CandidateAssessmentService:
             source_bundle_hash=context.source_bundle.bundle_hash,
             variants=tuple(variants),
             policy_versions={item.name: item.version for item in strategies},
+            normalization=NormalizationAudit(
+                status=(
+                    NormalizationStatus.FAILED
+                    if normalization_error is not None
+                    else NormalizationStatus.NOT_APPLICABLE
+                    if not normalizers
+                    else NormalizationStatus.APPLIED
+                    if normalized_content is not None
+                    else NormalizationStatus.UNCHANGED
+                ),
+                raw_sha256=sha256_text(content),
+                normalized_sha256=(
+                    sha256_text(normalized_content) if normalized_content is not None else None
+                ),
+                error=normalization_error,
+            ),
         )
         return CandidateAssessment(
             raw_content=content,

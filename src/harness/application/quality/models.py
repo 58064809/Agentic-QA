@@ -52,6 +52,13 @@ class NormalizationOperationKind(str, Enum):
     NORMALIZE_MARKDOWN_TABLE_DELIMITER_SPACING = "normalize_markdown_table_delimiter_spacing"
 
 
+class NormalizationStatus(str, Enum):
+    NOT_APPLICABLE = "not_applicable"
+    UNCHANGED = "unchanged"
+    APPLIED = "applied"
+    FAILED = "failed"
+
+
 class NormalizationOperation(FrozenModel):
     kind: NormalizationOperationKind
 
@@ -79,6 +86,13 @@ class VariantAssessment(FrozenModel):
         return not any(issue.severity == SourceIssueSeverity.BLOCKER for issue in self.issues)
 
 
+class NormalizationAudit(FrozenModel):
+    status: NormalizationStatus
+    raw_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    normalized_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    error: str | None = None
+
+
 class QualityReport(FrozenModel):
     schema_version: Literal["agentic-qa.harness.quality-report.v2"] = (
         "agentic-qa.harness.quality-report.v2"
@@ -90,6 +104,7 @@ class QualityReport(FrozenModel):
     source_bundle_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     variants: tuple[VariantAssessment, ...]
     policy_versions: dict[str, str]
+    normalization: NormalizationAudit
 
     def verdict_for(self, variant: ArtifactVariant) -> bool:
         return next(item for item in self.variants if item.variant == variant).passed
