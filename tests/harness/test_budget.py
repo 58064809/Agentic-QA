@@ -10,7 +10,7 @@ def test_elapsed_runtime_accumulates_across_restored_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     ticks = iter((100.0, 105.0))
-    monkeypatch.setattr("harness.budget.monotonic", lambda: next(ticks))
+    monkeypatch.setattr("harness.domain.budget.monotonic", lambda: next(ticks))
 
     budget = Budget(usage=BudgetUsage(model_calls=2, elapsed_seconds=120.0))
 
@@ -21,7 +21,7 @@ def test_elapsed_runtime_accumulates_across_restored_budget(
 
 def test_restored_elapsed_runtime_cannot_bypass_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     ticks = iter((200.0, 202.0))
-    monkeypatch.setattr("harness.budget.monotonic", lambda: next(ticks))
+    monkeypatch.setattr("harness.domain.budget.monotonic", lambda: next(ticks))
     budget = Budget(
         limits=BudgetLimits(max_runtime_seconds=10),
         usage=BudgetUsage(elapsed_seconds=9.0),

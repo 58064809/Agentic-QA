@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.tool-manifest.v1
+schema_version: agentic-qa.harness.tool-manifest.v2
 name: mcp.playwright
 provider: mcp
 description: 本次 run 冻结的 allowlisted Playwright MCP 工具

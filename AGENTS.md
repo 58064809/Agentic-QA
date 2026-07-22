@@ -17,11 +17,12 @@
 | Agent / Skill 声明 | `src/harness/manifests/agents/` 与 `src/harness/manifests/skills/` |
 | Skill 内置 QA 知识 | `src/harness/knowledge/`，仅由 Skill manifest 显式引用 |
 | Tool 声明 | `src/harness/manifests/tools/` |
-| LangGraph 状态与动态派发 | `src/harness/backend.py` 与 `src/harness/engine.py` |
+| 应用用例与端口 | `src/harness/application/` |
+| LangGraph 状态与动态派发 | `src/harness/backend.py`、`src/harness/engine.py` 与 `src/harness/infrastructure/workflow/` |
 | 预算 | `src/harness/budget.py` |
-| 工作区与 Artifact Store | `src/harness/store.py` |
+| 工作区与 Artifact Store | `src/harness/store.py` 与 `src/harness/infrastructure/persistence/` |
 | Review 状态与 promote | `src/harness/review.py` |
-| 领域 Schema | `src/harness/schemas/` |
+| 领域 Schema | `src/harness/domain/schemas/` |
 | RAG 行为 | `docs/rag-design.md` |
 
 LangGraph 类型不得出现在公开领域契约。CLI 只组装参数并调用 `Harness`。
@@ -29,7 +30,7 @@ LangGraph 类型不得出现在公开领域契约。CLI 只组装参数并调用
 ## 当前链路
 
 ```text
-TaskRequest -> QAPlan -> Send 并行专家 -> 主管验收 -> 质量门 -> candidate
+StartRunCommand -> QAPlan -> Send 并行专家 -> 主管验收 -> 质量策略 -> candidate
 -> interrupt -> 人工 ReviewDecision -> approved
 -> deterministic promote -> published
 ```
@@ -52,7 +53,7 @@ promote 成功才写入 `confirmed`。`review_assistant` 只能准备摘要和 d
 ## 工作区
 
 Harness 只读写 `workspaces/<id>/`。旧 `prd/` 是本机忽略数据，不迁移、不读取、不改写。
-候选不得覆盖；修订创建新 run。执行恢复必须使用同一 run 的 SQLite checkpoint。
+候选不得覆盖；修订创建新 run。执行恢复必须使用 PostgreSQL 中同一 run/thread 的 checkpoint。
 
 ## 验证与回执
 
@@ -60,7 +61,6 @@ Harness 只读写 `workspaces/<id>/`。旧 `prd/` 是本机忽略数据，不迁
 
 ```powershell
 ruff check .
-python scripts/validate_docs_consistency.py
 pytest -q
 ```
 

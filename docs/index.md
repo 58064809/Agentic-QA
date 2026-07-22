@@ -1,12 +1,16 @@
-# Agentic-QA
+# Agentic-QA 文档
 
-Agentic-QA 将开放式 QA 目标交给测试主管，由主管动态选择专家、并行执行、生成候选，
-然后在硬 Review Gate 暂停。人工审核通过后才会发布。
+Agentic-QA v2 将开放式 QA 目标交给测试主管，专家 Agent 生成不可覆盖的候选产物，
+质量策略通过后在 Review Gate 暂停。只有人工审核批准并完成确定性 promote，产物才会发布。
 
 ```powershell
-agentic-qa workspace init demo
-agentic-qa run demo "分析登录需求并生成测试用例"
+agentic-qa workspace create demo
+agentic-qa run start demo "分析登录需求并生成测试用例"
+agentic-qa run get demo <run_id>
+agentic-qa run review demo <run_id> approve --artifact all `
+  --reason "人工审核通过" --reviewed-by qa-owner
 ```
 
-从[架构](architecture.md)、[Harness 契约](harness-contracts.md)和
-[Review Gate](review-gate.md)开始阅读。
+推荐依次阅读：[配置](configuration.md)、[公开契约](harness-contracts.md)、
+[架构](architecture.md)、[Review Gate](review-gate.md)和
+[工作区与产物版本](artifact-versioning.md)。

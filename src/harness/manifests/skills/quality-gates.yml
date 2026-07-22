@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.skill-manifest.v1
+schema_version: agentic-qa.harness.skill-manifest.v2
 name: quality-gates
 description: 在候选进入人工审核前执行确定性质量检查。
 instructions: 空内容、契约错误或证据不足不得伪装为已完成产物。

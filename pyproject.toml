@@ -11,11 +11,12 @@ requires-python = ">=3.10"
 dependencies = [
   "anyio>=4,<5",
   "langgraph>=1.0,<2",
-  "langgraph-checkpoint-sqlite>=3,<4",
+  "langgraph-checkpoint-postgres>=3.1,<4",
   "jsonschema>=4,<5",
   "mcp>=1.0,<2",
   "openai>=1.0,<3",
   "pydantic>=2,<3",
+  "psycopg[binary]>=3.2,<4",
   "pyyaml>=6,<7",
   "requests>=2,<3",
 ]
@@ -28,7 +29,7 @@ dev = [
 ]
 
 [project.scripts]
-agentic-qa = "harness.cli:main"
+agentic-qa = "harness.interfaces.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

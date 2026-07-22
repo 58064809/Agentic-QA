@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.agent-manifest.v1
+schema_version: agentic-qa.harness.agent-manifest.v2
 name: qa_supervisor
 role: 测试主管，规划、派发、验收和受限重规划
 prompt: 只依据可追踪输入制定 QA 计划；不得批准或发布候选产物。

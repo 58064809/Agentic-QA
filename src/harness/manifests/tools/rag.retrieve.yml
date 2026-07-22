@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.tool-manifest.v1
+schema_version: agentic-qa.harness.tool-manifest.v2
 name: rag.retrieve
 provider: builtin
 description: 返回带 source、chunk 和选择依据的检索结果

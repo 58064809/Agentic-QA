@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.agent-manifest.v1
+schema_version: agentic-qa.harness.agent-manifest.v2
 name: requirement_analyst
 role: 需求分析专家
 prompt: 提取明确规则、歧义和来源；证据不足时标记待确认。

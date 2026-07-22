@@ -6,7 +6,7 @@ from typing import TypeVar
 import yaml
 from pydantic import BaseModel
 
-from harness.contracts import AgentManifest, SkillManifest, ToolManifest
+from harness.domain.models import AgentManifest, SkillManifest, ToolManifest
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -51,8 +51,9 @@ class AgentRegistry:
     ) -> AgentRegistry:
         skills = skills or SkillRegistry.builtin()
         tools = tools or ToolRegistry.builtin()
+        package_root = Path(__file__).parents[2]
         return cls(
-            _load_manifests(Path(__file__).parent / "manifests" / "agents", AgentManifest),
+            _load_manifests(package_root / "manifests" / "agents", AgentManifest),
             skills=skills,
             tools=tools,
         )
@@ -73,7 +74,8 @@ class ToolRegistry:
 
     @classmethod
     def builtin(cls) -> ToolRegistry:
-        return cls(_load_manifests(Path(__file__).parent / "manifests" / "tools", ToolManifest))
+        package_root = Path(__file__).parents[2]
+        return cls(_load_manifests(package_root / "manifests" / "tools", ToolManifest))
 
     def get(self, name: str) -> ToolManifest:
         try:
@@ -100,7 +102,7 @@ class SkillRegistry:
 
     @classmethod
     def builtin(cls) -> SkillRegistry:
-        package_root = Path(__file__).parent
+        package_root = Path(__file__).parents[2]
         return cls(
             _load_manifests(package_root / "manifests" / "skills", SkillManifest),
             knowledge_root=package_root / "knowledge",

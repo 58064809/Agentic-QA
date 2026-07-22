@@ -1,0 +1,28 @@
+from __future__ import annotations
+
+from harness.domain.models import ReviewDecision, ReviewIntent, RunSnapshot
+
+
+def validate_review_decision(
+    snapshot: RunSnapshot,
+    decision: ReviewDecision,
+) -> list[str]:
+    if snapshot.status not in {"needs_human_review", "partial"}:
+        raise ValueError(f"run 当前状态不可审核: {snapshot.status}")
+    artifacts = [candidate.artifact for candidate in snapshot.candidates]
+    if len(artifacts) > 1 and not decision.target_artifact:
+        raise ValueError("多候选审核必须指定单个 artifact 或 all")
+    target = decision.target_artifact or (artifacts[0] if len(artifacts) == 1 else None)
+    if target == "all":
+        targets = artifacts
+    elif target in artifacts:
+        targets = [target]
+    else:
+        raise ValueError(f"target_artifact 不在本次候选中: {target}")
+
+    if decision.intent == ReviewIntent.APPROVE:
+        for artifact in targets:
+            candidate = next(item for item in snapshot.candidates if item.artifact == artifact)
+            if not candidate.quality_passed or candidate.status == "partial":
+                raise PermissionError(f"partial 或未通过质量门的候选不可发布: {artifact}")
+    return targets

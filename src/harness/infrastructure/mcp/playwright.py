@@ -12,7 +12,7 @@ from anyio import fail_after
 from jsonschema import ValidationError, validate
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
-from harness.security import sanitize_untrusted
+from harness.domain.security import sanitize_untrusted
 
 
 class PlaywrightMCPConfig(BaseModel):
@@ -20,8 +20,8 @@ class PlaywrightMCPConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["agentic-qa.harness.playwright-mcp.v1"] = (
-        "agentic-qa.harness.playwright-mcp.v1"
+    schema_version: Literal["agentic-qa.harness.playwright-mcp.v2"] = (
+        "agentic-qa.harness.playwright-mcp.v2"
     )
     transport: Literal["stdio", "streamable_http"] = "stdio"
     command: Literal["npx", "npx.cmd"] | None = "npx"

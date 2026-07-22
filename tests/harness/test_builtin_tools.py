@@ -5,27 +5,33 @@ from pathlib import Path
 
 import pytest
 
-from harness import Harness, TaskRequest
+from harness import CreateWorkspaceCommand, Harness, StartRunCommand
 from harness.budget import Budget
 from harness.contracts import ExecutionProfile
-from harness.evals import recorded_model_gateway
-from harness.tools import ToolRuntime
+from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
+from harness.infrastructure.persistence.filesystem import FilesystemStore
+from harness.infrastructure.tools.runtime import ToolRuntime
+from harness.testing.evals import recorded_model_gateway
 
 
 def _runtime(tmp_path: Path):
     harness = Harness(tmp_path, model_gateway=recorded_model_gateway())
-    workspace = harness.init_workspace("demo")
-    snapshot = harness.run(
-        TaskRequest(
-            workspace="demo",
+    workspace = harness.create_workspace(CreateWorkspaceCommand(workspace_id="demo"))
+    snapshot = harness.start_run(
+        StartRunCommand(
+            workspace_id="demo",
             goal="analyze",
             expected_artifacts=["requirement_analysis"],
         )
     )
+    store = FilesystemStore(tmp_path)
+    tools = ToolRegistry.builtin()
+    skills = SkillRegistry.builtin()
+    agents = AgentRegistry.builtin(skills=skills, tools=tools)
     runtime = ToolRuntime(
-        store=harness.store,
-        agents=harness.agents,
-        tools=harness.tools,
+        store=store,
+        agents=agents,
+        tools=tools,
         budget=Budget(),
     )
     return harness, workspace, snapshot, runtime

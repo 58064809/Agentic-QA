@@ -1,23 +1,18 @@
 from __future__ import annotations
 
-import argparse
 import re
-import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_ROOT = REPO_ROOT / "src"
-if str(SOURCE_ROOT) not in sys.path:
-    sys.path.insert(0, str(SOURCE_ROOT))
+from harness.domain.schemas.api_test_cases import API_CASES_SCHEMA_VERSION
+from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 
-from harness.registry import AgentRegistry, SkillRegistry, ToolRegistry  # noqa: E402
-from harness.schemas.api_test_cases import API_CASES_SCHEMA_VERSION  # noqa: E402
-
+REPO_ROOT = Path(__file__).resolve().parents[2]
 CORE_FILES = (
     "README.md",
     "AGENTS.md",
     "COMMANDS.md",
     "docs/architecture.md",
+    "docs/configuration.md",
     "docs/harness-contracts.md",
     "docs/review-gate.md",
     "docs/artifact-versioning.md",
@@ -28,6 +23,10 @@ CORE_FILES = (
     "src/harness/engine.py",
     "src/harness/store.py",
     "src/harness/review.py",
+    "src/harness/domain/models.py",
+    "src/harness/application/use_cases.py",
+    "src/harness/infrastructure/persistence/filesystem.py",
+    "src/harness/interfaces/facade.py",
 )
 EXCLUDED_PARTS = {
     ".git",
@@ -41,28 +40,30 @@ EXCLUDED_PARTS = {
     "workspaces",
     "__pycache__",
 }
-INLINE_PATH = re.compile(r"`((?:src/harness|docs|scripts|tests)/[^`<>{}*?]+)`")
+INLINE_PATH = re.compile(r"`((?:src/harness|docs|tests)/[^`<>{}*?]+)`")
 
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _validate_manifests(errors: list[str]) -> None:
+def _manifest_errors() -> list[str]:
     try:
         tools = ToolRegistry.builtin()
         skills = SkillRegistry.builtin()
         agents = AgentRegistry.builtin(skills=skills, tools=tools)
     except Exception as exc:
-        errors.append(f"manifest 注册失败: {exc}")
-        return
+        return [f"manifest 注册失败: {exc}"]
+    errors = []
     if not agents.list() or not tools.list() or not skills.list():
         errors.append("Agent、Tool 和 Skill manifest 均不得为空")
     if "artifact.promote" in {tool for agent in agents.list() for tool in agent.tool_allowlist}:
         errors.append("artifact.promote 不得出现在任何 Agent allowlist")
+    return errors
 
 
-def _validate_markdown_paths(root: Path, errors: list[str]) -> None:
+def _markdown_path_errors(root: Path) -> list[str]:
+    errors = []
     for path in root.rglob("*.md"):
         relative = path.relative_to(root)
         if any(part in EXCLUDED_PARTS for part in relative.parts):
@@ -76,38 +77,34 @@ def _validate_markdown_paths(root: Path, errors: list[str]) -> None:
                     errors.append(
                         f"{relative.as_posix()}:{line_number} 引用了不存在的路径: {normalized}"
                     )
+    return errors
 
 
-def validate_docs_consistency(repo_root: Path) -> list[str]:
-    root = repo_root.resolve()
+def test_repository_contracts_are_consistent() -> None:
+    root = REPO_ROOT.resolve()
     errors = [f"缺少核心文件: {path}" for path in CORE_FILES if not (root / path).is_file()]
     for legacy_root in (".runtime", "runtime", "rag", "apps", "integrations", "knowledge"):
         path = root / legacy_root
         if path.exists() and any(path.rglob("*.py")):
             errors.append(f"旧可执行链路仍存在: {legacy_root}/")
-    _validate_manifests(errors)
-    _validate_markdown_paths(root, errors)
+    errors.extend(_manifest_errors())
+    errors.extend(_markdown_path_errors(root))
     api_doc = root / "docs/api-test-generation.md"
     if api_doc.is_file() and API_CASES_SCHEMA_VERSION not in _read(api_doc):
         errors.append(
             f"docs/api-test-generation.md 未声明当前 API Cases Schema: {API_CASES_SCHEMA_VERSION}"
         )
-    return errors
 
+    docs_text = "\n".join(_read(path) for path in (root / "docs").glob("*.md"))
+    for obsolete in (
+        "TaskRequest",
+        "Harness.run(",
+        "Harness.stream(",
+        "Harness.resume(",
+        "Harness.inspect(",
+        "agentic-qa.harness.*.v1",
+    ):
+        if obsolete in docs_text:
+            errors.append(f"docs 仍包含旧公开契约: {obsolete}")
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="校验 Harness 文档、manifest 和路径一致性")
-    parser.add_argument("--repo-root", default=REPO_ROOT, type=Path)
-    args = parser.parse_args()
-    errors = validate_docs_consistency(args.repo_root)
-    if not errors:
-        print("文档一致性检查通过。")
-        return 0
-    print("文档一致性检查未通过：")
-    for error in errors:
-        print(f"- {error}")
-    return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    assert not errors, "仓库一致性检查未通过：\n- " + "\n- ".join(errors)

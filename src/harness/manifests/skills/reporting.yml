@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.skill-manifest.v1
+schema_version: agentic-qa.harness.skill-manifest.v2
 name: reporting
 description: 汇总测试范围、证据、结果、限制和风险。
 instructions: 不扩大证据结论，必须显式列出待确认和未执行范围。

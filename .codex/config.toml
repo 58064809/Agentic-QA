@@ -9,6 +9,16 @@ args = ["-y", "@upstash/context7-mcp@3.2.3"]
 command = "npx"
 args = ["-y", "@playwright/mcp@0.0.78"]
 
+[mcp_servers.github]
+command = "powershell"
+args = [
+  "-NoProfile",
+  "-ExecutionPolicy",
+  "Bypass",
+  "-Command",
+  "$tokenName=$env:AGENTIC_QA_GITHUB_TOKEN_ENV; if (-not $tokenName) { $tokenName='GITHUB_TOKEN' }; $token=[Environment]::GetEnvironmentVariable($tokenName); if (-not $token) { throw \"GitHub token environment variable is not set: $tokenName\" }; $env:GITHUB_PERSONAL_ACCESS_TOKEN=$token; npx -y @modelcontextprotocol/server-github",
+]
+
 [plugins."github@openai-curated"]
 enabled = false
 

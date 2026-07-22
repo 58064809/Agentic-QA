@@ -1,4 +1,4 @@
-from harness.evals import run_offline_eval
+from harness.testing.evals import run_offline_eval
 
 
 def test_offline_eval_covers_complete_review_loop() -> None:

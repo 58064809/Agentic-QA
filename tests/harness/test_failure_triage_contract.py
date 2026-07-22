@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from harness.schemas.failure_triage import FailureTriage
+from harness.domain.schemas.failure_triage import FailureTriage
 
 
 def test_error_or_blocked_cannot_be_linked_to_bug() -> None:

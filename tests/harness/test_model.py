@@ -4,12 +4,11 @@ from types import SimpleNamespace
 
 from pydantic import BaseModel
 
-from harness.contracts import PlanTask, TaskRequest
-from harness.model import (
+from harness.application.model_port import ModelPolicy, ModelRoute
+from harness.contracts import PlanTask, StartRunCommand
+from harness.infrastructure.llm.gateway import (
     DEFAULT_DEEPSEEK_BASE_URL,
     ModelConfig,
-    ModelPolicy,
-    ModelRoute,
     OpenAICompatibleModelGateway,
 )
 
@@ -50,10 +49,10 @@ def test_single_model_override_pins_both_tiers(monkeypatch) -> None:
 def test_policy_uses_pro_only_for_complex_plans_and_specialists() -> None:
     policy = ModelPolicy()
 
-    routine = policy.for_planner(TaskRequest(workspace="demo", goal="design tests"))
+    routine = policy.for_planner(StartRunCommand(workspace_id="demo", goal="design tests"))
     complex_route = policy.for_planner(
-        TaskRequest(
-            workspace="demo",
+        StartRunCommand(
+            workspace_id="demo",
             goal="triage failures",
             expected_artifacts=["failure_analysis"],
         )

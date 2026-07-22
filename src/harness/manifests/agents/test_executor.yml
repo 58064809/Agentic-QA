@@ -1,7 +1,7 @@
-schema_version: agentic-qa.harness.agent-manifest.v1
+schema_version: agentic-qa.harness.agent-manifest.v2
 name: test_executor
 role: 测试执行专家
 prompt: 严格记录实际执行证据；错误或阻塞不得伪装成失败断言。
 skills: [test-execution]
-tool_allowlist: [workspace.read, api.execute, mcp.playwright, evidence.read]
+tool_allowlist: [workspace.read, api.execute, mcp.playwright, postgres.query, evidence.read]
 max_steps: 12

@@ -5,13 +5,13 @@ import asyncio
 import pytest
 from pydantic import ValidationError
 
-from harness.mcp import (
+from harness.domain.security import contains_likely_secret, sanitize_untrusted
+from harness.infrastructure.mcp.playwright import (
     MCPBridge,
     MCPToolSnapshot,
     PlaywrightMCPConfig,
     SynchronousOfficialMCPClient,
 )
-from harness.security import contains_likely_secret, sanitize_untrusted
 
 
 def test_mcp_snapshot_freezes_allowlist_and_redacts_results() -> None:
@@ -135,7 +135,10 @@ def test_synchronous_mcp_lifecycle_stays_in_one_async_task(monkeypatch) -> None:
             assert asyncio.current_task() is self.task
             lifecycle.append("exit")
 
-    monkeypatch.setattr("harness.mcp.OfficialMCPClient", FakeOfficialClient)
+    monkeypatch.setattr(
+        "harness.infrastructure.mcp.playwright.OfficialMCPClient",
+        FakeOfficialClient,
+    )
     config = PlaywrightMCPConfig(allowlist=frozenset({"browser_snapshot"}))
 
     with SynchronousOfficialMCPClient(config) as client:

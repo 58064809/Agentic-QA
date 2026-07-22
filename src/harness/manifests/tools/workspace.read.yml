@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.tool-manifest.v1
+schema_version: agentic-qa.harness.tool-manifest.v2
 name: workspace.read
 provider: builtin
 description: 读取当前 workspace 内受限文件

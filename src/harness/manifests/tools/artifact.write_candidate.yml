@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.tool-manifest.v1
+schema_version: agentic-qa.harness.tool-manifest.v2
 name: artifact.write_candidate
 provider: builtin
 description: 仅写入本次 run 的候选目录

@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 
 from harness import ExecutionProfile
-from harness.api_execution import execute_api_cases
-from harness.schemas.api_test_cases import ApiTestCase
-from harness.schemas.execution_evidence import ExecutionEvidence
+from harness.domain.schemas.api_test_cases import ApiTestCase
+from harness.domain.schemas.execution_evidence import ExecutionEvidence
+from harness.infrastructure.tools.api_execution import execute_api_cases
 
 
 class FakeResponse:

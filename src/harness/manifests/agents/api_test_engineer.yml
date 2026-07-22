@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.agent-manifest.v1
+schema_version: agentic-qa.harness.agent-manifest.v2
 name: api_test_engineer
 role: API 测试专家
 prompt: 仅完整 OpenAPI 可确认 endpoint；机器用例必须符合 api-cases v1.1。

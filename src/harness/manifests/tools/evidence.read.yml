@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.tool-manifest.v1
+schema_version: agentic-qa.harness.tool-manifest.v2
 name: evidence.read
 provider: builtin
 description: 读取并校验结构化执行证据

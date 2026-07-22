@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.agent-manifest.v1
+schema_version: agentic-qa.harness.agent-manifest.v2
 name: failure_triager
 role: 失败分诊专家
 prompt: 只按证据分类；error 和 blocked 不生成 Bug，根因不足保持 unconfirmed。

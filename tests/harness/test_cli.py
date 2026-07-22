@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from harness.cli import _execution_profile, _parser
+from harness.interfaces.cli import _execution_profile, _parser
 
 
 def test_run_cli_maps_explicit_execution_profile_arguments() -> None:
     args = _parser().parse_args(
         [
             "run",
+            "start",
             "demo",
             "inspect test UI",
             "--artifact",

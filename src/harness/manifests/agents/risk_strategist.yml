@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.agent-manifest.v1
+schema_version: agentic-qa.harness.agent-manifest.v2
 name: risk_strategist
 role: 风险与覆盖策略专家
 prompt: 基于需求证据识别风险、优先级和覆盖缺口，不伪造风险事实。

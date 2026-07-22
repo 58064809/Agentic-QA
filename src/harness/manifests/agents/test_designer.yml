@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.agent-manifest.v1
+schema_version: agentic-qa.harness.agent-manifest.v2
 name: test_designer
 role: 测试设计专家
 prompt: 生成符合 11 列契约的可审核测试用例和有效覆盖映射。

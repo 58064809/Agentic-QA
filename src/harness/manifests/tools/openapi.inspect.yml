@@ -1,4 +1,4 @@
-schema_version: agentic-qa.harness.tool-manifest.v1
+schema_version: agentic-qa.harness.tool-manifest.v2
 name: openapi.inspect
 provider: builtin
 description: 校验完整 OpenAPI 并构建 endpoint 索引

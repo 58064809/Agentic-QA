@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from harness.schemas.api_test_cases import ApiTestCasesDraft
-from harness.schemas.execution_evidence import ExecutionEvidence
+from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
+from harness.domain.schemas.execution_evidence import ExecutionEvidence
 
 UTC = timezone.utc
 

@@ -5,16 +5,23 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from harness.contracts import ARTIFACT_TYPES, ExecutionProfile, ReviewDecision, TaskRequest
-from harness.engine import (
+from harness.contracts import (
+    CreateWorkspaceCommand,
+    ExecutionProfile,
+    ReviewDecision,
+    ReviewRunCommand,
+    StartRunCommand,
+)
+from harness.domain.models import ARTIFACT_TYPES
+from harness.harness import Harness
+from harness.infrastructure.llm.gateway import CallableModelGateway
+from harness.infrastructure.mcp.playwright import MCPBridge, MCPToolSnapshot
+from harness.infrastructure.workflow.engine import (
     ARTIFACT_AGENT,
     AgentOutput,
     build_default_plan,
     default_recorded_artifact,
 )
-from harness.harness import Harness
-from harness.mcp import MCPBridge, MCPToolSnapshot
-from harness.model import CallableModelGateway
 
 
 def recorded_model_gateway(*, use_fake_mcp: bool = False) -> CallableModelGateway:
@@ -26,7 +33,7 @@ def recorded_model_gateway(*, use_fake_mcp: bool = False) -> CallableModelGatewa
         **_kwargs: Any,
     ) -> dict[str, Any]:
         if response_model.__name__ == "QAPlan":
-            request = TaskRequest.model_validate_json(prompt.splitlines()[-1])
+            request = StartRunCommand.model_validate_json(prompt.splitlines()[-1])
             return build_default_plan(request).model_dump(mode="json")
         if response_model is AgentOutput:
             context = json.loads(prompt)
@@ -96,10 +103,16 @@ def run_offline_eval() -> dict[str, Any]:
             model_gateway=recorded_model_gateway(use_fake_mcp=True),
             tool_handlers={"mcp.playwright": bridge.tool_handler},
         )
-        workspace = harness.init_workspace("offline-eval")
+        workspace = harness.create_workspace(
+            CreateWorkspaceCommand(
+                workspace_id="offline-eval",
+                quality_policies=["city-opening-rewards"],
+            )
+        )
         workspace.joinpath("workspace.yml").write_text(
-            """schema_version: agentic-qa.harness.workspace.v1
+            """schema_version: agentic-qa.harness.workspace.v2
 id: offline-eval
+quality_policies: [city-opening-rewards]
 execution:
   environments:
     recorded-test:
@@ -108,9 +121,9 @@ execution:
 """,
             encoding="utf-8",
         )
-        snapshot = harness.run(
-            TaskRequest(
-                workspace="offline-eval",
+        snapshot = harness.start_run(
+            StartRunCommand(
+                workspace_id="offline-eval",
                 goal="离线评测：覆盖需求、设计、API、UI、执行、分诊和报告闭环",
                 expected_artifacts=list(ARTIFACT_TYPES),
                 execution_profile=ExecutionProfile(
@@ -122,13 +135,16 @@ execution:
         candidate_types = {candidate.artifact for candidate in snapshot.candidates}
         generated = candidate_types == set(ARTIFACT_TYPES)
         gate_held = snapshot.status == "needs_human_review"
-        published = harness.resume(
-            snapshot.run_id,
-            ReviewDecision(
-                intent="approve",
-                target_artifact="all",
-                reason="offline deterministic eval",
-                reviewed_by="recorded_qa_owner",
+        published = harness.review_run(
+            ReviewRunCommand(
+                workspace_id="offline-eval",
+                run_id=snapshot.run_id,
+                decision=ReviewDecision(
+                    intent="approve",
+                    target_artifact="all",
+                    reason="offline deterministic eval",
+                    reviewed_by="recorded_qa_owner",
+                ),
             ),
         )
         checks = {
@@ -136,13 +152,13 @@ execution:
             "review_gate_interrupt": gate_held,
             "fake_playwright_mcp": mcp_calls == 2,
             "mcp_snapshot_frozen": any(
-                item.get("schema_version") == "agentic-qa.harness.mcp-tool-snapshot.v1"
+                item.get("schema_version") == "agentic-qa.harness.mcp-tool-snapshot.v2"
                 for item in snapshot.tool_calls
             ),
             "deterministic_promote": published.status == "published",
         }
         return {
-            "schema_version": "agentic-qa.harness.eval-result.v1",
+            "schema_version": "agentic-qa.harness.eval-result.v2",
             "passed": all(checks.values()),
             "checks": checks,
             "artifact_count": len(candidate_types),

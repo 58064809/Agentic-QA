@@ -1,3 +1,3 @@
-from harness.cli import main
+from harness.interfaces.cli import main
 
 raise SystemExit(main())

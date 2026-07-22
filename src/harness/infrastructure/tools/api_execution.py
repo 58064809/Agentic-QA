@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any
 
-from harness.contracts import ExecutionProfile
-from harness.schemas.api_test_cases import API_CASES_SCHEMA_VERSION, ApiTestCase
-from harness.schemas.execution_evidence import (
+from harness.domain.models import ExecutionProfile
+from harness.domain.schemas.api_test_cases import API_CASES_SCHEMA_VERSION, ApiTestCase
+from harness.domain.schemas.execution_evidence import (
     EXECUTION_EVIDENCE_SCHEMA_VERSION,
     AssertionEvidence,
     CaseExecutionEvidence,
