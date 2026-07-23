@@ -75,6 +75,7 @@ def recorded_model_gateway(*, use_fake_mcp: bool = False) -> CallableModelGatewa
 def run_offline_eval() -> dict[str, Any]:
     """Deterministic no-network scenario covering all first-release artifact routes."""
     with TemporaryDirectory(prefix="agentic-qa-eval-") as temporary:
+        workspace_id = Path(temporary).name
         mcp_calls = 0
 
         def fake_playwright(_name: str, _arguments: dict[str, Any]) -> dict[str, Any]:
@@ -106,7 +107,7 @@ def run_offline_eval() -> dict[str, Any]:
         )
         workspace = harness.create_workspace(
             CreateWorkspaceCommand(
-                workspace_id="offline-eval",
+                workspace_id=workspace_id,
                 quality_policies=["city-opening-rewards"],
             )
         )
@@ -115,8 +116,8 @@ def run_offline_eval() -> dict[str, Any]:
             encoding="utf-8",
         )
         workspace.joinpath("workspace.yml").write_text(
-            """schema_version: agentic-qa.harness.workspace.v2
-id: offline-eval
+            f"""schema_version: agentic-qa.harness.workspace.v2
+id: {workspace_id}
 quality_policies: [city-opening-rewards]
 execution:
   environments:
@@ -128,7 +129,7 @@ execution:
         )
         snapshot = harness.start_run(
             StartRunCommand(
-                workspace_id="offline-eval",
+                workspace_id=workspace_id,
                 goal="离线评测：覆盖需求、设计、API、UI、执行、分诊和报告闭环",
                 expected_artifacts=list(ARTIFACT_TYPES),
                 execution_profile=ExecutionProfile(
@@ -142,7 +143,7 @@ execution:
         gate_held = snapshot.status == "needs_human_review"
         published = harness.review_run(
             ReviewRunCommand(
-                workspace_id="offline-eval",
+                workspace_id=workspace_id,
                 run_id=snapshot.run_id,
                 decision=ReviewDecision(
                     intent="approve",

@@ -1,5 +1,7 @@
 # 工作区与产物版本
 
+## 目录
+
 ```text
 workspaces/<workspace_id>/
 ├── workspace.yml
@@ -22,21 +24,37 @@ workspaces/<workspace_id>/
     └── history/
 ```
 
-所有查询、恢复和审核都使用 `workspace_id + run_id`，不全局扫描 run ID。raw 是 Agent 原始输出，
-永不被策略或 Normalizer 覆盖。normalized 只能包含业务语义不变的表示层调整；remediation 是建议，
-需要新 run 才能成为新的 raw artifact。
+## 事实与可变性
 
-Candidate 采用同父目录 staging、逐文件 fsync、最后写 manifest、平台文件锁和同卷目录 rename。
-读取方只识别带有效 manifest 的 final directory，因此不会看到半写 bundle。若 final 已存在，相同
-assessment key 且全部 hashes 一致时复用；否则拒绝覆盖。
+| 数据 | 职责 | 可变性 | 恢复用途 |
+|---|---|---|---|
+| PostgreSQL checkpoint | LangGraph 执行状态 | 追加/更新 | 崩溃恢复事实来源 |
+| `state.json` | Run 查询投影 | 原子替换 | 查询，不替代 checkpoint |
+| Source Bundle/snapshot | 本 run 实际来源 | create-only | RAG、Agent、Tool、质量复用 |
+| Candidate Manifest | Candidate 文件集合与 provenance | create-only | 审核/发布事实来源 |
+| quality report | variant verdict 与评估审计 | create-only | Review 与 promote |
+| Review Record | 人工决定与批准版本 | 按 artifact 原子写 | 审计 |
+| published history | 已发布不可变版本 | create-only | 历史追踪 |
+| published current | 当前版本指针内容 | 原子替换 | 使用者读取 |
 
-ArtifactCandidate 不保存 `quality_passed`。可发布性由质量报告针对具体 variant 派生。Promote 将
-人工批准的强类型版本写入历史索引，并保存 variant、内容 hash 和 assessment key。旧 Candidate
-可以查询，但缺少 provenance 时不能 approve/promote，也不会自动补算。
+## 原子边界
 
-PostgreSQL checkpoint 是执行恢复事实来源；state.json 是查询投影；source snapshot 冻结本 run 的
-实际输入；Candidate manifest 和 quality report 是审核与发布事实来源。这些职责不可互相替代。
+| Bundle | 协议 |
+|---|---|
+| Source | run 级文件锁；staging 写快照；最后提交 manifest；失败清理未提交快照 |
+| Candidate | artifact 锁；同父 staging；逐文件 fsync；manifest 最后写；同卷 rename |
+| Publication | run 级锁与 Journal；幂等 history/current/Review/Snapshot/event；完成后 committed |
 
-发布由 `reviews/<run_id>/publication-intent.json` 两阶段 Journal 协调。`preparing` 保存批准版本、
-Review Record、目标 Snapshot 和发布前备份；恢复时 provenance 有效则幂等补齐，无效则回滚。
-只有 history、current、Review Record 和 Snapshot 全部持久化后才标记 `committed`。
+读取方只接受有效 manifest 的 final bundle，不读取 staging。Candidate 已存在时，仅当 assessment key
+与全部 hashes 相同才复用，否则拒绝覆盖。
+
+## 版本语义
+
+| 文件 | 可发布 | 规则 |
+|---|---:|---|
+| `raw.*` | 是 | Agent 原始输出，不得被质量策略修改 |
+| `normalized.*` | 是 | 可选，仅允许业务语义不变的机械格式调整 |
+| `normalization.patch` | 否 | 审计表示层变化 |
+| `remediation.patch` | 否 | 修订建议；必须通过新 run 形成新 raw |
+
+发布选择与拒绝条件见 [Review Gate](review-gate.md)。

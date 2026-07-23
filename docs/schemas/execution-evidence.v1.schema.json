@@ -1,0 +1,291 @@
+{
+  "$defs": {
+    "AssertionEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "title": "Type",
+          "type": "string"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "expected": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected"
+        },
+        "actual": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actual"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "message": {
+          "default": "",
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "passed"
+      ],
+      "title": "AssertionEvidence",
+      "type": "object"
+    },
+    "CaseExecutionEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "title": "Case Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "error",
+            "blocked"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "completed_at": {
+          "format": "date-time",
+          "title": "Completed At",
+          "type": "string"
+        },
+        "duration_ms": {
+          "minimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "status_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status Code"
+        },
+        "assertions": {
+          "items": {
+            "$ref": "#/$defs/AssertionEvidence"
+          },
+          "title": "Assertions",
+          "type": "array"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        }
+      },
+      "required": [
+        "case_id",
+        "title",
+        "method",
+        "path",
+        "status",
+        "started_at",
+        "completed_at",
+        "duration_ms"
+      ],
+      "title": "CaseExecutionEvidence",
+      "type": "object"
+    },
+    "ExecutionEnvironment": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "base_url_env": {
+          "title": "Base Url Env",
+          "type": "string"
+        },
+        "base_url_configured": {
+          "title": "Base Url Configured",
+          "type": "boolean"
+        },
+        "allowed_methods": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Allowed Methods",
+          "type": "array"
+        },
+        "request_timeout_seconds": {
+          "maximum": 60,
+          "minimum": 1,
+          "title": "Request Timeout Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "base_url_env",
+        "base_url_configured",
+        "allowed_methods",
+        "request_timeout_seconds"
+      ],
+      "title": "ExecutionEnvironment",
+      "type": "object"
+    },
+    "ExecutionSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "total": {
+          "minimum": 0,
+          "title": "Total",
+          "type": "integer"
+        },
+        "executed": {
+          "minimum": 0,
+          "title": "Executed",
+          "type": "integer"
+        },
+        "passed": {
+          "minimum": 0,
+          "title": "Passed",
+          "type": "integer"
+        },
+        "failed": {
+          "minimum": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "errors": {
+          "minimum": 0,
+          "title": "Errors",
+          "type": "integer"
+        },
+        "blocked": {
+          "minimum": 0,
+          "title": "Blocked",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "executed",
+        "passed",
+        "failed",
+        "errors",
+        "blocked"
+      ],
+      "title": "ExecutionSummary",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.execution-evidence.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "source_cases_path": {
+      "title": "Source Cases Path",
+      "type": "string"
+    },
+    "source_cases_schema_version": {
+      "title": "Source Cases Schema Version",
+      "type": "string"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "completed_at": {
+      "format": "date-time",
+      "title": "Completed At",
+      "type": "string"
+    },
+    "environment": {
+      "$ref": "#/$defs/ExecutionEnvironment"
+    },
+    "summary": {
+      "$ref": "#/$defs/ExecutionSummary"
+    },
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/CaseExecutionEvidence"
+      },
+      "minItems": 1,
+      "title": "Cases",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "source_cases_path",
+    "source_cases_schema_version",
+    "started_at",
+    "completed_at",
+    "environment",
+    "summary",
+    "cases"
+  ],
+  "title": "ExecutionEvidence",
+  "type": "object"
+}

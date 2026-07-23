@@ -1,0 +1,309 @@
+{
+  "$defs": {
+    "ApiAssertion": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "minLength": 1,
+          "title": "Type",
+          "type": "string"
+        },
+        "expected": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "ApiAssertion",
+      "type": "object"
+    },
+    "ApiRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Method"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "headers": {
+          "additionalProperties": true,
+          "title": "Headers",
+          "type": "object"
+        },
+        "query": {
+          "title": "Query"
+        },
+        "body": {
+          "title": "Body"
+        }
+      },
+      "title": "ApiRequest",
+      "type": "object"
+    },
+    "ApiTestCase": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "priority": {
+          "enum": [
+            "P0",
+            "P1",
+            "P2",
+            "P3"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "contract_status": {
+          "enum": [
+            "missing",
+            "pending_confirmation",
+            "partial",
+            "confirmed"
+          ],
+          "title": "Contract Status",
+          "type": "string"
+        },
+        "business_rule_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Business Rule Refs",
+          "type": "array"
+        },
+        "review_status": {
+          "const": "needs_human_review",
+          "title": "Review Status",
+          "type": "string"
+        },
+        "review_questions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Review Questions",
+          "type": "array"
+        },
+        "source_refs": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "minItems": 1,
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "pending": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Pending",
+          "type": "array"
+        },
+        "request": {
+          "$ref": "#/$defs/ApiRequest"
+        },
+        "assertions": {
+          "items": {
+            "$ref": "#/$defs/ApiAssertion"
+          },
+          "title": "Assertions",
+          "type": "array"
+        },
+        "variables": {
+          "additionalProperties": true,
+          "title": "Variables",
+          "type": "object"
+        },
+        "cleanup": {
+          "items": {},
+          "title": "Cleanup",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "priority",
+        "contract_status",
+        "business_rule_refs",
+        "review_status",
+        "review_questions",
+        "source_refs",
+        "pending",
+        "request",
+        "assertions",
+        "variables",
+        "cleanup"
+      ],
+      "title": "ApiTestCase",
+      "type": "object"
+    },
+    "SourceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "source_type": {
+          "minLength": 1,
+          "title": "Source Type",
+          "type": "string"
+        },
+        "source_path": {
+          "minLength": 1,
+          "title": "Source Path",
+          "type": "string"
+        },
+        "chunk_id": {
+          "minLength": 1,
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "locator": {
+          "minLength": 1,
+          "title": "Locator",
+          "type": "string"
+        },
+        "summary": {
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_type",
+        "source_path",
+        "chunk_id",
+        "locator",
+        "summary",
+        "confidence"
+      ],
+      "title": "SourceRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.api-cases.v1.1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "artifact_type": {
+      "const": "api_automation_cases",
+      "title": "Artifact Type",
+      "type": "string"
+    },
+    "status": {
+      "const": "needs_human_review",
+      "title": "Status",
+      "type": "string"
+    },
+    "human_review_required": {
+      "const": true,
+      "title": "Human Review Required",
+      "type": "boolean"
+    },
+    "base_url_env": {
+      "const": "AGENTIC_QA_BASE_URL",
+      "title": "Base Url Env",
+      "type": "string"
+    },
+    "business_rules": {
+      "items": {},
+      "minItems": 1,
+      "title": "Business Rules",
+      "type": "array"
+    },
+    "source_refs": {
+      "items": {
+        "$ref": "#/$defs/SourceRef"
+      },
+      "minItems": 1,
+      "title": "Source Refs",
+      "type": "array"
+    },
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/ApiTestCase"
+      },
+      "minItems": 1,
+      "title": "Cases",
+      "type": "array"
+    },
+    "review_questions": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Review Questions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "artifact_type",
+    "status",
+    "human_review_required",
+    "base_url_env",
+    "business_rules",
+    "source_refs",
+    "cases",
+    "review_questions"
+  ],
+  "title": "ApiTestCasesDraft",
+  "type": "object"
+}

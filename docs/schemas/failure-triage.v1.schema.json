@@ -1,0 +1,236 @@
+{
+  "$defs": {
+    "BugCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "case_id": {
+          "title": "Case Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "status": {
+          "const": "needs_human_review",
+          "title": "Status",
+          "type": "string"
+        },
+        "evidence_ref": {
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "request": {
+          "title": "Request",
+          "type": "string"
+        },
+        "expected": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Expected",
+          "type": "array"
+        },
+        "actual": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Actual",
+          "type": "array"
+        },
+        "pending": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Pending",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "case_id",
+        "title",
+        "status",
+        "evidence_ref",
+        "request",
+        "expected",
+        "actual",
+        "pending"
+      ],
+      "title": "BugCandidate",
+      "type": "object"
+    },
+    "FailureObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "title": "Case Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "evidence_status": {
+          "enum": [
+            "failed",
+            "error",
+            "blocked"
+          ],
+          "title": "Evidence Status",
+          "type": "string"
+        },
+        "category": {
+          "enum": [
+            "assertion_mismatch",
+            "execution_error",
+            "execution_policy_blocked"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "root_cause_status": {
+          "const": "unconfirmed",
+          "title": "Root Cause Status",
+          "type": "string"
+        },
+        "evidence_ref": {
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "observation": {
+          "title": "Observation",
+          "type": "string"
+        },
+        "bug_candidate_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bug Candidate Id"
+        }
+      },
+      "required": [
+        "case_id",
+        "title",
+        "method",
+        "path",
+        "evidence_status",
+        "category",
+        "root_cause_status",
+        "evidence_ref",
+        "observation"
+      ],
+      "title": "FailureObservation",
+      "type": "object"
+    },
+    "FailureTriageSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "total_non_passed": {
+          "minimum": 1,
+          "title": "Total Non Passed",
+          "type": "integer"
+        },
+        "assertion_failures": {
+          "minimum": 0,
+          "title": "Assertion Failures",
+          "type": "integer"
+        },
+        "execution_errors": {
+          "minimum": 0,
+          "title": "Execution Errors",
+          "type": "integer"
+        },
+        "policy_blocked": {
+          "minimum": 0,
+          "title": "Policy Blocked",
+          "type": "integer"
+        },
+        "bug_candidates": {
+          "minimum": 0,
+          "title": "Bug Candidates",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total_non_passed",
+        "assertion_failures",
+        "execution_errors",
+        "policy_blocked",
+        "bug_candidates"
+      ],
+      "title": "FailureTriageSummary",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.failure-triage.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_evidence_path": {
+      "title": "Source Evidence Path",
+      "type": "string"
+    },
+    "source_evidence_schema": {
+      "const": "agentic-qa.execution-evidence.v1",
+      "title": "Source Evidence Schema",
+      "type": "string"
+    },
+    "source_run_id": {
+      "title": "Source Run Id",
+      "type": "string"
+    },
+    "summary": {
+      "$ref": "#/$defs/FailureTriageSummary"
+    },
+    "observations": {
+      "items": {
+        "$ref": "#/$defs/FailureObservation"
+      },
+      "minItems": 1,
+      "title": "Observations",
+      "type": "array"
+    },
+    "bug_candidates": {
+      "items": {
+        "$ref": "#/$defs/BugCandidate"
+      },
+      "title": "Bug Candidates",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "source_evidence_path",
+    "source_evidence_schema",
+    "source_run_id",
+    "summary",
+    "observations"
+  ],
+  "title": "FailureTriage",
+  "type": "object"
+}

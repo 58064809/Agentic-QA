@@ -1,20 +1,36 @@
 # Agentic-QA 文档
 
-Agentic-QA v2 将开放式 QA 目标交给测试主管，专家 Agent 生成不可覆盖的 raw artifact。来源输入按
-run 冻结，Normalizer 只处理表示形式，质量策略生成独立报告；Candidate 无论通过与否都会停在
-Review Gate。只有人工显式选择通过质量门的版本并完成确定性 promote，产物才会发布。
+Agentic-QA 生成不可覆盖的候选产物，并以人工 Review Gate 隔离 Agent 输出与正式发布。
 
-第一次使用请先阅读仓库根目录的 [CLI 从零开始教程](../COMMANDS.md)。教程包含环境变量、来源资料、
-run_id、Candidate 检查、人工审核和发布产物的完整可执行示例。
+## 按读者选择入口
 
-```powershell
-agentic-qa workspace create demo
-agentic-qa run start demo "分析登录需求并生成测试用例"
-agentic-qa run get demo <run_id>
-agentic-qa run review demo <run_id> approve --artifact all `
-  --variant testcases=raw --reason "人工审核通过" --reviewed-by qa-owner
-```
+| 读者 | 首选文档 | 解决的问题 |
+|---|---|---|
+| CLI 使用者 | [从零开始](getting-started.md) | 如何完成配置、执行、审核和发布 |
+| CLI 使用者 | [CLI 参考](cli-reference.md) | 每条命令、参数和退出码是什么 |
+| 环境维护者 | [配置参考](configuration.md) | 环境变量、workspace、RAG 和 PostgreSQL 如何配置 |
+| Python 集成者 | [Harness 契约](harness-contracts.md) | 七个公开方法与强类型输入输出 |
+| 审核人 | [Review Gate](review-gate.md) | 哪些版本能批准，发布如何防绕过 |
+| 维护者 | [架构](architecture.md) | 分层依赖、组合根和运行链路 |
+| 维护者 | [工作区与产物版本](artifact-versioning.md) | 文件职责、原子提交和恢复边界 |
+| 测试设计者 | [测试用例标准](testcase-standards.md) | 固定 11 列与证据要求 |
+| API 测试者 | [API 测试契约](api-test-generation.md) | 来源可信度和机器 Schema |
 
-推荐依次阅读：[配置](configuration.md)、[公开契约](harness-contracts.md)、
-[架构](architecture.md)、[Review Gate](review-gate.md) 和
-[工作区与产物版本](artifact-versioning.md)。
+## 事实来源
+
+| 内容 | 事实来源 |
+|---|---|
+| 公开 API | `src/harness/interfaces/facade.py`、`src/harness/contracts.py` |
+| CLI | `src/harness/interfaces/cli.py` |
+| Agent、Skill、Tool | `src/harness/manifests/` |
+| Agent 运行知识 | `src/harness/knowledge/` |
+| 运行行为 | `src/harness/domain/`、`application/`、`infrastructure/` |
+| 本站文档 | 对事实来源的使用说明，不替代实现契约 |
+
+## 机器可读 Schema
+
+| Artifact | Schema |
+|---|---|
+| API cases v1.1 | [JSON Schema](schemas/api-cases.v1.1.schema.json) |
+| Execution evidence v1 | [JSON Schema](schemas/execution-evidence.v1.schema.json) |
+| Failure triage v1 | [JSON Schema](schemas/failure-triage.v1.schema.json) |

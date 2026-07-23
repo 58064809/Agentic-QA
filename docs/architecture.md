@@ -1,36 +1,69 @@
 # Harness v2 架构
 
-Agentic-QA 是单 Python distribution 的模块化单体，依赖方向为：
+Agentic-QA 是单 Python distribution 的模块化单体。
 
-```text
-interfaces -> application -> domain
-     |              ^
-     v              |
-bootstrap -> infrastructure
+## 实际依赖
+
+```mermaid
+flowchart LR
+    Domain[domain]
+    Application[application]
+    Infrastructure[infrastructure]
+    Bootstrap[bootstrap]
+    Interfaces[interfaces]
+
+    Application --> Domain
+    Infrastructure --> Application
+    Infrastructure --> Domain
+    Bootstrap --> Infrastructure
+    Bootstrap --> Application
+    Bootstrap --> Domain
+    Interfaces --> Bootstrap
+    Interfaces --> Application
+    Interfaces --> Domain
+    Interfaces --> Infrastructure
 ```
 
-`domain/` 只保存公开领域模型和 Review Gate 的纯规则。`application/` 保存用例、端口、
-Source Bundle 输入模型和质量评估模型。`infrastructure/` 实现文件仓储、PostgreSQL、
-LangGraph、模型、MCP、RAG、来源摄取以及质量策略。`interfaces/` 提供 Harness 门面和 CLI，
-`bootstrap.py` 是唯一组合根。
+架构测试严格限制 `domain` 和 `application` 的向外依赖。`interfaces` 是外层适配器：Facade 调用组合
+根，并允许在构造参数中暴露具体注册表类型，因此不宣称它完全独立于 infrastructure。
 
-SourceDocument、SourceBundle、SourceIssue 和 SourceCompleteness 位于
-`application/source/`，不属于质量领域。QualityStrategy 和 ArtifactNormalizer 是 application
-port；策略注册表、通用策略和 `city-opening-rewards` pack 位于 infrastructure。业务 pack 拆分为
-parser、rules、validators、remediation、normalizer 和 strategy，domain/application 不导入具体 pack。
+| 区域 | 职责 | 可依赖 | 禁止 |
+|---|---|---|---|
+| `domain` | 公开领域模型、Review 纯规则、安全规则 | 标准库、Pydantic | application、infrastructure、LangGraph、SDK、存储 |
+| `application` | 用例、端口、Source/Quality 输入模型 | domain | infrastructure、数据库、LangGraph、模型/MCP SDK |
+| `infrastructure` | Workflow、仓储、模型、MCP、RAG、质量适配器 | application、domain | 反向成为公开契约 |
+| `bootstrap.py` | 唯一生产组合根 | application、domain、infrastructure | 业务规则实现 |
+| `interfaces` | `Harness` Facade 与 CLI | 组合根及所需契约/适配器类型 | LangGraph 类型进入命令契约 |
 
-来源在 run 创建时按安全限制摄取一次，生成 `source-bundle.json` 和不可变文本快照。RAG、
-workspace.read、Agent prefetch 和质量评估都读取该快照，恢复时不重新读取已经变化的 workspace
-source。来源内容始终是不可信上下文，不能改变权限、预算或 Review Gate。
+## Run 数据流
 
-Agent 输出先作为 raw artifact 保留。表示层 Normalizer 只能处理换行、行尾空白、末尾换行和
-Markdown 表格分隔行空格；业务内容修改只能成为 advisory remediation patch。质量策略对 raw 和
-可选 normalized 版本分别只读校验，结果写入 `quality-report.json`。
+```mermaid
+flowchart TD
+    Start[StartRunCommand] --> Source[安全摄取并冻结 SourceBundle]
+    Source --> Plan[QAPlan]
+    Plan --> Agents[并行专家任务]
+    Agents --> Raw[raw artifact]
+    Raw --> Normalize[表示层 Normalizer]
+    Raw --> Assess[质量策略只读评估]
+    Normalize --> Assess
+    Assess --> Candidate[原子 Candidate bundle]
+    Candidate --> Interrupt[LangGraph interrupt]
+    Interrupt --> Human[人工 ReviewDecision]
+    Human --> Verify[Repository 复验 Manifest/Report/Review]
+    Verify --> Published[published current/history]
+```
 
-每个 artifact 以 assessment key 标识一次逻辑评估。Candidate 已提交时，checkpoint 恢复复用
-manifest 和质量报告，不重复执行策略；提交前崩溃可以重算纯策略，但同一 key 只能形成一份可见
-Candidate 和一组质量事件。
+## 适配边界
 
-AST 架构测试禁止 domain/application 导入 LangGraph、psycopg、OpenAI、MCP、基础设施实现或
-具体策略。LangGraph 只存在于 workflow adapter。PostgreSQL 是唯一 checkpoint；文件系统只保存
-workspace、run 投影、来源快照、Candidate、Review 和 published artifact。
+| 能力 | application port / model | infrastructure adapter |
+|---|---|---|
+| 来源 | `SourceBundleRepository`、`SourceBundle` | 文件摄取与快照仓储 |
+| 质量 | `QualityStrategy`、`ArtifactNormalizer` | 通用策略、注册表、业务 pack |
+| 模型 | `ModelGateway` | OpenAI-compatible gateway |
+| Checkpoint | `CheckpointProvider` | PostgreSQL saver |
+| Tool | handler/manifest 契约 | API、RAG、PostgreSQL、MCP handlers |
+| Artifact/Review | `ArtifactReviewRepository` | Candidate、Review、Publication Journal 文件仓储 |
+
+业务 pack `city-opening-rewards` 仅存在于 infrastructure，并拆为 parser、rules、validators、
+remediation、normalizer 和 strategy。LangGraph 只存在于 workflow adapter；PostgreSQL 是唯一生产
+checkpoint，文件系统保存查询投影和不可变产物。

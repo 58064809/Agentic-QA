@@ -1,31 +1,48 @@
 # Review Gate
 
-Candidate bundle 完整提交后，LangGraph 通过 `interrupt()` 暂停。Agent、模型、Tool、MCP 和
-review assistant 都不能构造人工批准或直接发布。
+Agent、模型、Tool、MCP 和 review assistant 都不能构造人工批准或直接发布。
 
-`resume_run` 只处理 planning、running 或 recoverable 的崩溃恢复；`review_run` 只处理人工
-ReviewDecision。多候选必须指定单个 artifact 或 `all`。
+## ReviewIntent
 
-Approve 必须提交强类型 `ArtifactVersionRef`，其中包含 artifact、`raw|normalized` variant、内容
-SHA-256、assessment key 和质量报告 SHA-256。每个目标恰好选择一个版本；存在 normalized 时仍由
-审核人显式选择，系统不替用户决定。remediation patch 不是 ArtifactVariant，不能被批准或发布。
+| Intent | 版本选择 | Candidate | Run/审核投影 | 发布 |
+|---|---|---|---|---|
+| `approve` | 每个目标一个 raw/normalized | 不修改 | promote 成功后 confirmed/published | 是 |
+| `hold` | 不允许 | 不修改 | `on_hold`，写记录与事件 | 否 |
+| `reject` | 不允许 | 不修改 | `rejected` | 否 |
+| `revise` | 不允许；必须有 revision request | 不覆盖 | `needs_revision` | 否，新 run 修订 |
 
-Review 服务重新读取质量报告并派生所选版本 verdict。以下情况拒绝 approve：
+多 Candidate 必须指定单个 artifact 或 `all`。`show_diff` 不是 ReviewIntent；差异查询不写 Review
+Record，也不修改 Run。
 
-- Candidate 为 partial；
-- 所选版本不存在或存在 blocker；
-- Candidate 缺少 manifest、assessment key 或质量报告；
-- 内容、报告或引用哈希不一致。
+## 状态迁移
 
-校验通过后，Review 服务生成 `ApprovedArtifactVersion`。Promote 只接受这一强类型对象，并再次
-核对文件、报告、assessment key 和 hashes，再确定性复制到 published/history。只有 promote 全部
-成功后审核状态才写为 confirmed；所有 Candidate confirmed 后 run 才进入 published。失败的审核
-不会把 run 改成 recoverable，也不会留下 approved 假状态。
+| 当前状态 | 操作 | 允许结果 |
+|---|---|---|
+| planning/running/recoverable | `resume_run` | running、needs_human_review、partial、failed |
+| needs_human_review/on_hold/partial | `review_run hold` | on_hold |
+| needs_human_review/on_hold/partial | reject/revise | rejected/needs_revision |
+| needs_human_review/on_hold | approve | 部分 confirmed 或全部 published |
+| partial | approve | 拒绝 |
+| published/rejected/needs_revision/failed | resume/review | 拒绝不适用操作 |
 
-Reject 和 revise 不发布；修订必须创建新 run，不能覆盖原 Candidate。
+## Approve 门禁
 
-HOLD 写入审核记录和事件，Run 与目标审核投影进入 `on_hold`，但不改写不可变 Candidate。
-`show_diff` 不是审核意图；差异通过 `get_artifact_diff` 或 `run diff` 只读查询。
+| 校验位置 | 必须验证 |
+|---|---|
+| Review 服务 | 人工身份与原因、目标完整、强类型版本、质量 verdict、非 partial |
+| Candidate loader | Manifest 文件集合、全部 hashes、Report/策略/来源 provenance |
+| Repository promote 边界 | 人工 review-record.v2、批准版本、真实 Manifest partial、Report 与实际文件 |
 
-Approve 使用 Publication Journal 协调 published history/current、Review Record 和 Run Snapshot；
-进程中断后会从 preparing 状态确定性完成或回滚，不会重复生成 history 条目。
+任一 blocker、缺失 normalized、partial、缺少 provenance、hash 漂移、assessment/source 不一致都会
+fail-closed。remediation patch 不是 ArtifactVariant，不能批准或发布。
+
+## Publication Journal
+
+| 状态 | 含义 | 恢复行为 |
+|---|---|---|
+| `preparing` | 已冻结发布 ID、版本、Review Records、目标 Snapshot 与备份 | provenance 有效则幂等完成，否则回滚 |
+| `committed` | history、current、Review、Snapshot 与事件已完成 | 重复调用直接复用 |
+| `rolled_back` | provenance 失效，已恢复发布前状态 | 不发布 |
+
+只有 history、current、Review Record、Run Snapshot 和审核事件均完成后才能标记 committed。存储布局
+和原子边界见[工作区与产物版本](artifact-versioning.md)。

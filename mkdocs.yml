@@ -9,17 +9,26 @@ theme:
 
 markdown_extensions:
   - admonition
-  - pymdownx.superfences
   - toc:
       permalink: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
 
 nav:
   - 首页: index.md
-  - 架构: architecture.md
-  - Harness 契约: harness-contracts.md
-  - Review Gate: review-gate.md
-  - 工作区与产物版本: artifact-versioning.md
-  - 测试用例标准: testcase-standards.md
-  - API 测试契约: api-test-generation.md
-  - RAG 设计: rag-design.md
+  - 开始使用:
+      - 从零开始: getting-started.md
+      - CLI 参考: cli-reference.md
+      - 配置参考: configuration.md
+  - 核心设计:
+      - 架构: architecture.md
+      - Review Gate: review-gate.md
+      - 工作区与产物版本: artifact-versioning.md
+      - RAG: rag-design.md
+  - 契约与标准:
+      - Harness 契约: harness-contracts.md
+      - 测试用例标准: testcase-standards.md
+      - API 测试契约: api-test-generation.md
   - 路线图: roadmap.md

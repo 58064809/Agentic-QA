@@ -27,6 +27,9 @@ dev = [
   "pytest-json-report>=1.5,<2",
   "ruff>=0.8,<1",
 ]
+docs = [
+  "mkdocs-material>=9,<10",
+]
 
 [project.scripts]
 agentic-qa = "harness.interfaces.cli:main"
