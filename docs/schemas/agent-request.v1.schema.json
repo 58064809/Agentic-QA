@@ -1,0 +1,81 @@
+{
+  "additionalProperties": false,
+  "description": "High-level, review-safe request for generating QA candidates from local sources.",
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.harness.agent-request.v1",
+      "default": "agentic-qa.harness.agent-request.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "request_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional caller identity; changing it intentionally creates a new request.",
+      "title": "Request Id"
+    },
+    "workspace_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional managed workspace ID; omit to derive a deterministic safe ID.",
+      "title": "Workspace Id"
+    },
+    "goal": {
+      "description": "QA analysis goal. Generated output remains an unapproved candidate.",
+      "minLength": 1,
+      "title": "Goal",
+      "type": "string"
+    },
+    "source_paths": {
+      "description": "Absolute UTF-8 text file or directory paths under server allow-source-root values.",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Source Paths",
+      "type": "array"
+    },
+    "expected_artifacts": {
+      "description": "Artifact types to generate; defaults to testcases.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Expected Artifacts",
+      "type": "array"
+    },
+    "quality_policies": {
+      "description": "Registered quality policy names; arbitrary Python imports are forbidden.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Quality Policies",
+      "type": "array"
+    }
+  },
+  "required": [
+    "goal",
+    "source_paths"
+  ],
+  "title": "AgentRequest",
+  "type": "object"
+}

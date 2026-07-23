@@ -13,7 +13,7 @@ dependencies = [
   "langgraph>=1.0,<2",
   "langgraph-checkpoint-postgres>=3.1,<4",
   "jsonschema>=4,<5",
-  "mcp>=1.0,<2",
+  "mcp>=1.12.4,<2",
   "openai>=1.0,<3",
   "pydantic>=2,<3",
   "psycopg[binary]>=3.2,<4",
@@ -33,6 +33,7 @@ docs = [
 
 [project.scripts]
 agentic-qa = "harness.interfaces.cli:main"
+agentic-qa-mcp = "harness.interfaces.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -42,7 +43,7 @@ include = ["harness*"]
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
-harness = ["manifests/**/*.yml", "knowledge/**/*.md"]
+harness = ["manifests/**/*.yml", "knowledge/**/*.md", "schemas/*.json"]
 
 [tool.ruff]
 line-length = 100

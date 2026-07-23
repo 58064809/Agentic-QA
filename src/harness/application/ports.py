@@ -5,6 +5,7 @@ from contextlib import AbstractContextManager
 from pathlib import Path
 from typing import Any, Protocol
 
+from harness.application.agent_request.models import AgentRequest, PreparedAgentWorkspace
 from harness.application.quality import (
     NormalizationProposal,
     QualityComponentConfiguration,
@@ -34,8 +35,16 @@ class WorkspaceRepository(Protocol):
     ) -> object | None: ...
 
 
+class ManagedAgentWorkspaceProvisioner(Protocol):
+    def prepare(self, request: AgentRequest) -> PreparedAgentWorkspace: ...
+
+    def request_lock(self, prepared: PreparedAgentWorkspace) -> AbstractContextManager[None]: ...
+
+
 class RunEventRepository(Protocol):
     def load_snapshot(self, workspace: str, run_id: str) -> RunSnapshot: ...
+
+    def load_snapshot_read_only(self, workspace: str, run_id: str) -> RunSnapshot: ...
 
     def save_snapshot(self, snapshot: RunSnapshot) -> None: ...
 
@@ -97,7 +106,7 @@ class QualityStrategyCatalog(Protocol):
 
 
 class WorkflowRunner(Protocol):
-    def start(self, command: StartRunCommand) -> RunSnapshot: ...
+    def start(self, command: StartRunCommand, *, run_id: str | None = None) -> RunSnapshot: ...
 
     def stream(self, command: StartRunCommand) -> Iterator[HarnessEvent]: ...
 

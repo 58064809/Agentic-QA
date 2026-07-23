@@ -10,6 +10,7 @@
 | Source 冻结、Candidate 原子提交、Review/Publication Journal | 已实现 | persistence adapters |
 | 通用质量与显式业务 pack | 已实现 | `src/harness/infrastructure/quality/` |
 | Agent/Skill/Tool manifests 与内置知识 | 已实现 | `src/harness/manifests/`、`knowledge/` |
+| 跨 AI AgentRequest 与本地 MCP stdio | 已实现 | `application/agent_request/`、`interfaces/mcp_server.py` |
 | 本地/远程 RAG、Playwright MCP、只读 PostgreSQL Tool | 已实现 | infrastructure adapters |
 | API cases、execution evidence、failure triage Schema | 已实现 | `src/harness/domain/schemas/` |
 

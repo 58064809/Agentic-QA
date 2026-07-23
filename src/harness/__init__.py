@@ -1,7 +1,12 @@
 """Public Agentic-QA v2 API."""
 
 from harness.contracts import (
+    AgentCandidateSummary,
     AgentManifest,
+    AgentNextAction,
+    AgentRequest,
+    AgentRequestCapabilities,
+    AgentRequestResult,
     ArtifactDiffEndpoint,
     ArtifactDiffResult,
     ArtifactVariant,
@@ -11,6 +16,7 @@ from harness.contracts import (
     ExecutionProfile,
     GetArtifactDiffQuery,
     HarnessEvent,
+    ImportedSourceFile,
     PlanTask,
     QAPlan,
     ResumeRunCommand,
@@ -20,13 +26,19 @@ from harness.contracts import (
     RunRef,
     RunSnapshot,
     SkillManifest,
+    SourceImportSummary,
     StartRunCommand,
     ToolManifest,
 )
 from harness.harness import Harness
 
 __all__ = [
+    "AgentCandidateSummary",
     "AgentManifest",
+    "AgentNextAction",
+    "AgentRequest",
+    "AgentRequestCapabilities",
+    "AgentRequestResult",
     "ArtifactDiffEndpoint",
     "ArtifactDiffResult",
     "ArtifactVariant",
@@ -36,6 +48,7 @@ __all__ = [
     "ExecutionProfile",
     "Harness",
     "HarnessEvent",
+    "ImportedSourceFile",
     "GetArtifactDiffQuery",
     "PlanTask",
     "QAPlan",
@@ -47,5 +60,6 @@ __all__ = [
     "RunSnapshot",
     "SkillManifest",
     "StartRunCommand",
+    "SourceImportSummary",
     "ToolManifest",
 ]

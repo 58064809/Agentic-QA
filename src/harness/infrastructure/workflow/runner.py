@@ -21,9 +21,14 @@ class LangGraphWorkflowRunner:
         self._store = store
         self._engine = engine
 
-    def start(self, command: StartRunCommand) -> RunSnapshot:
+    def start(
+        self,
+        command: StartRunCommand,
+        *,
+        run_id: str | None = None,
+    ) -> RunSnapshot:
         with self._configured_tool_handlers(command.workspace_id) as handlers:
-            return self._engine.execute(command, tool_handlers=handlers)
+            return self._engine.execute(command, tool_handlers=handlers, run_id=run_id)
 
     def stream(self, command: StartRunCommand) -> Iterator[HarnessEvent]:
         queue: Queue[HarnessEvent | BaseException | None] = Queue()

@@ -5,6 +5,7 @@
 - [从零开始](docs/getting-started.md)：安装、配置、Source、Run、Candidate、Review 与发布。
 - [CLI 参考](docs/cli-reference.md)：命令、参数、状态、Artifact 和退出码。
 - [配置参考](docs/configuration.md)：环境变量、`workspace.yml`、RAG 与 PostgreSQL。
+- [跨 AI 接入](docs/agent-integration.md)：Codex、Claude、Cursor 的 MCP 与请求文件入口。
 
 最短流程：
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
+from harness.application.agent_request import AgentRequest, AgentRequestResult, AgentRequestService
 from harness.application.ports import (
     ArtifactReviewRepository,
     QualityStrategyCatalog,
@@ -32,12 +33,14 @@ class HarnessApplication:
         workflow: WorkflowRunner,
         quality_policies: QualityStrategyCatalog,
         artifacts: ArtifactReviewRepository | None = None,
+        agent_requests: AgentRequestService | None = None,
     ) -> None:
         self._workspaces = workspaces
         self._runs = runs
         self._workflow = workflow
         self._quality_policies = quality_policies
         self._artifacts = artifacts
+        self._agent_requests = agent_requests
 
     def create_workspace(self, command: CreateWorkspaceCommand) -> Path:
         self._quality_policies.require(command.quality_policies)
@@ -56,6 +59,9 @@ class HarnessApplication:
 
     def get_run(self, ref: RunRef) -> RunSnapshot:
         return self._runs.load_snapshot(ref.workspace_id, ref.run_id)
+
+    def get_run_read_only(self, ref: RunRef) -> RunSnapshot:
+        return self._runs.load_snapshot_read_only(ref.workspace_id, ref.run_id)
 
     def get_artifact_diff(self, query: GetArtifactDiffQuery) -> ArtifactDiffResult:
         if self._artifacts is None:
@@ -76,3 +82,8 @@ class HarnessApplication:
         if snapshot.status not in {"needs_human_review", "partial", "on_hold"}:
             raise ValueError(f"run 当前状态不可审核: {snapshot.status}")
         return self._workflow.review(snapshot, command.decision)
+
+    def submit_agent_request(self, request: AgentRequest) -> AgentRequestResult:
+        if self._agent_requests is None:
+            raise RuntimeError("agent request service is not configured")
+        return self._agent_requests.submit(request)

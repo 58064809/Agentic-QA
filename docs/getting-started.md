@@ -2,6 +2,9 @@
 
 本流程使用 PowerShell、workspace `demo` 和默认 `analysis-only` 模式生成 `testcases`。
 
+如果希望 Codex、Claude、Cursor 等 AI 直接理解本地绝对路径并启动生成，请先看
+[跨 AI 接入](agent-integration.md)。该入口自动完成本页第 3～4 步，但仍停在人工 Review Gate。
+
 ## 1. 安装
 
 ```powershell
@@ -134,5 +137,6 @@ python -m harness run review demo $runId revise `
 | approve 要求 variant | 检查 diff 后明确选择 `artifact=raw|normalized` |
 | approve 被质量门拒绝 | 查看 `quality-report.json`，修正后创建新 run |
 | 旧 run 未读取新 sources | 这是冻结行为；创建新 run |
+| AgentRequest 路径被拒绝 | 将路径放在 MCP/CLI 的 `--allow-source-root` 内 |
 
 全部命令和参数见 [CLI 参考](cli-reference.md)。

@@ -36,6 +36,7 @@ python -m harness workspace create demo
 | 读者 | 从这里开始 | 继续阅读 |
 |---|---|---|
 | CLI 使用者 | [从零开始](docs/getting-started.md) | [CLI 参考](docs/cli-reference.md)、[配置](docs/configuration.md) |
+| AI 集成者 | [跨 AI 接入](docs/agent-integration.md) | MCP 与 YAML/JSON AgentRequest |
 | Python 集成者 | [Harness 契约](docs/harness-contracts.md) | [Review Gate](docs/review-gate.md) |
 | 维护者 | [架构](docs/architecture.md) | [存储与版本](docs/artifact-versioning.md)、[RAG](docs/rag-design.md) |
 | 编码 Agent | [AGENTS.md](AGENTS.md) | `src/harness/manifests/`、`src/harness/knowledge/` |

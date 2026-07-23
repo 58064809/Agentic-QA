@@ -15,6 +15,9 @@
 所有 run 操作显式携带 `workspace_id + run_id`，不全局扫描 run ID。控制面 Schema 使用
 `agentic-qa.harness.*.v2`；API cases 独立保持 `agentic-qa.api-cases.v1.1`。
 
+外部 AI 的 `AgentRequest` 和 MCP 是独立受限门面，不增加 Harness 的 Review 权限，也不改变上述
+七个方法；其契约见[跨 AI 接入](agent-integration.md)。
+
 ## Candidate provenance
 
 | 字段 | 用途 |

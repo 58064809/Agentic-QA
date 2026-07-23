@@ -1,5 +1,14 @@
 """Public Agentic-QA v2 command and result contracts."""
 
+from harness.application.agent_request import (
+    AgentCandidateSummary,
+    AgentNextAction,
+    AgentRequest,
+    AgentRequestCapabilities,
+    AgentRequestResult,
+    ImportedSourceFile,
+    SourceImportSummary,
+)
 from harness.domain.models import (
     AgentManifest,
     ApprovedArtifactVersion,
@@ -30,7 +39,12 @@ from harness.domain.models import (
 )
 
 __all__ = [
+    "AgentCandidateSummary",
     "AgentManifest",
+    "AgentNextAction",
+    "AgentRequest",
+    "AgentRequestCapabilities",
+    "AgentRequestResult",
     "ApprovedArtifactVersion",
     "ArtifactCandidate",
     "ArtifactDiffEndpoint",
@@ -44,6 +58,7 @@ __all__ = [
     "ExecutionEnvironmentPolicy",
     "ExecutionProfile",
     "HarnessEvent",
+    "ImportedSourceFile",
     "GetArtifactDiffQuery",
     "PlanTask",
     "QAPlan",
@@ -55,5 +70,6 @@ __all__ = [
     "RunSnapshot",
     "SkillManifest",
     "StartRunCommand",
+    "SourceImportSummary",
     "ToolManifest",
 ]

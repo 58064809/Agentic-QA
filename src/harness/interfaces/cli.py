@@ -5,7 +5,10 @@ import json
 import sys
 from pathlib import Path
 
+import yaml
+
 from harness import (
+    AgentRequest,
     ArtifactDiffEndpoint,
     ArtifactVariant,
     ArtifactVersionRef,
@@ -20,6 +23,7 @@ from harness import (
     RunRef,
     StartRunCommand,
 )
+from harness.interfaces.agent_gateway import AgentRequestGateway
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -81,6 +85,28 @@ def _parser() -> argparse.ArgumentParser:
 
     evaluate = commands.add_parser("eval")
     evaluate.add_subparsers(dest="eval_command", required=True).add_parser("run")
+
+    request = commands.add_parser("request")
+    request_commands = request.add_subparsers(dest="request_command", required=True)
+    request_run = request_commands.add_parser("run")
+    request_run.add_argument("request_file")
+    request_run.add_argument(
+        "--allow-source-root",
+        action="append",
+        required=True,
+        dest="allowed_source_roots",
+    )
+    request_commands.add_parser("schema")
+
+    mcp = commands.add_parser("mcp")
+    mcp_commands = mcp.add_subparsers(dest="mcp_command", required=True)
+    mcp_serve = mcp_commands.add_parser("serve")
+    mcp_serve.add_argument(
+        "--allow-source-root",
+        action="append",
+        required=True,
+        dest="allowed_source_roots",
+    )
     return parser
 
 
@@ -141,10 +167,44 @@ def _review_versions(harness: Harness, args: argparse.Namespace) -> list[Artifac
     return refs
 
 
+def _load_agent_request(path: Path) -> AgentRequest:
+    if not path.is_file():
+        raise FileNotFoundError(f"Agent Request 文件不存在: {path}")
+    suffix = path.suffix.lower()
+    text = path.read_text(encoding="utf-8")
+    if suffix == ".json":
+        payload = json.loads(text)
+    elif suffix in {".yaml", ".yml"}:
+        payload = yaml.safe_load(text)
+    else:
+        raise ValueError("Agent Request 只支持 .json、.yaml 或 .yml")
+    return AgentRequest.model_validate(payload)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    harness = Harness(Path(args.repo_root))
     try:
+        if args.command == "request":
+            if args.request_command == "schema":
+                _print(AgentRequest.model_json_schema())
+                return 0
+            gateway = AgentRequestGateway(
+                Path(args.repo_root),
+                allowed_source_roots=[Path(item) for item in args.allowed_source_roots],
+            )
+            _print(gateway.generate_from_sources(_load_agent_request(Path(args.request_file))))
+            return 0
+        if args.command == "mcp":
+            from harness.interfaces.mcp_server import create_mcp_server
+
+            gateway = AgentRequestGateway(
+                Path(args.repo_root),
+                allowed_source_roots=[Path(item) for item in args.allowed_source_roots],
+            )
+            create_mcp_server(gateway).run(transport="stdio")
+            return 0
+
+        harness = Harness(Path(args.repo_root))
         if args.command == "workspace":
             print(
                 harness.create_workspace(

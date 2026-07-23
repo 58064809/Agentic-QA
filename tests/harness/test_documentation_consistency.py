@@ -8,6 +8,7 @@ from urllib.parse import unquote
 
 import yaml
 
+from harness.application.agent_request import AgentRequest, AgentRequestResult
 from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.failure_triage import FailureTriage
@@ -18,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCS = ROOT / "docs"
 LINK = re.compile(r"\[[^]]+]\(([^)]+)\)")
 SCHEMAS = {
+    "agent-request.v1.schema.json": AgentRequest,
+    "agent-request-result.v1.schema.json": AgentRequestResult,
     "api-cases.v1.1.schema.json": ApiTestCasesDraft,
     "execution-evidence.v1.schema.json": ExecutionEvidence,
     "failure-triage.v1.schema.json": FailureTriage,
@@ -116,6 +119,11 @@ def test_checked_in_json_schemas_match_pydantic_models() -> None:
     for name, model in SCHEMAS.items():
         actual = json.loads((DOCS / "schemas" / name).read_text(encoding="utf-8"))
         assert actual == model.model_json_schema(), name
+        if name.startswith("agent-request"):
+            packaged = json.loads(
+                (ROOT / "src" / "harness" / "schemas" / name).read_text(encoding="utf-8")
+            )
+            assert packaged == actual, name
 
 
 def test_runtime_knowledge_is_structured_and_referenced() -> None:

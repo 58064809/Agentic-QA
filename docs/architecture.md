@@ -1,6 +1,7 @@
 # Harness v2 架构
 
-Agentic-QA 是单 Python distribution 的模块化单体。
+Agentic-QA 是单 Python distribution 的模块化单体。外部 AI 通过受限 AgentRequest/MCP 接口进入，
+不会获得 Review 写入能力。
 
 ## 实际依赖
 
@@ -39,7 +40,9 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    Start[StartRunCommand] --> Source[安全摄取并冻结 SourceBundle]
+    AgentRequest[AgentRequest/MCP] --> Import[白名单来源原子导入]
+    Import --> Start[StartRunCommand]
+    Start --> Source[安全摄取并冻结 SourceBundle]
     Source --> Plan[QAPlan]
     Plan --> Agents[并行专家任务]
     Agents --> Raw[raw artifact]
@@ -63,6 +66,7 @@ flowchart TD
 | Checkpoint | `CheckpointProvider` | PostgreSQL saver |
 | Tool | handler/manifest 契约 | API、RAG、PostgreSQL、MCP handlers |
 | Artifact/Review | `ArtifactReviewRepository` | Candidate、Review、Publication Journal 文件仓储 |
+| 外部 AI 请求 | `ManagedAgentWorkspaceProvisioner`、AgentRequest models | 白名单导入、MCP stdio |
 
 业务 pack `city-opening-rewards` 仅存在于 infrastructure，并拆为 parser、rules、validators、
 remediation、normalizer 和 strategy。LangGraph 只存在于 workflow adapter；PostgreSQL 是唯一生产

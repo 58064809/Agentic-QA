@@ -123,3 +123,17 @@ data_sources:
 
 通用策略允许 empty SourceBundle。是否要求来源或完整来源由启用的 QualityStrategy 声明；
 `city-opening-rewards` 两者都要求。
+
+## AgentRequest 与 MCP
+
+AgentRequest 不从环境变量读取来源根。每次启动 MCP Server 或执行请求文件时，必须通过可重复参数
+显式配置：
+
+```powershell
+python -m harness mcp serve `
+  --allow-source-root D:\Requirements `
+  --allow-source-root D:\OpenAPI
+```
+
+允许根只存在于当前进程参数中，不写入 workspace；工具调用不能扩大白名单。AgentRequest 固定使用
+`analysis-only`，不能配置 ExecutionProfile。完整协议见[跨 AI 接入](agent-integration.md)。

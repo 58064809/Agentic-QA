@@ -97,6 +97,9 @@ class FilesystemStore:
         self._recover_publication(snapshot)
         return self.runs.load_snapshot(workspace, run_id)
 
+    def load_snapshot_read_only(self, workspace: str, run_id: str) -> RunSnapshot:
+        return self.runs.load_snapshot(workspace, run_id)
+
     def commit_candidate(self, **kwargs: Any) -> tuple[ArtifactCandidate, bool]:
         return self.artifacts.commit_candidate(**kwargs)
 

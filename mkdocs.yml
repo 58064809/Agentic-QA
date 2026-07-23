@@ -22,6 +22,7 @@ nav:
       - 从零开始: getting-started.md
       - CLI 参考: cli-reference.md
       - 配置参考: configuration.md
+      - 跨 AI 接入: agent-integration.md
   - 核心设计:
       - 架构: architecture.md
       - Review Gate: review-gate.md

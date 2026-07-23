@@ -16,6 +16,7 @@
 |---|---|
 | 公开 Harness API | `src/harness/interfaces/facade.py` 与 `src/harness/contracts.py` |
 | CLI | `src/harness/interfaces/cli.py` |
+| 外部 AI 请求协议与 MCP 工具 | `src/harness/application/agent_request/` 与 `src/harness/interfaces/mcp_server.py` |
 | 领域模型与 Schema | `src/harness/domain/` |
 | 应用用例、Source/Quality 模型与端口 | `src/harness/application/` |
 | Workflow、仓储、模型、MCP、RAG、质量适配器 | `src/harness/infrastructure/` |
@@ -61,6 +62,7 @@ Harness 只读写 `workspaces/<id>/`。旧 `prd/` 不迁移、不读取、不改
 - 代码契约优先用表格、状态矩阵、Schema 或图表达，避免在多页重复同一段规则。
 - 修改 `src/harness/knowledge/` 等同于修改 Agent Prompt，必须保持引用有效并运行离线 eval。
 - 新增站点文档必须加入 MkDocs nav；新增本地链接必须通过一致性测试。
+- AgentRequest/MCP 不得暴露 Review 写入、approve、promote、shell 或任意文件读取工具。
 
 ## 验证与回执
 

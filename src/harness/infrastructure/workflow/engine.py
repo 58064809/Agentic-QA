@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any
@@ -302,6 +303,7 @@ class HarnessEngine:
         emit: Any | None = None,
         *,
         tool_handlers: dict[str, Any] | None = None,
+        run_id: str | None = None,
     ) -> RunSnapshot:
         if self.model is None:
             raise RuntimeError(
@@ -309,7 +311,9 @@ class HarnessEngine:
                 "或显式配置 AGENTIC_QA_MODEL 和模型密钥环境变量，"
                 "或显式注入 ModelGateway"
             )
-        run_id = f"run-{datetime.now(tz=UTC):%Y%m%d-%H%M%S}-{uuid4().hex[:8]}"
+        run_id = run_id or f"run-{datetime.now(tz=UTC):%Y%m%d-%H%M%S}-{uuid4().hex[:8]}"
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", run_id):
+            raise ValueError("run_id 不安全")
         snapshot = RunSnapshot(
             run_id=run_id,
             workspace_id=request.workspace_id,

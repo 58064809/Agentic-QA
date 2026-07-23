@@ -1,0 +1,173 @@
+{
+  "$defs": {
+    "AgentCandidateSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact": {
+          "title": "Artifact",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "partial": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Partial"
+        },
+        "variants": {
+          "items": {
+            "$ref": "#/$defs/ArtifactVariant"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "artifact",
+        "status",
+        "partial",
+        "variants"
+      ],
+      "title": "AgentCandidateSummary",
+      "type": "object"
+    },
+    "AgentNextAction": {
+      "enum": [
+        "human_review_required",
+        "wait",
+        "retry_same_request",
+        "inspect_errors",
+        "none"
+      ],
+      "title": "AgentNextAction",
+      "type": "string"
+    },
+    "ArtifactVariant": {
+      "enum": [
+        "raw",
+        "normalized"
+      ],
+      "title": "ArtifactVariant",
+      "type": "string"
+    },
+    "ImportedSourceFile": {
+      "additionalProperties": false,
+      "properties": {
+        "logical_path": {
+          "title": "Logical Path",
+          "type": "string"
+        },
+        "raw_sha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Raw Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "logical_path",
+        "raw_sha256",
+        "size_bytes"
+      ],
+      "title": "ImportedSourceFile",
+      "type": "object"
+    },
+    "SourceImportSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "file_count": {
+          "minimum": 0,
+          "title": "File Count",
+          "type": "integer"
+        },
+        "total_bytes": {
+          "minimum": 0,
+          "title": "Total Bytes",
+          "type": "integer"
+        },
+        "manifest_sha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Manifest Sha256",
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/ImportedSourceFile"
+          },
+          "title": "Files",
+          "type": "array"
+        }
+      },
+      "required": [
+        "file_count",
+        "total_bytes",
+        "manifest_sha256",
+        "files"
+      ],
+      "title": "SourceImportSummary",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.harness.agent-request-result.v1",
+      "default": "agentic-qa.harness.agent-request-result.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "request_key": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Request Key",
+      "type": "string"
+    },
+    "workspace_id": {
+      "title": "Workspace Id",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "source_import": {
+      "$ref": "#/$defs/SourceImportSummary"
+    },
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/AgentCandidateSummary"
+      },
+      "title": "Candidates",
+      "type": "array"
+    },
+    "next_action": {
+      "$ref": "#/$defs/AgentNextAction"
+    }
+  },
+  "required": [
+    "request_key",
+    "workspace_id",
+    "run_id",
+    "status",
+    "source_import",
+    "candidates",
+    "next_action"
+  ],
+  "title": "AgentRequestResult",
+  "type": "object"
+}
