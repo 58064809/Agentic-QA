@@ -11,8 +11,9 @@ Markdown、HTML 和 YAML 内容不会执行。
 空 sources；`city-opening-rewards` 要求来源存在且完整。关键的配置、档位、对应关系、规则表或枚举
 章节为空时产生 `suspected_missing_structure` blocker。
 
-复制 `.env.example` 后只在本机环境或密钥管理服务中填写真实值。代码、workspace、Prompt、事件
-和产物都不得保存 Token、API Key、Cookie 或数据库密码。
+`.env.example` 只提供变量名和占位值，CLI 不会自动加载 `.env`。运行前应通过当前 shell、Windows
+用户环境变量或密钥管理服务注入真实值。代码、workspace、Prompt、事件和产物都不得保存 Token、
+API Key、Cookie 或数据库密码。
 
 ## 环境变量
 
