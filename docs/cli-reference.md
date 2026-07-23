@@ -19,21 +19,20 @@ python -m harness [--repo-root <path>] <group> <command> ...
 | `run review` | `workspace_id run_id decision` | artifact、variant、审核信息 | 写审核记录；approve 可触发发布 |
 | `run diff` | `workspace_id run_id artifact` | before、after | 只读返回 unified diff |
 | `eval run` | 无 | 无 | 运行离线确定性评估 |
-| `request run` | `request_file` | 重复 `--allow-source-root` | 导入本地来源并幂等执行到 Review Gate |
+| `request run` | `request_file` | 可重复 `--allow-source-root` | 导入本地来源并幂等执行到 Review Gate |
 | `request schema` | 无 | 无 | 输出 AgentRequest v1 JSON Schema |
-| `mcp serve` | 无 | 重复 `--allow-source-root` | 启动本地 stdio MCP Server |
+| `mcp serve` | 无 | 可重复 `--allow-source-root` | 启动本地 stdio MCP Server |
 
 ## `request` 与 `mcp`
 
-`request run` 只接受 `.json`、`.yaml` 或 `.yml`，并要求至少一个绝对
-`--allow-source-root`。请求固定为 `analysis-only`，不会调用人工 Review 或发布。
+`request run` 只接受 `.json`、`.yaml` 或 `.yml`。项目内
+`local-sources/requirements/` 是默认允许根，缺失时自动创建；`--allow-source-root` 用于追加项目外
+绝对路径。请求固定为 `analysis-only`，不会调用人工 Review 或发布。
 
 ```powershell
-python -m harness request run .\request.yml `
-  --allow-source-root D:\Requirements
+python -m harness request run .\request.yml
 
-python -m harness mcp serve `
-  --allow-source-root D:\Requirements
+python -m harness mcp serve
 ```
 
 MCP 工具、请求字段和安全限制见[跨 AI 接入](agent-integration.md)。

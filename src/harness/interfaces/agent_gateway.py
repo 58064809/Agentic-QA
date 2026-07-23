@@ -8,7 +8,7 @@ from harness.application.agent_request import (
     AgentRequestResult,
 )
 from harness.application.use_cases import HarnessApplication
-from harness.bootstrap import build_application
+from harness.bootstrap import agent_source_roots, build_application
 from harness.domain.models import ArtifactDiffResult, GetArtifactDiffQuery, RunRef, RunSnapshot
 
 
@@ -19,13 +19,15 @@ class AgentRequestGateway:
         self,
         repo_root: Path | str = ".",
         *,
-        allowed_source_roots: list[Path | str],
+        allowed_source_roots: list[Path | str] | None = None,
         application: HarnessApplication | None = None,
     ) -> None:
-        self._application = application or build_application(
-            repo_root,
-            allowed_source_roots=allowed_source_roots,
-        )
+        self._application = application
+        if self._application is None:
+            self._application = build_application(
+                repo_root,
+                allowed_source_roots=agent_source_roots(repo_root, allowed_source_roots),
+            )
 
     def generate_from_sources(self, request: AgentRequest) -> AgentRequestResult:
         return self._application.submit_agent_request(request)

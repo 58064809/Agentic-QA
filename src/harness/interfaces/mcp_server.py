@@ -119,8 +119,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--allow-source-root",
         action="append",
-        required=True,
         dest="allowed_source_roots",
+        help="追加允许导入的绝对路径；项目内 local-sources/requirements 始终可用",
     )
     return parser
 
@@ -129,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     gateway = AgentRequestGateway(
         Path(args.repo_root),
-        allowed_source_roots=[Path(item) for item in args.allowed_source_roots],
+        allowed_source_roots=[Path(item) for item in (args.allowed_source_roots or [])],
     )
     create_mcp_server(gateway).run(transport="stdio")
     return 0

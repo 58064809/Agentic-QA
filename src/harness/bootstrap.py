@@ -24,6 +24,33 @@ from harness.infrastructure.quality.packs.city_opening_rewards import (
 from harness.infrastructure.workflow.engine import HarnessEngine
 from harness.infrastructure.workflow.runner import LangGraphWorkflowRunner
 
+LOCAL_REQUIREMENTS_RELATIVE_PATH = Path("local-sources") / "requirements"
+
+
+def ensure_local_requirements_root(repo_root: Path | str) -> Path:
+    """Return the repository-local requirement inbox, creating it when absent."""
+    path = Path(repo_root).resolve() / LOCAL_REQUIREMENTS_RELATIVE_PATH
+    path.mkdir(parents=True, exist_ok=True)
+    if not path.is_dir():
+        raise NotADirectoryError(f"本地需求路径不是目录: {path}")
+    return path
+
+
+def agent_source_roots(
+    repo_root: Path | str,
+    additional_roots: list[Path | str] | None = None,
+) -> list[Path]:
+    """Build the MCP/Agent Request allowlist with the local inbox always included."""
+    roots = [ensure_local_requirements_root(repo_root)]
+    seen = {str(roots[0]).casefold()}
+    for item in additional_roots or []:
+        path = Path(item)
+        key = str(path.resolve()).casefold()
+        if key not in seen:
+            roots.append(path)
+            seen.add(key)
+    return roots
+
 
 def build_application(
     repo_root: Path | str,
@@ -38,6 +65,7 @@ def build_application(
     tool_handlers: dict[str, Any] | None = None,
     allowed_source_roots: list[Path | str] | None = None,
 ) -> HarnessApplication:
+    ensure_local_requirements_root(repo_root)
     store = FilesystemStore(repo_root)
     tools = tool_registry or ToolRegistry.builtin()
     skills = skill_registry or SkillRegistry.builtin()

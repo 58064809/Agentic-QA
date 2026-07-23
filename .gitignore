@@ -27,6 +27,9 @@ Thumbs.db
 /knowledge/
 /.runtime/
 
+# Local requirement inbox for Agent Request / MCP imports
+/local-sources/
+
 # Local agent / skill runtime state
 .atomcode/
 

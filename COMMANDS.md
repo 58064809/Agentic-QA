@@ -7,6 +7,12 @@
 - [配置参考](docs/configuration.md)：环境变量、`workspace.yml`、RAG 与 PostgreSQL。
 - [跨 AI 接入](docs/agent-integration.md)：Codex、Claude、Cursor 的 MCP 与请求文件入口。
 
+使用 AI 生成测试用例时，把每项需求放在
+`local-sources/requirements/<需求名>/`。该目录不会提交到 Git，并在首次运行项目时自动创建。Codex
+注册 MCP 后可直接说：
+
+> 分析 `D:\TestHome\Agentic-QA\local-sources\requirements\<需求名>` 并生成测试用例。
+
 最短流程：
 
 ```powershell

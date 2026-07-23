@@ -30,6 +30,7 @@ from harness.infrastructure.persistence.filesystem import FilesystemStore
 from harness.infrastructure.persistence.workspace_repository import (
     WorkspaceFilesystemRepository,
 )
+from harness.interfaces import agent_gateway as agent_gateway_module
 from harness.interfaces import cli
 from harness.interfaces.agent_gateway import AgentRequestGateway
 from harness.interfaces.cli import _load_agent_request
@@ -109,6 +110,32 @@ def test_agent_gateway_get_run_uses_read_only_repository_path() -> None:
 
     assert result is snapshot
     assert len(calls) == 1
+
+
+def test_agent_gateway_creates_and_allows_local_requirement_inbox(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    captured: list[Path] = []
+
+    def fake_build_application(_repo_root: Path, *, allowed_source_roots: list[Path]):
+        captured.extend(allowed_source_roots)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(agent_gateway_module, "build_application", fake_build_application)
+
+    AgentRequestGateway(repo)
+
+    expected = (repo / "local-sources" / "requirements").resolve()
+    assert expected.is_dir()
+    assert captured == [expected]
+
+
+def test_cli_mcp_serve_uses_local_requirement_inbox_by_default() -> None:
+    args = cli._parser().parse_args(["mcp", "serve"])
+
+    assert args.allowed_source_roots is None
 
 
 def test_mcp_stdio_server_lists_restricted_tools(tmp_path: Path) -> None:

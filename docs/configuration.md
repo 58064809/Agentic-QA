@@ -126,14 +126,14 @@ data_sources:
 
 ## AgentRequest 与 MCP
 
-AgentRequest 不从环境变量读取来源根。每次启动 MCP Server 或执行请求文件时，必须通过可重复参数
-显式配置：
+AgentRequest 不从环境变量读取来源根。组合根会自动创建并允许项目内的
+`local-sources/requirements/`；该目录整体由 Git 忽略。项目外来源通过可重复参数显式追加：
 
 ```powershell
 python -m harness mcp serve `
-  --allow-source-root D:\Requirements `
   --allow-source-root D:\OpenAPI
 ```
 
-允许根只存在于当前进程参数中，不写入 workspace；工具调用不能扩大白名单。AgentRequest 固定使用
-`analysis-only`，不能配置 ExecutionProfile。完整协议见[跨 AI 接入](agent-integration.md)。
+默认根由 `--repo-root` 决定，追加允许根只存在于当前进程参数中，不写入 workspace；工具调用不能
+扩大白名单。AgentRequest 固定使用 `analysis-only`，不能配置 ExecutionProfile。完整协议见
+[跨 AI 接入](agent-integration.md)。

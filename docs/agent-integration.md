@@ -16,13 +16,29 @@ promote。
 
 ## AgentRequest
 
+项目约定的本地需求收件箱是：
+
+```text
+local-sources/
+└── requirements/
+    ├── login/
+    │   ├── prd.md
+    │   └── openapi.yaml
+    └── checkout/
+        └── requirement.md
+```
+
+`local-sources/` 已被 Git 忽略。运行任意 Harness 命令或启动 MCP 时，如果
+`local-sources/requirements/` 不存在，程序会自动创建；刚 clone 后无需手工初始化。建议每项需求使用
+独立子目录，相关 PRD、接口契约和补充说明放在一起。
+
 ```yaml
 schema_version: agentic-qa.harness.agent-request.v1
 request_id: login-cases-001       # 可选；需要主动区分同内容请求时使用
 workspace_id: login-qa            # 可选；省略时安全生成
 goal: 分析登录需求并生成测试用例
 source_paths:
-  - D:\Requirements\login
+  - D:\TestHome\Agentic-QA\local-sources\requirements\login
 expected_artifacts:
   - testcases
 quality_policies: []
@@ -46,11 +62,11 @@ quality_policies: []
 
 ```powershell
 agentic-qa-mcp `
-  --repo-root D:\TestHome\Agentic-QA `
-  --allow-source-root D:\Requirements
+  --repo-root D:\TestHome\Agentic-QA
 ```
 
-服务只使用 stdio。`--allow-source-root` 可重复，工具参数不能扩大这些目录；至少提供一个允许根。
+服务只使用 stdio。项目内 `local-sources/requirements/` 始终是允许根且会自动创建。需要读取项目外
+目录时，可重复传入 `--allow-source-root <绝对路径>` 追加白名单；工具参数不能扩大这些目录。
 
 ### MCP 工具
 
@@ -70,13 +86,12 @@ agentic-qa-mcp `
 ```powershell
 codex mcp add agentic-qa -- `
   D:\TestHome\Agentic-QA\.venv\Scripts\agentic-qa-mcp.exe `
-  --repo-root D:\TestHome\Agentic-QA `
-  --allow-source-root D:\Requirements
+  --repo-root D:\TestHome\Agentic-QA
 ```
 
 注册后可以说：
 
-> 分析 `D:\Requirements\login\prd.md` 并生成测试用例，只生成 Candidate。
+> 分析 `D:\TestHome\Agentic-QA\local-sources\requirements\login` 并生成测试用例，只生成 Candidate。
 
 Codex 根据 MCP Tool Schema 构造 `AgentRequest`。如果路径不在启动白名单内，服务明确拒绝，而不是
 要求模型自行复制文件。
@@ -92,9 +107,7 @@ Codex 根据 MCP Tool Schema 构造 `AgentRequest`。如果路径不在启动白
       "command": "D:\\TestHome\\Agentic-QA\\.venv\\Scripts\\agentic-qa-mcp.exe",
       "args": [
         "--repo-root",
-        "D:\\TestHome\\Agentic-QA",
-        "--allow-source-root",
-        "D:\\Requirements"
+        "D:\\TestHome\\Agentic-QA"
       ]
     }
   }
@@ -106,8 +119,7 @@ Codex 根据 MCP Tool Schema 构造 `AgentRequest`。如果路径不在启动白
 ## 请求文件 CLI
 
 ```powershell
-python -m harness request run .\agent-request.yml `
-  --allow-source-root D:\Requirements
+python -m harness request run .\agent-request.yml
 ```
 
 输出为 [AgentRequestResult JSON Schema](schemas/agent-request-result.v1.schema.json) 对应的 JSON。查看

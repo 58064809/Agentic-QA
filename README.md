@@ -20,6 +20,9 @@ python -m harness workspace create demo
 `.env.example` 只列出变量名，CLI 不会自动加载 `.env`。不要把真实 Token、密钥、Cookie 或数据库
 密码写入仓库。
 
+本地需求统一放入 `local-sources/requirements/<需求名>/`。目录被 Git 忽略，并在首次运行 Harness
+时自动创建；跨 AI 的 MCP 注册和一句话用法见[跨 AI 接入](docs/agent-integration.md)。
+
 ## 核心边界
 
 | 边界 | 行为 |
