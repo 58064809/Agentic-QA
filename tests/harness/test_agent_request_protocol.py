@@ -46,6 +46,12 @@ def _request(source: Path, *, workspace_id: str | None = None) -> AgentRequest:
     )
 
 
+def test_agent_request_defaults_to_analysis_and_testcases() -> None:
+    request = AgentRequest(goal="分析需求并生成测试用例", source_paths=["D:/requirements/prd.md"])
+
+    assert request.expected_artifacts == ["requirement_analysis", "testcases"]
+
+
 def _provisioner(repo: Path, allowed: Path) -> ManagedAgentWorkspaceFilesystemProvisioner:
     return ManagedAgentWorkspaceFilesystemProvisioner(
         WorkspaceFilesystemRepository(repo),
@@ -515,7 +521,10 @@ def test_agent_request_end_to_end_is_idempotent_and_stops_at_review(
     assert second.run_id == first.run_id
     assert first.status == "needs_human_review"
     assert first.next_action == AgentNextAction.HUMAN_REVIEW_REQUIRED
-    assert [item.artifact for item in first.candidates] == ["testcases"]
+    assert [item.artifact for item in first.candidates] == [
+        "requirement_analysis",
+        "testcases",
+    ]
     assert not list((repo / "workspaces" / first.workspace_id / "published").glob("*"))
 
     source.write_text("后来修改的需求\n", encoding="utf-8")
@@ -571,7 +580,7 @@ def test_recoverable_request_uses_workflow_resume() -> None:
     command = StartRunCommand(
         workspace_id="managed",
         goal=request.goal,
-        expected_artifacts=["testcases"],
+        expected_artifacts=request.expected_artifacts,
         execution_profile=ExecutionProfile(),
     )
     snapshot = RunSnapshot(

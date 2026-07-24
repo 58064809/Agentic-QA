@@ -18,7 +18,7 @@ from harness.infrastructure.quality.packs.city_opening_rewards.validators import
 
 class CityOpeningRewardsStrategy:
     name = "city-opening-rewards"
-    version = "2.0.0"
+    version = "2.1.0"
     requirements = StrategyRequirements(requires_sources=True, requires_complete_sources=True)
     configuration = QualityComponentConfiguration()
 

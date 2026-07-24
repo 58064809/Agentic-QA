@@ -10,6 +10,8 @@ import pytest
 
 from harness.application.quality import (
     ArtifactVariant,
+    GenerationModelCall,
+    GenerationProvenance,
     NormalizationOperation,
     NormalizationOperationKind,
     NormalizationProposal,
@@ -266,6 +268,22 @@ def test_valid_setext_heading_is_detected() -> None:
 
 def test_valid_numbered_colon_heading_is_detected() -> None:
     assert "suspected_missing_structure" in _structure_codes("1. 奖励配置：")
+
+
+def test_critical_parent_section_accepts_content_under_label_subsection() -> None:
+    content = "\n".join(
+        [
+            "## 圈子成长金档位",
+            "",
+            "配置规则：",
+            "",
+            "| 档位 | 成长金 |",
+            "|---:|---:|",
+            "| 1 | 500元 |",
+        ]
+    )
+
+    assert "suspected_missing_structure" not in _structure_codes(content)
 
 
 def test_hard_limit_does_not_publish_a_partial_file_hash(tmp_path: Path) -> None:
@@ -539,6 +557,55 @@ def test_candidate_bundle_commit_is_create_only_and_idempotent(tmp_path: Path) -
         store.commit_candidate(
             workspace="demo", run_id="run-1", artifact="qa_report", assessment=different
         )
+
+
+def test_candidate_bundle_records_generation_provenance(tmp_path: Path) -> None:
+    store, _workspace = _workspace_store(tmp_path)
+    bundle = store.create_source_bundle("demo", "run-1")
+    assessment = CandidateAssessmentService(_registry()).assess(
+        context=QualityContext(
+            workspace_id="demo",
+            run_id="run-1",
+            artifact="qa_report",
+            source_bundle=bundle,
+        ),
+        content="report",
+        media_type="text/markdown",
+        strategy_names=["generic-artifact-contracts"],
+    )
+    assessment = assessment.model_copy(
+        update={
+            "generation": GenerationProvenance(
+                llm_used=True,
+                task_id="produce-report",
+                agent="qa_reporter",
+                model_calls=(
+                    GenerationModelCall(
+                        call_index=1,
+                        purpose="expert:qa_reporter",
+                        model="test-model",
+                        tier="flash",
+                        thinking="disabled",
+                        outcome="quality_accepted",
+                    ),
+                ),
+                usage={"input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+            )
+        }
+    )
+
+    candidate, _created = store.commit_candidate(
+        workspace="demo",
+        run_id="run-1",
+        artifact="qa_report",
+        assessment=assessment,
+    )
+
+    assert candidate.generation_report_path
+    assert candidate.generation_report_sha256
+    payload = json.loads((tmp_path / candidate.generation_report_path).read_text(encoding="utf-8"))
+    assert payload["llm_used"] is True
+    assert payload["model_calls"][0]["model"] == "test-model"
 
 
 def test_candidate_restores_evidence_and_partial_status_from_manifest(tmp_path: Path) -> None:

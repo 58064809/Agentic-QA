@@ -69,8 +69,10 @@ def _quality_check(
                 and any(term in confirmed for term in ("非确定", "待确认", "未确认"))
             ):
                 raise ValueError(
-                    "requirement_analysis must preserve '约50%' and calculation/rounding "
-                    "as non-final suggestions, not confirmed fixed rules"
+                    "requirement_analysis 的“## 已确认...”章节提到“获奖人数比例”时，"
+                    "同一章节必须同时保留“约”“建议”，并明确写出“非确定”“待确认”"
+                    "或“未确认”之一；也可以把该项移到推断/待确认章节。不得把约50%及"
+                    "计算、取整建议写成已确认固定规则"
                 )
     if artifact == "testcases":
         missing = [header for header in TESTCASE_HEADERS if header not in content]
@@ -107,8 +109,20 @@ def _quality_check(
                 f"physical lines: {invalid_line_numbers[:10]}; replace cell newlines with <br>"
             )
         data_rows = [_markdown_cells(line) for line in main_lines if line.strip().startswith("|")]
-        if any(len(row) != len(TESTCASE_HEADERS) for row in data_rows):
-            raise ValueError("testcases candidate contains a row that is not exactly 11 columns")
+        malformed_rows = [
+            {
+                "physical_line": header_index + 3 + offset,
+                "column_count": len(_markdown_cells(line)),
+            }
+            for offset, line in enumerate(main_lines)
+            if line.strip().startswith("|") and len(_markdown_cells(line)) != len(TESTCASE_HEADERS)
+        ]
+        if malformed_rows:
+            raise ValueError(
+                "testcases candidate contains rows that are not exactly 11 columns; "
+                f"rows: {malformed_rows[:20]}. Keep each case on one physical line, use <br> "
+                "inside cells, and escape literal table separators"
+            )
         if not data_rows or not any(row[0] and row[2] for row in data_rows):
             raise ValueError("testcases candidate has no valid 11-column data row")
         coverage_rows = [
@@ -129,9 +143,19 @@ def _quality_check(
             row[0]
             for row in coverage_rows[2:]
             if len(row) == 3
-            and any(
-                term in " ".join(row)
-                for term in ("暂无", "未覆盖", "待补充", "需补充", "后续设计", "仍需补充")
+            and (
+                row[1].strip().casefold() in {"", "-", "无", "n/a", "待确认"}
+                or any(
+                    term in " ".join(row)
+                    for term in (
+                        "暂无",
+                        "未覆盖",
+                        "待补充",
+                        "需补充",
+                        "后续设计",
+                        "仍需补充",
+                    )
+                )
             )
         ]
         if incomplete_coverage:
@@ -141,7 +165,12 @@ def _quality_check(
         ranged_coverage_ids = [
             row[1]
             for row in coverage_rows[2:]
-            if len(row) == 3 and re.search(r"TC-[A-Za-z0-9-]*\d+\s*[~～]\s*\d+", row[1])
+            if len(row) == 3
+            and re.search(
+                r"\bTC-(?:[A-Za-z0-9]+-)*\d+\s*(?:~|～|—|–|-)\s*"
+                r"(?:TC-(?:[A-Za-z0-9]+-)*)?\d+\b",
+                row[1],
+            )
         ]
         if ranged_coverage_ids:
             raise ValueError(

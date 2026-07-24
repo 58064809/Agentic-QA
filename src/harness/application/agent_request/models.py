@@ -47,8 +47,11 @@ class AgentRequest(StrictModel):
         ),
     )
     expected_artifacts: list[str] = Field(
-        default_factory=lambda: ["testcases"],
-        description="Artifact types to generate; defaults to testcases.",
+        default_factory=lambda: ["requirement_analysis", "testcases"],
+        description=(
+            "Artifact types to generate; defaults to a reviewable requirement analysis "
+            "and testcases."
+        ),
     )
     quality_policies: list[str] = Field(
         default_factory=list,

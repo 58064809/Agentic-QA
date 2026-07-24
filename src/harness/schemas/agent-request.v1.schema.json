@@ -56,7 +56,7 @@
       "type": "array"
     },
     "expected_artifacts": {
-      "description": "Artifact types to generate; defaults to testcases.",
+      "description": "Artifact types to generate; defaults to a reviewable requirement analysis and testcases.",
       "items": {
         "type": "string"
       },

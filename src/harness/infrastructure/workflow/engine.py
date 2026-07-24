@@ -13,7 +13,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from harness.application.model_port import ModelGateway, ModelPolicy
 from harness.application.ports import CheckpointProvider
-from harness.application.quality import QualityContext
+from harness.application.quality import (
+    CandidateAssessment,
+    GenerationModelCall,
+    GenerationProvenance,
+    QualityContext,
+)
 from harness.application.review_service import apply_review
 from harness.application.source import SourceBundle
 from harness.domain.budget import Budget, BudgetExceeded, BudgetLimits
@@ -57,6 +62,14 @@ class AgentOutput(BaseModel):
     tool_requests: list[ToolRequest] = Field(default_factory=list)
 
 
+class _TaskExecution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    output: AgentOutput
+    assessments: dict[str, CandidateAssessment] = Field(default_factory=dict)
+    quality_exhausted_artifacts: set[str] = Field(default_factory=set)
+
+
 ARTIFACT_AGENT = {
     "requirement_analysis": "requirement_analyst",
     "testcases": "test_designer",
@@ -73,8 +86,10 @@ DESIGN_ARTIFACTS = frozenset({"testcases", "api_test_draft", "ui_test_draft"})
 
 ARTIFACT_OUTPUT_CONTRACTS = {
     "requirement_analysis": (
-        "输出完整 Markdown 需求分析，至少包含：来源、已确认规则、推断、冲突/歧义、"
-        "待确认项和测试影响。每条事实必须可追踪到 source；不得补造缺失配置。"
+        "输出完整 Markdown 需求分析，至少包含：来源清单、参与者与业务对象、业务流程、"
+        "已确认规则清单、配置/枚举、边界与异常、推断、冲突/歧义、待确认项和测试影响。"
+        "已确认规则使用稳定规则 ID，并逐条记录来源路径与章节、条件、结果和证据级别。"
+        "每条事实必须可追踪到 source；不得补造缺失配置。"
         "只输出需求分析，不得附带测试用例表。若同一术语存在不同条件口径，必须列为冲突。"
         "来源使用“约”或“建议”时不得改写为已确认固定规则。"
     ),
@@ -84,22 +99,20 @@ ARTIFACT_OUTPUT_CONTRACTS = {
         "测试步骤 | 预期结果 | 断言/证据 | 待确认项 |\n"
         "表格至少包含一条可执行用例；随后输出“覆盖矩阵”，包含规则/风险、用例和映射依据，"
         "且至少一条有效映射。每条 Markdown 表格记录必须保持在单个物理行内，多步骤使用 "
-        "<br> 分隔。不得把待确认规则写成确定预期；没有 OpenAPI 或数据模型证据时，不得"
-        "编造接口调用、数据库表或字段。不得增加来源未定义的后台、管理员、日志、"
-        "个人奖励页或账户余额等观察点。正式配置存在最低核销人数时，低于该人数的"
-        "场景只能标为不可执行的说明，不得包含操作步骤或产品结果。来源中的约数、计算"
-        "建议和取整建议不得写成固定断言；若保留建议用例，必须在预期和待确认项中明确"
-        "条件性。不得用‘非两队’判定非对抗，个人对个人和多人积分排名也可能是对抗类。"
-        "内容真实性判定、奖励审核或发放时机未定义时，不得伪造自动判定或到账证据。"
-        "覆盖矩阵不得使用暂无、未覆盖、待补充或需后续设计等占位映射。"
-        "来源存在正式逐场奖励配置表时，必须以表驱动用例逐场覆盖准确的新老玩家单价、"
-        "预算底标和最低核销人数，不得使用示意假数据。"
+        "<br> 分隔，单元格内不得出现未转义的竖线。不得把待确认规则写成确定预期；没有 "
+        "OpenAPI 或数据模型证据时，不得"
+        "编造接口调用、数据库表、字段、页面、角色或不可观察的实现细节。先建立原子规则与"
+        "风险清单，再用正向、反向、边界、状态迁移和关键组合覆盖；不得把多个独立规则压缩成"
+        "一个无法定位失败原因的用例。来源中的配置表、档位、枚举和对应关系必须逐项映射，"
+        "并覆盖阈值前/阈值/阈值后；覆盖矩阵不得使用暂无、未覆盖、待补充或需后续设计等"
+        "占位映射。"
     ),
 }
 
 MAX_ARTIFACT_REPAIRS = 5
+MAX_QUALITY_REVISIONS = 5
 MAX_PLAN_REPAIRS = 3
-SOURCE_PREFETCH_AGENTS = frozenset({"requirement_analyst", "risk_strategist"})
+SOURCE_PREFETCH_AGENTS = frozenset({"requirement_analyst", "risk_strategist", "test_designer"})
 
 
 class _ModelUsageTracker:
@@ -587,7 +600,7 @@ class HarnessEngine:
             task = PlanTask.model_validate(worker["task"])
             event("agent_started", task_id=task.id, agent=task.agent)
             try:
-                output = self._run_task(
+                execution = self._run_task(
                     task=task,
                     request=StartRunCommand.model_validate(worker["request"]),
                     dependencies=worker.get("dependencies", {}),
@@ -602,7 +615,12 @@ class HarnessEngine:
                     "task_id": task.id,
                     "agent": task.agent,
                     "ok": True,
-                    "output": output.model_dump(mode="json"),
+                    "output": execution.output.model_dump(mode="json"),
+                    "assessments": {
+                        artifact: assessment.model_dump(mode="json")
+                        for artifact, assessment in execution.assessments.items()
+                    },
+                    "quality_exhausted_artifacts": sorted(execution.quality_exhausted_artifacts),
                 }
                 event("agent_completed", task_id=task.id, agent=task.agent)
             except BudgetExceeded:
@@ -636,12 +654,17 @@ class HarnessEngine:
                 task_id = result["task_id"]
                 if result["ok"]:
                     output = AgentOutput.model_validate(result["output"])
+                    assessments = {
+                        artifact: CandidateAssessment.model_validate(value)
+                        for artifact, value in result.get("assessments", {}).items()
+                    }
+                    quality_exhausted_artifacts = set(result.get("quality_exhausted_artifacts", []))
                     outputs[task_id] = output.model_dump(mode="json")
                     if task_id in pending:
                         pending.remove(task_id)
                     if task_id not in completed:
                         completed.append(task_id)
-                    for artifact, content in output.artifacts.items():
+                    for artifact, _content in output.artifacts.items():
                         if artifact not in request.expected_artifacts:
                             event(
                                 "task_output_accepted",
@@ -650,25 +673,10 @@ class HarnessEngine:
                                 output=artifact,
                             )
                             continue
-                        configured = (
-                            self.store.workspace_config(request.workspace_id).get(
-                                "quality_policies"
-                            )
-                            or []
-                        )
-                        strategy_names = ["generic-artifact-contracts", *configured]
-                        context = QualityContext(
-                            workspace_id=request.workspace_id,
-                            run_id=snapshot.run_id,
-                            artifact=artifact,
-                            source_bundle=source_bundle,
-                        )
-                        assessment_key = self.assessment.assessment_key(
-                            context=context,
-                            content=content,
-                            media_type="text/markdown",
-                            strategy_names=strategy_names,
-                        )
+                        assessment = assessments.get(artifact)
+                        if assessment is None:
+                            raise RuntimeError(f"任务缺少已执行的质量评估: {artifact}")
+                        assessment_key = assessment.report.assessment_key
                         stored = self.store.load_candidate(
                             workspace=request.workspace_id,
                             run_id=snapshot.run_id,
@@ -677,22 +685,21 @@ class HarnessEngine:
                         if stored is not None and stored.assessment_key == assessment_key:
                             candidate, created = stored, False
                         else:
-                            assessment = self.assessment.assess(
-                                context=context,
-                                content=content,
-                                media_type="text/markdown",
-                                strategy_names=strategy_names,
-                            )
                             candidate, created = self.store.commit_candidate(
                                 workspace=request.workspace_id,
                                 run_id=snapshot.run_id,
                                 artifact=artifact,
                                 assessment=assessment,
+                                partial=artifact in quality_exhausted_artifacts,
                                 evidence=output.evidence,
                             )
                         if artifact not in {item["artifact"] for item in candidates}:
                             candidates.append(candidate.model_dump(mode="json"))
-                        review_status[artifact] = "needs_human_review"
+                        review_status[artifact] = (
+                            "needs_revision"
+                            if artifact in quality_exhausted_artifacts
+                            else "needs_human_review"
+                        )
                         needs_quality_event = created or not self.store.has_assessment_event(
                             request.workspace_id,
                             snapshot.run_id,
@@ -758,6 +765,15 @@ class HarnessEngine:
             missing = set(request.expected_artifacts) - artifacts
             if missing:
                 raise ValueError(f"任务未生成委派产物: {sorted(missing)}")
+            candidates = [
+                ArtifactCandidate.model_validate(item) for item in state.get("candidates", [])
+            ]
+            if any(item.partial for item in candidates):
+                event(
+                    "generation_quality_exhausted",
+                    artifacts=sorted(item.artifact for item in candidates if item.partial),
+                )
+                return {"status": "partial"}
             event("review_required", artifacts=sorted(artifacts))
             return {"status": "needs_human_review"}
 
@@ -860,7 +876,7 @@ class HarnessEngine:
         model_usage: _ModelUsageTracker,
         event: Any,
         source_bundle: SourceBundle,
-    ) -> AgentOutput:
+    ) -> _TaskExecution:
         if self.model is None:
             raise RuntimeError("model is not configured")
         manifest = self.agents.get(task.agent)
@@ -871,6 +887,9 @@ class HarnessEngine:
         validation_feedback: list[dict[str, str]] = []
         artifact_repair_attempts = 0
         structured_output_attempts = 0
+        quality_revisions = 0
+        generation_usage = _ModelUsageTracker({})
+        generation_calls: list[dict[str, Any]] = []
         source_files = [document.path for document in source_bundle.readable_documents]
         if (
             source_files
@@ -898,11 +917,12 @@ class HarnessEngine:
         for step in range(manifest.max_steps):
             budget.consume_model()
             route = self.model_policy.for_task(task)
+            route_record = self.model.describe_route(route)
             event(
                 "model_routed",
                 task_id=task.id,
                 agent=manifest.name,
-                **self.model.describe_route(route),
+                **route_record,
             )
             try:
                 try:
@@ -938,10 +958,19 @@ class HarnessEngine:
                         route=route,
                     )
                 finally:
-                    model_usage.add(_last_call_usage(self.model))
+                    call_usage = _last_call_usage(self.model)
+                    model_usage.add(call_usage)
+                    generation_usage.add(call_usage)
             except RuntimeError as exc:
                 if not _is_invalid_structured_output(exc) or step + 1 >= manifest.max_steps:
                     raise
+                generation_calls.append(
+                    {
+                        "call_index": len(generation_calls) + 1,
+                        **route_record,
+                        "outcome": "invalid_structured_output",
+                    }
+                )
                 error = str(exc)[:500]
                 structured_output_attempts += 1
                 validation_feedback.append(
@@ -962,6 +991,13 @@ class HarnessEngine:
                     error=error,
                 )
                 continue
+            generation_calls.append(
+                {
+                    "call_index": len(generation_calls) + 1,
+                    **route_record,
+                    "outcome": "completed",
+                }
+            )
             if result.tool_requests:
                 for call in result.tool_requests:
                     if call.tool not in available_tool_names:
@@ -1030,7 +1066,108 @@ class HarnessEngine:
                         f"artifact validation failed after {MAX_ARTIFACT_REPAIRS} attempts: {error}"
                     ) from exc
                 continue
-            return result
+            configured = (
+                self.store.workspace_config(request.workspace_id).get("quality_policies") or []
+            )
+            strategy_names = ["generic-artifact-contracts", *configured]
+            assessments: dict[str, CandidateAssessment] = {}
+            blockers: list[dict[str, str]] = []
+            remediation_guidance: dict[str, str] = {}
+            for artifact, content in result.artifacts.items():
+                if artifact not in request.expected_artifacts:
+                    continue
+                context = QualityContext(
+                    workspace_id=request.workspace_id,
+                    run_id=run_id,
+                    artifact=artifact,
+                    source_bundle=source_bundle,
+                )
+                assessment = self.assessment.assess(
+                    context=context,
+                    content=content,
+                    media_type="text/markdown",
+                    strategy_names=strategy_names,
+                )
+                assessments[artifact] = assessment
+                if assessment.remediation_patch:
+                    remediation_guidance[artifact] = assessment.remediation_patch
+                if any(variant.passed for variant in assessment.report.variants):
+                    continue
+                for issue in assessment.report.variants[0].issues:
+                    if issue.severity.value == "blocker":
+                        blockers.append(
+                            {
+                                "artifact": artifact,
+                                "policy": issue.policy,
+                                "code": issue.code,
+                                "message": issue.message[:4000],
+                            }
+                        )
+            if blockers:
+                generation_calls[-1]["outcome"] = "quality_rejected"
+                repairable = any(item["policy"] != "source-ingestion" for item in blockers)
+                can_retry = (
+                    repairable
+                    and quality_revisions < MAX_QUALITY_REVISIONS
+                    and step + 1 < manifest.max_steps
+                )
+                if can_retry:
+                    quality_revisions += 1
+                    feedback = {
+                        "kind": "quality_gate",
+                        "error": json.dumps(
+                            {
+                                "blockers": blockers,
+                                "advisory_remediation_patches": remediation_guidance,
+                            },
+                            ensure_ascii=False,
+                        )[:30000],
+                        "previous_artifacts": json.dumps(
+                            {
+                                artifact: result.artifacts[artifact]
+                                for artifact in sorted({item["artifact"] for item in blockers})
+                            },
+                            ensure_ascii=False,
+                        )[:60000],
+                        "instruction": (
+                            "质量门未通过。必须根据每个 blocker 修订并重新输出完整产物；"
+                            "remediation patch 仅是修订线索，必须结合冻结来源核对后由模型重新"
+                            "生成 raw。previous_artifacts 是上轮被拒绝的完整草稿，应在保留已覆盖"
+                            "规则的基础上精确修复；不得机械复制错误建议、只解释、降低覆盖或把"
+                            "已确认规则改成待确认。"
+                        ),
+                    }
+                    validation_feedback.append(feedback)
+                    event(
+                        "artifact_quality_revision_requested",
+                        task_id=task.id,
+                        agent=manifest.name,
+                        attempt=quality_revisions,
+                        blockers=blockers,
+                    )
+                    continue
+            else:
+                generation_calls[-1]["outcome"] = "quality_accepted"
+            provenance = GenerationProvenance(
+                llm_used=True,
+                task_id=task.id,
+                agent=manifest.name,
+                model_calls=tuple(
+                    GenerationModelCall.model_validate(item) for item in generation_calls
+                ),
+                usage=generation_usage.snapshot(),
+                structured_output_retries=structured_output_attempts,
+                quality_revisions=quality_revisions,
+            )
+            assessments = {
+                artifact: assessment.model_copy(update={"generation": provenance})
+                for artifact, assessment in assessments.items()
+            }
+            return _TaskExecution(
+                output=result,
+                assessments=assessments,
+                quality_exhausted_artifacts={item["artifact"] for item in blockers},
+            )
         raise RuntimeError(f"agent step limit exceeded: {manifest.name}")
 
     def _project(

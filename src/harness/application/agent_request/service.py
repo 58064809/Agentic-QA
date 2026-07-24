@@ -66,8 +66,10 @@ class AgentRequestService:
         prepared: PreparedAgentWorkspace,
         snapshot: RunSnapshot,
     ) -> AgentRequestResult:
-        if snapshot.status in {"needs_human_review", "partial", "on_hold"}:
+        if snapshot.status in {"needs_human_review", "on_hold"}:
             next_action = AgentNextAction.HUMAN_REVIEW_REQUIRED
+        elif snapshot.status == "partial":
+            next_action = AgentNextAction.INSPECT_ERRORS
         elif snapshot.status in {"planning", "running"}:
             next_action = AgentNextAction.WAIT
         elif snapshot.status == "recoverable":

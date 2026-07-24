@@ -1656,7 +1656,7 @@ def test_requirement_quality_gate_preserves_approximate_suggestion_status() -> N
     )
     source = "每场获奖人数按约 50% 测算。开发计算建议：人数 × 50%。"
 
-    with pytest.raises(ValueError, match="non-final suggestions"):
+    with pytest.raises(ValueError, match="已确认固定规则"):
         _quality_check("requirement_analysis", content, source_corpus=source)
 
 
@@ -2181,6 +2181,62 @@ def test_coverage_range_shorthand_is_expanded_to_actual_ids() -> None:
     assert "expand_coverage_case_id_range" in metadata["rules"]
     assert "TC-RANGE-01, TC-RANGE-02, TC-RANGE-03" in enriched
     _quality_check("testcases", enriched)
+
+
+@pytest.mark.parametrize(
+    "mapping",
+    [
+        "TC-004~TC-007",
+        "TC-034-TC-036",
+        "TC-004 ～ TC-007",
+    ],
+)
+def test_coverage_rejects_common_range_shorthand(mapping: str) -> None:
+    content = _testcase_artifact(
+        [
+            "TC-004",
+            "source",
+            "case",
+            "功能",
+            "P1",
+            "前置",
+            "数据",
+            "步骤",
+            "预期",
+            "证据",
+            "无",
+        ]
+    ).replace(
+        "| source rule | TC-004 | source mapping |",
+        f"| 风险覆盖 | {mapping} | 必须枚举实际用例 ID |",
+    )
+
+    with pytest.raises(ValueError, match="enumerate actual testcase IDs"):
+        _quality_check("testcases", content)
+
+
+def test_coverage_rejects_no_case_mapping() -> None:
+    content = _testcase_artifact(
+        [
+            "TC-001",
+            "source",
+            "case",
+            "功能",
+            "P1",
+            "前置",
+            "数据",
+            "步骤",
+            "预期",
+            "证据",
+            "无",
+        ]
+    ).replace(
+        "| source rule | TC-001 | source mapping |",
+        "| 风险覆盖 | 无 | 待确认，无用例映射 |",
+    )
+
+    with pytest.raises(ValueError, match="incomplete placeholder mappings"):
+        _quality_check("testcases", content)
 
 
 def test_numbered_content_condition_is_reduced_to_source_evidence() -> None:

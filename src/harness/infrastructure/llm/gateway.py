@@ -24,6 +24,7 @@ class ModelConfig:
     api_key_env: str = "DEEPSEEK_API_KEY"
     base_url: str | None = DEFAULT_DEEPSEEK_BASE_URL
     request_timeout_seconds: float = 180.0
+    max_output_tokens: int = 16384
 
     @classmethod
     def from_env(cls) -> ModelConfig | None:
@@ -65,6 +66,9 @@ class ModelConfig:
             base_url=os.getenv("AGENTIC_QA_MODEL_BASE_URL", "").strip() or default_base_url,
             request_timeout_seconds=float(
                 os.getenv("AGENTIC_QA_MODEL_TIMEOUT_SECONDS", "").strip() or "180"
+            ),
+            max_output_tokens=int(
+                os.getenv("AGENTIC_QA_MODEL_MAX_OUTPUT_TOKENS", "").strip() or "16384"
             ),
         )
 
@@ -154,6 +158,7 @@ class OpenAICompatibleModelGateway:
                     {"role": "user", "content": prompt},
                 ],
                 response_format={"type": "json_object"},
+                max_tokens=self.config.max_output_tokens,
                 **request_options,
             )
             usage = response.usage

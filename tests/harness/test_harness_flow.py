@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,6 +18,7 @@ from harness import (
     RunRef,
     StartRunCommand,
 )
+from harness.infrastructure.llm.gateway import CallableModelGateway
 from harness.testing.evals import recorded_model_gateway
 
 
@@ -111,7 +113,18 @@ def test_policy_actions_are_audited(tmp_path: Path) -> None:
         )
     )
     (workspace / "sources/rules.md").write_text(
-        "正式配置：第1场，新玩家单价10元，老玩家单价5元，预算底标100元，最低核销3人。",
+        "\n".join(
+            [
+                "# 领取奖励条件",
+                "",
+                "- 报名",
+                "- 核销",
+                "- 进入获奖名单",
+                "- 发布趣看动态",
+                "- 带 #今天一起开局 话题",
+                "- @交子立方官方号",
+            ]
+        ),
         encoding="utf-8",
     )
 
@@ -126,19 +139,82 @@ def test_policy_actions_are_audited(tmp_path: Path) -> None:
     policy_events = [item for item in events if item["type"] == "artifact_quality_evaluated"]
     assert policy_events
     city_event = policy_events[0]
-    assert city_event["data"]["policy_versions"]["city-opening-rewards"] == "2.0.0"
+    assert city_event["data"]["policy_versions"]["city-opening-rewards"] == "2.1.0"
     assert city_event["data"]["assessment_key"].startswith("sha256:")
     assert city_event["data"]["source_bundle_hash"].startswith("sha256:")
+    revision_events = [
+        item for item in events if item["type"] == "artifact_quality_revision_requested"
+    ]
+    assert len(revision_events) == 5
+    assert snapshot.status == "partial"
+    generation_report = json.loads(
+        (tmp_path / snapshot.candidates[0].generation_report_path).read_text(encoding="utf-8")
+    )
+    assert generation_report["llm_used"] is True
+    assert generation_report["quality_revisions"] == 5
+    assert generation_report["model_calls"][-1]["outcome"] == "quality_rejected"
 
 
-def test_source_blocker_prevents_approve_without_changing_run_state(tmp_path: Path) -> None:
+def test_quality_feedback_includes_rejected_draft_and_repairs_candidate(
+    tmp_path: Path,
+) -> None:
+    recorded = recorded_model_gateway()
+    test_designer_calls = 0
+
+    def respond(
+        *,
+        prompt: str,
+        response_model: type,
+        **kwargs: Any,
+    ) -> Any:
+        nonlocal test_designer_calls
+        context = json.loads(prompt) if response_model.__name__ == "AgentOutput" else {}
+        if context.get("task", {}).get("expected_outputs") == ["testcases"]:
+            test_designer_calls += 1
+            if test_designer_calls == 1:
+                return {
+                    "summary": "first draft",
+                    "artifacts": {"testcases": "# 被质量门拒绝的首稿"},
+                    "evidence": ["user_goal"],
+                    "pending": [],
+                    "tool_requests": [],
+                }
+            feedback = context["validation_feedback"][-1]
+            assert "被质量门拒绝的首稿" in feedback["previous_artifacts"]
+        return recorded._callback(  # noqa: SLF001 - recorded gateway is a test fixture
+            prompt=prompt,
+            response_model=response_model,
+            **kwargs,
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    _create(harness)
+
+    snapshot = harness.start_run(StartRunCommand(workspace_id="demo", goal="test login"))
+
+    assert snapshot.status == "needs_human_review"
+    assert test_designer_calls == 2
+    generation_report = json.loads(
+        (tmp_path / snapshot.candidates[0].generation_report_path).read_text(encoding="utf-8")
+    )
+    assert generation_report["quality_revisions"] == 1
+    assert [item["outcome"] for item in generation_report["model_calls"]] == [
+        "quality_rejected",
+        "quality_accepted",
+    ]
+
+
+def test_source_blocker_marks_partial_and_prevents_approve(tmp_path: Path) -> None:
     harness = _harness(tmp_path)
     workspace = _create(harness)
     (workspace / "sources/rules.md").write_text("# 奖励配置\n", encoding="utf-8")
     snapshot = harness.start_run(StartRunCommand(workspace_id="demo", goal="test login"))
     candidate = snapshot.candidates[0]
 
-    with pytest.raises(PermissionError, match="未通过质量门"):
+    assert snapshot.status == "partial"
+    assert snapshot.review_status == {"testcases": "needs_revision"}
+
+    with pytest.raises(PermissionError, match="partial candidate"):
         harness.review_run(
             ReviewRunCommand(
                 workspace_id="demo",
@@ -154,8 +230,8 @@ def test_source_blocker_prevents_approve_without_changing_run_state(tmp_path: Pa
         )
 
     current = harness.get_run(RunRef(workspace_id="demo", run_id=snapshot.run_id))
-    assert current.status == "needs_human_review"
-    assert current.review_status == {"testcases": "needs_human_review"}
+    assert current.status == "partial"
+    assert current.review_status == {"testcases": "needs_revision"}
 
 
 def test_promote_rechecks_selected_content_hash(tmp_path: Path) -> None:

@@ -1,6 +1,8 @@
 from harness.application.quality.models import (
     ArtifactVariant,
     CandidateAssessment,
+    GenerationModelCall,
+    GenerationProvenance,
     NormalizationAudit,
     NormalizationComponentAudit,
     NormalizationOperation,
@@ -20,6 +22,8 @@ from harness.application.quality.models import (
 __all__ = [
     "ArtifactVariant",
     "CandidateAssessment",
+    "GenerationModelCall",
+    "GenerationProvenance",
     "NormalizationOperation",
     "NormalizationOperationKind",
     "NormalizationProposal",

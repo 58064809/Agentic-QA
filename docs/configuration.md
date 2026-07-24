@@ -17,6 +17,7 @@
 | `AGENTIC_QA_MODEL_PRO` | `deepseek-v4-pro` | Pro 路由模型 |
 | `AGENTIC_QA_MODEL_BASE_URL` | DeepSeek 时 `https://api.deepseek.com` | OpenAI-compatible 地址 |
 | `AGENTIC_QA_MODEL_TIMEOUT_SECONDS` | `180` | 模型请求超时秒数 |
+| `AGENTIC_QA_MODEL_MAX_OUTPUT_TOKENS` | `16384` | 单次结构化产物最大输出 token；避免长用例 JSON 被默认上限截断 |
 
 ### Execution、RAG 与预留变量
 

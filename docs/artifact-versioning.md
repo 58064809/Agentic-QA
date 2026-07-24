@@ -17,6 +17,7 @@ workspaces/<workspace_id>/
 │   ├── normalization.patch        # 可选
 │   ├── remediation.patch          # 可选、不可发布
 │   ├── quality-report.json
+│   ├── generation-report.json     # 可选；模型调用与质量修订审计
 │   └── manifest.json
 ├── reviews/<run_id>/
 └── published/<artifact>/
@@ -33,6 +34,7 @@ workspaces/<workspace_id>/
 | Source Bundle/snapshot | 本 run 实际来源 | create-only | RAG、Agent、Tool、质量复用 |
 | Candidate Manifest | Candidate 文件集合与 provenance | create-only | 审核/发布事实来源 |
 | quality report | variant verdict 与评估审计 | create-only | Review 与 promote |
+| generation report | 是否使用 LLM、模型路由、Token 与修订次数 | create-only | 生成过程审计 |
 | Review Record | 人工决定与批准版本 | 按 artifact 原子写 | 审计 |
 | published history | 已发布不可变版本 | create-only | 历史追踪 |
 | published current | 当前版本指针内容 | 原子替换 | 使用者读取 |
@@ -56,5 +58,6 @@ workspaces/<workspace_id>/
 | `normalized.*` | 是 | 可选，仅允许业务语义不变的机械格式调整 |
 | `normalization.patch` | 否 | 审计表示层变化 |
 | `remediation.patch` | 否 | 修订建议；必须通过新 run 形成新 raw |
+| `generation-report.json` | 否 | 记录 `llm_used`、每次模型调用结果和质量回灌次数 |
 
 发布选择与拒绝条件见 [Review Gate](review-gate.md)。

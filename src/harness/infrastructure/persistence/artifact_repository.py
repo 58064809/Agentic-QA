@@ -12,7 +12,12 @@ from typing import Any
 
 import yaml
 
-from harness.application.quality import ArtifactVariant, CandidateAssessment, QualityReport
+from harness.application.quality import (
+    ArtifactVariant,
+    CandidateAssessment,
+    GenerationProvenance,
+    QualityReport,
+)
 from harness.domain.models import (
     ApprovedArtifactVersion,
     ArtifactCandidate,
@@ -92,6 +97,10 @@ class ArtifactReviewFilesystemRepository:
                     f"raw{extension}": assessment.raw_content.encode("utf-8"),
                     "quality-report.json": _json_bytes(assessment.report.model_dump(mode="json")),
                 }
+                if assessment.generation is not None:
+                    files["generation-report.json"] = _json_bytes(
+                        assessment.generation.model_dump(mode="json")
+                    )
                 if assessment.normalized_content is not None:
                     files[f"normalized{extension}"] = assessment.normalized_content.encode("utf-8")
                 if assessment.normalization_patch:
@@ -434,6 +443,9 @@ class ArtifactReviewFilesystemRepository:
         artifact: str,
     ) -> ArtifactCandidate:
         manifest = self._validated_manifest(final)
+        generation_report = final / "generation-report.json"
+        if generation_report.name in manifest["files"]:
+            GenerationProvenance.model_validate_json(generation_report.read_text(encoding="utf-8"))
         if manifest.get("artifact") != artifact:
             raise ValueError("candidate manifest artifact 不匹配")
         extension = ARTIFACT_EXTENSIONS[artifact]
@@ -480,6 +492,12 @@ class ArtifactReviewFilesystemRepository:
                 assessment_key=manifest.get("assessment_key"),
                 quality_report_path=report_path.relative_to(self.repo_root).as_posix(),
                 quality_report_sha256=manifest["files"].get("quality-report.json"),
+                generation_report_path=(
+                    (final / "generation-report.json").relative_to(self.repo_root).as_posix()
+                    if "generation-report.json" in manifest["files"]
+                    else None
+                ),
+                generation_report_sha256=manifest["files"].get("generation-report.json"),
                 source_bundle_hash=manifest.get("source_bundle_hash"),
                 policy_versions=policy_versions if isinstance(policy_versions, dict) else {},
             )
@@ -516,6 +534,12 @@ class ArtifactReviewFilesystemRepository:
             assessment_key=manifest["assessment_key"],
             quality_report_path=report_path.relative_to(self.repo_root).as_posix(),
             quality_report_sha256=manifest["files"]["quality-report.json"],
+            generation_report_path=(
+                (final / "generation-report.json").relative_to(self.repo_root).as_posix()
+                if "generation-report.json" in manifest["files"]
+                else None
+            ),
+            generation_report_sha256=manifest["files"].get("generation-report.json"),
             source_bundle_hash=manifest["source_bundle_hash"],
             policy_versions=manifest["policy_versions"],
         )

@@ -161,6 +161,34 @@ class QualityReport(FrozenModel):
         return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
+class GenerationModelCall(FrozenModel):
+    call_index: int = Field(ge=1)
+    purpose: str
+    model: str | None = None
+    tier: str
+    thinking: str
+    reasoning_effort: str | None = None
+    outcome: Literal[
+        "completed",
+        "invalid_structured_output",
+        "quality_rejected",
+        "quality_accepted",
+    ]
+
+
+class GenerationProvenance(FrozenModel):
+    schema_version: Literal["agentic-qa.harness.generation-provenance.v1"] = (
+        "agentic-qa.harness.generation-provenance.v1"
+    )
+    llm_used: bool
+    task_id: str
+    agent: str
+    model_calls: tuple[GenerationModelCall, ...] = ()
+    usage: dict[str, int] = Field(default_factory=dict)
+    structured_output_retries: int = Field(default=0, ge=0)
+    quality_revisions: int = Field(default=0, ge=0)
+
+
 class CandidateAssessment(FrozenModel):
     raw_content: str
     raw_media_type: str = "text/markdown"
@@ -168,3 +196,4 @@ class CandidateAssessment(FrozenModel):
     normalization_patch: str | None = None
     remediation_patch: str | None = None
     report: QualityReport
+    generation: GenerationProvenance | None = None

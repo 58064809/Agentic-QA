@@ -13,6 +13,7 @@ from typing import Any
 def exclusive_file_lock(path: Path) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = path.open("a+b")
+    acquired = False
     try:
         if path.stat().st_size == 0:
             handle.write(b"0")
@@ -26,14 +27,15 @@ def exclusive_file_lock(path: Path) -> Iterator[None]:
             import fcntl
 
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        acquired = True
         yield
     finally:
-        if os.name == "nt":
+        if acquired and os.name == "nt":
             import msvcrt
 
             handle.seek(0)
             msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-        else:
+        elif acquired:
             import fcntl
 
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

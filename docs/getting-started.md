@@ -71,14 +71,17 @@ $runId = $result.run_id
 
 ```powershell
 $run = python -m harness run get demo $runId | ConvertFrom-Json
-$run.candidates | Format-Table artifact, status, path, quality_report_path
+$run.candidates |
+  Format-Table artifact, status, path, quality_report_path, generation_report_path
 
 $candidate = $run.candidates | Where-Object artifact -eq "testcases"
 Get-Content -Encoding utf8 (Join-Path $PWD $candidate.path)
 Get-Content -Encoding utf8 (Join-Path $PWD $candidate.quality_report_path)
+Get-Content -Encoding utf8 (Join-Path $PWD $candidate.generation_report_path)
 ```
 
-审核至少确认：所选 variant 已通过、没有 blocker、不是 partial、来源和待确认项真实可追踪。
+`generation-report.json` 明确记录是否使用 LLM、实际模型路由、Token、结构化输出重试和质量修订
+次数。审核至少确认：所选 variant 已通过、没有 blocker、不是 partial、来源和待确认项真实可追踪。
 
 若同时存在 `raw` 与 `normalized`，先比较：
 

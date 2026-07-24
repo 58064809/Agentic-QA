@@ -33,6 +33,7 @@ def test_deepseek_key_enables_default_v4_routing(monkeypatch) -> None:
     assert config.flash_model == "deepseek-v4-flash"
     assert config.pro_model == "deepseek-v4-pro"
     assert config.request_timeout_seconds == 180
+    assert config.max_output_tokens == 16384
 
 
 def test_single_model_override_pins_both_tiers(monkeypatch) -> None:
@@ -102,6 +103,7 @@ def test_deepseek_gateway_uses_json_object_and_thinking_parameters(monkeypatch) 
     assert result.value == "ok"
     assert captured["model"] == "deepseek-v4-pro"
     assert captured["response_format"] == {"type": "json_object"}
+    assert captured["max_tokens"] == 16384
     assert captured["extra_body"] == {"thinking": {"type": "enabled"}}
     assert captured["reasoning_effort"] == "max"
     assert "JSON Schema" in captured["messages"][0]["content"]

@@ -54,21 +54,21 @@ def _issue_payload(issue: SourceIssue) -> dict[str, Any]:
     }
 
 
-def _is_heading(lines: list[str], index: int) -> tuple[bool, str, int]:
+def _is_heading(lines: list[str], index: int) -> tuple[bool, str, int, int]:
     line = lines[index]
     atx = ATX_HEADING.fullmatch(line)
     if atx:
         title = atx.group(2).strip()
-        return bool(title), title, 1
+        return bool(title), title, 1, len(atx.group(1))
     if index + 1 < len(lines):
         marker = lines[index + 1]
         if line.strip() and SETEXT_MARKER.fullmatch(marker):
-            return True, line.strip(), 2
+            return True, line.strip(), 2, 1 if marker.lstrip().startswith("=") else 2
     stripped = line.strip()
     if len(stripped) <= 80 and stripped.endswith(("：", ":")):
         if NUMBERED_COLON_HEADING.fullmatch(line) or not stripped[0].isdigit():
-            return True, stripped.rstrip("：:"), 1
-    return False, "", 1
+            return True, stripped.rstrip("：:"), 1, 7
+    return False, "", 1, 7
 
 
 def _visible_markdown_lines(text: str) -> list[str]:
@@ -105,19 +105,35 @@ def _visible_markdown_lines(text: str) -> list[str]:
 
 def _critical_structure_issues(path: str, text: str, truncated: bool) -> list[SourceIssue]:
     lines = _visible_markdown_lines(text)
-    headings: list[tuple[int, str, int]] = []
+    headings: list[tuple[int, str, int, int]] = []
     index = 0
     while index < len(lines):
-        matched, title, width = _is_heading(lines, index)
+        matched, title, width, level = _is_heading(lines, index)
         if matched:
-            headings.append((index, title, width))
+            headings.append((index, title, width, level))
         index += max(width, 1)
+    heading_lines = {
+        line_index
+        for start, _title, width, _level in headings
+        for line_index in range(start, start + width)
+    }
     issues: list[SourceIssue] = []
-    for position, (start, title, width) in enumerate(headings):
+    for position, (start, title, width, level) in enumerate(headings):
         if not any(keyword in title for keyword in KEYWORDS):
             continue
-        end = headings[position + 1][0] if position + 1 < len(headings) else len(lines)
-        body = [line.strip() for line in lines[start + width : end] if line.strip()]
+        end = next(
+            (
+                next_start
+                for next_start, _next_title, _next_width, next_level in headings[position + 1 :]
+                if next_level <= level
+            ),
+            len(lines),
+        )
+        body = [
+            line.strip()
+            for line_index, line in enumerate(lines[start + width : end], start + width)
+            if line_index not in heading_lines and line.strip()
+        ]
         if _has_section_content(body):
             continue
         if truncated and end == len(lines):

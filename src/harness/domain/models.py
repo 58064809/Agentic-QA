@@ -258,6 +258,8 @@ class ArtifactCandidate(StrictModel):
     assessment_key: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     quality_report_path: str | None = None
     quality_report_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    generation_report_path: str | None = None
+    generation_report_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     source_bundle_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     policy_versions: dict[str, str] = Field(default_factory=dict)
 

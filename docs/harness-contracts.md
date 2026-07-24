@@ -25,6 +25,7 @@
 | `versions` | 实际存在的 raw/normalized 文件、路径和内容 hash |
 | `assessment_key` | 固定本次来源、内容、Normalizer 和策略输入 |
 | `quality_report_path/sha256` | 质量报告定位与完整性 |
+| `generation_report_path/sha256` | LLM 使用、模型路由、Token、重试与质量修订审计 |
 | `source_bundle_hash` | 绑定 run 的冻结来源 |
 | `policy_versions` | 记录参与评估的策略版本 |
 | `partial` | 从 Candidate Manifest 恢复；不是 Snapshot 的可信替代 |
