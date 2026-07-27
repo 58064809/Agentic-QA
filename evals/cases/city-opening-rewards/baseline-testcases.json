@@ -1,0 +1,55 @@
+{
+  "schema_version": "agentic-qa.test-case-set.v1",
+  "cases": [
+    {
+      "case_id": "TC-REWARD-001",
+      "rule_ids": ["REWARD-001"],
+      "title": "9人且已核销不具备奖励资格",
+      "test_type": "边界",
+      "priority": "P0",
+      "preconditions": ["活动已完成核销"],
+      "test_data": ["participant_count=9"],
+      "steps": ["记录9名有效参与者", "完成活动核销", "查询奖励资格判定"],
+      "expected_results": ["活动不具备奖励资格"],
+      "assertions": ["奖励资格状态为不具备"],
+      "pending_items": [],
+      "covered_boundary_values": ["9"],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-REWARD-002",
+      "rule_ids": ["REWARD-001"],
+      "title": "10人且已核销具备奖励资格",
+      "test_type": "边界",
+      "priority": "P0",
+      "preconditions": ["活动可完成核销"],
+      "test_data": ["participant_count=10"],
+      "steps": ["记录10名有效参与者", "完成活动核销", "查询奖励资格判定"],
+      "expected_results": ["活动具备奖励资格"],
+      "assertions": ["奖励资格状态为具备"],
+      "pending_items": [],
+      "covered_boundary_values": ["10"],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-REWARD-003",
+      "rule_ids": ["REWARD-001"],
+      "title": "11人但未核销不具备奖励资格",
+      "test_type": "反向",
+      "priority": "P0",
+      "preconditions": ["活动尚未完成核销"],
+      "test_data": ["participant_count=11"],
+      "steps": ["记录11名有效参与者", "保持活动未核销", "查询奖励资格判定"],
+      "expected_results": ["活动不具备奖励资格"],
+      "assertions": ["奖励资格状态为不具备"],
+      "pending_items": [],
+      "covered_boundary_values": ["11"],
+      "covered_transitions": []
+    }
+  ],
+  "coverage": [{
+    "rule_id": "REWARD-001",
+    "case_ids": ["TC-REWARD-001", "TC-REWARD-002", "TC-REWARD-003"],
+    "rationale": "覆盖人数阈值前、阈值和阈值后，并验证全部条件语义"
+  }]
+}

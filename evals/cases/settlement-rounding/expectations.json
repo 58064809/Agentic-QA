@@ -1,0 +1,21 @@
+{
+  "schema_version": "agentic-qa.requirement-catalog.v1",
+  "sources": [{"source": "source.md", "section": "结算舍入"}],
+  "actors": ["结算系统"],
+  "business_objects": ["结算金额"],
+  "flows": ["结算金额按两位小数舍入"],
+  "rules": [{
+    "rule_id": "ROUND-001",
+    "title": "四舍五入保留两位小数",
+    "condition": "生成结算金额",
+    "outcome": "金额按四舍五入保留两位小数",
+    "evidence_level": "confirmed",
+    "source_refs": [{"source": "source.md", "section": "结算舍入"}],
+    "boundaries": [{
+      "field": "third_decimal",
+      "values": ["1.234", "1.235", "1.236"]
+    }]
+  }],
+  "forbidden_inventions": ["Decimal128", "settlement_ledger", "batch_settle_api"],
+  "pending_questions": ["负数金额和超大金额范围未定义"]
+}

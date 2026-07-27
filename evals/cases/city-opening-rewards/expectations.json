@@ -1,0 +1,21 @@
+{
+  "schema_version": "agentic-qa.requirement-catalog.v1",
+  "sources": [{"source": "source.md", "section": "城市开局奖励"}],
+  "actors": ["活动参与者"],
+  "business_objects": ["活动", "奖励资格"],
+  "flows": ["活动完成后按有效参与人数和核销状态判定奖励资格"],
+  "rules": [{
+    "rule_id": "REWARD-001",
+    "title": "参与人数与核销条件全部满足",
+    "condition": "有效参与人数达到10人且活动完成核销",
+    "outcome": "活动具备奖励资格",
+    "evidence_level": "confirmed",
+    "source_refs": [{"source": "source.md", "section": "城市开局奖励"}],
+    "boundaries": [{
+      "field": "participant_count",
+      "values": ["9", "10", "11"]
+    }]
+  }],
+  "forbidden_inventions": ["领取奖励按钮", "#今天一起开局", "@官方账号", "500元"],
+  "pending_questions": ["奖励金额与发放方式未定义"]
+}

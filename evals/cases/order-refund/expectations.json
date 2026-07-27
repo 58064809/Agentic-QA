@@ -1,0 +1,31 @@
+{
+  "schema_version": "agentic-qa.requirement-catalog.v1",
+  "sources": [{"source": "source.md", "section": "订单退款"}],
+  "actors": ["订单用户"],
+  "business_objects": ["订单", "退款"],
+  "flows": ["已支付订单申请退款并完成退款"],
+  "rules": [
+    {
+      "rule_id": "REFUND-001",
+      "title": "已支付订单退款状态迁移",
+      "condition": "订单状态为已支付且退款申请通过",
+      "outcome": "订单进入退款处理中，完成后进入已退款",
+      "evidence_level": "confirmed",
+      "source_refs": [{"source": "source.md", "section": "订单退款"}],
+      "state_transitions": [
+        {"from_state": "已支付", "event": "退款申请通过", "to_state": "退款处理中"},
+        {"from_state": "退款处理中", "event": "退款完成", "to_state": "已退款"}
+      ]
+    },
+    {
+      "rule_id": "REFUND-002",
+      "title": "未支付订单禁止退款",
+      "condition": "订单未支付",
+      "outcome": "不得发起退款",
+      "evidence_level": "confirmed",
+      "source_refs": [{"source": "source.md", "section": "订单退款"}]
+    }
+  ],
+  "forbidden_inventions": ["立即退款按钮", "payment_callback_code", "refund_order_table"],
+  "pending_questions": ["退款到账时限未定义"]
+}

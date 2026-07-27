@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Lock, local
@@ -122,6 +124,10 @@ class OpenAICompatibleModelGateway:
         route: ModelRoute | None = None,
     ) -> T:
         self._local.last_call_usage = {}
+        self._local.last_call_diagnostics = {
+            "input_context_characters": len(system) + len(prompt),
+        }
+        started = time.perf_counter()
         selected = route or ModelRoute(
             tier="flash",
             thinking="disabled",
@@ -174,6 +180,17 @@ class OpenAICompatibleModelGateway:
                         key: self.last_usage.get(key, 0) + value for key, value in current.items()
                     }
             content = response.choices[0].message.content
+            choice = response.choices[0]
+            self._local.last_call_diagnostics = {
+                **self._local.last_call_diagnostics,
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "finish_reason": getattr(choice, "finish_reason", None),
+                "raw_response_sha256": (
+                    f"sha256:{hashlib.sha256(content.encode('utf-8')).hexdigest()}"
+                    if content
+                    else None
+                ),
+            }
             if not content:
                 raise ValueError("model returned empty structured output")
             try:
@@ -184,6 +201,15 @@ class OpenAICompatibleModelGateway:
                     raise
                 return response_model.model_validate_json(repaired)
         except Exception as exc:
+            self._local.last_call_diagnostics = {
+                **getattr(self._local, "last_call_diagnostics", {}),
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "failure_stage": (
+                    "structured_output_validation"
+                    if isinstance(exc, ValueError)
+                    else "model_request"
+                ),
+            }
             if isinstance(exc, KeyboardInterrupt | SystemExit):
                 raise
             raise RuntimeError(
@@ -192,6 +218,9 @@ class OpenAICompatibleModelGateway:
 
     def last_call_usage(self) -> dict[str, int]:
         return dict(getattr(self._local, "last_call_usage", {}))
+
+    def last_call_diagnostics(self) -> dict[str, Any]:
+        return dict(getattr(self._local, "last_call_diagnostics", {}))
 
 
 class CallableModelGateway:
@@ -215,6 +244,10 @@ class CallableModelGateway:
         route: ModelRoute | None = None,
     ) -> T:
         self._local.last_call_usage = {}
+        self._local.last_call_diagnostics = {
+            "input_context_characters": len(system) + len(prompt),
+        }
+        started = time.perf_counter()
         try:
             selected = route or ModelRoute(
                 tier="flash",
@@ -235,8 +268,23 @@ class CallableModelGateway:
                 result = result.model_dump(mode="json")
             if isinstance(result, str):
                 result = json.loads(result)
-            return response_model.model_validate(result)
+            validated = response_model.model_validate(result)
+            raw = validated.model_dump_json()
+            self._local.last_call_diagnostics = {
+                **self._local.last_call_diagnostics,
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "finish_reason": "recorded",
+                "raw_response_sha256": (
+                    f"sha256:{hashlib.sha256(raw.encode('utf-8')).hexdigest()}"
+                ),
+            }
+            return validated
         except Exception as exc:
+            self._local.last_call_diagnostics = {
+                **getattr(self._local, "last_call_diagnostics", {}),
+                "latency_ms": int((time.perf_counter() - started) * 1000),
+                "failure_stage": "structured_output_validation",
+            }
             if isinstance(exc, KeyboardInterrupt | SystemExit):
                 raise
             raise RuntimeError(
@@ -245,6 +293,9 @@ class CallableModelGateway:
 
     def last_call_usage(self) -> dict[str, int]:
         return dict(getattr(self._local, "last_call_usage", {}))
+
+    def last_call_diagnostics(self) -> dict[str, Any]:
+        return dict(getattr(self._local, "last_call_diagnostics", {}))
 
 
 def model_gateway_from_env() -> ModelGateway | None:

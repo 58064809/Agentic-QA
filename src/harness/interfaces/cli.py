@@ -84,7 +84,9 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     evaluate = commands.add_parser("eval")
-    evaluate.add_subparsers(dest="eval_command", required=True).add_parser("run")
+    eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
+    eval_commands.add_parser("run")
+    eval_commands.add_parser("live")
 
     request = commands.add_parser("request")
     request_commands = request.add_subparsers(dest="request_command", required=True)
@@ -263,9 +265,9 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
         elif args.command == "eval":
-            from harness.testing.evals import run_offline_eval
+            from harness.testing.evals import run_eval, run_live_eval
 
-            result = run_offline_eval()
+            result = run_live_eval() if args.eval_command == "live" else run_eval()
             _print(result)
             return 0 if result["passed"] else 1
         return 0

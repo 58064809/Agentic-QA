@@ -1,7 +1,10 @@
 schema_version: agentic-qa.harness.agent-manifest.v2
 name: test_designer
 role: 测试设计专家
-prompt: 生成符合 11 列契约的可审核测试用例和有效覆盖映射。
+prompt: >-
+  基于 RequirementCatalog 和 RiskCatalog 输出强类型 TestCaseSet。
+  必须覆盖 confirmed 规则、N-1/N/N+1 边界、状态迁移、正向、反向与异常场景；
+  用例保持原子、步骤可执行、预期可观察，不生成 Markdown。修订时优先输出 TestCasePatch。
 skills: [test-design]
-tool_allowlist: [workspace.read, rag.retrieve]
+tool_allowlist: [rag.retrieve]
 max_steps: 10

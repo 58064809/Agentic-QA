@@ -151,6 +151,15 @@ def test_mcp_stdio_server_lists_restricted_tools(tmp_path: Path) -> None:
     async def scenario() -> set[str]:
         parameters = StdioServerParameters(
             command=sys.executable,
+            env={
+                **os.environ,
+                "PYTHONPATH": os.pathsep.join(
+                    [
+                        str(Path(__file__).resolve().parents[2] / "src"),
+                        os.environ.get("PYTHONPATH", ""),
+                    ]
+                ),
+            },
             args=[
                 "-m",
                 "harness",

@@ -1,0 +1,59 @@
+{
+  "schema_version": "agentic-qa.test-case-set.v1",
+  "cases": [
+    {
+      "case_id": "TC-LOGIN-001",
+      "rule_ids": ["LOGIN-001"],
+      "title": "第4次失败仍可继续尝试",
+      "test_type": "边界",
+      "priority": "P0",
+      "preconditions": ["账号处于可登录状态且已连续失败3次"],
+      "test_data": ["failed_attempts=4"],
+      "steps": ["提交第4次错误凭据", "查询账号业务状态"],
+      "expected_results": ["账号仍处于可登录状态"],
+      "assertions": ["未建立登录会话且账号状态不是已锁定"],
+      "pending_items": [],
+      "covered_boundary_values": ["4"],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-LOGIN-002",
+      "rule_ids": ["LOGIN-001"],
+      "title": "第5次失败触发锁定",
+      "test_type": "状态迁移",
+      "priority": "P0",
+      "preconditions": ["账号处于可登录状态且已连续失败4次"],
+      "test_data": ["failed_attempts=5"],
+      "steps": ["提交第5次错误凭据", "再次使用正确凭据请求登录"],
+      "expected_results": ["账号进入已锁定状态", "正确凭据也不能建立登录会话"],
+      "assertions": ["账号状态为已锁定", "登录会话不存在"],
+      "pending_items": [],
+      "covered_boundary_values": ["5"],
+      "covered_transitions": [{
+        "from_state": "可登录",
+        "event": "第5次连续失败",
+        "to_state": "已锁定"
+      }]
+    },
+    {
+      "case_id": "TC-LOGIN-003",
+      "rule_ids": ["LOGIN-001"],
+      "title": "第6次请求保持锁定",
+      "test_type": "异常",
+      "priority": "P0",
+      "preconditions": ["账号已锁定"],
+      "test_data": ["failed_attempts=6"],
+      "steps": ["再次提交任意登录凭据", "查询是否建立登录会话"],
+      "expected_results": ["账号保持已锁定状态"],
+      "assertions": ["未建立登录会话"],
+      "pending_items": [],
+      "covered_boundary_values": ["6"],
+      "covered_transitions": []
+    }
+  ],
+  "coverage": [{
+    "rule_id": "LOGIN-001",
+    "case_ids": ["TC-LOGIN-001", "TC-LOGIN-002", "TC-LOGIN-003"],
+    "rationale": "覆盖阈值前、阈值和阈值后，以及锁定状态迁移"
+  }]
+}

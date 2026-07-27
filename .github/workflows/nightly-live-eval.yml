@@ -1,0 +1,42 @@
+name: Nightly live model eval
+
+on:
+  schedule:
+    - cron: "30 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-eval:
+    runs-on: ubuntu-latest
+    environment: nightly-live-eval
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: python -m pip install --upgrade pip ".[dev]"
+      - name: Run live candidate eval
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AGENTIC_QA_LIVE_EVAL_OUTPUT: ${{ runner.temp }}/agentic-qa-live-eval
+        run: python -m harness eval live | tee "${{ runner.temp }}/live-eval-result.json"
+      - name: Upload review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-live-eval-${{ github.run_id }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/live-eval-result.json
+            ${{ runner.temp }}/agentic-qa-live-eval/source-bundle.json
+            ${{ runner.temp }}/agentic-qa-live-eval/requirement_analysis/raw.md
+            ${{ runner.temp }}/agentic-qa-live-eval/requirement_analysis/quality-report.json
+            ${{ runner.temp }}/agentic-qa-live-eval/requirement_analysis/generation-report.json
+            ${{ runner.temp }}/agentic-qa-live-eval/testcases/raw.md
+            ${{ runner.temp }}/agentic-qa-live-eval/testcases/quality-report.json
+            ${{ runner.temp }}/agentic-qa-live-eval/testcases/generation-report.json

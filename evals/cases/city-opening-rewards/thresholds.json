@@ -1,0 +1,18 @@
+{
+  "schema_version": "agentic-qa.golden-expectation.v1",
+  "must_extract_rules": ["REWARD-001"],
+  "must_cover_points": [
+    "REWARD-001",
+    "boundary:9",
+    "boundary:10",
+    "boundary:11",
+    "type:反向"
+  ],
+  "forbidden_inventions": [
+    "领取奖励按钮",
+    "#今天一起开局",
+    "@官方账号",
+    "500元"
+  ],
+  "minimum_score": 0.95
+}

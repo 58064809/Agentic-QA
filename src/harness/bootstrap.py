@@ -16,11 +16,9 @@ from harness.infrastructure.persistence.agent_workspace_provisioner import (
 from harness.infrastructure.persistence.filesystem import FilesystemStore
 from harness.infrastructure.persistence.postgres_checkpoint import PostgresCheckpointProvider
 from harness.infrastructure.quality import QualityStrategyRegistry
+from harness.infrastructure.quality.declarative import DeclarativeQualityStrategy
 from harness.infrastructure.quality.generic import GenericArtifactStrategy
 from harness.infrastructure.quality.normalization import SafeMarkdownNormalizer
-from harness.infrastructure.quality.packs.city_opening_rewards import (
-    CityOpeningRewardsStrategy,
-)
 from harness.infrastructure.workflow.engine import HarnessEngine
 from harness.infrastructure.workflow.runner import LangGraphWorkflowRunner
 
@@ -73,8 +71,12 @@ def build_application(
     policies = quality_strategy_registry or QualityStrategyRegistry()
     if GenericArtifactStrategy.name not in policies.strategies:
         policies.register(GenericArtifactStrategy())
-    if CityOpeningRewardsStrategy.name not in policies.strategies:
-        policies.register(CityOpeningRewardsStrategy())
+    declarative_manifest = (
+        Path(__file__).resolve().parent / "manifests" / "quality" / "city-opening-rewards.yml"
+    )
+    declarative = DeclarativeQualityStrategy.from_manifest(declarative_manifest)
+    if declarative.name not in policies.strategies:
+        policies.register(declarative)
     if not policies.normalizers():
         policies.register_normalizer(SafeMarkdownNormalizer())
     engine = HarnessEngine(

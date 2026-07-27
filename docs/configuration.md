@@ -138,3 +138,17 @@ python -m harness mcp serve `
 默认根由 `--repo-root` 决定，追加允许根只存在于当前进程参数中，不写入 workspace；工具调用不能
 扩大白名单。AgentRequest 固定使用 `analysis-only`，不能配置 ExecutionProfile。完整协议见
 [跨 AI 接入](agent-integration.md)。
+## 声明式质量策略
+
+可扩展业务质量约束使用 `agentic-qa.declarative-quality-policy.v1` manifest，支持
+`required_rules`、`boundary_requirements` 和 `forbidden_inventions`。内置示例位于
+`src/harness/manifests/quality/city-opening-rewards.yml`，注册名为
+`city-opening-rewards`。该默认名称由声明式 manifest 注册，不再加载同名的 Python
+业务规则实现。
+
+```yaml
+quality_policies: [city-opening-rewards]
+```
+
+新增业务 Pack 应优先新增声明式 manifest，不应把具体业务文案、页面、接口或数据库细节写入
+Python Validator。约束配置会进入 assessment identity 和质量报告。

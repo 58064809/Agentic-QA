@@ -72,6 +72,9 @@ class NormalizationProposal(FrozenModel):
 class StrategyAudit(FrozenModel):
     name: str
     version: str
+    reviewer_role: Literal["independent_deterministic_reviewer"] = (
+        "independent_deterministic_reviewer"
+    )
     configuration_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     requirements: StrategyRequirements
     actions: tuple[str, ...] = ()
@@ -161,6 +164,13 @@ class QualityReport(FrozenModel):
         return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
+class GenerationSourceSelection(FrozenModel):
+    source: str
+    raw_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    chunk_id: str | None = None
+    selection_reason: str
+
+
 class GenerationModelCall(FrozenModel):
     call_index: int = Field(ge=1)
     purpose: str
@@ -168,17 +178,29 @@ class GenerationModelCall(FrozenModel):
     tier: str
     thinking: str
     reasoning_effort: str | None = None
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+    latency_ms: int | None = Field(default=None, ge=0)
+    finish_reason: str | None = None
+    input_context_characters: int | None = Field(default=None, ge=0)
+    source_selection: tuple[GenerationSourceSelection, ...] = ()
+    prompt_template_version: str = "unknown-v1"
+    raw_response_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    artifact_validation_retries: int = Field(default=0, ge=0)
+    failure_stage: str | None = None
     outcome: Literal[
         "completed",
         "invalid_structured_output",
+        "artifact_validation_rejected",
         "quality_rejected",
         "quality_accepted",
     ]
 
 
 class GenerationProvenance(FrozenModel):
-    schema_version: Literal["agentic-qa.harness.generation-provenance.v1"] = (
-        "agentic-qa.harness.generation-provenance.v1"
+    schema_version: Literal["agentic-qa.harness.generation-provenance.v2"] = (
+        "agentic-qa.harness.generation-provenance.v2"
     )
     llm_used: bool
     task_id: str

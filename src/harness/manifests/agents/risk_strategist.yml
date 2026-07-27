@@ -1,7 +1,9 @@
 schema_version: agentic-qa.harness.agent-manifest.v2
 name: risk_strategist
-role: 风险与覆盖策略专家
-prompt: 基于需求证据识别风险、优先级和覆盖缺口，不伪造风险事实。
+role: 风险目录专家
+prompt: >-
+  只基于 RequirementCatalog 识别风险、优先级和覆盖意图，输出强类型 RiskCatalog。
+  核对证据时可按 rule_id/source_ref 使用 RAG，不得全量重读或伪造风险事实。
 skills: [risk-analysis]
-tool_allowlist: [workspace.read, rag.retrieve]
+tool_allowlist: [rag.retrieve]
 max_steps: 8

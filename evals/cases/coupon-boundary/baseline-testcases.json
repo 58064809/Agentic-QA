@@ -1,0 +1,55 @@
+{
+  "schema_version": "agentic-qa.test-case-set.v1",
+  "cases": [
+    {
+      "case_id": "TC-COUPON-001",
+      "rule_ids": ["COUPON-001"],
+      "title": "99.99元不可使用满减券",
+      "test_type": "边界",
+      "priority": "P1",
+      "preconditions": ["满减券处于可用期"],
+      "test_data": ["payable_amount=99.99"],
+      "steps": ["创建应付金额99.99元的订单", "请求应用满减券"],
+      "expected_results": ["满减券不被应用"],
+      "assertions": ["订单应付金额保持99.99元"],
+      "pending_items": [],
+      "covered_boundary_values": ["99.99"],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-COUPON-002",
+      "rule_ids": ["COUPON-001"],
+      "title": "100.00元可抵扣10元",
+      "test_type": "边界",
+      "priority": "P1",
+      "preconditions": ["满减券处于可用期"],
+      "test_data": ["payable_amount=100.00"],
+      "steps": ["创建应付金额100.00元的订单", "请求应用满减券"],
+      "expected_results": ["满减券被应用且抵扣10元"],
+      "assertions": ["抵扣后的应付金额为90.00元"],
+      "pending_items": [],
+      "covered_boundary_values": ["100.00"],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-COUPON-003",
+      "rule_ids": ["COUPON-001"],
+      "title": "100.01元可抵扣10元",
+      "test_type": "边界",
+      "priority": "P1",
+      "preconditions": ["满减券处于可用期"],
+      "test_data": ["payable_amount=100.01"],
+      "steps": ["创建应付金额100.01元的订单", "请求应用满减券"],
+      "expected_results": ["满减券被应用且抵扣10元"],
+      "assertions": ["抵扣后的应付金额为90.01元"],
+      "pending_items": [],
+      "covered_boundary_values": ["100.01"],
+      "covered_transitions": []
+    }
+  ],
+  "coverage": [{
+    "rule_id": "COUPON-001",
+    "case_ids": ["TC-COUPON-001", "TC-COUPON-002", "TC-COUPON-003"],
+    "rationale": "覆盖金额阈值前、阈值和阈值后"
+  }]
+}

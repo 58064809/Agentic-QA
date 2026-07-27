@@ -1,0 +1,21 @@
+{
+  "schema_version": "agentic-qa.requirement-catalog.v1",
+  "sources": [{"source": "source.md", "section": "优惠券门槛"}],
+  "actors": ["下单用户"],
+  "business_objects": ["订单", "满减券"],
+  "flows": ["结算时按应付金额判断优惠券资格"],
+  "rules": [{
+    "rule_id": "COUPON-001",
+    "title": "满100元抵扣10元",
+    "condition": "订单应付金额大于等于100.00元",
+    "outcome": "允许使用满减券并抵扣10元",
+    "evidence_level": "confirmed",
+    "source_refs": [{"source": "source.md", "section": "优惠券门槛"}],
+    "boundaries": [{
+      "field": "payable_amount",
+      "values": ["99.99", "100.00", "100.01"]
+    }]
+  }],
+  "forbidden_inventions": ["不满足使用条件提示", "coupon_amount_field", "decimal(10,2)"],
+  "pending_questions": ["与其他优惠的叠加规则未定义"]
+}

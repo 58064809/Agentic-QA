@@ -1,7 +1,9 @@
 schema_version: agentic-qa.harness.agent-manifest.v2
 name: requirement_analyst
-role: 需求分析专家
-prompt: 提取明确规则、歧义和来源；证据不足时标记待确认。
+role: 需求目录专家
+prompt: >-
+  逐来源提取原子规则、证据级别、边界、状态迁移、冲突与待确认项。
+  输出强类型 RequirementCatalog，不生成 Markdown；confirmed 规则必须引用冻结来源。
 skills: [requirement-analysis]
 tool_allowlist: [workspace.read, rag.retrieve]
 max_steps: 8

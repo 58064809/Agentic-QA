@@ -1,0 +1,14 @@
+{
+  "schema_version": "agentic-qa.golden-expectation.v1",
+  "must_extract_rules": ["LOGIN-001"],
+  "must_cover_points": [
+    "LOGIN-001",
+    "boundary:4",
+    "boundary:5",
+    "boundary:6",
+    "transition:可登录->第5次连续失败->已锁定",
+    "type:异常"
+  ],
+  "forbidden_inventions": ["解锁按钮", "user_lock_table"],
+  "minimum_score": 0.95
+}

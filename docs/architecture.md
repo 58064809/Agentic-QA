@@ -1,73 +1,73 @@
 # Harness v2 架构
 
-Agentic-QA 是单 Python distribution 的模块化单体。外部 AI 通过受限 AgentRequest/MCP 接口进入，
-不会获得 Review 写入能力。
+公开契约是 Pydantic 领域模型；LangGraph 只存在于基础设施层，不进入 `Harness`、CLI 或 MCP
+公开接口。PostgreSQL checkpoint 是执行恢复事实来源，文件仓储负责冻结 SourceBundle、
+create-only Candidate、人工 Review 和确定性发布。
 
-## 实际依赖
+## 生成链路
 
-```mermaid
-flowchart LR
-    Domain[domain]
-    Application[application]
-    Infrastructure[infrastructure]
-    Bootstrap[bootstrap]
-    Interfaces[interfaces]
-
-    Application --> Domain
-    Infrastructure --> Application
-    Infrastructure --> Domain
-    Bootstrap --> Infrastructure
-    Bootstrap --> Application
-    Bootstrap --> Domain
-    Interfaces --> Bootstrap
-    Interfaces --> Application
-    Interfaces --> Domain
-    Interfaces --> Infrastructure
+```text
+StartRunCommand
+  → immutable SourceBundle
+  → 每个 source 独立提取 RequirementCatalog fragment
+  → 冲突保留并合并为唯一 RequirementCatalog
+  → 确定性渲染 requirement_analysis.md
+  → RiskCatalog（只消费 RequirementCatalog）
+  → 每批最多 5 条规则的独立 Test Designer 调用
+  → 批次 TestCaseSet 强类型校验与确定性合并
+  → 跨目录确定性校验
+  → 确定性渲染 testcases.md
+  → 独立确定性 reviewer（通用/声明式质量策略）
+  → blocker 范围内的 TestCasePatch 定向修补
+  → representation-only normalization
+  → quality-report.json + generation-report.json
+  → atomic Candidate bundle
+  → interrupt / 人工 ArtifactVersionRef
+  → ApprovedArtifactVersion
+  → deterministic promote
+  → published
 ```
 
-架构测试严格限制 `domain` 和 `application` 的向外依赖。`interfaces` 是外层适配器：Facade 调用组合
-根，并允许在构造参数中暴露具体注册表类型，因此不宣称它完全独立于 infrastructure。
+需求目录只生产一次。给用户看的 `requirement_analysis.md` 和 Risk/Test Designer 使用的规则来自同一个
+`RequirementCatalog`，因此不存在两份分析事实源。
 
-| 区域 | 职责 | 可依赖 | 禁止 |
-|---|---|---|---|
-| `domain` | 公开领域模型、Review 纯规则、安全规则 | 标准库、Pydantic | application、infrastructure、LangGraph、SDK、存储 |
-| `application` | 用例、端口、Source/Quality 输入模型 | domain | infrastructure、数据库、LangGraph、模型/MCP SDK |
-| `infrastructure` | Workflow、仓储、模型、MCP、RAG、质量适配器 | application、domain | 反向成为公开契约 |
-| `bootstrap.py` | 唯一生产组合根 | application、domain、infrastructure | 业务规则实现 |
-| `interfaces` | `Harness` Facade 与 CLI | 组合根及所需契约/适配器类型 | LangGraph 类型进入命令契约 |
+## 结构化设计契约
 
-## Run 数据流
+| 模型 | 作用 | 关键约束 |
+|---|---|---|
+| `RequirementCatalog` | 原子规则与证据目录 | confirmed 规则必须有 source ref；规则 ID 唯一 |
+| `RiskCatalog` | 规则到风险和覆盖意图 | 只能引用已存在规则 |
+| `TestCaseSet` | 用例与覆盖映射 | 用例/映射引用有效；confirmed、边界、状态迁移完整 |
+| `TestCasePatch` | 局部质量修订 | 仅替换失败用例或映射，保留未受影响内容 |
 
-```mermaid
-flowchart TD
-    AgentRequest[AgentRequest/MCP] --> Import[白名单来源原子导入]
-    Import --> Start[StartRunCommand]
-    Start --> Source[安全摄取并冻结 SourceBundle]
-    Source --> Plan[QAPlan]
-    Plan --> Agents[并行专家任务]
-    Agents --> Raw[raw artifact]
-    Raw --> Normalize[表示层 Normalizer]
-    Raw --> Assess[质量策略只读评估]
-    Normalize --> Assess
-    Assess --> Candidate[原子 Candidate bundle]
-    Candidate --> Interrupt[LangGraph interrupt]
-    Interrupt --> Human[人工 ReviewDecision]
-    Human --> Verify[Repository 复验 Manifest/Report/Review]
-    Verify --> Published[published current/history]
-```
+Markdown 是可审核表示，不是模型事实源。质量归一化只能改变行尾、空白等表示，不得静默改变业务
+语义或覆盖 raw artifact。
+
+## 质量与审核边界
+
+自动质量门可以拒绝结构不完整、语义空泛、覆盖错误或来源不支持的 Candidate，但不能批准发布。
+Candidate 始终 create-only；修订创建新 run。只有人工选择明确的 raw/normalized
+`ArtifactVersionRef` 后，仓储才重新读取 Manifest、质量报告和 Review，并执行确定性 promote。
+
+partial、blocker、Hash 漂移、缺少 provenance 或 remediation patch 均不可发布。
+
+## 可诊断性
+
+`generation-report.json` 按调用记录模型/路由、thinking、Token、延迟、finish reason、输入字符数、
+来源选择及 Hash、Prompt 模板版本、原始响应 Hash、结构化失败、artifact validation 重试、质量
+修订次数和具体失败阶段。
+
+`quality-report.json` 记录原始/归一化变体、独立 reviewer 角色、策略版本、配置 Hash、问题、
+SourceBundle Hash 与 assessment key。reviewer 不复用生成模型；修订补丁若触及 blocker
+范围之外的 case/rule 会被拒绝。两类报告都属于 Candidate bundle，不是发布产物。
 
 ## 适配边界
 
-| 能力 | application port / model | infrastructure adapter |
-|---|---|---|
-| 来源 | `SourceBundleRepository`、`SourceBundle` | 文件摄取与快照仓储 |
-| 质量 | `QualityStrategy`、`ArtifactNormalizer` | 通用策略、注册表、业务 pack |
-| 模型 | `ModelGateway` | OpenAI-compatible gateway |
-| Checkpoint | `CheckpointProvider` | PostgreSQL saver |
-| Tool | handler/manifest 契约 | API、RAG、PostgreSQL、MCP handlers |
-| Artifact/Review | `ArtifactReviewRepository` | Candidate、Review、Publication Journal 文件仓储 |
-| 外部 AI 请求 | `ManagedAgentWorkspaceProvisioner`、AgentRequest models | 白名单导入、MCP stdio |
-
-业务 pack `city-opening-rewards` 仅存在于 infrastructure，并拆为 parser、rules、validators、
-remediation、normalizer 和 strategy。LangGraph 只存在于 workflow adapter；PostgreSQL 是唯一生产
-checkpoint，文件系统保存查询投影和不可变产物。
+| 层 | 职责 |
+|---|---|
+| `domain/` | 公开领域模型、Review 和 QA 结构化 Schema |
+| `application/` | 用例、端口、Source/Quality 模型、确定性渲染与校验 |
+| `infrastructure/` | Workflow、模型、仓储、RAG、MCP、质量策略 |
+| `interfaces/` | Facade、CLI、MCP；只组装强类型参数 |
+| `manifests/` | Agent、Skill、Tool 与声明式质量 Pack |
+| `knowledge/` | 仅由 Skill manifest 显式引用的运行知识 |

@@ -1,0 +1,17 @@
+{
+  "schema_version": "agentic-qa.golden-expectation.v1",
+  "must_extract_rules": ["REFUND-001", "REFUND-002"],
+  "must_cover_points": [
+    "REFUND-001",
+    "REFUND-002",
+    "transition:已支付->退款申请通过->退款处理中",
+    "transition:退款处理中->退款完成->已退款",
+    "type:反向"
+  ],
+  "forbidden_inventions": [
+    "立即退款按钮",
+    "payment_callback_code",
+    "refund_order_table"
+  ],
+  "minimum_score": 0.95
+}

@@ -67,7 +67,11 @@ def test_policy_uses_pro_only_for_complex_plans_and_specialists() -> None:
     assert (routine.tier, routine.thinking) == ("flash", "enabled")
     assert (complex_route.tier, complex_route.reasoning_effort) == ("pro", "max")
     assert (analyst.tier, analyst.thinking) == ("flash", "disabled")
-    assert (designer.tier, designer.thinking) == ("pro", "disabled")
+    assert (designer.tier, designer.thinking, designer.reasoning_effort) == (
+        "pro",
+        "enabled",
+        "high",
+    )
     assert (triager.tier, triager.thinking) == ("pro", "enabled")
 
 

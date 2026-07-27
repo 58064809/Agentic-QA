@@ -1,0 +1,13 @@
+{
+  "schema_version": "agentic-qa.golden-expectation.v1",
+  "must_extract_rules": ["ROUND-001"],
+  "must_cover_points": [
+    "ROUND-001",
+    "boundary:1.234",
+    "boundary:1.235",
+    "boundary:1.236",
+    "type:边界"
+  ],
+  "forbidden_inventions": ["Decimal128", "settlement_ledger", "batch_settle_api"],
+  "minimum_score": 0.95
+}

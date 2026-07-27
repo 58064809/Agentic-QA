@@ -1,0 +1,22 @@
+schema_version: agentic-qa.declarative-quality-policy.v1
+name: city-opening-rewards
+version: 1.0.0
+requires_sources: true
+requires_complete_sources: true
+required_rules:
+  - rule_id: REWARD-001
+    condition_mode: all_of
+    conditions:
+      - field: participant_count
+        operator: present
+      - field: 核销
+        operator: present
+boundary_requirements:
+  - rule_id: REWARD-001
+    field: participant_count
+    values: ["9", "10", "11"]
+forbidden_inventions:
+  - 领取奖励按钮
+  - "#今天一起开局"
+  - "@官方账号"
+  - 500元

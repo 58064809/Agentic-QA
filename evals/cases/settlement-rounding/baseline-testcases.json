@@ -1,0 +1,55 @@
+{
+  "schema_version": "agentic-qa.test-case-set.v1",
+  "cases": [
+    {
+      "case_id": "TC-ROUND-001",
+      "rule_ids": ["ROUND-001"],
+      "title": "第三位小数为4时向下舍入",
+      "test_type": "边界",
+      "priority": "P0",
+      "preconditions": ["结算计算可执行"],
+      "test_data": ["raw_amount=1.234"],
+      "steps": ["以原始金额1.234执行结算计算", "读取结算金额"],
+      "expected_results": ["结算金额为1.23元"],
+      "assertions": ["结算金额精确等于1.23"],
+      "pending_items": [],
+      "covered_boundary_values": ["1.234"],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-ROUND-002",
+      "rule_ids": ["ROUND-001"],
+      "title": "第三位小数为5时向上舍入",
+      "test_type": "边界",
+      "priority": "P0",
+      "preconditions": ["结算计算可执行"],
+      "test_data": ["raw_amount=1.235"],
+      "steps": ["以原始金额1.235执行结算计算", "读取结算金额"],
+      "expected_results": ["结算金额为1.24元"],
+      "assertions": ["结算金额精确等于1.24"],
+      "pending_items": [],
+      "covered_boundary_values": ["1.235"],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-ROUND-003",
+      "rule_ids": ["ROUND-001"],
+      "title": "第三位小数为6时向上舍入",
+      "test_type": "边界",
+      "priority": "P0",
+      "preconditions": ["结算计算可执行"],
+      "test_data": ["raw_amount=1.236"],
+      "steps": ["以原始金额1.236执行结算计算", "读取结算金额"],
+      "expected_results": ["结算金额为1.24元"],
+      "assertions": ["结算金额精确等于1.24"],
+      "pending_items": [],
+      "covered_boundary_values": ["1.236"],
+      "covered_transitions": []
+    }
+  ],
+  "coverage": [{
+    "rule_id": "ROUND-001",
+    "case_ids": ["TC-ROUND-001", "TC-ROUND-002", "TC-ROUND-003"],
+    "rationale": "覆盖舍入分界点前、分界点和分界点后"
+  }]
+}

@@ -1,0 +1,17 @@
+{
+  "schema_version": "agentic-qa.golden-expectation.v1",
+  "must_extract_rules": ["COUPON-001"],
+  "must_cover_points": [
+    "COUPON-001",
+    "boundary:99.99",
+    "boundary:100.00",
+    "boundary:100.01",
+    "type:边界"
+  ],
+  "forbidden_inventions": [
+    "不满足使用条件提示",
+    "coupon_amount_field",
+    "decimal(10,2)"
+  ],
+  "minimum_score": 0.95
+}

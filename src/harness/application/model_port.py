@@ -48,7 +48,12 @@ class ModelPolicy:
 
     def for_task(self, task: PlanTask) -> ModelRoute:
         if task.agent == "test_designer":
-            return ModelRoute(tier="pro", thinking="disabled", purpose=f"expert:{task.agent}")
+            return ModelRoute(
+                tier="pro",
+                thinking="enabled",
+                reasoning_effort="high",
+                purpose=f"expert:{task.agent}",
+            )
         if task.agent in self._pro_agents:
             return ModelRoute(
                 tier="pro",
@@ -65,6 +70,8 @@ class ModelGateway(Protocol):
     def describe_route(self, route: ModelRoute) -> dict[str, Any]: ...
 
     def last_call_usage(self) -> dict[str, int]: ...
+
+    def last_call_diagnostics(self) -> dict[str, Any]: ...
 
     def structured(
         self,

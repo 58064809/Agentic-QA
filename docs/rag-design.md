@@ -1,37 +1,42 @@
 # RAG 设计
 
-RAG 是专家 Agent 的只读 typed tool，只消费当前 run 已冻结的 SourceBundle。
+RAG 用于按规则核对证据，不再作为“全量来源已经塞入 Prompt”之后的可选附件。
 
 ## 数据流
 
-```mermaid
-flowchart LR
-    Workspace[workspace/sources] -->|run start 安全摄取一次| Bundle[SourceBundle + snapshot]
-    Bundle --> Prefetch[Agent prefetch]
-    Bundle --> Read[workspace.read sources/*]
-    Bundle --> RAG[rag.retrieve]
-    Bundle --> Quality[QualityStrategy]
+```text
+冻结 SourceBundle
+  → 每个文件独立结构化提取
+  → RequirementCatalog（source_ref / chunk_id / selection_reason）
+  → RiskCatalog
+  → 有界 rule batch（每批最多 5 条）
+  → 每批独立生成并确定性合并 TestCaseSet
+  → 需要核证时按 rule_id/source_ref 调用 rag.retrieve
 ```
 
-恢复时不重新读取 workspace 当前 sources，因此文件后续新增或修改不会漂移到旧 run。
+Requirement Analyst 的每个来源提取调用只接收一个冻结文档。合并调用只接收结构化 fragments，不重复
+接收全部原文。Risk Strategist 和 Test Designer 默认只消费目录，不具备 `workspace.read`；
+只有核对证据时才按当前 rule batch 的 `rule_id/source_ref` 调用 `rag.retrieve`。
+
+## 可追踪检索
+
+每个检索结果必须记录：
+
+- source 路径；
+- SourceBundle 中的 raw Hash；
+- chunk ID；
+- selection reason；
+- 所属模型调用和 Prompt 模板版本。
+
+这些字段进入 `generation-report.json`。同一个 run 的 RAG、`workspace.read` 和质量策略必须消费同一
+冻结 SourceBundle，禁止读取后来变化的来源。
 
 ## Provider
 
-| Provider | 排序 | 外部请求 | 密钥 | 缺失配置 |
-|---|---|---:|---|---|
-| `local-lexical` | 确定性词法匹配 | 否 | 不需要 | 返回实际命中的 chunks |
-| `openai-compatible` | embedding cosine | 是，发送 query 与 chunks | `api_key_env` 指向的变量 | 明确失败，不回退 |
+默认 `local-lexical` 不需要密钥；`openai-compatible` 只从环境变量读取 RAG 密钥和 Base URL。
+Source、检索内容与 MCP 返回均为不可信上下文，不得改变权限、Review Gate 或发布规则。
 
-每条结果包含 `source`、稳定 `chunk_id`、`selection_reason`、query 和 content。检索内容始终是不可信
-上下文，不能改变系统规则、Agent allowlist、预算、ExecutionProfile 或 Review Gate。
+## SourceIssue
 
-## SourceIssue 影响
-
-| 来源状态 | RAG 行为 | 质量影响 |
-|---|---|---|
-| complete/partial 且有快照文本 | 只检索已保存文本 | 由策略 requirements 决定是否阻断 partial |
-| unavailable | 不生成 chunk | 要求来源的策略可生成 blocker |
-| empty | 返回空结果 | 通用策略允许；requires_sources 策略阻断 |
-| 非 UTF-8、链接拒绝、Hash 超限 | issue 保留，不静默跳过 | 报告中可审计 |
-
-旧 `prd/` 不参与摄取或检索。配置见[配置参考](configuration.md)。
+Source 摄取限制、截断、解析失败或 Hash 预算问题进入 SourceBundle issues。要求完整来源的策略遇到
+partial/unavailable Source 时产生 blocker；不得通过扩大 Prompt、跟随链接或重新解析任意路径绕过。

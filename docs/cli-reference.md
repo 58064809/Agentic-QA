@@ -3,39 +3,26 @@
 ## 调用形式
 
 ```powershell
-python -m harness [--repo-root <path>] <group> <command> ...
+python -m harness [--repo-root PATH] <command>
 ```
 
-`--repo-root` 必须位于子命令之前；默认值为当前目录。
+`--repo-root` 必须位于子命令之前，默认是当前目录。
 
 ## 命令
 
-| 命令 | 必需参数 | 主要选项 | 输出/副作用 |
-|---|---|---|---|
-| `workspace create` | `workspace_id` | 重复 `--quality-policy` | 创建 v2 workspace |
-| `run start` | `workspace_id goal` | artifact、ExecutionProfile | 创建 run、冻结来源并执行到 Review Gate |
-| `run get` | `workspace_id run_id` | 无 | 只读返回 RunSnapshot |
-| `run resume` | `workspace_id run_id` | 无 | 仅恢复崩溃执行 |
-| `run review` | `workspace_id run_id decision` | artifact、variant、审核信息 | 写审核记录；approve 可触发发布 |
-| `run diff` | `workspace_id run_id artifact` | before、after | 只读返回 unified diff |
-| `eval run` | 无 | 无 | 运行离线确定性评估 |
-| `request run` | `request_file` | 可重复 `--allow-source-root` | 导入本地来源并幂等执行到 Review Gate |
-| `request schema` | 无 | 无 | 输出 AgentRequest v1 JSON Schema |
-| `mcp serve` | 无 | 可重复 `--allow-source-root` | 启动本地 stdio MCP Server |
-
-## `request` 与 `mcp`
-
-`request run` 只接受 `.json`、`.yaml` 或 `.yml`。项目内
-`local-sources/requirements/` 是默认允许根，缺失时自动创建；`--allow-source-root` 用于追加项目外
-绝对路径。请求固定为 `analysis-only`，不会调用人工 Review 或发布。
-
-```powershell
-python -m harness request run .\request.yml
-
-python -m harness mcp serve
-```
-
-MCP 工具、请求字段和安全限制见[跨 AI 接入](agent-integration.md)。
+| 命令 | 必需参数 | 主要作用 |
+|---|---|---|
+| `workspace create` | `workspace_id` | 创建 v2 workspace；可重复指定 `--quality-policy` |
+| `run start` | `workspace_id goal` | 冻结来源并执行到 Review Gate |
+| `run get` | `workspace_id run_id` | 只读返回 RunSnapshot |
+| `run resume` | `workspace_id run_id` | 恢复 recoverable run |
+| `run review` | `workspace_id run_id decision` | 写人工 Review；approve 可触发发布 |
+| `run diff` | `workspace_id run_id artifact` | 比较 raw、normalized 或 published |
+| `eval run` | 无 | 运行离线工作流 Eval 和五类脱敏 Golden Eval |
+| `eval live` | 无 | 使用显式配置的模型密钥生成 nightly Candidate，不发布 |
+| `request run` | `request_file` | 导入允许根内的来源并幂等执行到 Review Gate |
+| `request schema` | 无 | 输出 AgentRequest v1 JSON Schema |
+| `mcp serve` | 无 | 启动受限的 stdio MCP Server |
 
 ## `run start`
 
@@ -44,8 +31,8 @@ MCP 工具、请求字段和安全限制见[跨 AI 接入](agent-integration.md)
 | `--artifact` | `testcases` | 可重复；必须是受支持 artifact |
 | `--environment` | `analysis-only` | 禁止 production-like 名称 |
 | `--base-url-env` | 空 | 非 analysis-only 时必须匹配 workspace policy |
-| `--allow-http-method` | `GET, HEAD, OPTIONS` | 可重复且只能收窄 workspace policy |
-| `--allow-ui-mutations` | false | analysis-only 禁止；workspace 必须先授权 |
+| `--allow-http-method` | `GET, HEAD, OPTIONS` | 只能收窄 workspace policy |
+| `--allow-ui-mutations` | false | workspace 必须先授权 |
 | `--request-timeout-seconds` | `10` | 1–60 秒且不得超过 workspace policy |
 
 Artifact：`requirement_analysis`、`testcases`、`api_test_draft`、`ui_test_draft`、
@@ -53,46 +40,49 @@ Artifact：`requirement_analysis`、`testcases`、`api_test_draft`、`ui_test_dr
 
 ## `run review`
 
-| decision | 是否需要 version | 是否发布 | 状态结果 |
+| decision | version | 发布 | 结果 |
 |---|---:|---:|---|
-| `approve` | 是，每个目标恰好一个 | 质量门与 Repository 复验通过后发布 | `published` 或保留其他 artifact 状态 |
-| `hold` | 否 | 否 | `on_hold` |
-| `reject` | 否 | 否 | `rejected` |
-| `revise` | 否；必须有 `--revision-request` | 否 | `needs_revision` |
+| `approve` | 每个目标恰好一个 | 复验通过后发布 | `published` 或其余 artifact 状态 |
+| `hold` | 不需要 | 否 | `on_hold` |
+| `reject` | 不需要 | 否 | `rejected` |
+| `revise` | 不需要；必须有 `--revision-request` | 否 | `needs_revision` |
 
-通用参数：
-
-| 参数 | 规则 |
-|---|---|
-| `--artifact` | 单个 artifact 或 `all`；多 Candidate 时必须指定 |
-| `--variant` | approve 专用，可重复，格式 `artifact=raw|normalized` |
-| `--reason` | 必填的人工决定原因 |
-| `--reviewed-by` | 必填的审核人标识 |
-| `--revision-request` | revise 必填 |
-
-存在 normalized 时 CLI 不替审核人选择，必须显式提供 variant。
+多 Candidate 时 `--artifact` 必须是单个 artifact 或 `all`。approve 必须通过可重复的
+`--variant artifact=raw|normalized` 明确选择版本，CLI 不代替审核人决定。
 
 ## `run diff`
 
-`--before` 和 `--after` 均为必填，端点只能是 `raw`、`normalized` 或 `published`。端点必须真实
-存在；remediation patch 不是可比较或可发布的 ArtifactVariant。
+`--before` 与 `--after` 必须是 `raw`、`normalized` 或 `published`。remediation patch 不是
+ArtifactVariant，不可比较或发布。
 
-## 状态与下一步
+## `request` 与 `mcp`
 
-| Run 状态 | 用户动作 |
-|---|---|
-| `planning`、`running`、`recoverable` | 进程中断后可 `run resume` |
-| `needs_human_review` | 检查 Candidate 后 `run review` |
-| `on_hold` | 等待确认，之后继续 `run review` |
-| `partial` | 可查询和审核，但不能 approve/promote |
-| `needs_revision`、`rejected` | 更新输入后创建新 run |
-| `published` | 从 `published/<artifact>/current.*` 读取 |
-| `failed` | 查看 snapshot errors 和 events；不能伪装成 Review |
+`request run` 接受 JSON/YAML。`local-sources/requirements/` 是默认允许根；额外根使用可重复的
+`--allow-source-root`。AgentRequest 固定为 analysis-only，不暴露 Review、approve、promote、shell
+或任意文件读取工具。
+
+## Eval
+
+`eval run` 不需要模型密钥，包含：
+
+- recorded workflow、MCP snapshot、Review Gate 和 deterministic promote；
+- login-lock、order-refund、coupon-boundary、settlement-rounding、
+  city-opening-rewards 五类脱敏 Golden Case。每个 Case 分别读取
+  `expectations.json`、`baseline-testcases.json`、
+  `candidate-requirement-catalog.json` 和 `candidate-testcases.md`；候选缺失时失败，
+  并报告 `baseline_score` 与 `baseline_gap`，不会把人工基线当成待测产物；
+- 规则召回、覆盖率、幻觉率、重复率、边界/状态覆盖和可执行性评分。
+
+`eval live` 需要显式模型配置。它从脱敏 login-lock Golden source 生成真实隔离 Candidate，
+停在 Review Gate 后读取本次 `requirement_analysis/raw.md` 与 `testcases/raw.md` 计算规则召回、
+覆盖、幻觉、重复、边界/状态和可执行性分数；状态正确但质量分不足仍返回失败。设置
+`AGENTIC_QA_LIVE_EVAL_OUTPUT` 时，只导出脱敏 `source-bundle.json`、两类 raw artifact、
+`quality-report.json` 与 `generation-report.json` 供人工审查，不导出整个 workspace。
 
 ## 退出码
 
 | 退出码 | 含义 |
 |---:|---|
-| `0` | 命令成功；`eval run` 的评估通过 |
-| `1` | `eval run` 完成但评估未通过 |
-| `2` | 参数、配置或运行错误；原因写入 stderr |
+| `0` | 命令成功；Eval 通过 |
+| `1` | Eval 完成但未通过 |
+| `2` | 参数、配置或运行错误 |

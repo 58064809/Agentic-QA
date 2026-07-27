@@ -52,16 +52,12 @@ def test_quality_adapters_do_not_live_in_domain() -> None:
     assert (PACKAGE_ROOT / "application" / "source" / "models.py").is_file()
 
 
-def test_city_quality_pack_stays_split() -> None:
-    root = PACKAGE_ROOT / "infrastructure" / "quality" / "packs" / "city_opening_rewards"
-    required = {"parser.py", "rules.py", "validators.py", "normalizer.py", "strategy.py"}
-    assert required.issubset({path.name for path in root.glob("*.py")})
-    oversized = {
-        path.name: len(path.read_text(encoding="utf-8").splitlines())
-        for path in root.glob("*.py")
-        if len(path.read_text(encoding="utf-8").splitlines()) > 1100
-    }
-    assert not oversized, f"city quality pack 出现新的单文件聚合实现: {oversized}"
+def test_business_quality_pack_is_declarative_not_python() -> None:
+    legacy = PACKAGE_ROOT / "infrastructure" / "quality" / "packs" / "city_opening_rewards"
+    manifest = PACKAGE_ROOT / "manifests" / "quality" / "city-opening-rewards.yml"
+
+    assert not any(legacy.glob("*.py"))
+    assert manifest.is_file()
 
 
 def test_candidate_has_no_persisted_quality_passed_field() -> None:

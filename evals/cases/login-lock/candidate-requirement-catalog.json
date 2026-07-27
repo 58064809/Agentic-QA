@@ -1,0 +1,23 @@
+{
+  "schema_version": "agentic-qa.requirement-catalog.v1",
+  "sources": [{"source": "source.md", "section": "登录锁定"}],
+  "actors": ["账号持有人"],
+  "business_objects": ["账号", "登录会话"],
+  "flows": ["登录失败累计达到阈值后锁定账号"],
+  "rules": [{
+    "rule_id": "LOGIN-001",
+    "title": "连续失败锁定",
+    "condition": "同一账号连续登录失败达到5次",
+    "outcome": "账号进入已锁定状态且不得建立登录会话",
+    "evidence_level": "confirmed",
+    "source_refs": [{"source": "source.md", "section": "登录锁定"}],
+    "boundaries": [{"field": "failed_attempts", "values": ["4", "5", "6"]}],
+    "state_transitions": [{
+      "from_state": "可登录",
+      "event": "第5次连续失败",
+      "to_state": "已锁定"
+    }]
+  }],
+  "forbidden_inventions": ["解锁按钮", "user_lock_table"],
+  "pending_questions": ["锁定持续时间与解锁方式未定义"]
+}

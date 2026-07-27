@@ -1,0 +1,70 @@
+{
+  "schema_version": "agentic-qa.test-case-set.v1",
+  "cases": [
+    {
+      "case_id": "TC-REFUND-001",
+      "rule_ids": ["REFUND-001"],
+      "title": "退款申请通过后进入处理中",
+      "test_type": "状态迁移",
+      "priority": "P0",
+      "preconditions": ["订单状态为已支付"],
+      "test_data": ["退款申请审核结果=通过"],
+      "steps": ["提交退款申请", "使退款申请得到通过", "读取订单业务状态"],
+      "expected_results": ["订单状态变为退款处理中"],
+      "assertions": ["订单业务状态记录为退款处理中"],
+      "pending_items": [],
+      "covered_boundary_values": [],
+      "covered_transitions": [{
+        "from_state": "已支付",
+        "event": "退款申请通过",
+        "to_state": "退款处理中"
+      }]
+    },
+    {
+      "case_id": "TC-REFUND-002",
+      "rule_ids": ["REFUND-001"],
+      "title": "退款完成后进入已退款",
+      "test_type": "状态迁移",
+      "priority": "P0",
+      "preconditions": ["订单状态为退款处理中"],
+      "test_data": ["退款处理结果=完成"],
+      "steps": ["完成退款处理", "读取订单业务状态"],
+      "expected_results": ["订单状态变为已退款"],
+      "assertions": ["订单业务状态记录为已退款"],
+      "pending_items": [],
+      "covered_boundary_values": [],
+      "covered_transitions": [{
+        "from_state": "退款处理中",
+        "event": "退款完成",
+        "to_state": "已退款"
+      }]
+    },
+    {
+      "case_id": "TC-REFUND-003",
+      "rule_ids": ["REFUND-002"],
+      "title": "未支付订单拒绝退款",
+      "test_type": "反向",
+      "priority": "P0",
+      "preconditions": ["订单状态为未支付"],
+      "test_data": ["退款申请=提交"],
+      "steps": ["对未支付订单提交退款申请", "读取退款受理结果"],
+      "expected_results": ["退款申请不被受理"],
+      "assertions": ["订单状态保持未支付且无退款流程"],
+      "pending_items": [],
+      "covered_boundary_values": [],
+      "covered_transitions": []
+    }
+  ],
+  "coverage": [
+    {
+      "rule_id": "REFUND-001",
+      "case_ids": ["TC-REFUND-001", "TC-REFUND-002"],
+      "rationale": "覆盖退款完整状态链路"
+    },
+    {
+      "rule_id": "REFUND-002",
+      "case_ids": ["TC-REFUND-003"],
+      "rationale": "覆盖未支付订单反向约束"
+    }
+  ]
+}
