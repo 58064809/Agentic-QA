@@ -43,7 +43,7 @@ include = ["harness*"]
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
-harness = ["manifests/**/*.yml", "knowledge/**/*.md", "schemas/*.json"]
+harness = ["manifests/**/*.yml", "knowledge/**/*.yml", "schemas/*.json"]
 
 [tool.ruff]
 line-length = 100

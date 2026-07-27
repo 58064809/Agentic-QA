@@ -1,5 +1,7 @@
 # 工作区与产物版本
 
+本页适合排查 Candidate、审核记录、发布历史或恢复问题，目录图展示每类文件由哪个阶段产生。
+
 ## 目录
 
 ```text
@@ -15,7 +17,7 @@ workspaces/<workspace_id>/
 │   ├── raw.md
 │   ├── normalized.md              # 可选
 │   ├── normalization.patch        # 可选
-│   ├── remediation.patch          # 可选、不可发布
+│   ├── remediation.patch          # 可选，仅用于修订建议
 │   ├── quality-report.json
 │   ├── generation-report.json     # 可选；模型调用与质量修订审计
 │   └── manifest.json
@@ -36,7 +38,7 @@ workspaces/<workspace_id>/
 | quality report | variant verdict 与评估审计 | create-only | Review 与 promote |
 | generation report | 是否使用 LLM、模型路由、Token 与修订次数 | create-only | 生成过程审计 |
 | Review Record | 人工决定与批准版本 | 按 artifact 原子写 | 审计 |
-| published history | 已发布不可变版本 | create-only | 历史追踪 |
+| published history | 已发布只增不改版本 | create-only | 历史追踪 |
 | published current | 当前版本指针内容 | 原子替换 | 使用者读取 |
 
 ## 原子边界
@@ -54,10 +56,10 @@ workspaces/<workspace_id>/
 
 | 文件 | 可发布 | 规则 |
 |---|---:|---|
-| `raw.*` | 是 | Agent 原始输出，不得被质量策略修改 |
+| `raw.*` | 是 | Agent 原始输出；质量策略只读评估并保留原文件 |
 | `normalized.*` | 是 | 可选，仅允许业务语义不变的机械格式调整 |
 | `normalization.patch` | 否 | 审计表示层变化 |
-| `remediation.patch` | 否 | 修订建议；必须通过新 run 形成新 raw |
+| `remediation.patch` | 否 | 修订建议；接受建议后由新 run 形成新的 raw |
 | `generation-report.json` | 否 | 记录 `llm_used`、每次模型调用结果和质量回灌次数 |
 
 发布选择与拒绝条件见 [Review Gate](review-gate.md)。

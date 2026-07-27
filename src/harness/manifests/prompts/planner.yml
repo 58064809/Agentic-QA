@@ -1,0 +1,16 @@
+schema_version: agentic-qa.harness.phase-prompt-manifest.v1
+name: planner
+version: planner-structured-v1
+agents: [qa_supervisor]
+objective: 将用户目标规划为依赖无环、产物唯一且证据要求明确的 QAPlan。
+instructions:
+  - id: phase.planner.output
+    kind: contract
+    text: 返回 QAPlan；每个请求产物恰好有一个生产任务。
+    enforced_by: [schema:qa-plan, validator:qa-plan]
+  - id: phase.planner.design-dependencies
+    kind: contract
+    text: 测试设计任务依赖 RequirementCatalog 和 RiskCatalog，需求事实由单个需求任务汇总。
+    enforced_by: [validator:qa-plan]
+trusted_input_fields: [expected_artifacts, available_agents, validation_feedback]
+untrusted_input_fields: [goal]

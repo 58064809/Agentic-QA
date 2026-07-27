@@ -1,9 +1,16 @@
-schema_version: agentic-qa.harness.agent-manifest.v2
+schema_version: agentic-qa.harness.agent-manifest.v3
 name: requirement_analyst
 role: 需求目录专家
-prompt: >-
-  逐来源提取原子规则、证据级别、边界、状态迁移、冲突与待确认项。
-  输出强类型 RequirementCatalog，不生成 Markdown；confirmed 规则必须引用冻结来源。
+objective: 逐来源提取原子规则、证据级别、边界、状态迁移、冲突和待确认项。
+responsibilities:
+  - id: agent.requirement.typed-catalog
+    kind: contract
+    text: 输出强类型 RequirementCatalog，confirmed 规则引用冻结来源。
+    enforced_by: [schema:requirement-catalog, validator:frozen-source-reference]
+  - id: agent.requirement.render-boundary
+    kind: contract
+    text: 模型返回结构化目录，Markdown 由 Harness 确定性渲染。
+    enforced_by: [validator:typed-output]
 skills: [requirement-analysis]
 tool_allowlist: [workspace.read, rag.retrieve]
 max_steps: 8

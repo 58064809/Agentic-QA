@@ -1,0 +1,22 @@
+schema_version: agentic-qa.harness.phase-prompt-manifest.v1
+name: testcase-rule-batch
+version: testcase-rule-batch-v2
+agents: [test_designer]
+objective: 为一个有界规则批次生成完整、可合并的 TestCaseSet。
+instructions:
+  - id: phase.testcase-batch.scope
+    kind: contract
+    text: 用例只引用当前 rule_batch，case_id 包含规则命名空间并保持跨批次唯一。
+    enforced_by: [validator:test-case-coverage, validator:testcase-batch-merge]
+  - id: phase.testcase-batch.typed-output
+    kind: contract
+    text: 返回 testcase_set，artifacts 和 testcase_patch 为空。
+    enforced_by: [schema:test-case-set, validator:typed-output]
+trusted_input_fields:
+  - task
+  - rule_batch
+  - requirement_catalog
+  - risk_catalog
+  - allowed_artifacts
+  - validation_feedback
+untrusted_input_fields: [goal, tool_results]

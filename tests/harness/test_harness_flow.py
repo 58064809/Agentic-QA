@@ -24,6 +24,16 @@ from harness.infrastructure.workflow.engine import default_recorded_testcase_set
 from harness.testing.evals import recorded_model_gateway
 
 
+def _prompt_context(prompt: str, response_model: type) -> dict[str, Any]:
+    if response_model.__name__ != "AgentOutput":
+        return {}
+    envelope = json.loads(prompt)
+    return {
+        **envelope.get("trusted_context", {}),
+        **envelope.get("untrusted_context", {}),
+    }
+
+
 def _harness(path: Path) -> Harness:
     return Harness(path, model_gateway=recorded_model_gateway())
 
@@ -179,7 +189,7 @@ def test_quality_feedback_includes_rejected_draft_and_repairs_candidate(
         **kwargs: Any,
     ) -> Any:
         nonlocal test_designer_calls
-        context = json.loads(prompt) if response_model.__name__ == "AgentOutput" else {}
+        context = _prompt_context(prompt, response_model)
         if context.get("task", {}).get("expected_outputs") == ["testcases"]:
             test_designer_calls += 1
             if test_designer_calls == 1:
@@ -243,7 +253,7 @@ def test_requirement_sources_are_extracted_per_file_with_generation_provenance(
     fragment_calls = [
         call
         for call in report["model_calls"]
-        if call["prompt_template_version"] == "requirement-fragment-v1"
+        if call["prompt_template_version"] == "requirement-fragment-v2"
     ]
     assert len(fragment_calls) == 2
     assert {
@@ -253,6 +263,8 @@ def test_requirement_sources_are_extracted_per_file_with_generation_provenance(
     assert all(call["latency_ms"] >= 0 for call in report["model_calls"])
     assert all(call["finish_reason"] == "recorded" for call in report["model_calls"])
     assert all(call["input_context_characters"] > 0 for call in report["model_calls"])
+    assert all(call["prompt_sha256"] for call in report["model_calls"])
+    assert all(call["prompt_reference_versions"] for call in report["model_calls"])
     assert all(
         selection["raw_sha256"] for call in fragment_calls for selection in call["source_selection"]
     )
@@ -270,7 +282,7 @@ def test_test_designer_executes_bounded_rule_batches_and_merges_them(
         response_model: type,
         **kwargs: Any,
     ) -> Any:
-        context = json.loads(prompt) if response_model.__name__ == "AgentOutput" else {}
+        context = _prompt_context(prompt, response_model)
         payload = recorded._callback(  # noqa: SLF001 - recorded gateway is a test fixture
             prompt=prompt,
             response_model=response_model,
@@ -323,7 +335,7 @@ def test_test_designer_executes_bounded_rule_batches_and_merges_them(
     batch_calls = [
         call
         for call in report["model_calls"]
-        if call["prompt_template_version"] == "testcase-rule-batch-v1"
+        if call["prompt_template_version"] == "testcase-rule-batch-v2"
     ]
     assert len(batch_calls) == 2
     assert all(call["source_selection"] for call in batch_calls)
@@ -346,7 +358,7 @@ def test_testcase_rule_batch_can_retrieve_source_evidence_on_demand(
         **kwargs: Any,
     ) -> Any:
         nonlocal requested, consumed_retrieval
-        context = json.loads(prompt) if response_model.__name__ == "AgentOutput" else {}
+        context = _prompt_context(prompt, response_model)
         if context.get("rule_batch") and not requested:
             requested = True
             return {
@@ -363,7 +375,7 @@ def test_testcase_rule_batch_can_retrieve_source_evidence_on_demand(
             }
         if context.get("rule_batch") and context.get("tool_results"):
             consumed_retrieval = True
-            assert context["source_prefetched"] is False
+            assert "source_prefetched" not in context
         return recorded._callback(  # noqa: SLF001 - recorded gateway is a test fixture
             prompt=prompt,
             response_model=response_model,
@@ -407,7 +419,7 @@ def test_generation_report_marks_artifact_contract_rejection(tmp_path: Path) -> 
         **kwargs: Any,
     ) -> Any:
         nonlocal rejected
-        context = json.loads(prompt) if response_model.__name__ == "AgentOutput" else {}
+        context = _prompt_context(prompt, response_model)
         if not rejected and context.get("task", {}).get("agent") == "test_designer":
             rejected = True
             return {

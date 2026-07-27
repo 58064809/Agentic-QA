@@ -1,0 +1,22 @@
+schema_version: agentic-qa.harness.phase-prompt-manifest.v1
+name: testcase-rule-batch-repair
+version: testcase-rule-batch-repair-v1
+agents: [test_designer]
+objective: 根据验证反馈修复当前规则批次并返回完整批次 TestCaseSet。
+instructions:
+  - id: phase.testcase-repair.scope
+    kind: contract
+    text: 修复范围保持在当前 rule_batch，返回替换该批次的完整 testcase_set。
+    enforced_by: [validator:test-case-coverage, validator:testcase-batch-merge]
+  - id: phase.testcase-repair.tools
+    kind: safety
+    text: 定向检索结果只补充当前批次的来源证据。
+    enforced_by: [allowlist:agent-tool-manifest, validator:frozen-source-reference]
+trusted_input_fields:
+  - task
+  - rule_batch
+  - requirement_catalog
+  - risk_catalog
+  - allowed_artifacts
+  - validation_feedback
+untrusted_input_fields: [goal, tool_results]

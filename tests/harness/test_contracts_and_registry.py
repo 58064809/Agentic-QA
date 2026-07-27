@@ -13,8 +13,19 @@ from harness import (
     QAPlan,
     StartRunCommand,
 )
-from harness.contracts import SkillManifest
-from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
+from harness.contracts import AgentManifest, SkillManifest
+from harness.domain.models import (
+    KnowledgeSpec,
+    PromptInstruction,
+    SkillPromptManifest,
+)
+from harness.infrastructure.manifests.registry import (
+    AgentRegistry,
+    KnowledgeRegistry,
+    PhasePromptRegistry,
+    SkillRegistry,
+    ToolRegistry,
+)
 from harness.testing.evals import recorded_model_gateway
 
 
@@ -97,43 +108,88 @@ def test_builtin_manifests_are_declarative_and_complete() -> None:
             assert skills.get(skill).name == skill
 
 
-def test_builtin_skill_knowledge_is_compiled_into_instructions() -> None:
+def test_public_v2_manifest_contracts_remain_unchanged() -> None:
+    agent = AgentManifest(name="sample", role="sample", prompt="sample")
+    skill = SkillManifest(
+        name="sample",
+        description="sample",
+        instructions="sample",
+        references=["sample.md"],
+    )
+
+    assert agent.schema_version == "agentic-qa.harness.agent-manifest.v2"
+    assert skill.schema_version == "agentic-qa.harness.skill-manifest.v2"
+
+
+def test_builtin_skill_knowledge_is_structured_and_referenced() -> None:
     skills = SkillRegistry.builtin()
 
-    instructions = skills.instructions("test-design")
+    knowledge = skills.knowledge_for("test-design")
 
-    assert "等价类" in instructions
-    assert "边界值" in instructions
-    assert "API" in instructions
-    assert skills.get("test-design").references == [
-        "test-design.md",
-        "assertion-design.md",
+    assert {item.name for item in knowledge} == {"test-design", "assertion-design"}
+    assert any("等价类" in step for item in knowledge for step in item.procedure)
+    assert skills.get("test-design").knowledge_refs == [
+        "test-design",
+        "assertion-design",
     ]
 
 
-def test_skill_knowledge_reference_cannot_escape_root(tmp_path: Path) -> None:
-    outside = tmp_path / "outside.md"
-    outside.write_text("do not load", encoding="utf-8")
-    manifest = SkillManifest(
-        name="unsafe",
-        description="unsafe reference",
-        instructions="base",
-        references=["../outside.md"],
-    )
-
-    with pytest.raises(ValueError, match="escapes package"):
-        SkillRegistry({"unsafe": manifest}, knowledge_root=tmp_path / "knowledge")
-
-
-def test_skill_knowledge_reference_must_exist(tmp_path: Path) -> None:
-    knowledge = tmp_path / "knowledge"
-    knowledge.mkdir()
-    manifest = SkillManifest(
+def test_skill_knowledge_reference_must_exist() -> None:
+    manifest = SkillPromptManifest(
         name="missing",
         description="missing reference",
-        instructions="base",
-        references=["missing.md"],
+        instructions=[PromptInstruction(id="skill.missing.base", kind="guidance", text="base")],
+        knowledge_refs=["missing"],
     )
 
-    with pytest.raises(ValueError, match="is missing"):
-        SkillRegistry({"missing": manifest}, knowledge_root=knowledge)
+    with pytest.raises(KeyError, match="unknown knowledge"):
+        SkillRegistry({"missing": manifest}, knowledge=KnowledgeRegistry({}))
+
+
+def test_skill_knowledge_must_apply_to_referencing_skill() -> None:
+    manifest = SkillPromptManifest(
+        name="consumer",
+        description="consumer",
+        instructions=[PromptInstruction(id="skill.consumer.base", kind="guidance", text="base")],
+        knowledge_refs=["shared"],
+    )
+    knowledge = KnowledgeSpec(
+        name="shared",
+        version="1.0.0",
+        purpose="shared",
+        applies_to=["different-skill"],
+        inputs=["input"],
+        procedure=["step"],
+        output_expectations=["output"],
+        evidence_policy=["evidence"],
+        uncertainty_policy=["unknown"],
+        prohibited_actions=["prohibited"],
+        deterministic_checks=["validator:test"],
+    )
+
+    with pytest.raises(ValueError, match="does not apply"):
+        SkillRegistry(
+            {"consumer": manifest},
+            knowledge=KnowledgeRegistry({"shared": knowledge}),
+        )
+
+
+def test_contract_and_safety_instructions_require_deterministic_enforcement() -> None:
+    with pytest.raises(ValidationError, match="requires enforced_by"):
+        PromptInstruction(id="test.contract", kind="contract", text="contract")
+    with pytest.raises(ValidationError, match="unknown deterministic enforcement"):
+        PromptInstruction(
+            id="test.contract",
+            kind="contract",
+            text="contract",
+            enforced_by=["prompt:itself"],
+        )
+
+
+def test_builtin_prompt_phases_reference_registered_agents() -> None:
+    agents = AgentRegistry.builtin()
+    phases = PhasePromptRegistry.builtin()
+
+    for phase in phases.list():
+        for agent in phase.agents:
+            assert agents.get(agent).name == agent

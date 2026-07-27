@@ -1,7 +1,12 @@
-schema_version: agentic-qa.harness.agent-manifest.v2
+schema_version: agentic-qa.harness.agent-manifest.v3
 name: failure_triager
 role: 失败分诊专家
-prompt: 只按证据分类；error 和 blocked 不生成 Bug，根因不足保持 unconfirmed。
+objective: 根据执行证据区分产品失败、执行错误、阻塞和未确认原因。
+responsibilities:
+  - id: agent.failure-triage.classification
+    kind: contract
+    text: error 和 blocked 保留原状态，根因证据不足时结论保持 unconfirmed。
+    enforced_by: [schema:failure-triage-v1, validator:failure-evidence]
 skills: [failure-triage]
 tool_allowlist: [evidence.read]
 max_steps: 8

@@ -20,7 +20,7 @@ Requirement Analyst 的每个来源提取调用只接收一个冻结文档。合
 
 ## 可追踪检索
 
-每个检索结果必须记录：
+每个检索结果包含以下审计字段：
 
 - source 路径；
 - SourceBundle 中的 raw Hash；
@@ -28,15 +28,17 @@ Requirement Analyst 的每个来源提取调用只接收一个冻结文档。合
 - selection reason；
 - 所属模型调用和 Prompt 模板版本。
 
-这些字段进入 `generation-report.json`。同一个 run 的 RAG、`workspace.read` 和质量策略必须消费同一
-冻结 SourceBundle，禁止读取后来变化的来源。
+这些字段进入 `generation-report.json`。同一个 run 的 RAG、`workspace.read` 和质量策略读取同一
+冻结 SourceBundle；run 启动后的来源变化不会进入当前上下文。
 
 ## Provider
 
 默认 `local-lexical` 不需要密钥；`openai-compatible` 只从环境变量读取 RAG 密钥和 Base URL。
-Source、检索内容与 MCP 返回均为不可信上下文，不得改变权限、Review Gate 或发布规则。
+Source、检索内容与 MCP 返回位于 Prompt 的外部数据区。权限、Review Gate 和发布行为来自代码
+中的 allowlist、validator 与仓储边界。
 
 ## SourceIssue
 
 Source 摄取限制、截断、解析失败或 Hash 预算问题进入 SourceBundle issues。要求完整来源的策略遇到
-partial/unavailable Source 时产生 blocker；不得通过扩大 Prompt、跟随链接或重新解析任意路径绕过。
+partial/unavailable Source 会产生 blocker。Source 摄取器不会通过扩大 Prompt、跟随链接或重新解析
+任意路径来补齐内容。

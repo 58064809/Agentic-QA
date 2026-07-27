@@ -60,6 +60,29 @@ def test_business_quality_pack_is_declarative_not_python() -> None:
     assert manifest.is_file()
 
 
+def test_workflow_model_calls_use_compiled_structured_prompts() -> None:
+    engine_path = PACKAGE_ROOT / "infrastructure" / "workflow" / "engine.py"
+    tree = ast.parse(engine_path.read_text(encoding="utf-8"))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "structured"
+    ]
+
+    assert calls
+    for call in calls:
+        keywords = {item.arg: item.value for item in call.keywords if item.arg}
+        system = keywords["system"]
+        prompt = keywords["prompt"]
+        assert isinstance(system, ast.Attribute)
+        assert system.attr == "content"
+        assert isinstance(prompt, ast.Call)
+        assert isinstance(prompt.func, ast.Attribute)
+        assert prompt.func.attr == "user_message"
+
+
 def test_candidate_has_no_persisted_quality_passed_field() -> None:
     models = (PACKAGE_ROOT / "domain" / "models.py").read_text(encoding="utf-8")
     tree = ast.parse(models)

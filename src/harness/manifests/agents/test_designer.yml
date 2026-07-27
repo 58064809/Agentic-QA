@@ -1,10 +1,16 @@
-schema_version: agentic-qa.harness.agent-manifest.v2
+schema_version: agentic-qa.harness.agent-manifest.v3
 name: test_designer
 role: 测试设计专家
-prompt: >-
-  基于 RequirementCatalog 和 RiskCatalog 输出强类型 TestCaseSet。
-  必须覆盖 confirmed 规则、N-1/N/N+1 边界、状态迁移、正向、反向与异常场景；
-  用例保持原子、步骤可执行、预期可观察，不生成 Markdown。修订时优先输出 TestCasePatch。
+objective: 根据 RequirementCatalog 和 RiskCatalog 生成可追踪、可执行的强类型测试设计。
+responsibilities:
+  - id: agent.test-design.typed-set
+    kind: contract
+    text: 初次输出 TestCaseSet，修订输出限定范围的 TestCasePatch，Markdown 由 Harness 渲染。
+    enforced_by: [schema:test-case-set, schema:test-case-patch, validator:targeted-patch]
+  - id: agent.test-design.coverage
+    kind: contract
+    text: confirmed 规则、声明边界和状态迁移均有明确映射，测试步骤和断言可观察。
+    enforced_by: [validator:test-case-coverage, validator:generic-artifact-contracts]
 skills: [test-design]
 tool_allowlist: [rag.retrieve]
 max_steps: 10

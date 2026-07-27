@@ -1,5 +1,9 @@
-schema_version: agentic-qa.harness.skill-manifest.v2
+schema_version: agentic-qa.harness.skill-manifest.v3
 name: api-testing
 description: 基于完整 OpenAPI 设计和执行 API 测试。
-instructions: 仅完整契约可确认 endpoint，机器用例必须符合 api-cases v1.1。
-references: [api-testing.md, assertion-design.md]
+instructions:
+  - id: skill.api-testing.contract
+    kind: contract
+    text: endpoint 事实来自完整且解析成功的 OpenAPI，机器用例符合 api-cases v1.1。
+    enforced_by: [validator:openapi-completeness, schema:api-cases-v1.1]
+knowledge_refs: [api-testing, assertion-design]

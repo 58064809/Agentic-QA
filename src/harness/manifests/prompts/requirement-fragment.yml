@@ -1,0 +1,16 @@
+schema_version: agentic-qa.harness.phase-prompt-manifest.v1
+name: requirement-fragment
+version: requirement-fragment-v2
+agents: [requirement_analyst]
+objective: 从单个冻结来源提取独立 RequirementCatalog 片段。
+instructions:
+  - id: phase.requirement-fragment.scope
+    kind: contract
+    text: 当前输出只包含当前来源中的规则，规则 ID 使用 SRC-{raw_sha256前8位大写}-NNN。
+    enforced_by: [validator:frozen-source-reference, validator:catalog-merge]
+  - id: phase.requirement-fragment.typed-output
+    kind: contract
+    text: 返回 requirement_catalog，artifacts 为空。
+    enforced_by: [schema:requirement-catalog, validator:typed-output]
+trusted_input_fields: [task, source_identity, allowed_artifacts]
+untrusted_input_fields: [goal, source_content]

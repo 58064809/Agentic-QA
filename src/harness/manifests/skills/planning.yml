@@ -1,4 +1,8 @@
-schema_version: agentic-qa.harness.skill-manifest.v2
+schema_version: agentic-qa.harness.skill-manifest.v3
 name: planning
 description: 将开放式测试目标拆成有依赖和证据要求的任务。
-instructions: 计划必须可执行、依赖无环，并把证据不足的结论标记为待确认。
+instructions:
+  - id: skill.planning.valid-graph
+    kind: contract
+    text: 计划具有无环依赖、唯一任务 ID、证据要求和明确产物生产者。
+    enforced_by: [schema:qa-plan, validator:qa-plan]

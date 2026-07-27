@@ -1,0 +1,32 @@
+schema_version: agentic-qa.harness.knowledge-spec.v1
+name: test-design
+version: 1.0.0
+purpose: 使用等价类、边界、场景和状态迁移生成可追踪的原子测试。
+applies_to: [test-design]
+inputs:
+  - RequirementCatalog
+  - RiskCatalog
+  - 当前规则批次
+procedure:
+  - 为有效、无效、缺失、空白、格式错误和权限不足建立等价类。
+  - 为数值阈值覆盖阈值前、阈值和阈值后。
+  - 覆盖主流程、替代流程、中断、重试、取消、超时和跨角色场景。
+  - 覆盖初态、事件、目标态、重复事件和恢复事件。
+  - 将每个用例聚焦到一个可定位的核心目标。
+output_expectations:
+  - 用例引用当前批次中的规则 ID。
+  - 步骤可执行，预期和断言可观察。
+  - 覆盖矩阵列出实际存在的用例 ID 和具体依据。
+  - 用例数量由规则和风险决定。
+evidence_policy:
+  - 页面、接口、字段、角色和配置只来自已提供证据。
+uncertainty_policy:
+  - 缺失的环境、数据或观察点进入 pending_items。
+prohibited_actions:
+  - 不使用范围缩写或占位映射代替真实覆盖。
+  - 不在缺少证据时编造接口、数据库、页面或实现细节。
+deterministic_checks:
+  - schema:test-case-set
+  - validator:test-case-coverage
+  - validator:observable-assertion
+  - validator:generic-artifact-contracts

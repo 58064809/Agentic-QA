@@ -29,4 +29,4 @@ python -m harness run start demo "分析需求并生成测试用例"
 ```
 
 `run start` 返回 `run_id`。后续查询、恢复和审核始终使用 `workspace_id + run_id`。Candidate 不会
-自动发布；必须先检查质量报告，再通过人工 `run review` 选择 `raw` 或 `normalized` 版本。
+自动发布。审核人检查质量报告后，可通过 `run review` 选择 `raw` 或 `normalized` 版本。

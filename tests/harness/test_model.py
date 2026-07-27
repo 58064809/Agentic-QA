@@ -110,7 +110,7 @@ def test_deepseek_gateway_uses_json_object_and_thinking_parameters(monkeypatch) 
     assert captured["max_tokens"] == 16384
     assert captured["extra_body"] == {"thinking": {"type": "enabled"}}
     assert captured["reasoning_effort"] == "max"
-    assert "JSON Schema" in captured["messages"][0]["content"]
+    assert captured["messages"][0]["content"] == "Return json."
     assert gateway.route_history == [
         {
             "tier": "pro",

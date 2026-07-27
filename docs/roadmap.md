@@ -1,5 +1,7 @@
 # 路线图
 
+本页区分已实现能力、后续方向和当前产品边界；“计划中”不代表运行时已经提供对应接口。
+
 ## 已实现
 
 | 能力 | 状态 | 实现证据 |
@@ -26,7 +28,7 @@
 | 能力 | 原因 |
 |---|---|
 | 自动批准或绕过 Review Gate | 破坏人工发布边界 |
-| 生产环境 API/UI mutation | ExecutionProfile 明确禁止 |
-| 外部缺陷系统自动写入 | 证据和根因不足时必须保持 unconfirmed |
+| 生产环境 API/UI mutation | ExecutionProfile 会拒绝 production-like 环境 |
+| 外部缺陷系统自动写入 | 当前只生成 unconfirmed 候选，不连接外部写入端口 |
 | v1 workspace 自动迁移 | 旧数据只保留，不读取、不改写 |
 | SQLite 或生产内存 checkpoint | PostgreSQL 是唯一生产 checkpoint |

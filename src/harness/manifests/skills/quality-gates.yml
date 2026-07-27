@@ -1,4 +1,8 @@
-schema_version: agentic-qa.harness.skill-manifest.v2
+schema_version: agentic-qa.harness.skill-manifest.v3
 name: quality-gates
 description: 在候选进入人工审核前执行确定性质量检查。
-instructions: 空内容、契约错误或证据不足不得伪装为已完成产物。
+instructions:
+  - id: skill.quality-gates.candidate-status
+    kind: contract
+    text: 空内容、契约错误或证据 blocker 对应 rejected 或 partial Candidate 状态。
+    enforced_by: [validator:candidate-quality, gate:review-gate]

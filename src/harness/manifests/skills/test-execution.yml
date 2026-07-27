@@ -1,5 +1,9 @@
-schema_version: agentic-qa.harness.skill-manifest.v2
+schema_version: agentic-qa.harness.skill-manifest.v3
 name: test-execution
 description: 执行已允许的测试并记录结构化证据。
-instructions: passed、failed、error 和 blocked 必须按实际证据区分。
-references: [execution-evidence.md]
+instructions:
+  - id: skill.test-execution.status
+    kind: contract
+    text: 执行状态由操作结果和断言证据共同决定。
+    enforced_by: [schema:execution-evidence-v1, validator:execution-status]
+knowledge_refs: [execution-evidence]

@@ -6,7 +6,13 @@ from typing import TypeVar
 import yaml
 from pydantic import BaseModel
 
-from harness.domain.models import AgentManifest, SkillManifest, ToolManifest
+from harness.domain.models import (
+    AgentPromptManifest,
+    KnowledgeSpec,
+    PhasePromptManifest,
+    SkillPromptManifest,
+    ToolManifest,
+)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -16,6 +22,10 @@ def _load_manifests(path: Path, model: type[T]) -> dict[str, T]:
     for manifest_path in sorted(path.glob("*.yml")):
         payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
         item = model.model_validate(payload)
+        if manifest_path.stem != item.name:
+            raise ValueError(
+                f"manifest filename must match name: {manifest_path.name} != {item.name}"
+            )
         if item.name in result:
             raise ValueError(f"duplicate manifest: {item.name}")
         result[item.name] = item
@@ -25,7 +35,7 @@ def _load_manifests(path: Path, model: type[T]) -> dict[str, T]:
 class AgentRegistry:
     def __init__(
         self,
-        manifests: dict[str, AgentManifest],
+        manifests: dict[str, AgentPromptManifest],
         *,
         skills: SkillRegistry | None = None,
         tools: ToolRegistry | None = None,
@@ -53,18 +63,18 @@ class AgentRegistry:
         tools = tools or ToolRegistry.builtin()
         package_root = Path(__file__).parents[2]
         return cls(
-            _load_manifests(package_root / "manifests" / "agents", AgentManifest),
+            _load_manifests(package_root / "manifests" / "agents", AgentPromptManifest),
             skills=skills,
             tools=tools,
         )
 
-    def get(self, name: str) -> AgentManifest:
+    def get(self, name: str) -> AgentPromptManifest:
         try:
             return self._items[name]
         except KeyError as exc:
             raise KeyError(f"unknown agent: {name}") from exc
 
-    def list(self) -> list[AgentManifest]:
+    def list(self) -> list[AgentPromptManifest]:
         return list(self._items.values())
 
 
@@ -90,54 +100,78 @@ class ToolRegistry:
 class SkillRegistry:
     def __init__(
         self,
-        manifests: dict[str, SkillManifest],
+        manifests: dict[str, SkillPromptManifest],
         *,
-        knowledge_root: Path | None = None,
+        knowledge: KnowledgeRegistry | None = None,
     ):
         self._items = dict(manifests)
-        self._knowledge_root = knowledge_root.resolve() if knowledge_root else None
-        self._instructions = {
-            name: self._compile_instructions(item) for name, item in self._items.items()
-        }
+        self.knowledge = knowledge or KnowledgeRegistry({})
+        for manifest in self._items.values():
+            for reference in manifest.knowledge_refs:
+                knowledge_spec = self.knowledge.get(reference)
+                if manifest.name not in knowledge_spec.applies_to:
+                    raise ValueError(
+                        f"knowledge {reference} does not apply to skill {manifest.name}"
+                    )
 
     @classmethod
     def builtin(cls) -> SkillRegistry:
         package_root = Path(__file__).parents[2]
         return cls(
-            _load_manifests(package_root / "manifests" / "skills", SkillManifest),
-            knowledge_root=package_root / "knowledge",
+            _load_manifests(package_root / "manifests" / "skills", SkillPromptManifest),
+            knowledge=KnowledgeRegistry.builtin(),
         )
 
-    def _compile_instructions(self, manifest: SkillManifest) -> str:
-        sections = [manifest.instructions.strip()]
-        for reference in manifest.references:
-            if self._knowledge_root is None:
-                raise ValueError(f"skill {manifest.name} references knowledge without a root")
-            target = (self._knowledge_root / reference).resolve()
-            if not target.is_relative_to(self._knowledge_root):
-                raise ValueError(
-                    f"skill {manifest.name} knowledge path escapes package: {reference}"
-                )
-            if not target.is_file():
-                raise ValueError(f"skill {manifest.name} knowledge file is missing: {reference}")
-            text = target.read_text(encoding="utf-8").strip()
-            if not text:
-                raise ValueError(f"skill {manifest.name} knowledge file is empty: {reference}")
-            sections.append(f"参考知识：{reference}\n{text}")
-        compiled = "\n\n".join(sections)
-        if len(compiled) > 50_000:
-            raise ValueError(f"skill {manifest.name} compiled instructions exceed 50000 characters")
-        return compiled
-
-    def get(self, name: str) -> SkillManifest:
+    def get(self, name: str) -> SkillPromptManifest:
         try:
             return self._items[name]
         except KeyError as exc:
             raise KeyError(f"unknown skill: {name}") from exc
 
-    def list(self) -> list[SkillManifest]:
+    def list(self) -> list[SkillPromptManifest]:
         return list(self._items.values())
 
-    def instructions(self, name: str) -> str:
-        self.get(name)
-        return self._instructions[name]
+    def knowledge_for(self, name: str) -> list[KnowledgeSpec]:
+        manifest = self.get(name)
+        return [self.knowledge.get(reference) for reference in manifest.knowledge_refs]
+
+
+class KnowledgeRegistry:
+    def __init__(self, specs: dict[str, KnowledgeSpec]):
+        self._items = dict(specs)
+
+    @classmethod
+    def builtin(cls) -> KnowledgeRegistry:
+        package_root = Path(__file__).parents[2]
+        return cls(_load_manifests(package_root / "knowledge", KnowledgeSpec))
+
+    def get(self, name: str) -> KnowledgeSpec:
+        try:
+            return self._items[name]
+        except KeyError as exc:
+            raise KeyError(f"unknown knowledge: {name}") from exc
+
+    def list(self) -> list[KnowledgeSpec]:
+        return list(self._items.values())
+
+
+class PhasePromptRegistry:
+    def __init__(self, manifests: dict[str, PhasePromptManifest]):
+        self._items = dict(manifests)
+
+    @classmethod
+    def builtin(cls) -> PhasePromptRegistry:
+        package_root = Path(__file__).parents[2]
+        return cls(_load_manifests(package_root / "manifests" / "prompts", PhasePromptManifest))
+
+    def get(self, name: str, *, agent: str | None = None) -> PhasePromptManifest:
+        try:
+            manifest = self._items[name]
+        except KeyError as exc:
+            raise KeyError(f"unknown prompt phase: {name}") from exc
+        if agent is not None and agent not in manifest.agents:
+            raise ValueError(f"prompt phase {name} does not support agent {agent}")
+        return manifest
+
+    def list(self) -> list[PhasePromptManifest]:
+        return list(self._items.values())

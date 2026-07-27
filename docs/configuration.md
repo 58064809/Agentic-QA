@@ -1,7 +1,7 @@
 # 配置参考
 
 `.env.example` 是变量名清单，CLI 不自动加载 `.env`。真实值通过当前 shell、Windows 用户环境变量
-或密钥管理服务注入，不能进入 workspace、Prompt、事件或产物。
+或密钥管理服务注入。敏感值进入 workspace、Prompt、事件或产物时，安全扫描会报告问题。
 
 ## 环境变量
 
@@ -58,8 +58,8 @@ execution:
   environments: {}
 ```
 
-`created_at` 由系统写入。业务策略只能使用注册名，例如 `city-opening-rewards`；未知或重复名称会被
-拒绝，不能配置 Python import path。
+`created_at` 由系统写入。业务策略使用注册名，例如 `city-opening-rewards`；未知、重复名称或
+Python import path 会被配置校验拒绝。
 
 ### 注册测试环境
 
@@ -73,8 +73,8 @@ execution:
       max_request_timeout_seconds: 10
 ```
 
-非 `analysis-only` 的 ExecutionProfile 必须匹配环境名和 `base_url_env`，且只能收窄方法、UI mutation
-与超时权限。production-like 环境名被拒绝。
+非 `analysis-only` 的 ExecutionProfile 会匹配环境名和 `base_url_env`，并与 workspace 的方法、
+UI mutation 和超时上限比较。production-like 环境名被拒绝。
 
 ### RAG Provider
 
@@ -119,8 +119,9 @@ data_sources:
 | 总 Hash 预算 | 64 MiB | 后续超预算文件标记 unavailable |
 | 解析文本总量 | 100,000 characters | 保存截断快照并标记 partial |
 
-路径必须位于 `workspace/sources`。链接、junction、Windows reparse point、绝对路径、`..`、控制字符和
-大小写折叠冲突均被拒绝；archive 不解压，Markdown/HTML/YAML 内容不执行。
+Source 摄取器只解析 `workspace/sources` 内的相对普通文件。链接、junction、Windows reparse point、
+绝对路径、`..`、控制字符和大小写折叠冲突均被拒绝；archive 不解压，Markdown/HTML/YAML 内容
+不会执行。
 
 通用策略允许 empty SourceBundle。是否要求来源或完整来源由启用的 QualityStrategy 声明；
 `city-opening-rewards` 两者都要求。
@@ -135,8 +136,8 @@ python -m harness mcp serve `
   --allow-source-root D:\OpenAPI
 ```
 
-默认根由 `--repo-root` 决定，追加允许根只存在于当前进程参数中，不写入 workspace；工具调用不能
-扩大白名单。AgentRequest 固定使用 `analysis-only`，不能配置 ExecutionProfile。完整协议见
+默认根由 `--repo-root` 决定，追加允许根只存在于当前进程参数中，不写入 workspace；工具参数超出
+白名单时返回权限错误。AgentRequest 固定使用 `analysis-only`，协议中没有 ExecutionProfile 字段。完整协议见
 [跨 AI 接入](agent-integration.md)。
 ## 声明式质量策略
 

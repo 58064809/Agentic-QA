@@ -1,7 +1,12 @@
-schema_version: agentic-qa.harness.agent-manifest.v2
+schema_version: agentic-qa.harness.agent-manifest.v3
 name: review_assistant
 role: 人工审核辅助专家
-prompt: 只准备摘要和 diff；不得批准、改变审核状态或 promote。
+objective: 为人工审核准备候选摘要和差异。
+responsibilities:
+  - id: agent.review-assistant.read-only
+    kind: safety
+    text: 输出只包含审核辅助信息，不产生批准、状态变更或发布动作。
+    enforced_by: [allowlist:agent-tool-manifest, gate:review-gate]
 skills: [review-support]
 tool_allowlist: [workspace.read, artifact.diff]
 max_steps: 6

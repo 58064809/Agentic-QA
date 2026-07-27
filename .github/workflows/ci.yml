@@ -4,7 +4,6 @@ on:
   push:
     branches: [master]
   pull_request:
-    branches: [master]
 
 permissions:
   contents: read
@@ -45,7 +44,9 @@ jobs:
       - name: Install
         run: python -m pip install --upgrade pip build ".[dev,docs]"
       - name: Ruff
-        run: ruff check .
+        run: |
+          ruff format --check .
+          ruff check .
       - name: Tests
         run: pytest -q
       - name: Offline and golden eval
@@ -55,4 +56,4 @@ jobs:
       - name: Build and inspect wheel
         run: |
           python -m build --wheel
-          python -c "import glob,zipfile; names=zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist(); assert all(any(n.startswith(p) for n in names) for p in ('harness/domain/','harness/application/','harness/infrastructure/','harness/interfaces/','harness/manifests/','harness/knowledge/')); assert not any(n.startswith(('runtime/','rag/','scripts/')) for n in names); assert not any('city_opening_rewards' in n for n in names)"
+          python -c "import glob,zipfile; names=zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist(); assert all(any(n.startswith(p) for n in names) for p in ('harness/domain/','harness/application/','harness/infrastructure/','harness/interfaces/','harness/manifests/','harness/manifests/prompts/','harness/knowledge/')); assert any(n.endswith('harness/knowledge/test-design.yml') for n in names); assert not any(n.startswith(('runtime/','rag/','scripts/')) for n in names); assert not any(n.startswith('harness/knowledge/') and n.endswith('.md') for n in names); assert not any('city_opening_rewards' in n for n in names)"

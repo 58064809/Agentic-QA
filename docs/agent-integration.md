@@ -1,6 +1,6 @@
 # 跨 AI 接入
 
-Agentic-QA 不要求外部 AI 自己拼接 workspace、文件复制和 `run start`。支持 MCP 的客户端调用
+Agentic-QA 为外部 AI 封装了 workspace、文件导入和 `run start`。支持 MCP 的客户端调用
 `generate_from_sources`；只有终端能力的客户端提交同一份 YAML/JSON `AgentRequest`。
 
 两种入口使用相同 Schema、来源安全边界和幂等规则，结果都只到 Candidate，不会 approve 或
@@ -12,7 +12,7 @@ promote。
 |---|---|---|
 | MCP + 本地进程 | MCP stdio | 一句话触发导入、生成、查询和 diff |
 | 本地终端 | `agentic-qa request run` | 执行机器可读请求文件 |
-| 仅聊天，无本地工具 | 不支持 | 不能读取绝对路径或运行 Harness |
+| 仅聊天，无本地工具 | 不支持 | 缺少读取绝对路径和运行 Harness 的能力 |
 
 ## AgentRequest
 
@@ -71,7 +71,8 @@ agentic-qa-mcp `
 ```
 
 服务只使用 stdio。项目内 `local-sources/requirements/` 始终是允许根且会自动创建。需要读取项目外
-目录时，可重复传入 `--allow-source-root <绝对路径>` 追加白名单；工具参数不能扩大这些目录。
+目录时，可重复传入 `--allow-source-root <绝对路径>` 追加白名单；超出这些目录的工具参数会返回
+权限错误。
 
 ### MCP 工具
 
@@ -119,7 +120,7 @@ Codex 根据 MCP Tool Schema 构造 `AgentRequest`。如果路径不在启动白
 }
 ```
 
-不要通过客户端提示词增加 approve/promote；服务端根本不注册这些工具。
+客户端提示词无法增加 approve/promote，因为服务端工具注册表中没有这些能力。
 
 ## 请求文件 CLI
 
@@ -141,7 +142,7 @@ python -m harness request schema
 | 输入根 | 最多 16 个绝对文件或目录 | 相对路径或白名单越界时拒绝整个请求 |
 | 递归 | 最多 16 层 | 超限拒绝 |
 | 文件 | 最多 256 个 | 超限拒绝 |
-| 单文件 | 最多 16 MiB | 超限拒绝，不导入不可分析文件 |
+| 单文件 | 最多 16 MiB | 超限时拒绝该文件并记录导入问题 |
 | 总量 | 最多 64 MiB | 超限拒绝 |
 | 内容 | 完整 UTF-8 文本且无 NUL | 非文本拒绝 |
 | 文件类型 | 普通文件 | symlink、junction、reparse point 和特殊文件拒绝 |
@@ -153,6 +154,6 @@ workspace；持久化 Manifest 只包含逻辑路径和 Hash，不保存本机�
 
 `human_review_required` 表示 Candidate 已生成并通过自动质量门，不表示业务审核通过。
 生成阶段会把结构化 blocker 和上一版草稿回灌给模型，最多修订 5 轮；`inspect_errors` 表示多轮
-修订后仍有 blocker，Candidate 会标记为 partial，只用于诊断和发起新 run，不能批准。审核人继续使用
-[`run diff` 和 `run review`](review-gate.md)；MCP 和 AgentRequest CLI 都不能构造
+修订后仍有 blocker，Candidate 会标记为 partial，用于诊断和发起新 run；批准校验会拒绝该版本。
+审核人继续使用 [`run diff` 和 `run review`](review-gate.md)；MCP 和 AgentRequest CLI 都没有构造
 `ApprovedArtifactVersion`。

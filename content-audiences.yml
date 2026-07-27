@@ -1,0 +1,39 @@
+schema_version: agentic-qa.content-audiences.v1
+audiences:
+  human:
+    purpose: 解释产品场景、操作、系统响应、示例和常见问题。
+    may_reference: [human, machine_contract]
+  runtime_ai:
+    purpose: 为 Harness 模型调用提供结构化任务、证据和输出指导。
+    may_reference: [runtime_ai, machine_contract]
+  machine_contract:
+    purpose: 为程序提供可验证的类型、Schema 和内容目录。
+    may_reference: [machine_contract]
+  contributor_agent:
+    purpose: 为仓库编码 Agent 提供协作与治理上下文。
+    may_reference: [human, runtime_ai, machine_contract, contributor_agent]
+entries:
+  - pattern: README.md
+    audience: human
+  - pattern: COMMANDS.md
+    audience: human
+  - pattern: docs/*.md
+    audience: human
+  - pattern: AGENTS.md
+    audience: contributor_agent
+  - pattern: src/harness/manifests/**/*.yml
+    audience: runtime_ai
+  - pattern: src/harness/knowledge/*.yml
+    audience: runtime_ai
+  - pattern: docs/schemas/*.json
+    audience: machine_contract
+  - pattern: src/harness/schemas/*.json
+    audience: machine_contract
+  - pattern: src/harness/schemas/*.py
+    audience: machine_contract
+  - pattern: src/harness/domain/schemas/*.py
+    audience: machine_contract
+  - pattern: src/harness/domain/models.py
+    audience: machine_contract
+  - pattern: content-audiences.yml
+    audience: machine_contract

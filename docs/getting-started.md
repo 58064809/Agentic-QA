@@ -38,8 +38,8 @@ python -m harness workspace create demo
 Copy-Item D:\Docs\login-prd.md .\workspaces\demo\sources\
 ```
 
-workspace 只创建一次。PRD、规则说明、OpenAPI 等文件必须在启动 run 前放入 `sources/`。run 启动后
-会冻结 Source Bundle；修改当前 `sources/` 不会影响旧 run。
+workspace 只创建一次。run 启动时，系统从 `sources/` 读取 PRD、规则说明和 OpenAPI，并冻结为
+Source Bundle；之后修改当前 `sources/` 不会影响旧 run。
 
 普通项目不需要传 `--quality-policy`。只有确实使用对应业务规则时才显式选择
 `city-opening-rewards`。
@@ -89,7 +89,7 @@ Get-Content -Encoding utf8 (Join-Path $PWD $candidate.generation_report_path)
 python -m harness run diff demo $runId testcases --before raw --after normalized
 ```
 
-`raw` 是 Agent 原始内容；`normalized` 只能包含不改变业务语义的格式调整。首次发布前不存在
+`raw` 是 Agent 原始内容；`normalized` 包含不改变业务语义的格式调整。首次发布前不存在
 `published` diff 端点。
 
 ## 6. 人工审核与发布
@@ -104,8 +104,8 @@ python -m harness run review demo $runId approve `
   --reviewed-by "qa-owner"
 ```
 
-批准 normalized 时改用 `--variant testcases=normalized`。多 Candidate 一起批准必须指定 `all`，并为
-每个 artifact 重复提供一个 `--variant`。
+批准 normalized 时改用 `--variant testcases=normalized`。多 Candidate 一起批准时，`all` 表示全部
+目标，每个 artifact 都有一个对应的 `--variant`；缺少选择会返回参数错误。
 
 发布成功后读取：
 

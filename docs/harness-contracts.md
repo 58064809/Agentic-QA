@@ -1,5 +1,7 @@
 # Harness v2 公开契约
 
+本页面向 Python 集成者，说明 Facade 接受的强类型输入、返回值和可观察副作用。
+
 ## Facade 方法
 
 | 方法 | 输入 | 输出 | 前置条件 | 写入/副作用 |
@@ -37,11 +39,11 @@
 
 | 字段 | 约束 |
 |---|---|
-| `artifact` | 必须是本次目标 Candidate |
+| `artifact` | 与本次目标 Candidate 对应 |
 | `variant` | 仅 `raw` 或 `normalized` |
-| `content_sha256` | 必须匹配实际版本文件 |
-| `assessment_key` | 必须匹配 Candidate 与质量报告 |
-| `quality_report_sha256` | 必须匹配已提交报告 |
+| `content_sha256` | 与实际版本文件不一致时发布校验失败 |
+| `assessment_key` | 与 Candidate 或质量报告不一致时发布校验失败 |
+| `quality_report_sha256` | 与已提交报告不一致时发布校验失败 |
 
 可使用 `candidate.version_ref(ArtifactVariant.RAW)` 构造。Approve 对每个目标恰好提供一个引用；CLI
 对应重复的 `--variant artifact=raw|normalized`。
@@ -51,6 +53,6 @@
 | 输入 | 行为 |
 |---|---|
 | v1 workspace | 明确拒绝，不迁移、不删除 |
-| 缺少 Candidate provenance 的旧 v2 run | 只可查询，不可批准或发布 |
+| 缺少 Candidate provenance 的旧 v2 run | 查询仍可用，批准和发布校验返回拒绝 |
 | `resume_run` 携带人工决定 | 类型契约不支持 |
 | `review_run` 用于崩溃恢复 | 不支持；职责与 resume 分离 |

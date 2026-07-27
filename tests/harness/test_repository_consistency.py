@@ -5,12 +5,14 @@ from pathlib import Path
 
 from harness.domain.schemas.api_test_cases import API_CASES_SCHEMA_VERSION
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
+from harness.infrastructure.prompts import PromptCompiler
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORE_FILES = (
     "README.md",
     "AGENTS.md",
     "COMMANDS.md",
+    "content-audiences.yml",
     "docs/getting-started.md",
     "docs/cli-reference.md",
     "docs/agent-integration.md",
@@ -34,6 +36,7 @@ CORE_FILES = (
     "src/harness/store.py",
     "src/harness/review.py",
     "src/harness/domain/models.py",
+    "src/harness/infrastructure/prompts/compiler.py",
     "src/harness/application/use_cases.py",
     "src/harness/infrastructure/persistence/filesystem.py",
     "src/harness/interfaces/facade.py",
@@ -62,6 +65,7 @@ def _manifest_errors() -> list[str]:
         tools = ToolRegistry.builtin()
         skills = SkillRegistry.builtin()
         agents = AgentRegistry.builtin(skills=skills, tools=tools)
+        PromptCompiler(agents=agents, skills=skills)
     except Exception as exc:
         return [f"manifest 注册失败: {exc}"]
     errors = []

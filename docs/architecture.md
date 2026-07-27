@@ -35,31 +35,39 @@ StartRunCommand
 
 | 模型 | 作用 | 关键约束 |
 |---|---|---|
-| `RequirementCatalog` | 原子规则与证据目录 | confirmed 规则必须有 source ref；规则 ID 唯一 |
-| `RiskCatalog` | 规则到风险和覆盖意图 | 只能引用已存在规则 |
+| `RequirementCatalog` | 原子规则与证据目录 | confirmed 规则带有 source ref；规则 ID 在目录内唯一 |
+| `RiskCatalog` | 规则到风险和覆盖意图 | 未知规则引用会在校验阶段返回错误 |
 | `TestCaseSet` | 用例与覆盖映射 | 用例/映射引用有效；confirmed、边界、状态迁移完整 |
 | `TestCasePatch` | 局部质量修订 | 仅替换失败用例或映射，保留未受影响内容 |
 
-Markdown 是可审核表示，不是模型事实源。质量归一化只能改变行尾、空白等表示，不得静默改变业务
-语义或覆盖 raw artifact。
+Markdown 是可审核表示，不是模型事实源。质量归一化处理行尾、空白等表示；语义变化会被质量门
+报告，raw artifact 始终保留。
 
 ## 质量与审核边界
 
-自动质量门可以拒绝结构不完整、语义空泛、覆盖错误或来源不支持的 Candidate，但不能批准发布。
+自动质量门会拒绝结构不完整、语义空泛、覆盖错误或来源缺少支持的 Candidate；批准能力仅存在于
+人工 Review 流程。
 Candidate 始终 create-only；修订创建新 run。只有人工选择明确的 raw/normalized
 `ArtifactVersionRef` 后，仓储才重新读取 Manifest、质量报告和 Review，并执行确定性 promote。
 
-partial、blocker、Hash 漂移、缺少 provenance 或 remediation patch 均不可发布。
+partial、blocker、Hash 漂移、缺少 provenance 或 remediation patch 会使发布校验返回拒绝结果。
 
 ## 可诊断性
 
 `generation-report.json` 按调用记录模型/路由、thinking、Token、延迟、finish reason、输入字符数、
-来源选择及 Hash、Prompt 模板版本、原始响应 Hash、结构化失败、artifact validation 重试、质量
-修订次数和具体失败阶段。
+来源选择及 Hash、Prompt 模板版本与编译 Hash、知识版本、原始响应 Hash、结构化失败、artifact
+validation 重试、质量修订次数和具体失败阶段。
 
 `quality-report.json` 记录原始/归一化变体、独立 reviewer 角色、策略版本、配置 Hash、问题、
 SourceBundle Hash 与 assessment key。reviewer 不复用生成模型；修订补丁若触及 blocker
 范围之外的 case/rule 会被拒绝。两类报告都属于 Candidate bundle，不是发布产物。
+
+## 内容与 Prompt 分层
+
+`content-audiences.yml` 将内容分为人类文档、运行时 AI 指令、机器契约和编码 Agent 治理文件。
+运行时指令来自 Agent、Skill、Phase manifest 与 YAML knowledge，由 Prompt 编译器合成为稳定
+JSON；Source、RAG 和 MCP 内容位于独立的外部数据区。Prompt 提供生成指导，Schema、validator、
+工具 allowlist 和 Review Gate 决定系统接受哪些输入与动作。
 
 ## 适配边界
 

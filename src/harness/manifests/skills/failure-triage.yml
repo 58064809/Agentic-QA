@@ -1,5 +1,9 @@
-schema_version: agentic-qa.harness.skill-manifest.v2
+schema_version: agentic-qa.harness.skill-manifest.v3
 name: failure-triage
 description: 根据执行证据分类失败和生成 Bug 候选。
-instructions: error 或 blocked 不生成 Bug，根因不足时保持 unconfirmed。
-references: [failure-triage.md, execution-evidence.md]
+instructions:
+  - id: skill.failure-triage.bug-gate
+    kind: contract
+    text: error 或 blocked 不形成 Bug 候选，根因不足时保持 unconfirmed。
+    enforced_by: [schema:failure-triage-v1, validator:failure-evidence]
+knowledge_refs: [failure-triage, execution-evidence]

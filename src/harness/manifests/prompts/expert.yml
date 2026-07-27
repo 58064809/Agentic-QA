@@ -1,0 +1,36 @@
+schema_version: agentic-qa.harness.phase-prompt-manifest.v1
+name: expert
+version: expert-structured-v3
+agents:
+  - requirement_analyst
+  - risk_strategist
+  - test_designer
+  - api_test_engineer
+  - ui_test_engineer
+  - test_executor
+  - failure_triager
+  - qa_reporter
+  - review_assistant
+objective: 根据任务、强类型依赖和可追踪证据返回 AgentOutput。
+instructions:
+  - id: phase.expert.delegated-output
+    kind: contract
+    text: 输出范围与 task.expected_outputs 一致；结构化设计 Agent 使用 typed fields。
+    enforced_by: [schema:agent-output, validator:delegated-artifact]
+  - id: phase.expert.targeted-repair
+    kind: contract
+    text: 已存在 TestCaseSet 时，测试设计修订使用仅覆盖 blocker 范围的 TestCasePatch。
+    enforced_by: [schema:test-case-patch, validator:targeted-patch]
+trusted_input_fields:
+  - task
+  - dependencies
+  - source_files
+  - source_prefetched
+  - requirement_catalog
+  - risk_catalog
+  - rule_batches
+  - current_testcase_set
+  - source_fragments
+  - allowed_artifacts
+  - validation_feedback
+untrusted_input_fields: [goal, tool_results]

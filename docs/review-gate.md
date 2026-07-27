@@ -1,18 +1,18 @@
 # Review Gate
 
-Agent、模型、Tool、MCP 和 review assistant 都不能构造人工批准或直接发布。
+Agent、模型、Tool、MCP 和 review assistant 的接口中没有人工批准或直接发布能力。
 
 ## ReviewIntent
 
 | Intent | 版本选择 | Candidate | Run/审核投影 | 发布 |
 |---|---|---|---|---|
 | `approve` | 每个目标一个 raw/normalized | 不修改 | promote 成功后 confirmed/published | 是 |
-| `hold` | 不允许 | 不修改 | `on_hold`，写记录与事件 | 否 |
-| `reject` | 不允许 | 不修改 | `rejected` | 否 |
-| `revise` | 不允许；必须有 revision request | 不覆盖 | `needs_revision` | 否，新 run 修订 |
+| `hold` | 不接收版本 | 不修改 | `on_hold`，写记录与事件 | 否 |
+| `reject` | 不接收版本 | 不修改 | `rejected` | 否 |
+| `revise` | 不接收版本；缺少 revision request 时返回校验错误 | 不覆盖 | `needs_revision` | 否，新 run 修订 |
 
-多 Candidate 必须指定单个 artifact 或 `all`。`show_diff` 不是 ReviewIntent；差异查询不写 Review
-Record，也不修改 Run。
+多 Candidate 场景接受单个 artifact 或 `all`；未给出目标时返回歧义错误。`show_diff` 不是
+ReviewIntent，差异查询不会写入 Review Record，也不会修改 Run。
 
 ## 状态迁移
 
@@ -27,14 +27,14 @@ Record，也不修改 Run。
 
 ## Approve 门禁
 
-| 校验位置 | 必须验证 |
+| 校验位置 | 系统复验内容 |
 |---|---|
 | Review 服务 | 人工身份与原因、目标完整、强类型版本、质量 verdict、非 partial |
 | Candidate loader | Manifest 文件集合、全部 hashes、Report/策略/来源 provenance |
 | Repository promote 边界 | 人工 review-record.v2、批准版本、真实 Manifest partial、Report 与实际文件 |
 
 任一 blocker、缺失 normalized、partial、缺少 provenance、hash 漂移、assessment/source 不一致都会
-fail-closed。remediation patch 不是 ArtifactVariant，不能批准或发布。
+fail-closed。remediation patch 不属于 ArtifactVariant，因此不会进入批准或发布路径。
 
 ## Publication Journal
 
@@ -44,5 +44,5 @@ fail-closed。remediation patch 不是 ArtifactVariant，不能批准或发布�
 | `committed` | history、current、Review、Snapshot 与事件已完成 | 重复调用直接复用 |
 | `rolled_back` | provenance 失效，已恢复发布前状态 | 不发布 |
 
-只有 history、current、Review Record、Run Snapshot 和审核事件均完成后才能标记 committed。存储布局
-和原子边界见[工作区与产物版本](artifact-versioning.md)。
+history、current、Review Record、Run Snapshot 和审核事件全部完成后，Journal 才进入
+`committed`。存储布局和原子边界见[工作区与产物版本](artifact-versioning.md)。

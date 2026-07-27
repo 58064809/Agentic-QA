@@ -1,12 +1,14 @@
 # CLI 参考
 
+本页用于查询命令位置、参数默认值、系统响应和退出码；完整操作示例见[从零开始](getting-started.md)。
+
 ## 调用形式
 
 ```powershell
 python -m harness [--repo-root PATH] <command>
 ```
 
-`--repo-root` 必须位于子命令之前，默认是当前目录。
+`--repo-root` 是顶层参数，解析位置在子命令之前；省略时使用当前目录。
 
 ## 命令
 
@@ -26,14 +28,14 @@ python -m harness [--repo-root PATH] <command>
 
 ## `run start`
 
-| 参数 | 默认值 | 规则 |
+| 参数 | 默认值 | 系统行为 |
 |---|---|---|
-| `--artifact` | `testcases` | 可重复；必须是受支持 artifact |
-| `--environment` | `analysis-only` | 禁止 production-like 名称 |
-| `--base-url-env` | 空 | 非 analysis-only 时必须匹配 workspace policy |
-| `--allow-http-method` | `GET, HEAD, OPTIONS` | 只能收窄 workspace policy |
-| `--allow-ui-mutations` | false | workspace 必须先授权 |
-| `--request-timeout-seconds` | `10` | 1–60 秒且不得超过 workspace policy |
+| `--artifact` | `testcases` | 可重复；未知 artifact 返回参数错误 |
+| `--environment` | `analysis-only` | production-like 名称被安全校验拒绝 |
+| `--base-url-env` | 空 | 非 analysis-only 时与 workspace policy 比对 |
+| `--allow-http-method` | `GET, HEAD, OPTIONS` | 超出 workspace policy 的方法被拒绝 |
+| `--allow-ui-mutations` | false | workspace 未授权时返回权限错误 |
+| `--request-timeout-seconds` | `10` | 接受 1–60 秒，并与 workspace policy 上限比对 |
 
 Artifact：`requirement_analysis`、`testcases`、`api_test_draft`、`ui_test_draft`、
 `api_discovery_report`、`qa_report`、`execution_report`、`failure_analysis`、`bug_draft`。
@@ -45,15 +47,15 @@ Artifact：`requirement_analysis`、`testcases`、`api_test_draft`、`ui_test_dr
 | `approve` | 每个目标恰好一个 | 复验通过后发布 | `published` 或其余 artifact 状态 |
 | `hold` | 不需要 | 否 | `on_hold` |
 | `reject` | 不需要 | 否 | `rejected` |
-| `revise` | 不需要；必须有 `--revision-request` | 否 | `needs_revision` |
+| `revise` | 不接收版本；缺少 `--revision-request` 时返回参数错误 | 否 | `needs_revision` |
 
-多 Candidate 时 `--artifact` 必须是单个 artifact 或 `all`。approve 必须通过可重复的
-`--variant artifact=raw|normalized` 明确选择版本，CLI 不代替审核人决定。
+多 Candidate 时，`--artifact` 接受单个 artifact 或 `all`；缺少目标会返回歧义错误。approve 通过
+可重复的 `--variant artifact=raw|normalized` 明确选择版本，CLI 不代替审核人决定。
 
 ## `run diff`
 
-`--before` 与 `--after` 必须是 `raw`、`normalized` 或 `published`。remediation patch 不是
-ArtifactVariant，不可比较或发布。
+`--before` 与 `--after` 接受 `raw`、`normalized` 或 `published`。remediation patch 不属于
+ArtifactVariant，因此不会出现在差异端点或发布版本中。
 
 ## `request` 与 `mcp`
 

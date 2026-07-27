@@ -1,0 +1,24 @@
+schema_version: agentic-qa.harness.knowledge-spec.v1
+name: qa-reporting
+version: 1.0.0
+purpose: 将测试范围、执行结果、风险和限制整理为可审核报告。
+applies_to: [reporting]
+inputs:
+  - 测试计划和候选产物
+  - 执行证据、质量报告和未执行范围
+procedure:
+  - 按范围、执行、结果、风险、限制和建议组织内容。
+  - 分开统计计划覆盖、实际执行和未覆盖项目。
+  - 将缺陷、风险和统计值回指对应证据。
+output_expectations:
+  - 报告列出 blocker、剩余风险和待人工确认内容。
+  - 发布建议以候选意见呈现。
+evidence_policy:
+  - 统计值可回溯到 execution evidence。
+uncertainty_policy:
+  - 缺少证据的数据不计入已验证结论。
+prohibited_actions:
+  - 不把报告状态解释为人工批准或发布结果。
+deterministic_checks:
+  - validator:report-evidence
+  - gate:review-gate

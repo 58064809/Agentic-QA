@@ -1,4 +1,8 @@
-schema_version: agentic-qa.harness.skill-manifest.v2
+schema_version: agentic-qa.harness.skill-manifest.v3
 name: delegation
 description: 按 Agent 能力和工具权限派发任务。
-instructions: 只派发 manifest 已声明的 Agent，不扩大任务输出或工具权限。
+instructions:
+  - id: skill.delegation.registered-agent
+    kind: contract
+    text: 任务只分配给已注册 Agent，输出和工具范围来自计划与 Agent manifest。
+    enforced_by: [validator:qa-plan, allowlist:agent-tool-manifest]

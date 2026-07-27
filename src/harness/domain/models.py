@@ -178,7 +178,35 @@ class QAPlan(StrictModel):
         return self
 
 
+class PromptInstructionKind(str, Enum):
+    GUIDANCE = "guidance"
+    CONTRACT = "contract"
+    SAFETY = "safety"
+
+
+class PromptInstruction(StrictModel):
+    id: str = Field(pattern=r"^[a-z][a-z0-9_.-]*$")
+    kind: PromptInstructionKind
+    text: str = Field(min_length=1)
+    enforced_by: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_enforcement(self) -> PromptInstruction:
+        if self.kind in {PromptInstructionKind.CONTRACT, PromptInstructionKind.SAFETY}:
+            if not self.enforced_by:
+                raise ValueError(f"{self.kind.value} instruction requires enforced_by")
+        if len(self.enforced_by) != len(set(self.enforced_by)):
+            raise ValueError("enforced_by entries must be unique")
+        allowed_prefixes = ("schema:", "validator:", "allowlist:", "gate:", "repository:")
+        invalid = [item for item in self.enforced_by if not item.startswith(allowed_prefixes)]
+        if invalid:
+            raise ValueError(f"unknown deterministic enforcement references: {invalid}")
+        return self
+
+
 class AgentManifest(StrictModel):
+    """Public v2 manifest contract retained for API compatibility; runtime uses v3."""
+
     schema_version: Literal["agentic-qa.harness.agent-manifest.v2"] = (
         "agentic-qa.harness.agent-manifest.v2"
     )
@@ -193,6 +221,8 @@ class AgentManifest(StrictModel):
 
 
 class SkillManifest(StrictModel):
+    """Public v2 manifest contract retained for API compatibility; runtime uses v3."""
+
     schema_version: Literal["agentic-qa.harness.skill-manifest.v2"] = (
         "agentic-qa.harness.skill-manifest.v2"
     )
@@ -200,6 +230,128 @@ class SkillManifest(StrictModel):
     description: str = Field(min_length=1)
     instructions: str = Field(min_length=1)
     references: list[str] = Field(default_factory=list)
+
+
+class AgentPromptManifest(StrictModel):
+    schema_version: Literal["agentic-qa.harness.agent-manifest.v3"] = (
+        "agentic-qa.harness.agent-manifest.v3"
+    )
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    role: str = Field(min_length=1)
+    objective: str = Field(min_length=1)
+    responsibilities: list[PromptInstruction] = Field(min_length=1)
+    skills: list[str] = Field(default_factory=list)
+    tool_allowlist: list[str] = Field(default_factory=list)
+    input_schema: str = "agentic-qa.harness.agent-input.v2"
+    output_schema: str = "agentic-qa.harness.agent-output.v2"
+    max_steps: int = Field(default=8, ge=1, le=50)
+
+    @model_validator(mode="after")
+    def validate_instruction_ids(self) -> AgentPromptManifest:
+        ids = [item.id for item in self.responsibilities]
+        if len(ids) != len(set(ids)):
+            raise ValueError("agent responsibility ids must be unique")
+        return self
+
+
+class SkillPromptManifest(StrictModel):
+    schema_version: Literal["agentic-qa.harness.skill-manifest.v3"] = (
+        "agentic-qa.harness.skill-manifest.v3"
+    )
+    name: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    description: str = Field(min_length=1)
+    instructions: list[PromptInstruction] = Field(min_length=1)
+    knowledge_refs: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_instruction_ids(self) -> SkillPromptManifest:
+        ids = [item.id for item in self.instructions]
+        if len(ids) != len(set(ids)):
+            raise ValueError("skill instruction ids must be unique")
+        if len(self.knowledge_refs) != len(set(self.knowledge_refs)):
+            raise ValueError("knowledge_refs must be unique")
+        return self
+
+
+class KnowledgeSpec(StrictModel):
+    schema_version: Literal["agentic-qa.harness.knowledge-spec.v1"] = (
+        "agentic-qa.harness.knowledge-spec.v1"
+    )
+    name: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    version: str = Field(pattern=r"^[1-9][0-9]*\.[0-9]+\.[0-9]+$")
+    purpose: str = Field(min_length=1)
+    applies_to: list[str] = Field(min_length=1)
+    inputs: list[str] = Field(min_length=1)
+    procedure: list[str] = Field(min_length=1)
+    output_expectations: list[str] = Field(min_length=1)
+    evidence_policy: list[str] = Field(min_length=1)
+    uncertainty_policy: list[str] = Field(min_length=1)
+    prohibited_actions: list[str] = Field(min_length=1)
+    deterministic_checks: list[str] = Field(min_length=1)
+
+    @field_validator(
+        "applies_to",
+        "inputs",
+        "procedure",
+        "output_expectations",
+        "evidence_policy",
+        "uncertainty_policy",
+        "prohibited_actions",
+        "deterministic_checks",
+    )
+    @classmethod
+    def validate_unique_nonempty_items(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item for item in normalized):
+            raise ValueError("knowledge list entries cannot be empty")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("knowledge list entries must be unique")
+        return normalized
+
+    @field_validator("deterministic_checks")
+    @classmethod
+    def validate_deterministic_checks(cls, value: list[str]) -> list[str]:
+        allowed_prefixes = ("schema:", "validator:", "allowlist:", "gate:", "repository:")
+        invalid = [item for item in value if not item.startswith(allowed_prefixes)]
+        if invalid:
+            raise ValueError(f"unknown deterministic checks: {invalid}")
+        return value
+
+
+class PhasePromptManifest(StrictModel):
+    schema_version: Literal["agentic-qa.harness.phase-prompt-manifest.v1"] = (
+        "agentic-qa.harness.phase-prompt-manifest.v1"
+    )
+    name: str = Field(pattern=r"^[a-z][a-z0-9_-]*$")
+    version: str = Field(pattern=r"^[a-z][a-z0-9_.-]*$")
+    agents: list[str] = Field(min_length=1)
+    objective: str = Field(min_length=1)
+    instructions: list[PromptInstruction] = Field(min_length=1)
+    trusted_input_fields: list[str] = Field(default_factory=list)
+    untrusted_input_fields: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_phase(self) -> PhasePromptManifest:
+        ids = [item.id for item in self.instructions]
+        if len(ids) != len(set(ids)):
+            raise ValueError("phase instruction ids must be unique")
+        overlap = set(self.trusted_input_fields) & set(self.untrusted_input_fields)
+        if overlap:
+            raise ValueError(f"phase input fields have conflicting trust levels: {sorted(overlap)}")
+        return self
+
+
+class CompiledPrompt(StrictModel):
+    schema_version: Literal["agentic-qa.harness.compiled-prompt.v1"] = (
+        "agentic-qa.harness.compiled-prompt.v1"
+    )
+    phase: str
+    template_version: str
+    content: str
+    content_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    reference_versions: dict[str, str] = Field(default_factory=dict)
+    trusted_input_fields: list[str] = Field(default_factory=list)
+    untrusted_input_fields: list[str] = Field(default_factory=list)
 
 
 class ToolRisk(str, Enum):

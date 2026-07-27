@@ -1,0 +1,27 @@
+schema_version: agentic-qa.harness.knowledge-spec.v1
+name: assertion-design
+version: 1.0.0
+purpose: 将业务预期转换为可观察、可追踪的断言和证据。
+applies_to: [api-testing, test-design]
+inputs:
+  - 明确业务预期
+  - 可观察接口、界面、异步状态或持久化结果
+procedure:
+  - 为 API 检查协议状态、业务码、关键字段和值域以及状态副作用。
+  - 为 UI 检查关键文案、控件状态、导航结果和业务状态。
+  - 为异步流程定义完成条件、轮询边界和超时结果。
+  - 为动态数据记录 fixture 或前序响应中的提取路径。
+output_expectations:
+  - 每项断言绑定一个业务预期和可观察结果。
+  - 证据记录来源、观察时间、执行环境和关联步骤。
+evidence_policy:
+  - 实际结果来自工具或执行记录。
+  - 敏感凭证仅以环境变量引用出现。
+uncertainty_policy:
+  - 无法取得证据的场景标记为未执行或待确认。
+prohibited_actions:
+  - 不把预期结果写成实际执行结果。
+  - 不使用仅包含成功、正常或元素存在的空泛断言。
+deterministic_checks:
+  - validator:observable-assertion
+  - schema:execution-evidence-v1

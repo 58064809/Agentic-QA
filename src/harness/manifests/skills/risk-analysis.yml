@@ -1,5 +1,9 @@
-schema_version: agentic-qa.harness.skill-manifest.v2
+schema_version: agentic-qa.harness.skill-manifest.v3
 name: risk-analysis
 description: 基于证据识别质量风险和覆盖优先级。
-instructions: 风险结论必须引用需求、接口或执行证据，并说明影响与覆盖策略。
-references: [risk-analysis.md]
+instructions:
+  - id: skill.risk-analysis.traceability
+    kind: contract
+    text: 每项风险引用规则或执行证据，并记录影响、可能性、覆盖策略和剩余风险。
+    enforced_by: [schema:risk-catalog, validator:risk-rule-reference]
+knowledge_refs: [risk-analysis]

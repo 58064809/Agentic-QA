@@ -186,6 +186,8 @@ class GenerationModelCall(FrozenModel):
     input_context_characters: int | None = Field(default=None, ge=0)
     source_selection: tuple[GenerationSourceSelection, ...] = ()
     prompt_template_version: str = "unknown-v1"
+    prompt_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    prompt_reference_versions: dict[str, str] = Field(default_factory=dict)
     raw_response_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     artifact_validation_retries: int = Field(default=0, ge=0)
     failure_stage: str | None = None

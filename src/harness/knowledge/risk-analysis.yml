@@ -1,0 +1,26 @@
+schema_version: agentic-qa.harness.knowledge-spec.v1
+name: risk-analysis
+version: 1.0.0
+purpose: 根据已确认规则评估影响、可能性、恢复能力和测试优先级。
+applies_to: [risk-analysis]
+inputs:
+  - RequirementCatalog
+  - 定向检索得到的冻结来源证据
+procedure:
+  - 评估用户、数据、资金、安全和合规影响。
+  - 评估历史缺陷、技术复杂度和变化范围对应的可能性。
+  - 评估可逆性、恢复时间和状态一致性。
+  - 为每项风险记录覆盖策略与剩余风险。
+output_expectations:
+  - 每项风险引用已知 rule_id。
+  - 优先级与影响、可能性和恢复难度保持一致。
+evidence_policy:
+  - 风险事实引用需求、接口或执行证据。
+uncertainty_policy:
+  - 证据不足的风险标记待确认。
+prohibited_actions:
+  - 不把模型评估的风险等级写成已确认缺陷。
+  - 不创建 RequirementCatalog 之外的规则引用。
+deterministic_checks:
+  - schema:risk-catalog
+  - validator:risk-rule-reference

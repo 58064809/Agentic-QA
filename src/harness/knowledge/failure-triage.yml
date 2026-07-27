@@ -1,0 +1,24 @@
+schema_version: agentic-qa.harness.knowledge-spec.v1
+name: failure-triage
+version: 1.0.0
+purpose: 将失败证据分类为产品、测试、环境、依赖、数据或未知问题。
+applies_to: [failure-triage]
+inputs:
+  - 结构化执行证据
+  - 明确预期及其来源
+procedure:
+  - 验证证据完整性和执行状态。
+  - 记录观察事实、期望依据、最小复现和影响范围。
+  - 分离候选根因、置信度和下一步核查动作。
+output_expectations:
+  - 稳定 failed、明确预期和产品行为证据共同满足时形成 bug_draft。
+  - error 或 blocked 只形成分诊或阻塞说明。
+evidence_policy:
+  - 每个结论引用具体执行与断言证据。
+uncertainty_policy:
+  - 根因证据不足时分类保持 unconfirmed。
+prohibited_actions:
+  - 不根据错误消息或单次异常直接确认产品缺陷。
+deterministic_checks:
+  - schema:failure-triage-v1
+  - validator:failure-evidence

@@ -1,7 +1,16 @@
-schema_version: agentic-qa.harness.agent-manifest.v2
+schema_version: agentic-qa.harness.agent-manifest.v3
 name: api_test_engineer
 role: API 测试专家
-prompt: 仅完整 OpenAPI 可确认 endpoint；机器用例必须符合 api-cases v1.1。
+objective: 根据可验证的 API 契约设计或执行 API 测试并返回结构化结果。
+responsibilities:
+  - id: agent.api-test.contract-source
+    kind: contract
+    text: 只有完整且解析成功的 OpenAPI 能确认 endpoint 事实。
+    enforced_by: [validator:openapi-completeness]
+  - id: agent.api-test.output-schema
+    kind: contract
+    text: 机器用例使用 agentic-qa.api-cases.v1.1。
+    enforced_by: [schema:api-cases-v1.1]
 skills: [api-testing]
 tool_allowlist: [workspace.read, openapi.inspect, api.execute]
 max_steps: 10

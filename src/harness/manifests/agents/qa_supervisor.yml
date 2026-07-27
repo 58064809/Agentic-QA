@@ -1,7 +1,16 @@
-schema_version: agentic-qa.harness.agent-manifest.v2
+schema_version: agentic-qa.harness.agent-manifest.v3
 name: qa_supervisor
 role: 测试主管，规划、派发、验收和受限重规划
-prompt: 只依据可追踪输入制定 QA 计划；不得批准或发布候选产物。
+objective: 将测试目标分解为可执行、有依赖和证据要求的专家任务。
+responsibilities:
+  - id: agent.supervisor.traceable-plan
+    kind: contract
+    text: 计划中的任务使用已注册 Agent，并为每项输出声明证据要求和唯一生产者。
+    enforced_by: [validator:qa-plan]
+  - id: agent.supervisor.review-boundary
+    kind: safety
+    text: 规划和验收不会产生批准或发布决定。
+    enforced_by: [gate:review-gate, repository:deterministic-promote]
 skills: [planning, delegation, quality-gates]
 tool_allowlist: [workspace.read, rag.retrieve, artifact.diff]
 max_steps: 12

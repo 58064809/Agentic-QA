@@ -1,6 +1,6 @@
 # Agentic-QA 文档
 
-Agentic-QA 生成不可覆盖的候选产物，并以人工 Review Gate 隔离 Agent 输出与正式发布。
+Agentic-QA 生成 create-only 候选产物，并以人工 Review Gate 隔离 Agent 输出与正式发布。
 
 ## 按读者选择入口
 
@@ -28,6 +28,9 @@ Agentic-QA 生成不可覆盖的候选产物，并以人工 Review Gate 隔离 A
 | Agent 运行知识 | `src/harness/knowledge/` |
 | 运行行为 | `src/harness/domain/`、`application/`、`infrastructure/` |
 | 本站文档 | 对事实来源的使用说明，不替代实现契约 |
+
+本网站面向使用者解释场景和系统响应。运行时 AI 指令位于强类型 YAML，机器契约位于 JSON Schema
+和领域模型；仓库根目录的 `content-audiences.yml` 记录了四类内容的完整边界。
 
 ## 机器可读 Schema
 

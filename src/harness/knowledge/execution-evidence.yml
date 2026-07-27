@@ -1,0 +1,27 @@
+schema_version: agentic-qa.harness.knowledge-spec.v1
+name: execution-evidence
+version: 1.0.0
+purpose: 根据操作与断言证据区分测试执行状态。
+applies_to: [failure-triage, test-execution]
+inputs:
+  - 测试环境和执行时间
+  - 用例、步骤与输入摘要
+  - 工具结果、断言结果和脱敏附件引用
+procedure:
+  - 确认目标操作是否实际完成。
+  - 核对全部必要断言是否存在可追踪证据。
+  - 区分产品行为不一致、执行异常和前置阻塞。
+output_expectations:
+  - passed 表示操作完成且全部必要断言成立。
+  - failed 表示目标已执行且观察结果与明确预期不一致。
+  - error 表示工具、网络、脚本或环境异常导致无法判断产品行为。
+  - blocked 表示权限、数据、依赖或环境缺失导致目标未完成。
+evidence_policy:
+  - 每个状态引用对应操作和断言证据。
+uncertainty_policy:
+  - 缺少必要断言时不形成产品失败结论。
+prohibited_actions:
+  - 不把 error、blocked 或无断言响应归类为产品失败。
+deterministic_checks:
+  - schema:execution-evidence-v1
+  - validator:execution-status

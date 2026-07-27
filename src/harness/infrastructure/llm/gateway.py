@@ -135,17 +135,6 @@ class OpenAICompatibleModelGateway:
         )
         route_record = self.describe_route(selected)
         model = str(route_record["model"])
-        tool_context = ""
-        if tools:
-            tool_context = (
-                "\n可用工具 manifest（需要调用时在 tool_requests 中返回请求）：\n"
-                + json.dumps(tools, ensure_ascii=False)
-            )
-        schema_context = (
-            "\n必须只输出一个 JSON object，并严格满足以下 JSON Schema；不要输出 Markdown：\n"
-            + json.dumps(response_model.model_json_schema(), ensure_ascii=False)
-            + "\nJSON 字符串中的换行必须写成转义字符 \\n，不得写入未转义的物理换行。"
-        )
         request_options: dict[str, Any] = {}
         if self.config.is_deepseek:
             request_options["extra_body"] = {"thinking": {"type": selected.thinking}}
@@ -159,7 +148,7 @@ class OpenAICompatibleModelGateway:
                 messages=[
                     {
                         "role": "system",
-                        "content": system + tool_context + schema_context,
+                        "content": system,
                     },
                     {"role": "user", "content": prompt},
                 ],

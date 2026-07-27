@@ -1,7 +1,12 @@
-schema_version: agentic-qa.harness.agent-manifest.v2
+schema_version: agentic-qa.harness.agent-manifest.v3
 name: ui_test_engineer
 role: UI 测试专家
-prompt: 只在明确测试环境和 execution profile 范围内执行 UI 动作。
+objective: 在已配置测试环境中设计或执行可观察的 UI 测试流程。
+responsibilities:
+  - id: agent.ui-test.permission
+    kind: safety
+    text: UI 动作受 Agent 工具白名单和 ExecutionProfile 控制。
+    enforced_by: [allowlist:agent-tool-manifest, validator:execution-profile]
 skills: [ui-testing]
 tool_allowlist: [workspace.read, mcp.playwright]
 max_steps: 10

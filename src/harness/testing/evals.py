@@ -49,11 +49,19 @@ def recorded_model_gateway(*, use_fake_mcp: bool = False) -> CallableModelGatewa
         tools: list[dict[str, Any]],
         **_kwargs: Any,
     ) -> dict[str, Any]:
+        envelope = json.loads(prompt)
+        context = {
+            **envelope.get("trusted_context", {}),
+            **envelope.get("untrusted_context", {}),
+        }
         if response_model.__name__ == "QAPlan":
-            request = StartRunCommand.model_validate_json(prompt.splitlines()[-1])
+            request = StartRunCommand(
+                workspace_id="recorded-eval",
+                goal=context["goal"],
+                expected_artifacts=context["expected_artifacts"],
+            )
             return build_default_plan(request).model_dump(mode="json")
         if response_model is AgentOutput:
-            context = json.loads(prompt)
             outputs = context["task"]["expected_outputs"]
             agent = context["task"]["agent"]
             allowed_tools = {item["name"] for item in tools}
@@ -86,16 +94,16 @@ def recorded_model_gateway(*, use_fake_mcp: bool = False) -> CallableModelGatewa
                     and agent not in {"requirement_analyst", "test_designer"}
                 },
                 "evidence": context.get("source_files")
-                or [str(context.get("source", {}).get("path") or "user_goal")],
+                or [str(context.get("source_identity", {}).get("path") or "user_goal")],
                 "pending": [],
                 "tool_requests": [],
             }
             if agent == "requirement_analyst":
                 payload["artifacts"] = {}
                 catalog = default_recorded_requirement_catalog(context["goal"])
-                source_path = str(context.get("source", {}).get("path") or "")
+                source_path = str(context.get("source_identity", {}).get("path") or "")
                 if source_path:
-                    raw_sha256 = str(context.get("source", {}).get("raw_sha256") or "")
+                    raw_sha256 = str(context.get("source_identity", {}).get("raw_sha256") or "")
                     source_rule_id = f"SRC-{raw_sha256.removeprefix('sha256:')[:8].upper()}-001"
                     reference = SourceReference(
                         source=source_path,
