@@ -33,7 +33,7 @@ def test_deepseek_key_enables_default_v4_routing(monkeypatch) -> None:
     assert config.flash_model == "deepseek-v4-flash"
     assert config.pro_model == "deepseek-v4-pro"
     assert config.request_timeout_seconds == 180
-    assert config.max_output_tokens == 16384
+    assert config.max_output_tokens == 32768
 
 
 def test_single_model_override_pins_both_tiers(monkeypatch) -> None:
@@ -66,7 +66,11 @@ def test_policy_uses_pro_only_for_complex_plans_and_specialists() -> None:
 
     assert (routine.tier, routine.thinking) == ("flash", "enabled")
     assert (complex_route.tier, complex_route.reasoning_effort) == ("pro", "max")
-    assert (analyst.tier, analyst.thinking) == ("flash", "disabled")
+    assert (analyst.tier, analyst.thinking, analyst.reasoning_effort) == (
+        "flash",
+        "enabled",
+        "high",
+    )
     assert (designer.tier, designer.thinking, designer.reasoning_effort) == (
         "pro",
         "enabled",
@@ -107,7 +111,7 @@ def test_deepseek_gateway_uses_json_object_and_thinking_parameters(monkeypatch) 
     assert result.value == "ok"
     assert captured["model"] == "deepseek-v4-pro"
     assert captured["response_format"] == {"type": "json_object"}
-    assert captured["max_tokens"] == 16384
+    assert captured["max_tokens"] == 32768
     assert captured["extra_body"] == {"thinking": {"type": "enabled"}}
     assert captured["reasoning_effort"] == "max"
     assert captured["messages"][0]["content"] == "Return json."

@@ -19,8 +19,14 @@ from harness import (
     RunRef,
     StartRunCommand,
 )
+from harness.application.qa_design import parse_testcase_markdown
+from harness.domain.schemas.qa_design import CoverageMapping
+from harness.domain.schemas.qa_design import TestCaseSet as QATestCaseSet
 from harness.infrastructure.llm.gateway import CallableModelGateway
-from harness.infrastructure.workflow.engine import default_recorded_testcase_set
+from harness.infrastructure.workflow.engine import (
+    _targeted_testcase_patch_context,
+    default_recorded_testcase_set,
+)
 from harness.testing.evals import recorded_model_gateway
 
 
@@ -114,6 +120,211 @@ def test_stream_run_emits_a_terminal_snapshot_event(tmp_path: Path) -> None:
     assert events
     snapshot = harness.get_run(RunRef(workspace_id="demo", run_id=events[-1].run_id))
     assert snapshot.status == "needs_human_review"
+
+
+def test_invalid_model_plans_fall_back_to_deterministic_artifact_topology(
+    tmp_path: Path,
+) -> None:
+    recorded = recorded_model_gateway()
+    planner_calls = 0
+
+    def respond(
+        *,
+        prompt: str,
+        response_model: type,
+        **kwargs: Any,
+    ) -> Any:
+        nonlocal planner_calls
+        if response_model.__name__ == "QAPlan":
+            planner_calls += 1
+            return {
+                "tasks": [
+                    {
+                        "id": "incomplete-requirement-analysis",
+                        "objective": "analyze requirements without internal typed context",
+                        "agent": "requirement_analyst",
+                        "expected_outputs": ["requirement_analysis"],
+                        "evidence_requirements": [
+                            {"kind": "source", "description": "frozen requirement source"}
+                        ],
+                    },
+                    {
+                        "id": "invalid-test-design",
+                        "objective": "generate tests without typed dependencies",
+                        "agent": "test_designer",
+                        "expected_outputs": ["testcases"],
+                        "evidence_requirements": [
+                            {"kind": "trace", "description": "requirement trace"}
+                        ],
+                    },
+                ]
+            }
+        return recorded._callback(  # noqa: SLF001 - recorded gateway is a test fixture
+            prompt=prompt,
+            response_model=response_model,
+            **kwargs,
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    workspace = _create(harness)
+
+    snapshot = harness.start_run(
+        StartRunCommand(
+            workspace_id="demo",
+            goal="test login",
+            expected_artifacts=["requirement_analysis", "testcases"],
+        )
+    )
+
+    assert snapshot.status == "needs_human_review"
+    assert snapshot.errors == []
+    assert planner_calls == 3
+    assert {item.artifact for item in snapshot.candidates} == {
+        "requirement_analysis",
+        "testcases",
+    }
+    assert snapshot.plan is not None
+    assert [task.id for task in snapshot.plan.tasks] == [
+        "analyze_requirements",
+        "analyze_risks",
+        "produce_testcases",
+    ]
+    events = [
+        json.loads(line)
+        for line in (workspace / f"runs/{snapshot.run_id}/events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    fallback = [item for item in events if item["type"] == "plan_fallback_applied"]
+    assert len(fallback) == 1
+    assert fallback[0]["data"]["failed_attempts"] == 3
+    assert fallback[0]["data"]["fallback"] == "deterministic_artifact_topology"
+    assert "requires exactly one root RequirementCatalog task" in fallback[0]["data"]["reason"]
+
+
+def test_invalid_testcase_batch_schema_uses_local_repair_instead_of_replanning(
+    tmp_path: Path,
+) -> None:
+    recorded = recorded_model_gateway()
+    invalid_batches = 0
+    repair_calls = 0
+
+    def respond(
+        *,
+        prompt: str,
+        response_model: type,
+        **kwargs: Any,
+    ) -> Any:
+        nonlocal invalid_batches, repair_calls
+        result = recorded._callback(  # noqa: SLF001 - recorded gateway is a test fixture
+            prompt=prompt,
+            response_model=response_model,
+            **kwargs,
+        )
+        context = _prompt_context(prompt, response_model)
+        if (
+            response_model.__name__ == "AgentOutput"
+            and context.get("task", {}).get("agent") == "test_designer"
+            and context.get("rule_batch")
+        ):
+            if context.get("validation_feedback"):
+                repair_calls += 1
+            elif invalid_batches == 0:
+                invalid_batches += 1
+                result = deepcopy(result)
+                testcase_set = result["testcase_set"]
+                old_id = testcase_set["cases"][0]["case_id"]
+                testcase_set["cases"][0]["case_id"] = "TC-invalid-a"
+                testcase_set["coverage"][0]["case_ids"] = ["TC-invalid-a"]
+                assert old_id != "TC-invalid-a"
+        return result
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    workspace = _create(harness)
+
+    snapshot = harness.start_run(StartRunCommand(workspace_id="demo", goal="test login"))
+
+    assert snapshot.status == "needs_human_review"
+    assert invalid_batches == 1
+    assert repair_calls == 1
+    assert snapshot.plan is not None
+    assert snapshot.plan.revision == 0
+    events = [
+        json.loads(line)
+        for line in (workspace / f"runs/{snapshot.run_id}/events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert not [item for item in events if item["type"] == "agent_failed"]
+    repairs = [
+        item
+        for item in events
+        if item["type"] == "model_routed" and item["data"].get("phase") == "rule_batch_repair"
+    ]
+    assert len(repairs) == 1
+    generation_report = json.loads(
+        (tmp_path / snapshot.candidates[0].generation_report_path).read_text(encoding="utf-8")
+    )
+    assert generation_report["model_calls"][0]["outcome"] == "invalid_structured_output"
+    assert generation_report["model_calls"][1]["outcome"] == "quality_accepted"
+
+
+def test_exhausted_testcase_batch_repairs_use_traceable_deterministic_fallback(
+    tmp_path: Path,
+) -> None:
+    recorded = recorded_model_gateway()
+    invalid_batch_calls = 0
+
+    def respond(
+        *,
+        prompt: str,
+        response_model: type,
+        **kwargs: Any,
+    ) -> Any:
+        nonlocal invalid_batch_calls
+        result = recorded._callback(  # noqa: SLF001 - recorded gateway is a test fixture
+            prompt=prompt,
+            response_model=response_model,
+            **kwargs,
+        )
+        context = _prompt_context(prompt, response_model)
+        if (
+            response_model.__name__ == "AgentOutput"
+            and context.get("task", {}).get("agent") == "test_designer"
+            and context.get("rule_batch")
+        ):
+            invalid_batch_calls += 1
+            result = deepcopy(result)
+            result["testcase_set"]["cases"][0]["test_data"] = []
+        return result
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    workspace = _create(harness)
+
+    snapshot = harness.start_run(StartRunCommand(workspace_id="demo", goal="test login"))
+
+    assert snapshot.status == "needs_human_review"
+    assert snapshot.plan is not None
+    assert snapshot.plan.revision == 0
+    assert invalid_batch_calls == 3
+    events = [
+        json.loads(line)
+        for line in (workspace / f"runs/{snapshot.run_id}/events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    fallbacks = [item for item in events if item["type"] == "testcase_batch_fallback_applied"]
+    assert len(fallbacks) == 1
+    assert fallbacks[0]["data"]["reason"] == "structured_output_repair_exhausted"
+    assert not [item for item in events if item["type"] == "agent_failed"]
+    testcase_candidate = next(item for item in snapshot.candidates if item.artifact == "testcases")
+    testcase_set = parse_testcase_markdown(
+        (tmp_path / testcase_candidate.path).read_text(encoding="utf-8")
+    )
+    assert all(
+        any("规则驱动基础用例" in pending for pending in case.pending_items)
+        for case in testcase_set.cases
+    )
 
 
 def test_policy_actions_are_audited(tmp_path: Path) -> None:
@@ -228,6 +439,52 @@ def test_quality_feedback_includes_rejected_draft_and_repairs_candidate(
     ]
 
 
+def test_quality_patch_context_contains_only_reviewer_blocker_cases() -> None:
+    base = default_recorded_testcase_set("test login")
+    first = base.cases[0]
+    second = first.model_copy(
+        update={
+            "case_id": "TC-SECOND-002",
+            "rule_ids": ["SRC-OTHER-002"],
+        }
+    )
+    current = QATestCaseSet(
+        requirement_catalog_hash=base.requirement_catalog_hash,
+        cases=[first, second],
+        coverage=[
+            base.coverage[0],
+            CoverageMapping(
+                rule_id="SRC-OTHER-002",
+                case_ids=[second.case_id],
+                rationale="第二条独立规则的覆盖。",
+            ),
+        ],
+    )
+    feedback = [
+        {
+            "kind": "quality_gate",
+            "error": json.dumps(
+                {
+                    "blockers": [
+                        {
+                            "case_id": first.case_id,
+                            "rule_id": first.rule_ids[0],
+                        }
+                    ]
+                }
+            ),
+        }
+    ]
+
+    targeted = _targeted_testcase_patch_context(current, feedback)
+
+    assert targeted is not None
+    testcase_context, rule_ids = targeted
+    assert [case.case_id for case in testcase_context.cases] == [first.case_id]
+    assert [mapping.rule_id for mapping in testcase_context.coverage] == first.rule_ids
+    assert rule_ids == set(first.rule_ids)
+
+
 def test_requirement_sources_are_extracted_per_file_with_generation_provenance(
     tmp_path: Path,
 ) -> None:
@@ -253,7 +510,7 @@ def test_requirement_sources_are_extracted_per_file_with_generation_provenance(
     fragment_calls = [
         call
         for call in report["model_calls"]
-        if call["prompt_template_version"] == "requirement-fragment-v2"
+        if call["prompt_template_version"] == "requirement-fragment-v3"
     ]
     assert len(fragment_calls) == 2
     assert {
@@ -268,6 +525,70 @@ def test_requirement_sources_are_extracted_per_file_with_generation_provenance(
     assert all(
         selection["raw_sha256"] for call in fragment_calls for selection in call["source_selection"]
     )
+
+
+def test_invalid_requirement_fragment_schema_uses_local_repair_without_replanning(
+    tmp_path: Path,
+) -> None:
+    recorded = recorded_model_gateway()
+    fragment_calls = 0
+
+    def respond(
+        *,
+        prompt: str,
+        response_model: type,
+        **kwargs: Any,
+    ) -> Any:
+        nonlocal fragment_calls
+        result = recorded._callback(  # noqa: SLF001 - recorded gateway is a test fixture
+            prompt=prompt,
+            response_model=response_model,
+            **kwargs,
+        )
+        context = _prompt_context(prompt, response_model)
+        if response_model.__name__ == "AgentOutput" and "source_content" in context:
+            fragment_calls += 1
+            if fragment_calls == 1:
+                result = deepcopy(result)
+                result.pop("summary")
+            else:
+                assert context["validation_feedback"]
+        return result
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    workspace = _create(harness)
+    (workspace / "sources/requirements.md").write_text("# 规则\n\n登录后可抽奖。", encoding="utf-8")
+
+    snapshot = harness.start_run(
+        StartRunCommand(
+            workspace_id="demo",
+            goal="analyze lottery requirements",
+            expected_artifacts=["requirement_analysis"],
+        )
+    )
+
+    assert snapshot.status == "needs_human_review"
+    assert snapshot.plan is not None
+    assert snapshot.plan.revision == 0
+    assert fragment_calls == 2
+    events = [
+        json.loads(line)
+        for line in (workspace / f"runs/{snapshot.run_id}/events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert not [item for item in events if item["type"] == "agent_failed"]
+    repairs = [
+        item
+        for item in events
+        if item["type"] == "model_routed" and item["data"].get("phase") == "source_fragment_repair"
+    ]
+    assert len(repairs) == 1
+    report = json.loads(
+        (tmp_path / snapshot.candidates[0].generation_report_path).read_text(encoding="utf-8")
+    )
+    assert report["model_calls"][0]["outcome"] == "invalid_structured_output"
+    assert report["model_calls"][1]["outcome"] == "completed"
 
 
 def test_test_designer_executes_bounded_rule_batches_and_merges_them(
@@ -335,7 +656,7 @@ def test_test_designer_executes_bounded_rule_batches_and_merges_them(
     batch_calls = [
         call
         for call in report["model_calls"]
-        if call["prompt_template_version"] == "testcase-rule-batch-v2"
+        if call["prompt_template_version"] == "testcase-rule-batch-v3"
     ]
     assert len(batch_calls) == 2
     assert all(call["source_selection"] for call in batch_calls)

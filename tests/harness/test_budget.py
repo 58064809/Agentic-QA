@@ -6,6 +6,14 @@ from harness.budget import Budget, BudgetExceeded, BudgetLimits
 from harness.contracts import BudgetUsage
 
 
+def test_default_runtime_budget_supports_large_real_model_runs() -> None:
+    assert BudgetLimits().max_runtime_seconds == 60 * 60
+
+
+def test_default_model_budget_supports_batched_large_requirement_catalogs() -> None:
+    assert BudgetLimits().max_model_calls == 96
+
+
 def test_elapsed_runtime_accumulates_across_restored_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

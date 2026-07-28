@@ -26,7 +26,7 @@ class ModelConfig:
     api_key_env: str = "DEEPSEEK_API_KEY"
     base_url: str | None = DEFAULT_DEEPSEEK_BASE_URL
     request_timeout_seconds: float = 180.0
-    max_output_tokens: int = 16384
+    max_output_tokens: int = 32768
 
     @classmethod
     def from_env(cls) -> ModelConfig | None:
@@ -70,7 +70,7 @@ class ModelConfig:
                 os.getenv("AGENTIC_QA_MODEL_TIMEOUT_SECONDS", "").strip() or "180"
             ),
             max_output_tokens=int(
-                os.getenv("AGENTIC_QA_MODEL_MAX_OUTPUT_TOKENS", "").strip() or "16384"
+                os.getenv("AGENTIC_QA_MODEL_MAX_OUTPUT_TOKENS", "").strip() or "32768"
             ),
         )
 

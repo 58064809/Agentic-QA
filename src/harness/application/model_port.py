@@ -47,6 +47,13 @@ class ModelPolicy:
         )
 
     def for_task(self, task: PlanTask) -> ModelRoute:
+        if task.agent == "requirement_analyst":
+            return ModelRoute(
+                tier="flash",
+                thinking="enabled",
+                reasoning_effort="high",
+                purpose=f"expert:{task.agent}",
+            )
         if task.agent == "test_designer":
             return ModelRoute(
                 tier="pro",

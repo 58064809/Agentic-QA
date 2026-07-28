@@ -117,7 +117,10 @@ class RiskItem(StrictModel):
     rule_ids: list[str] = Field(min_length=1)
     priority: RiskLevel
     rationale: str = Field(min_length=1)
-    coverage_intent: list[str] = Field(min_length=1)
+    coverage_intent: list[str] = Field(
+        min_length=1,
+        description="Array of separate test coverage intents; never return one prose string.",
+    )
 
 
 class RiskCatalog(StrictModel):
@@ -133,7 +136,13 @@ class RiskCatalog(StrictModel):
 
 
 class TestCase(StrictModel):
-    case_id: str = Field(pattern=TESTCASE_ID_PATTERN)
+    case_id: str = Field(
+        pattern=TESTCASE_ID_PATTERN,
+        description=(
+            "Globally unique uppercase ID matching ^TC-[A-Z0-9_-]*\\d{3,}$; "
+            "use numeric suffixes such as TC-RULE-001-001, never lowercase suffixes."
+        ),
+    )
     rule_ids: list[str] = Field(min_length=1, max_length=3)
     title: str = Field(min_length=1)
     test_type: str = Field(min_length=1)
@@ -144,8 +153,20 @@ class TestCase(StrictModel):
     expected_results: list[str] = Field(min_length=1)
     assertions: list[str] = Field(min_length=1)
     pending_items: list[str] = Field(default_factory=list)
-    covered_boundary_values: list[str] = Field(default_factory=list)
-    covered_transitions: list[StateTransition] = Field(default_factory=list)
+    covered_boundary_values: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Exact, unmodified values copied from boundaries of the referenced rules. "
+            "Every boundary value must appear in at least one case that references its rule."
+        ),
+    )
+    covered_transitions: list[StateTransition] = Field(
+        default_factory=list,
+        description=(
+            "Exact StateTransition objects copied from the referenced rules. "
+            "Every declared transition must appear in at least one case that references its rule."
+        ),
+    )
 
     @field_validator(
         "rule_ids",
@@ -181,8 +202,14 @@ class TestCase(StrictModel):
 
 
 class CoverageMapping(StrictModel):
-    rule_id: str = Field(pattern=RULE_ID_PATTERN)
-    case_ids: list[str] = Field(min_length=1)
+    rule_id: str = Field(
+        pattern=RULE_ID_PATTERN,
+        description="One exact confirmed rule ID from the current bounded RequirementCatalog.",
+    )
+    case_ids: list[str] = Field(
+        min_length=1,
+        description="IDs of real cases whose rule_ids include this exact rule_id.",
+    )
     rationale: str = Field(min_length=1)
 
     @field_validator("case_ids")

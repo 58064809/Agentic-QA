@@ -145,6 +145,54 @@ def test_generic_gate_rejects_dangling_coverage_reference() -> None:
     assert {issue.code for issue in result.issues} == {"invalid_testcase_set"}
 
 
+def test_generic_gate_accepts_source_supported_chinese_implementation_suffix() -> None:
+    original = _testcase_set()
+    first_case = original.cases[0].model_copy(
+        update={
+            "title": "验证活动页面",
+            "preconditions": ["活动页面可访问"],
+            "test_data": ["有效测试用户"],
+            "steps": ["用户进入活动页面"],
+            "expected_results": ["活动页面展示活动内容"],
+            "assertions": ["观察活动页面内容"],
+            "pending_items": [],
+        }
+    )
+    first_mapping = original.coverage[0].model_copy(update={"case_ids": [first_case.case_id]})
+    testcase_set = QATestCaseSet(cases=[first_case], coverage=[first_mapping])
+
+    result = GenericArtifactStrategy().evaluate(
+        _context("testcases", "产品提供活动页面。"),
+        render_testcase_set(testcase_set),
+    )
+
+    assert "unsupported_implementation_detail" not in {issue.code for issue in result.issues}
+
+
+def test_generic_gate_rejects_invented_implementation_suffix() -> None:
+    original = _testcase_set()
+    first_case = original.cases[0].model_copy(
+        update={
+            "title": "验证抽奖动作",
+            "preconditions": ["活动已开始"],
+            "test_data": ["有效测试用户"],
+            "steps": ["调用抽奖接口"],
+            "expected_results": ["抽奖动作产生可观察结果"],
+            "assertions": ["记录业务结果"],
+            "pending_items": [],
+        }
+    )
+    first_mapping = original.coverage[0].model_copy(update={"case_ids": [first_case.case_id]})
+    testcase_set = QATestCaseSet(cases=[first_case], coverage=[first_mapping])
+
+    result = GenericArtifactStrategy().evaluate(
+        _context("testcases", "产品提供活动页面。"),
+        render_testcase_set(testcase_set),
+    )
+
+    assert "unsupported_implementation_detail" in {issue.code for issue in result.issues}
+
+
 def test_declarative_policy_enforces_boundaries_without_business_python() -> None:
     strategy = DeclarativeQualityStrategy.from_manifest(
         Path("src/harness/manifests/quality/city-opening-rewards.yml")

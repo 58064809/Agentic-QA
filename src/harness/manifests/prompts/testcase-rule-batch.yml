@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.phase-prompt-manifest.v1
 name: testcase-rule-batch
-version: testcase-rule-batch-v2
+version: testcase-rule-batch-v3
 agents: [test_designer]
 objective: 为一个有界规则批次生成完整、可合并的 TestCaseSet。
 instructions:
@@ -12,6 +12,26 @@ instructions:
     kind: contract
     text: 返回 testcase_set，artifacts 和 testcase_patch 为空。
     enforced_by: [schema:test-case-set, validator:typed-output]
+  - id: phase.testcase-batch.boundary-fields
+    kind: contract
+    text: 对当前批次每条规则，将 boundaries.values 的每个原值逐字复制到引用该规则的至少一个 case.covered_boundary_values；不得用步骤或近义词替代该字段。
+    enforced_by: [validator:test-case-coverage]
+  - id: phase.testcase-batch.transition-fields
+    kind: contract
+    text: 对当前批次每条规则，将每个 state_transitions 原对象完整复制到引用该规则的至少一个 case.covered_transitions。
+    enforced_by: [validator:test-case-coverage]
+  - id: phase.testcase-batch.coverage-matrix
+    kind: contract
+    text: 每条 confirmed 规则恰好有一个 coverage 项；case_ids 必须引用真实用例，且对应 case.rule_ids 包含该规则 ID。
+    enforced_by: [validator:test-case-coverage]
+  - id: phase.testcase-batch.case-id
+    kind: contract
+    text: case_id 全局唯一并匹配 ^TC-[A-Z0-9_-]*\d{3,}$；只使用大写字母、数字、下划线和连字符，以三位数字结尾，不使用 a/b 等小写后缀。
+    enforced_by: [schema:test-case-set, validator:testcase-batch-merge]
+  - id: phase.testcase-batch.evidence-language
+    kind: safety
+    text: 页面、按钮、接口、数据库表、数据表、字段和日志等实现名词只使用 RequirementCatalog 中已有的原词；来源没有实现名词时改写为可观察业务动作或结果，并把缺失观察点写入 pending_items。
+    enforced_by: [validator:generic-artifact-contracts]
 trusted_input_fields:
   - task
   - rule_batch
