@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.phase-prompt-manifest.v1
 name: planner
-version: planner-structured-v1
+version: planner-structured-v2
 agents: [qa_supervisor]
 objective: 将用户目标规划为依赖无环、产物唯一且证据要求明确的 QAPlan。
 instructions:
@@ -10,7 +10,23 @@ instructions:
     enforced_by: [schema:qa-plan, validator:qa-plan]
   - id: phase.planner.design-dependencies
     kind: contract
-    text: 测试设计任务依赖 RequirementCatalog 和 RiskCatalog，需求事实由单个需求任务汇总。
+    text: 测试设计使用三个固定层级：根 RequirementCatalog 任务、依赖它的 RiskCatalog 任务、直接依赖前两者的产物任务。
+    enforced_by: [validator:qa-plan]
+  - id: phase.planner.requirement-task-shape
+    kind: contract
+    text: 需要需求事实时，恰好创建一个 agent=requirement_analyst 且 dependencies=[] 的根任务；expected_outputs 必含 analysis_context，请求包含 requirement_analysis 时同一任务还输出 requirement_analysis。
+    enforced_by: [validator:qa-plan]
+  - id: phase.planner.risk-task-shape
+    kind: contract
+    text: 请求 testcases 等测试设计产物时，恰好创建一个 agent=risk_strategist 的任务；expected_outputs 必含 risk_context，dependencies 必含根 RequirementCatalog 任务 ID。
+    enforced_by: [validator:qa-plan]
+  - id: phase.planner.artifact-task-shape
+    kind: contract
+    text: 每个请求产物恰好由一个对应 Agent 任务输出；testcases 由 test_designer 输出，其 dependencies 必须直接包含 RequirementCatalog 与 RiskCatalog 两个任务 ID。
+    enforced_by: [validator:qa-plan]
+  - id: phase.planner.evidence-requirements
+    kind: contract
+    text: 每个任务的 evidence_requirements 至少包含一项非空 kind 与 description。
     enforced_by: [validator:qa-plan]
 trusted_input_fields: [expected_artifacts, available_agents, validation_feedback]
 untrusted_input_fields: [goal]

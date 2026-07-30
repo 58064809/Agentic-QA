@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.phase-prompt-manifest.v1
 name: testcase-rule-batch-repair
-version: testcase-rule-batch-repair-v1
+version: testcase-rule-batch-repair-v2
 agents: [test_designer]
 objective: 根据验证反馈修复当前规则批次并返回完整批次 TestCaseSet。
 instructions:
@@ -12,6 +12,22 @@ instructions:
     kind: safety
     text: 定向检索结果只补充当前批次的来源证据。
     enforced_by: [allowlist:agent-tool-manifest, validator:frozen-source-reference]
+  - id: phase.testcase-repair.validation-fields
+    kind: contract
+    text: 逐项修复 validation_feedback；boundary_value_uncovered 通过把反馈中的原值逐字加入引用该规则的 case.covered_boundary_values，state_transition_uncovered 通过复制完整 StateTransition 对象修复。
+    enforced_by: [validator:test-case-coverage]
+  - id: phase.testcase-repair.complete-replacement
+    kind: contract
+    text: 返回 testcase_set，artifacts 和 testcase_patch 为空；结果是当前批次的完整替换，保留已通过的规则、用例和覆盖映射。
+    enforced_by: [schema:test-case-set, validator:testcase-batch-merge]
+  - id: phase.testcase-repair.schema-errors
+    kind: contract
+    text: structured output 错误逐字段修复；case_id 只使用大写字母、数字、下划线和连字符并以三位数字结尾，数组字段始终返回数组。
+    enforced_by: [schema:test-case-set]
+  - id: phase.testcase-repair.unsupported-details
+    kind: safety
+    text: unsupported_implementation_detail 通过删除来源未出现的页面、按钮、接口、表、字段或日志名称修复；替换为 RequirementCatalog 支持的业务动作与可观察结果，缺失观察点进入 pending_items。
+    enforced_by: [validator:generic-artifact-contracts]
 trusted_input_fields:
   - task
   - rule_batch

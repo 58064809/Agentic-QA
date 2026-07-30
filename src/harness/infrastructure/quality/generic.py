@@ -15,7 +15,7 @@ from harness.application.quality import (
 
 PLACEHOLDER_MAPPING = re.compile(r"(?:暂无|未覆盖|待补充|后续设计|TODO|TBD)", re.IGNORECASE)
 UNSUPPORTED_IMPLEMENTATION = re.compile(
-    r"(?P<term>[\w\u4e00-\u9fff]{1,24}(?:页面|按钮|接口|数据库表|数据表|字段|日志))"
+    r"(?P<term>[\w\u4e00-\u9fff]{1,24}(?P<marker>页面|按钮|接口|数据库表|数据表|字段|日志))"
 )
 REQUIRED_REQUIREMENT_SECTIONS = (
     "## 来源清单",
@@ -30,9 +30,21 @@ REQUIRED_REQUIREMENT_SECTIONS = (
 )
 
 
+def _implementation_term_supported(term: str, marker: str, source_corpus: str) -> bool:
+    normalized = term.casefold()
+    if normalized in source_corpus:
+        return True
+    stem = normalized[: -len(marker)]
+    normalized_marker = marker.casefold()
+    for stem_length in range(min(len(stem), 8), 1, -1):
+        if f"{stem[-stem_length:]}{normalized_marker}" in source_corpus:
+            return True
+    return False
+
+
 class GenericArtifactStrategy:
     name = "generic-artifact-contracts"
-    version = "4.0.0"
+    version = "4.1.0"
     requirements = StrategyRequirements()
     configuration = QualityComponentConfiguration()
 
@@ -100,9 +112,10 @@ class GenericArtifactStrategy:
             pending_text = " ".join(case.pending_items)
             for match in UNSUPPORTED_IMPLEMENTATION.finditer(case_text):
                 term = match.group("term")
+                marker = match.group("marker")
                 if (
                     source_corpus
-                    and term.casefold() not in source_corpus
+                    and not _implementation_term_supported(term, marker, source_corpus)
                     and term not in pending_text
                 ):
                     issues.append(

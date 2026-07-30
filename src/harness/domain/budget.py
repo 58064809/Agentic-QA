@@ -13,11 +13,13 @@ class BudgetExceeded(RuntimeError):
 
 @dataclass(frozen=True)
 class BudgetLimits:
-    max_model_calls: int = 24
+    # Covers planner/extraction/review calls plus bounded repairs for a large
+    # RequirementCatalog split into rule batches; runtime remains the hard stop.
+    max_model_calls: int = 96
     max_tool_calls: int = 50
     max_replans: int = 3
     max_concurrent_agents: int = 3
-    max_runtime_seconds: int = 30 * 60
+    max_runtime_seconds: int = 60 * 60
 
     def __post_init__(self) -> None:
         if min(self.max_model_calls, self.max_tool_calls, self.max_replans) < 0:

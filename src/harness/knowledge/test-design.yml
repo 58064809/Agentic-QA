@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.knowledge-spec.v1
 name: test-design
-version: 1.0.0
+version: 1.1.0
 purpose: 使用等价类、边界、场景和状态迁移生成可追踪的原子测试。
 applies_to: [test-design]
 inputs:
@@ -17,6 +17,8 @@ output_expectations:
   - 用例引用当前批次中的规则 ID。
   - 步骤可执行，预期和断言可观察。
   - 覆盖矩阵列出实际存在的用例 ID 和具体依据。
+  - 每个边界原值逐字进入引用对应规则的 covered_boundary_values。
+  - 每个状态迁移原对象进入引用对应规则的 covered_transitions。
   - 用例数量由规则和风险决定。
 evidence_policy:
   - 页面、接口、字段、角色和配置只来自已提供证据。
@@ -25,6 +27,7 @@ uncertainty_policy:
 prohibited_actions:
   - 不使用范围缩写或占位映射代替真实覆盖。
   - 不在缺少证据时编造接口、数据库、页面或实现细节。
+  - 不把通用测试动作改写成来源未声明的接口、字段、按钮、页面或日志名称。
 deterministic_checks:
   - schema:test-case-set
   - validator:test-case-coverage

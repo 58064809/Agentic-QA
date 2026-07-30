@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.phase-prompt-manifest.v1
 name: requirement-fragment
-version: requirement-fragment-v2
+version: requirement-fragment-v3
 agents: [requirement_analyst]
 objective: 从单个冻结来源提取独立 RequirementCatalog 片段。
 instructions:
@@ -12,5 +12,11 @@ instructions:
     kind: contract
     text: 返回 requirement_catalog，artifacts 为空。
     enforced_by: [schema:requirement-catalog, validator:typed-output]
-trusted_input_fields: [task, source_identity, allowed_artifacts]
+  - id: phase.requirement-fragment.section-coverage
+    kind: guidance
+    text: 按来源中的标题和编号顺序逐节扫描；每个章节都要提取规则，或在 open_questions 中说明该章节没有可测试规则，避免只总结核心流程而遗漏页面、状态、库存、发放、分享、隐私、后台、风控、迭代范围和验收标准。
+  - id: phase.requirement-fragment.atomic-enumeration
+    kind: guidance
+    text: 将每个可独立验证的条件、结果、边界、枚举、异常、恢复路径、范围声明和验收标准分别建为原子规则；同一段包含多项行为时不要合并成一条摘要规则。
+trusted_input_fields: [task, source_identity, allowed_artifacts, validation_feedback]
 untrusted_input_fields: [goal, source_content]

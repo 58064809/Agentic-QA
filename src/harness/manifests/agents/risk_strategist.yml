@@ -5,7 +5,7 @@ objective: 根据 RequirementCatalog 识别风险、优先级、覆盖意图和�
 responsibilities:
   - id: agent.risk.typed-catalog
     kind: contract
-    text: 输出只引用已知规则的强类型 RiskCatalog。
+    text: 只在 risk_catalog 字段返回强类型 RiskCatalog，不返回 Markdown artifacts；每项 coverage_intent 是字符串数组，rule_ids 只引用已知规则。
     enforced_by: [schema:risk-catalog, validator:risk-rule-reference]
   - id: agent.risk.evidence-retrieval
     kind: safety

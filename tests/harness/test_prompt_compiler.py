@@ -51,7 +51,7 @@ def test_compiled_prompt_is_deterministic_and_response_contract_is_first() -> No
     assert payload["instruction_layers"][3]["layer"] == "skills"
     assert payload["response_contract"]["model"] == "AgentOutput"
     assert payload["tools"] == [{"name": "rag.retrieve"}]
-    assert first.reference_versions["knowledge:test-design"] == "1.0.0"
+    assert first.reference_versions["knowledge:test-design"] == "1.1.0"
 
 
 def test_untrusted_source_instruction_stays_out_of_system_prompt() -> None:
@@ -74,9 +74,88 @@ def test_untrusted_source_instruction_stays_out_of_system_prompt() -> None:
     )
     payload = json.loads(user_message)
 
+    assert compiled.template_version == "requirement-fragment-v3"
+    assert compiled.reference_versions["knowledge:requirement-analysis"] == "1.1.0"
     assert injected not in compiled.content
     assert payload["untrusted_context"]["source_content"] == injected
     assert "source_content" not in payload["trusted_context"]
+
+
+def test_planner_prompt_declares_the_exact_design_task_topology() -> None:
+    compiler = _builtin_compiler()
+
+    compiled = compiler.compile(
+        phase="planner",
+        agent="qa_supervisor",
+        response_model=QAPlan,
+    )
+    payload = json.loads(compiled.content)
+    phase_instruction_ids = {
+        item["id"]
+        for layer in payload["instruction_layers"]
+        if layer["layer"] == "phase"
+        for item in layer["instructions"]
+    }
+
+    assert compiled.template_version == "planner-structured-v2"
+    assert {
+        "phase.planner.requirement-task-shape",
+        "phase.planner.risk-task-shape",
+        "phase.planner.artifact-task-shape",
+        "phase.planner.evidence-requirements",
+    }.issubset(phase_instruction_ids)
+
+
+def test_testcase_batch_prompts_expose_exact_validation_fields() -> None:
+    compiler = _builtin_compiler()
+
+    batch = compiler.compile(
+        phase="testcase-rule-batch",
+        agent="test_designer",
+        response_model=AgentOutput,
+    )
+    repair = compiler.compile(
+        phase="testcase-rule-batch-repair",
+        agent="test_designer",
+        response_model=AgentOutput,
+    )
+    batch_payload = json.loads(batch.content)
+    repair_payload = json.loads(repair.content)
+    batch_ids = {
+        item["id"]
+        for layer in batch_payload["instruction_layers"]
+        if layer["layer"] == "phase"
+        for item in layer["instructions"]
+    }
+    repair_ids = {
+        item["id"]
+        for layer in repair_payload["instruction_layers"]
+        if layer["layer"] == "phase"
+        for item in layer["instructions"]
+    }
+    testcase_properties = batch_payload["response_contract"]["schema"]["$defs"]["TestCase"][
+        "properties"
+    ]
+
+    assert batch.template_version == "testcase-rule-batch-v3"
+    assert repair.template_version == "testcase-rule-batch-repair-v2"
+    assert {
+        "phase.testcase-batch.boundary-fields",
+        "phase.testcase-batch.transition-fields",
+        "phase.testcase-batch.coverage-matrix",
+        "phase.testcase-batch.evidence-language",
+    }.issubset(batch_ids)
+    assert {
+        "phase.testcase-repair.validation-fields",
+        "phase.testcase-repair.complete-replacement",
+        "phase.testcase-repair.unsupported-details",
+    }.issubset(repair_ids)
+    assert (
+        "Exact, unmodified values" in testcase_properties["covered_boundary_values"]["description"]
+    )
+    assert (
+        "Exact StateTransition objects" in testcase_properties["covered_transitions"]["description"]
+    )
 
 
 def test_prompt_compiler_rejects_duplicate_instruction_ids_across_layers() -> None:

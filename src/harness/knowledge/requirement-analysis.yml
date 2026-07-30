@@ -1,17 +1,20 @@
 schema_version: agentic-qa.harness.knowledge-spec.v1
 name: requirement-analysis
-version: 1.0.0
+version: 1.1.0
 purpose: 从冻结来源提取原子、可追踪且保留不确定性的需求规则。
 applies_to: [requirement-analysis]
 inputs:
   - 单个冻结来源及其路径和内容哈希
   - 用户测试目标
 procedure:
+  - 先建立来源章节清单，按标题和编号顺序逐节扫描，不跳过非核心流程章节。
   - 提取业务对象、参与者、前置状态、触发动作、流程和验收条件。
   - 逐项提取配置、枚举、阈值、异常、恢复路径和状态迁移。
+  - 将一段中的多个独立条件、结果、范围声明或验收点拆成多条原子规则。
   - 为每条规则记录条件、结果、测试影响和来源引用。
   - 将来源冲突并列记录，不代替用户选择结论。
 output_expectations:
+  - 来源中的每个章节均有规则覆盖，或形成说明该章节无可测试规则的待确认项。
   - confirmed 规则具有冻结来源引用。
   - inferred 规则包含推断依据。
   - unknown 规则转换为具体可回答的问题。

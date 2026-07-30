@@ -44,6 +44,7 @@ from harness.domain.schemas.qa_design import (
     RequirementCatalog,
     RequirementRule,
     RiskCatalog,
+    RiskLevel,
     SourceReference,
     TestCase,
     TestCasePatch,
@@ -108,6 +109,7 @@ ARTIFACT_AGENT = {
 DESIGN_ARTIFACTS = frozenset({"testcases", "api_test_draft", "ui_test_draft"})
 
 MAX_ARTIFACT_REPAIRS = 5
+MAX_TESTCASE_BATCH_ATTEMPTS = 3
 MAX_QUALITY_REVISIONS = 5
 MAX_PLAN_REPAIRS = 3
 SOURCE_PREFETCH_AGENTS: frozenset[str] = frozenset()
@@ -528,6 +530,8 @@ class HarnessEngine:
                 agent="qa_supervisor",
                 response_model=QAPlan,
             )
+            plan: QAPlan | None = None
+            fallback_reason = ""
             for attempt in range(1, MAX_PLAN_REPAIRS + 1):
                 budget.consume_model()
                 event(
@@ -557,9 +561,10 @@ class HarnessEngine:
                     finally:
                         model_usage.add(_last_call_usage(self.model))
                 except RuntimeError as exc:
-                    if not _is_invalid_structured_output(exc) or attempt >= MAX_PLAN_REPAIRS:
+                    if not _is_invalid_structured_output(exc):
                         raise
                     error = str(exc)[:500]
+                    fallback_reason = f"invalid_structured_output: {error}"
                     validation_feedback.append(
                         {"code": "invalid_structured_output", "detail": error}
                     )
@@ -574,6 +579,7 @@ class HarnessEngine:
                     self._validate_plan(plan, request)
                 except ValueError as exc:
                     error = str(exc)[:500]
+                    fallback_reason = f"qa_plan_validation: {error}"
                     validation_feedback.append({"code": "qa_plan_validation", "detail": error})
                     event(
                         "plan_validation_failed",
@@ -581,10 +587,20 @@ class HarnessEngine:
                         attempt=attempt,
                         error=error,
                     )
-                    if attempt >= MAX_PLAN_REPAIRS:
-                        raise
                     continue
                 break
+            else:
+                plan = build_default_plan(request)
+                self._validate_plan(plan, request)
+                event(
+                    "plan_fallback_applied",
+                    agent="qa_supervisor",
+                    failed_attempts=MAX_PLAN_REPAIRS,
+                    reason=fallback_reason,
+                    fallback="deterministic_artifact_topology",
+                )
+            if plan is None:  # defensive guard; every successful loop assigns a validated plan
+                raise RuntimeError("planner produced no validated plan")
             pending_task_ids = [task.id for task in plan.tasks]
             ready = _ready_task_ids(
                 plan,
@@ -952,69 +968,100 @@ class HarnessEngine:
                 tools=model_tools,
             )
             for document in source_bundle.readable_documents:
-                budget.consume_model()
                 route = self.model_policy.for_task(task)
                 route_record = self.model.describe_route(route)
-                event(
-                    "model_routed",
-                    task_id=task.id,
-                    agent=manifest.name,
-                    phase="source_fragment",
-                    source=document.path,
-                    **route_record,
-                )
-                fragment_usage: dict[str, int] = {}
-                fragment_diagnostics: dict[str, Any] = {}
-                try:
-                    try:
-                        fragment_result = self.model.structured(
-                            system=fragment_prompt.content,
-                            prompt=self.prompt_compiler.user_message(
-                                fragment_prompt,
-                                trusted_context={
-                                    "task": task.model_dump(mode="json"),
-                                    "source_identity": {
-                                        "path": document.path,
-                                        "raw_sha256": document.raw_sha256,
-                                        "parsed_sha256": document.parsed_sha256,
-                                    },
-                                    "allowed_artifacts": [],
-                                },
-                                untrusted_context={
-                                    "goal": request.goal,
-                                    "source_content": document.text,
-                                },
-                            ),
-                            response_model=AgentOutput,
-                            route=route,
-                        )
-                    finally:
-                        fragment_usage = _last_call_usage(self.model)
-                        fragment_diagnostics = _last_call_diagnostics(self.model)
-                        model_usage.add(fragment_usage)
-                        generation_usage.add(fragment_usage)
-                except RuntimeError:
-                    generation_calls.append(
-                        {
-                            "call_index": len(generation_calls) + 1,
-                            **route_record,
-                            **fragment_usage,
-                            **fragment_diagnostics,
-                            "source_selection": [
-                                {
-                                    "source": document.path,
-                                    "raw_sha256": document.raw_sha256,
-                                    "selection_reason": "per_file_structured_extraction",
-                                }
-                            ],
-                            "prompt_template_version": fragment_prompt.template_version,
-                            "prompt_sha256": fragment_prompt.content_sha256,
-                            "prompt_reference_versions": fragment_prompt.reference_versions,
-                            "outcome": "invalid_structured_output",
-                            "failure_stage": "source_fragment_extraction",
-                        }
+                fragment_result: AgentOutput | None = None
+                fragment_feedback: list[dict[str, str]] = []
+                for fragment_attempt in range(1, MAX_ARTIFACT_REPAIRS + 1):
+                    budget.consume_model()
+                    event(
+                        "model_routed",
+                        task_id=task.id,
+                        agent=manifest.name,
+                        phase=(
+                            "source_fragment" if fragment_attempt == 1 else "source_fragment_repair"
+                        ),
+                        source=document.path,
+                        repair_attempt=fragment_attempt,
+                        **route_record,
                     )
-                    raise
+                    fragment_usage: dict[str, int] = {}
+                    fragment_diagnostics: dict[str, Any] = {}
+                    try:
+                        try:
+                            fragment_result = self.model.structured(
+                                system=fragment_prompt.content,
+                                prompt=self.prompt_compiler.user_message(
+                                    fragment_prompt,
+                                    trusted_context={
+                                        "task": task.model_dump(mode="json"),
+                                        "source_identity": {
+                                            "path": document.path,
+                                            "raw_sha256": document.raw_sha256,
+                                            "parsed_sha256": document.parsed_sha256,
+                                        },
+                                        "allowed_artifacts": [],
+                                        "validation_feedback": fragment_feedback,
+                                    },
+                                    untrusted_context={
+                                        "goal": request.goal,
+                                        "source_content": document.text,
+                                    },
+                                ),
+                                response_model=AgentOutput,
+                                route=route,
+                            )
+                        finally:
+                            fragment_usage = _last_call_usage(self.model)
+                            fragment_diagnostics = _last_call_diagnostics(self.model)
+                            model_usage.add(fragment_usage)
+                            generation_usage.add(fragment_usage)
+                    except RuntimeError as exc:
+                        generation_calls.append(
+                            {
+                                "call_index": len(generation_calls) + 1,
+                                **route_record,
+                                **fragment_usage,
+                                **fragment_diagnostics,
+                                "source_selection": [
+                                    {
+                                        "source": document.path,
+                                        "raw_sha256": document.raw_sha256,
+                                        "selection_reason": "per_file_structured_extraction",
+                                    }
+                                ],
+                                "prompt_template_version": fragment_prompt.template_version,
+                                "prompt_sha256": fragment_prompt.content_sha256,
+                                "prompt_reference_versions": fragment_prompt.reference_versions,
+                                "outcome": "invalid_structured_output",
+                                "artifact_validation_retries": fragment_attempt,
+                                "failure_stage": "source_fragment_extraction",
+                            }
+                        )
+                        if (
+                            not _is_invalid_structured_output(exc)
+                            or fragment_attempt == MAX_ARTIFACT_REPAIRS
+                        ):
+                            raise
+                        fragment_feedback = [
+                            {
+                                "kind": "structured_output",
+                                "error": str(exc)[:500],
+                            }
+                        ]
+                        event(
+                            "model_output_invalid",
+                            task_id=task.id,
+                            agent=manifest.name,
+                            phase="source_fragment",
+                            source=document.path,
+                            attempt=fragment_attempt,
+                            error=str(exc)[:500],
+                        )
+                        continue
+                    break
+                if fragment_result is None:  # pragma: no cover - loop invariant
+                    raise RuntimeError(f"source fragment extraction failed: {document.path}")
                 if fragment_result.requirement_catalog is None:
                     raise ValueError(f"source fragment {document.path} omitted requirement_catalog")
                 _validate_catalog_sources(fragment_result.requirement_catalog, source_bundle)
@@ -1116,7 +1163,7 @@ class HarnessEngine:
                         batch_diagnostics = _last_call_diagnostics(self.model)
                         model_usage.add(batch_usage)
                         generation_usage.add(batch_usage)
-                except RuntimeError:
+                except RuntimeError as exc:
                     generation_calls.append(
                         {
                             "call_index": len(generation_calls) + 1,
@@ -1133,7 +1180,33 @@ class HarnessEngine:
                             "failure_stage": "testcase_rule_batch",
                         }
                     )
-                    raise
+                    if not _is_invalid_structured_output(exc):
+                        raise
+                    repaired, retry_calls = self._repair_testcase_batch(
+                        task=task,
+                        goal=request.goal,
+                        manifest=manifest,
+                        model_tools=model_tools,
+                        batch=batch,
+                        catalog=batch_catalog,
+                        risks=batch_risks,
+                        source_bundle=source_bundle,
+                        budget=budget,
+                        model_usage=model_usage,
+                        generation_usage=generation_usage,
+                        first_call_index=len(generation_calls) + 1,
+                        initial_error=(
+                            f"{batch['batch_id']}:invalid_structured_output:{str(exc)[:1000]}"
+                        ),
+                        runtime=runtime,
+                        request=request,
+                        run_id=run_id,
+                        available_tool_names=available_tool_names,
+                        event=event,
+                    )
+                    testcase_fragments.append(repaired)
+                    generation_calls.extend(retry_calls)
+                    continue
                 if batch_result.tool_requests:
                     batch_tool_results: list[dict[str, Any]] = []
                     for call in batch_result.tool_requests:
@@ -1327,6 +1400,32 @@ class HarnessEngine:
                 budget.consume_model()
             route = self.model_policy.for_task(task)
             route_record = self.model.describe_route(route)
+            prompt_requirement_catalog = requirement_catalog
+            prompt_risk_catalog = risk_catalog
+            prompt_testcase_set = current_testcase_set
+            if (
+                manifest.name == "test_designer"
+                and current_testcase_set is not None
+                and requirement_catalog is not None
+            ):
+                targeted = _targeted_testcase_patch_context(
+                    current_testcase_set,
+                    validation_feedback,
+                )
+                if targeted is not None:
+                    prompt_testcase_set, targeted_rule_ids = targeted
+                    prompt_requirement_catalog = _catalog_for_rule_ids(
+                        requirement_catalog,
+                        targeted_rule_ids,
+                    )
+                    if risk_catalog is not None:
+                        prompt_risk_catalog = RiskCatalog(
+                            risks=[
+                                risk
+                                for risk in risk_catalog.risks
+                                if set(risk.rule_ids) & targeted_rule_ids
+                            ]
+                        )
             if not using_batched_seed:
                 event(
                     "model_routed",
@@ -1348,13 +1447,13 @@ class HarnessEngine:
                                 "source_files": source_files,
                                 "source_prefetched": bool(tool_results),
                                 "requirement_catalog": (
-                                    requirement_catalog.model_dump(mode="json")
-                                    if requirement_catalog is not None
+                                    prompt_requirement_catalog.model_dump(mode="json")
+                                    if prompt_requirement_catalog is not None
                                     else None
                                 ),
                                 "risk_catalog": (
-                                    risk_catalog.model_dump(mode="json")
-                                    if risk_catalog is not None
+                                    prompt_risk_catalog.model_dump(mode="json")
+                                    if prompt_risk_catalog is not None
                                     else None
                                 ),
                                 "rule_batches": (
@@ -1368,8 +1467,8 @@ class HarnessEngine:
                                     else []
                                 ),
                                 "current_testcase_set": (
-                                    current_testcase_set.model_dump(mode="json")
-                                    if current_testcase_set is not None
+                                    prompt_testcase_set.model_dump(mode="json")
+                                    if prompt_testcase_set is not None
                                     else None
                                 ),
                                 "source_fragments": [
@@ -1747,7 +1846,7 @@ class HarnessEngine:
         calls: list[dict[str, Any]] = []
         feedback = initial_error
         batch_tool_results = list(initial_tool_results or [])
-        for repair_attempt in range(2, MAX_ARTIFACT_REPAIRS + 1):
+        for repair_attempt in range(2, MAX_TESTCASE_BATCH_ATTEMPTS + 1):
             budget.consume_model()
             route = self.model_policy.for_task(task)
             route_record = self.model.describe_route(route)
@@ -1812,8 +1911,17 @@ class HarnessEngine:
                         "failure_stage": "testcase_rule_batch_repair",
                     }
                 )
-                if repair_attempt == MAX_ARTIFACT_REPAIRS:
-                    raise
+                if repair_attempt == MAX_TESTCASE_BATCH_ATTEMPTS:
+                    fallback = _deterministic_testcase_batch_fallback(catalog, risks)
+                    event(
+                        "testcase_batch_fallback_applied",
+                        task_id=task.id,
+                        agent=manifest.name,
+                        batch_id=batch["batch_id"],
+                        rule_ids=batch["rule_ids"],
+                        reason="structured_output_repair_exhausted",
+                    )
+                    return fallback, calls
                 feedback = "response does not satisfy AgentOutput schema"
                 continue
             if result.tool_requests:
@@ -1889,10 +1997,16 @@ class HarnessEngine:
             if error is None:
                 return candidate, calls
             feedback = error
-        raise ValueError(
-            f"{batch['batch_id']} validation failed after "
-            f"{MAX_ARTIFACT_REPAIRS} attempts: {feedback}"
+        fallback = _deterministic_testcase_batch_fallback(catalog, risks)
+        event(
+            "testcase_batch_fallback_applied",
+            task_id=task.id,
+            agent=manifest.name,
+            batch_id=batch["batch_id"],
+            rule_ids=batch["rule_ids"],
+            reason=f"artifact_validation_repair_exhausted:{feedback[:500]}",
         )
+        return fallback, calls
 
     def _project(
         self,
@@ -2120,6 +2234,68 @@ def _merge_testcase_batches(
     return merged
 
 
+def _deterministic_testcase_batch_fallback(
+    catalog: RequirementCatalog,
+    risks: RiskCatalog,
+) -> TestCaseSet:
+    priority_order = {
+        RiskLevel.P0: 0,
+        RiskLevel.P1: 1,
+        RiskLevel.P2: 2,
+        RiskLevel.P3: 3,
+    }
+    cases: list[TestCase] = []
+    coverage: list[CoverageMapping] = []
+    for rule in catalog.rules:
+        matching_priorities = [
+            risk.priority for risk in risks.risks if rule.rule_id in risk.rule_ids
+        ]
+        priority = (
+            min(matching_priorities, key=priority_order.__getitem__)
+            if matching_priorities
+            else RiskLevel.P2
+        )
+        case_id = f"TC-{rule.rule_id}-001"
+        fallback_pending = (
+            "模型批次修复耗尽；当前为规则驱动基础用例，具体测试数据和执行细节待人工补充。"
+        )
+        cases.append(
+            TestCase(
+                case_id=case_id,
+                rule_ids=[rule.rule_id],
+                title=f"验证：{rule.title}",
+                test_type="规则验证",
+                priority=priority,
+                preconditions=[rule.condition],
+                test_data=["满足规则条件的最小测试数据，具体取值待人工确认"],
+                steps=[
+                    f"准备满足“{rule.condition}”的业务场景",
+                    f"执行与“{rule.title}”对应的业务操作",
+                    "记录系统返回或界面展示的可观察结果",
+                ],
+                expected_results=[rule.outcome],
+                assertions=[f"可观察结果应满足规则结果：{rule.outcome}"],
+                pending_items=[*rule.pending_questions, fallback_pending],
+                covered_boundary_values=[
+                    value for boundary in rule.boundaries for value in boundary.values
+                ],
+                covered_transitions=rule.state_transitions,
+            )
+        )
+        coverage.append(
+            CoverageMapping(
+                rule_id=rule.rule_id,
+                case_ids=[case_id],
+                rationale="规则驱动的确定性基础覆盖；数据和执行细节等待人工 Review。",
+            )
+        )
+    return TestCaseSet(
+        requirement_catalog_hash=catalog_hash(catalog),
+        cases=cases,
+        coverage=coverage,
+    )
+
+
 def _catalog_source_selection(
     catalog: RequirementCatalog,
     source_bundle: SourceBundle,
@@ -2148,23 +2324,66 @@ def _catalog_source_selection(
     ]
 
 
-def _validate_targeted_testcase_patch(
-    patch: TestCasePatch,
-    current: TestCaseSet,
+def _quality_blocker_scope(
     feedback: list[dict[str, str]],
-) -> None:
-    blockers: list[dict[str, Any]] = []
+) -> tuple[set[str], set[str]]:
     for item in reversed(feedback):
         if item.get("kind") != "quality_gate":
             continue
         try:
             payload = json.loads(item.get("error") or "{}")
         except json.JSONDecodeError:
-            break
+            return set(), set()
         blockers = [blocker for blocker in payload.get("blockers", []) if isinstance(blocker, dict)]
-        break
-    allowed_case_ids = {str(blocker["case_id"]) for blocker in blockers if blocker.get("case_id")}
-    allowed_rule_ids = {str(blocker["rule_id"]) for blocker in blockers if blocker.get("rule_id")}
+        return (
+            {str(blocker["case_id"]) for blocker in blockers if blocker.get("case_id")},
+            {str(blocker["rule_id"]) for blocker in blockers if blocker.get("rule_id")},
+        )
+    return set(), set()
+
+
+def _targeted_testcase_patch_context(
+    current: TestCaseSet,
+    feedback: list[dict[str, str]],
+) -> tuple[TestCaseSet, set[str]] | None:
+    allowed_case_ids, allowed_rule_ids = _quality_blocker_scope(feedback)
+    if not allowed_case_ids and not allowed_rule_ids:
+        return None
+    selected_cases = [
+        case
+        for case in current.cases
+        if case.case_id in allowed_case_ids or set(case.rule_ids) & allowed_rule_ids
+    ]
+    if not selected_cases:
+        return None
+    selected_case_ids = {case.case_id for case in selected_cases}
+    selected_rule_ids = {
+        rule_id for case in selected_cases for rule_id in case.rule_ids
+    } | allowed_rule_ids
+    selected_coverage = []
+    for mapping in current.coverage:
+        case_ids = [case_id for case_id in mapping.case_ids if case_id in selected_case_ids]
+        if case_ids:
+            selected_coverage.append(mapping.model_copy(update={"case_ids": case_ids}))
+    if not selected_coverage:
+        return None
+    return (
+        current.model_copy(
+            update={
+                "cases": selected_cases,
+                "coverage": selected_coverage,
+            }
+        ),
+        selected_rule_ids,
+    )
+
+
+def _validate_targeted_testcase_patch(
+    patch: TestCasePatch,
+    current: TestCaseSet,
+    feedback: list[dict[str, str]],
+) -> None:
+    allowed_case_ids, allowed_rule_ids = _quality_blocker_scope(feedback)
     if not allowed_case_ids and not allowed_rule_ids:
         return
     current_by_id = {case.case_id: case for case in current.cases}
