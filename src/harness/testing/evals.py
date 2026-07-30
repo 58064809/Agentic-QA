@@ -28,6 +28,7 @@ from harness.infrastructure.workflow.engine import (
     ARTIFACT_AGENT,
     AgentOutput,
     build_default_plan,
+    default_recorded_api_test_cases,
     default_recorded_artifact,
     default_recorded_requirement_catalog,
 )
@@ -99,6 +100,23 @@ def recorded_model_gateway(*, use_fake_mcp: bool = False) -> CallableModelGatewa
                 "pending": [],
                 "tool_requests": [],
             }
+            if agent == "api_test_engineer" and "api_test_draft" in outputs:
+                payload["artifacts"].pop("api_test_draft", None)
+                draft = default_recorded_api_test_cases(context["goal"])
+                rule_ids = [
+                    rule["rule_id"]
+                    for rule in (context.get("requirement_catalog") or {}).get("rules", [])
+                ] or ["GOAL-001"]
+                draft = draft.model_copy(
+                    update={
+                        "business_rules": rule_ids,
+                        "cases": [
+                            case.model_copy(update={"business_rule_refs": rule_ids})
+                            for case in draft.cases
+                        ],
+                    }
+                )
+                payload["api_test_cases"] = draft.model_dump(mode="json")
             if agent == "requirement_analyst":
                 payload["artifacts"] = {}
                 catalog = default_recorded_requirement_catalog(context["goal"])

@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.knowledge-spec.v1
 name: api-testing
-version: 1.0.0
+version: 1.1.0
 purpose: 根据完整 API 契约设计可验证的机器用例并记录执行边界。
 applies_to: [api-testing]
 inputs:
@@ -8,17 +8,19 @@ inputs:
   - ExecutionProfile
   - 脱敏测试数据或受控 fixture
 procedure:
+  - 通过 openapi.inspect 解析 SourceBundle 中的完整契约。
   - 提取 endpoint、method、参数、响应 Schema 和安全方案。
   - 覆盖认证授权、必填字段、类型、边界、错误码和状态副作用。
   - 对幂等、分页、并发、限流和超时建立独立场景。
 output_expectations:
+  - 机器用例写入 AgentOutput.api_test_cases，由 Harness 渲染为 YAML Candidate。
   - 请求使用结构化 method 和 path。
   - 断言使用 agentic-qa.api-cases.v1.1 中的类型化 assertions。
 evidence_policy:
   - endpoint 事实引用完整 OpenAPI。
   - 执行结果记录环境、请求摘要、响应摘要和断言结果。
 uncertainty_policy:
-  - Markdown、抓包或残缺契约形成 partial 或待确认项。
+  - Markdown、抓包或残缺契约形成 partial 或待确认项，request.method/path 保持 null。
 prohibited_actions:
   - 不根据残缺来源补全 endpoint、响应字段或业务规则。
   - 不在输出中包含真实 Token、Cookie 或生产地址。

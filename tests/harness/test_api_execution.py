@@ -121,3 +121,32 @@ def test_execution_evidence_rejects_inconsistent_summary() -> None:
 
     with pytest.raises(ValueError, match="does not match cases"):
         ExecutionEvidence.model_validate(evidence)
+
+
+def test_execution_blocks_unconfirmed_case_without_sending_request() -> None:
+    case = _case("API-PENDING", "GET").model_copy(
+        update={
+            "contract_status": "pending_confirmation",
+            "request": _case("API-PENDING-REQUEST", "GET").request.model_copy(
+                update={"method": None, "path": None}
+            ),
+        }
+    )
+    calls = []
+
+    evidence = execute_api_cases(
+        [case],
+        run_id="run-test",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="staging",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=lambda *_args, **_kwargs: calls.append(True),
+    )
+
+    assert evidence.summary.blocked == 1
+    assert evidence.cases[0].error == "API contract is not confirmed"
+    assert calls == []
