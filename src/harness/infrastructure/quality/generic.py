@@ -14,6 +14,7 @@ from harness.application.quality import (
     StrategyResult,
 )
 from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
+from harness.domain.security import contains_likely_secret
 
 PLACEHOLDER_MAPPING = re.compile(r"(?:暂无|未覆盖|待补充|后续设计|TODO|TBD)", re.IGNORECASE)
 UNSUPPORTED_IMPLEMENTATION = re.compile(
@@ -46,7 +47,7 @@ def _implementation_term_supported(term: str, marker: str, source_corpus: str) -
 
 class GenericArtifactStrategy:
     name = "generic-artifact-contracts"
-    version = "4.2.0"
+    version = "4.3.0"
     requirements = StrategyRequirements()
     configuration = QualityComponentConfiguration()
 
@@ -62,6 +63,8 @@ class GenericArtifactStrategy:
             issues.extend(self._requirement_issues(content))
         elif context.artifact == "api_test_draft":
             issues.extend(self._api_test_issues(context, content))
+        elif context.artifact == "api_discovery_report":
+            issues.extend(self._api_discovery_issues(content))
         return StrategyResult(issues=tuple(issues))
 
     def _testcase_issues(
@@ -167,6 +170,42 @@ class GenericArtifactStrategy:
                     )
                 ]
         return []
+
+    def _api_discovery_issues(self, content: str) -> list[QualityIssue]:
+        required_sections = (
+            "## 采集来源",
+            "## 接口调用链",
+            "## 业务接口候选清单",
+            "## 请求与响应结构摘要",
+            "## 与 OpenAPI 契约的关系",
+            "## 脱敏说明",
+            "## 待确认问题",
+        )
+        missing = [section for section in required_sections if section not in content]
+        issues: list[QualityIssue] = []
+        if missing:
+            issues.append(
+                self._issue(
+                    "api_discovery_sections",
+                    f"API discovery report misses deterministic sections: {missing}",
+                )
+            )
+        if "不代表完整 API 契约" not in content:
+            issues.append(
+                self._issue(
+                    "api_discovery_contract_claim",
+                    "API discovery report must state that observed traffic is not a "
+                    "complete API contract",
+                )
+            )
+        if contains_likely_secret(content):
+            issues.append(
+                self._issue(
+                    "api_discovery_secret",
+                    "API discovery report contains a likely unredacted secret",
+                )
+            )
+        return issues
 
     def _requirement_issues(self, content: str) -> list[QualityIssue]:
         issues: list[QualityIssue] = []

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import re
 from datetime import datetime, timezone
@@ -39,6 +40,7 @@ from harness.domain.models import (
     StartRunCommand,
 )
 from harness.domain.review import validate_review_decision
+from harness.domain.schemas.api_discovery import ApiDiscoveryCatalog
 from harness.domain.schemas.api_test_cases import (
     API_CASES_SCHEMA_VERSION,
     ApiTestCasesDraft,
@@ -967,7 +969,12 @@ class HarnessEngine:
         if self.model is None:
             raise RuntimeError("model is not configured")
         manifest = self.agents.get(task.agent)
-        model_tools = runtime.model_tools(manifest.tool_allowlist)
+        model_tool_allowlist = list(manifest.tool_allowlist)
+        if task.expected_outputs == ["api_discovery_report"]:
+            # Raw captures can contain credentials and personal data. The model only
+            # receives the deterministic inspector's sanitized result for this task.
+            model_tool_allowlist = ["network.capture.inspect"]
+        model_tools = runtime.model_tools(model_tool_allowlist)
         available_tool_names = {item["name"] for item in model_tools}
         tool_results: list[dict[str, Any]] = []
         validation_feedback: list[dict[str, str]] = []
@@ -1741,6 +1748,41 @@ class HarnessEngine:
                         )
                     rendered["api_test_draft"] = _render_api_test_cases(result.api_test_cases)
                     result = result.model_copy(update={"artifacts": rendered})
+                elif (
+                    manifest.name == "api_test_engineer"
+                    and "api_discovery_report" in task.expected_outputs
+                ):
+                    discovery_catalogs = _api_discovery_catalogs(
+                        tool_results,
+                        source_bundle=source_bundle,
+                    )
+                    if not discovery_catalogs:
+                        raise ValueError(
+                            "api_discovery_report requires network.capture.inspect on a "
+                            "frozen HAR or JSON capture"
+                        )
+                    expected_capture_sources = _expected_network_capture_sources(source_bundle)
+                    inspected_sources = {catalog.source_path for catalog in discovery_catalogs}
+                    missing_capture_sources = expected_capture_sources - inspected_sources
+                    if missing_capture_sources:
+                        raise ValueError(
+                            "api_discovery_report omitted frozen capture sources: "
+                            f"{sorted(missing_capture_sources)}"
+                        )
+                    rendered = dict(result.artifacts)
+                    if "api_discovery_report" in rendered:
+                        rendered.pop("api_discovery_report")
+                        event(
+                            "redundant_model_artifacts_ignored",
+                            task_id=task.id,
+                            agent=manifest.name,
+                            artifacts=["api_discovery_report"],
+                        )
+                    rendered["api_discovery_report"] = _render_api_discovery_report(
+                        discovery_catalogs,
+                        run_id=run_id,
+                    )
+                    result = result.model_copy(update={"artifacts": rendered})
                 unexpected = set(result.artifacts) - set(task.expected_outputs)
                 if unexpected:
                     raise ValueError(
@@ -2218,6 +2260,227 @@ def _render_api_test_cases(cases: ApiTestCasesDraft) -> str:
     )
 
 
+def _api_discovery_catalogs(
+    tool_results: list[dict[str, Any]],
+    *,
+    source_bundle: SourceBundle,
+) -> list[ApiDiscoveryCatalog]:
+    frozen_sources = {document.path for document in source_bundle.documents}
+    catalogs: dict[str, ApiDiscoveryCatalog] = {}
+    for item in tool_results:
+        if item.get("tool") != "network.capture.inspect":
+            continue
+        raw = item.get("result")
+        if not isinstance(raw, dict):
+            continue
+        catalog = ApiDiscoveryCatalog.model_validate(raw)
+        if catalog.source_path not in frozen_sources:
+            raise ValueError(
+                f"API discovery source is not part of the frozen SourceBundle: "
+                f"{catalog.source_path}"
+            )
+        if any(candidate.source_path != catalog.source_path for candidate in catalog.candidates):
+            raise ValueError("API discovery candidate source does not match its catalog")
+        catalogs[catalog.source_path] = catalog
+    return [catalogs[source] for source in sorted(catalogs)]
+
+
+def _expected_network_capture_sources(source_bundle: SourceBundle) -> set[str]:
+    expected: set[str] = set()
+    for document in source_bundle.documents:
+        path = document.path.casefold()
+        if path.endswith(".har") or (
+            path.endswith(".json") and ("capture" in path or "network" in path)
+        ):
+            expected.add(document.path)
+    return expected
+
+
+def _render_api_discovery_report(
+    catalogs: list[ApiDiscoveryCatalog],
+    *,
+    run_id: str,
+) -> str:
+    lines = [
+        "# 接口发现报告",
+        "",
+        "## 采集来源",
+        "",
+        "| Run | 来源文件 | 格式 | 非静态调用 | 业务候选 |",
+        "|---|---|---|---:|---:|",
+    ]
+    for catalog in catalogs:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    _markdown_cell(run_id),
+                    _markdown_cell(catalog.source_path),
+                    _markdown_cell(catalog.capture_format),
+                    str(catalog.observed_call_count),
+                    str(catalog.business_candidate_count),
+                ]
+            )
+            + " |"
+        )
+    lines.extend(
+        [
+            "",
+            "## 接口调用链",
+            "",
+            "| 顺序 | 来源 | Method | Path | Status | Resource Type | 页面路径 | "
+            "耗时(ms) | 业务候选 |",
+            "|---:|---|---|---|---:|---|---|---:|---|",
+        ]
+    )
+    call_number = 0
+    for catalog in catalogs:
+        for call in catalog.calls:
+            call_number += 1
+            lines.append(
+                "| "
+                + " | ".join(
+                    [
+                        str(call_number),
+                        _markdown_cell(catalog.source_path),
+                        call.method,
+                        _markdown_cell(call.path),
+                        str(call.status or ""),
+                        _markdown_cell(call.resource_type or "-"),
+                        _markdown_cell(call.page_path or "-"),
+                        str(call.duration_ms if call.duration_ms is not None else ""),
+                        "是" if call.business_candidate else "否",
+                    ]
+                )
+                + " |"
+            )
+    if call_number == 0:
+        lines.append("| - | - | - | 未发现非静态网络调用 | - | - | - | - | 否 |")
+
+    lines.extend(
+        [
+            "",
+            "## 业务接口候选清单",
+            "",
+            "| 候选 | 来源 | Method | Path | 调用次数 | 状态码 | Query 字段 | "
+            "平均耗时(ms) | 证据级别 |",
+            "|---|---|---|---|---:|---|---|---:|---|",
+        ]
+    )
+    candidates = [(catalog, candidate) for catalog in catalogs for candidate in catalog.candidates]
+    for catalog, candidate in candidates:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    candidate.candidate_id,
+                    _markdown_cell(catalog.source_path),
+                    candidate.method,
+                    _markdown_cell(candidate.path),
+                    str(candidate.call_count),
+                    _markdown_cell(", ".join(map(str, candidate.status_codes)) or "-"),
+                    _markdown_cell(", ".join(candidate.query_parameters) or "-"),
+                    str(
+                        candidate.average_duration_ms
+                        if candidate.average_duration_ms is not None
+                        else ""
+                    ),
+                    "observed / playwright-network-capture",
+                ]
+            )
+            + " |"
+        )
+    if not candidates:
+        lines.append("| - | - | - | 未发现业务接口候选 | 0 | - | - | - | observed |")
+
+    lines.extend(["", "## 请求与响应结构摘要", ""])
+    if not candidates:
+        lines.append("未发现可生成结构摘要的业务接口候选。")
+    for catalog, candidate in candidates:
+        lines.extend(
+            [
+                f"### {candidate.candidate_id} {candidate.method} "
+                f"`{_markdown_code(candidate.path)}`",
+                "",
+                f"- 来源：`{_markdown_code(catalog.source_path)}`；定位："
+                + ", ".join(f"`{_markdown_code(locator)}`" for locator in candidate.locators),
+                "- Request Schema 摘要：",
+                "",
+                *[
+                    f"    {line}"
+                    for line in json.dumps(
+                        candidate.request_schema,
+                        ensure_ascii=False,
+                        indent=2,
+                    ).splitlines()
+                ],
+                "- Response Schema 摘要：",
+                "",
+                *[
+                    f"    {line}"
+                    for line in json.dumps(
+                        candidate.response_schema,
+                        ensure_ascii=False,
+                        indent=2,
+                    ).splitlines()
+                ],
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## 与 OpenAPI 契约的关系",
+            "",
+            "本报告只记录浏览器网络抓包中的运行时观察，不代表完整 API 契约，也不能替代 "
+            "OpenAPI、Swagger 或其他正式协议来源。候选接口的必填字段、枚举、错误码全集、"
+            "权限、风控与副作用仍需通过完整契约确认。",
+            "",
+            "## 可转入 API 测试草稿的建议",
+            "",
+            "- observed 候选可用于提出主流程、异常响应、鉴权、幂等和重复提交等测试意图。",
+            "- 在完整 OpenAPI 确认前，API 测试草稿中的 contract_status 保持未确认，"
+            "request.method/path 保持 null。",
+            "",
+            "## 脱敏说明",
+            "",
+            "系统未保存原始 header 值、query value、request body value 或完整 response body；"
+            "报告仅保留路径归一化结果、字段名和 JSON 类型摘要。",
+            "",
+        ]
+    )
+    redactions = sorted({item for catalog in catalogs for item in catalog.redactions})
+    if redactions:
+        lines.extend(f"- 已脱敏：`{_markdown_code(item)}`" for item in redactions)
+    else:
+        lines.append("- 本次结构中未识别到需要按字段名标记的敏感项；原始值仍未进入报告。")
+    lines.extend(["", "## 待确认问题", ""])
+    limitations = list(
+        dict.fromkeys(
+            [
+                *(pending for _catalog, candidate in candidates for pending in candidate.pending),
+                *(limitation for catalog in catalogs for limitation in catalog.limitations),
+            ]
+        )
+    )
+    lines.extend(f"- {_markdown_text(item)}" for item in limitations)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _markdown_cell(value: str) -> str:
+    return html.escape(value, quote=True).replace("|", r"\|").replace("\r", " ").replace("\n", " ")
+
+
+def _markdown_code(value: str) -> str:
+    return (
+        html.escape(value, quote=True).replace("`", "&#96;").replace("\r", " ").replace("\n", " ")
+    )
+
+
+def _markdown_text(value: str) -> str:
+    return html.escape(value, quote=True).replace("\r", " ").replace("\n", " ")
+
+
 def _validate_api_test_cases(
     cases: ApiTestCasesDraft,
     *,
@@ -2249,6 +2512,13 @@ def _validate_api_test_cases(
         else set()
     )
     frozen_sources = {document.path for document in source_bundle.documents}
+    inspected_capture_sources = {
+        catalog.source_path
+        for catalog in _api_discovery_catalogs(
+            tool_results,
+            source_bundle=source_bundle,
+        )
+    }
     for case in cases.cases:
         if known_rules:
             unknown_rules = set(case.business_rule_refs) - known_rules
@@ -2256,6 +2526,17 @@ def _validate_api_test_cases(
                 raise ValueError(
                     f"{case.id} references unknown requirement rules: {sorted(unknown_rules)}"
                 )
+        capture_refs = {
+            reference.source_path
+            for reference in case.source_refs
+            if reference.source_type == "playwright-network-capture"
+        }
+        uninspected_capture_refs = capture_refs - inspected_capture_sources
+        if uninspected_capture_refs:
+            raise ValueError(
+                f"{case.id} references uninspected network captures: "
+                f"{sorted(uninspected_capture_refs)}"
+            )
         if case.contract_status != "confirmed":
             continue
         endpoint = (str(case.request.method or "").upper(), str(case.request.path or ""))
@@ -2675,6 +2956,14 @@ def _generation_source_selection(
                     "source": source,
                     "raw_sha256": hashes.get(source),
                     "selection_reason": "openapi.inspect",
+                }
+        elif tool == "network.capture.inspect":
+            source = str(result.get("source_path") or "")
+            if source:
+                selected[(source, None)] = {
+                    "source": source,
+                    "raw_sha256": hashes.get(source),
+                    "selection_reason": "network.capture.inspect",
                 }
     return list(selected.values())
 

@@ -16,6 +16,7 @@ Agentic-QA 生成 create-only 候选产物，并以人工 Review Gate 隔离 Age
 | 维护者 | [工作区与产物版本](artifact-versioning.md) | 文件职责、原子提交和恢复边界 |
 | 测试设计者 | [测试用例标准](testcase-standards.md) | 固定 11 列与证据要求 |
 | API 测试者 | [API 测试契约](api-test-generation.md) | 来源可信度和机器 Schema |
+| API 测试者 | [API Discovery](api-discovery.md) | 如何把已有网络抓包转成脱敏接口观察报告 |
 
 ## 事实来源
 
@@ -36,6 +37,7 @@ Agentic-QA 生成 create-only 候选产物，并以人工 Review Gate 隔离 Age
 
 | Artifact | Schema |
 |---|---|
+| API discovery v1 | [JSON Schema](schemas/api-discovery.v1.schema.json) |
 | API cases v1.1 | [JSON Schema](schemas/api-cases.v1.1.schema.json) |
 | Execution evidence v1 | [JSON Schema](schemas/execution-evidence.v1.schema.json) |
 | Failure triage v1 | [JSON Schema](schemas/failure-triage.v1.schema.json) |

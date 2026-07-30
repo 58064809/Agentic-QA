@@ -22,6 +22,7 @@ from harness.infrastructure.manifests.registry import AgentRegistry, ToolRegistr
 from harness.infrastructure.persistence.filesystem import FilesystemStore
 from harness.infrastructure.rag.provider import RagProviderConfig, RagRetriever
 from harness.infrastructure.tools.api_execution import execute_api_cases
+from harness.infrastructure.tools.network_capture import inspect_network_capture
 from harness.infrastructure.tools.openapi import inspect_openapi
 from harness.infrastructure.tools.postgres_query import (
     PostgresSourceConfig,
@@ -59,6 +60,9 @@ class ToolRuntime:
             ),
             "openapi.inspect": lambda workspace, run, arguments, _profile: self._openapi_inspect(
                 workspace, run, arguments
+            ),
+            "network.capture.inspect": lambda workspace, run, arguments, _profile: (
+                self._network_capture_inspect(workspace, run, arguments)
             ),
             "api.execute": self._api_execute,
             "postgres.query": lambda workspace, _run, arguments, profile: self._postgres_query(
@@ -310,6 +314,25 @@ class ToolRuntime:
         except (json.JSONDecodeError, yaml.YAMLError) as exc:
             raise ValueError("source is not a complete OpenAPI/Swagger document") from exc
         return inspect_openapi(payload, source=source).model_dump(mode="json", by_alias=True)
+
+    def _network_capture_inspect(
+        self,
+        workspace: str,
+        run_id: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        requested = self._normalized_tool_path(arguments.get("path"))
+        if not self._is_source_path(requested):
+            raise ValueError("network capture must belong to the frozen SourceBundle")
+        frozen = self._read_frozen_source(workspace, run_id, requested)
+        source = frozen["path"]
+        if PurePosixPath(source).suffix.casefold() not in {".har", ".json"}:
+            raise ValueError("network capture must use .har or .json")
+        try:
+            payload = json.loads(frozen["content"])
+        except json.JSONDecodeError as exc:
+            raise ValueError("network capture is not valid JSON") from exc
+        return inspect_network_capture(payload, source=source).model_dump(mode="json")
 
     def _api_execute(
         self,

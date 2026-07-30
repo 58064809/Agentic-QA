@@ -38,6 +38,22 @@ def _runtime(tmp_path: Path):
         ),
         encoding="utf-8",
     )
+    (workspace / "sources/network-capture.json").write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {
+                        "method": "GET",
+                        "url": "https://example.test/api/health",
+                        "status": 200,
+                        "resource_type": "xhr",
+                        "response_body": {"ok": True},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
     (workspace / "sources/unavailable.bin").write_bytes(b"\xff\xfe")
     snapshot = harness.start_run(
         StartRunCommand(
@@ -163,3 +179,36 @@ def test_openapi_inspect_uses_frozen_source_when_path_is_under_sources(tmp_path:
         "responses": [{"status": "200", "description": "ok", "content": {}}],
         "security": [],
     }
+
+
+def test_network_capture_inspect_uses_frozen_source_and_returns_no_values(
+    tmp_path: Path,
+) -> None:
+    _, workspace, snapshot, runtime = _runtime(tmp_path)
+    (workspace / "sources/network-capture.json").write_text(
+        json.dumps({"entries": []}),
+        encoding="utf-8",
+    )
+
+    result = runtime.call(
+        workspace="demo",
+        run_id=snapshot.run_id,
+        agent="api_test_engineer",
+        tool="network.capture.inspect",
+        arguments={"path": "sources/network-capture.json"},
+        profile=ExecutionProfile(),
+    )
+
+    assert result["source_path"] == "sources/network-capture.json"
+    assert result["business_candidate_count"] == 1
+    assert result["candidates"][0]["path"] == "/api/health"
+
+    with pytest.raises(ValueError, match="frozen SourceBundle"):
+        runtime.call(
+            workspace="demo",
+            run_id=snapshot.run_id,
+            agent="api_test_engineer",
+            tool="network.capture.inspect",
+            arguments={"path": "runtime/network-capture.json"},
+            profile=ExecutionProfile(),
+        )
