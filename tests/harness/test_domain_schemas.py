@@ -28,6 +28,57 @@ def test_api_cases_only_accept_v1_1() -> None:
         )
 
 
+def test_unconfirmed_api_case_cannot_look_executable() -> None:
+    with pytest.raises(ValidationError, match="Input should be None"):
+        ApiTestCasesDraft.model_validate(
+            {
+                "schema_version": "agentic-qa.api-cases.v1.1",
+                "artifact_type": "api_automation_cases",
+                "status": "needs_human_review",
+                "human_review_required": True,
+                "base_url_env": "AGENTIC_QA_BASE_URL",
+                "business_rules": ["RULE-001"],
+                "source_refs": [
+                    {
+                        "source_type": "requirement",
+                        "source_path": "sources/requirement.md",
+                        "chunk_id": "rule-1",
+                        "locator": "rule",
+                        "summary": "业务规则",
+                        "confidence": "medium",
+                    }
+                ],
+                "cases": [
+                    {
+                        "id": "API-PENDING-001",
+                        "title": "待确认接口",
+                        "priority": "P1",
+                        "contract_status": "partial",
+                        "business_rule_refs": ["RULE-001"],
+                        "review_status": "needs_human_review",
+                        "review_questions": ["接口契约待确认"],
+                        "source_refs": [
+                            {
+                                "source_type": "requirement",
+                                "source_path": "sources/requirement.md",
+                                "chunk_id": "rule-1",
+                                "locator": "rule",
+                                "summary": "业务规则",
+                                "confidence": "medium",
+                            }
+                        ],
+                        "pending": ["完整 OpenAPI"],
+                        "request": {"method": "POST", "path": "/guessed"},
+                        "assertions": [],
+                        "variables": {},
+                        "cleanup": [],
+                    }
+                ],
+                "review_questions": ["接口契约待确认"],
+            }
+        )
+
+
 def test_execution_summary_must_match_case_evidence() -> None:
     now = datetime.now(tz=UTC)
     with pytest.raises(ValidationError, match="does not match cases"):

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 from harness import (
     ArtifactDiffEndpoint,
@@ -77,6 +78,49 @@ def test_v2_start_get_review_and_promote(tmp_path: Path) -> None:
     assert published.status == "published"
     assert published.review_status == {"testcases": "confirmed"}
     assert (workspace / "published/testcases/current.md").is_file()
+
+
+def test_api_test_draft_is_typed_yaml_and_keeps_human_review_gate(tmp_path: Path) -> None:
+    harness = _harness(tmp_path)
+    workspace = _create(harness)
+
+    snapshot = harness.start_run(
+        StartRunCommand(
+            workspace_id="demo",
+            goal="为福利活动设计 API 测试",
+            expected_artifacts=["api_test_draft"],
+        )
+    )
+
+    assert snapshot.status == "needs_human_review"
+    candidate = snapshot.candidates[0]
+    assert candidate.path.endswith("/api_test_draft/raw.yml")
+    candidate_root = (tmp_path / candidate.path).parent
+    manifest = json.loads((candidate_root / "manifest.json").read_text(encoding="utf-8"))
+    payload = yaml.safe_load((candidate_root / "raw.yml").read_text(encoding="utf-8"))
+    assert manifest["media_type"] == "application/yaml"
+    assert payload["schema_version"] == "agentic-qa.api-cases.v1.1"
+    assert payload["cases"][0]["contract_status"] == "missing"
+    assert payload["cases"][0]["request"]["method"] is None
+    assert payload["cases"][0]["request"]["path"] is None
+    assert not (workspace / "published/api_test_draft/current.yml").exists()
+
+    published = harness.review_run(
+        ReviewRunCommand(
+            workspace_id="demo",
+            run_id=snapshot.run_id,
+            decision=ReviewDecision(
+                intent="approve",
+                target_artifact="api_test_draft",
+                reason="人工确认待契约项表达准确",
+                reviewed_by="qa_owner",
+                versions=[candidate.version_ref(ArtifactVariant.RAW)],
+            ),
+        )
+    )
+
+    assert published.status == "published"
+    assert (workspace / "published/api_test_draft/current.yml").is_file()
 
 
 def test_resume_is_separate_from_human_review(tmp_path: Path) -> None:

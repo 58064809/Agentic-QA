@@ -41,7 +41,7 @@ UTC = timezone.utc
 ARTIFACT_EXTENSIONS = {
     "requirement_analysis": ".md",
     "testcases": ".md",
-    "api_test_draft": ".md",
+    "api_test_draft": ".yml",
     "ui_test_draft": ".md",
     "api_discovery_report": ".md",
     "qa_report": ".md",
