@@ -1,7 +1,10 @@
 # API Discovery
 
-API Discovery 把 Web、H5 或后台页面的网络抓包整理成可审核的接口观察报告。首版读取已有
-HAR 或简化 JSON；Playwright 在线监听与自动导出 HAR 尚未接入 Harness。
+API Discovery 把 Web、H5 或后台页面的网络流量整理成可审核的接口观察报告。系统支持两种来源：
+已有 HAR/简化 JSON，以及显式测试环境中的实时 Playwright MCP 会话。
+
+实时链路直接把浏览器网络详情转换为脱敏强类型目录，不落盘原始 HAR。原始 HAR 的安全导出仍在
+评估中，因为即使省略 response body，header、Cookie 和请求内容仍可能进入 HAR。
 
 ## 场景
 
@@ -18,6 +21,8 @@ HAR 或简化 JSON；Playwright 在线监听与自动导出 HAR 尚未接入 Har
 错误码全集、权限、风控或未执行到的业务分支。
 
 ## 操作
+
+### 已有抓包
 
 HAR 或简化 JSON 位于 workspace 的 `sources/` 后，run 选择
 `api_discovery_report`：
@@ -50,11 +55,78 @@ $result = python -m harness run start demo "基于冻结抓包生成接口发现
 }
 ```
 
+### 实时 Playwright 会话
+
+实时发现使用 workspace 中已登记的测试环境和 Playwright MCP。下面的配置创建隔离、无界面的
+浏览器会话，阻断 service worker，并冻结页面动作与网络读取工具：
+
+```yaml
+execution:
+  environments:
+    qa:
+      base_url_env: AGENTIC_QA_BASE_URL
+      allowed_http_methods: [GET, HEAD, OPTIONS, POST]
+      allow_ui_mutations: true
+      max_request_timeout_seconds: 10
+mcp:
+  playwright:
+    transport: stdio
+    command: npx
+    args:
+      - -y
+      - "@playwright/mcp@latest"
+      - --isolated
+      - --headless
+      - --block-service-workers
+    allowlist:
+      - browser_navigate
+      - browser_snapshot
+      - browser_find
+      - browser_click
+      - browser_fill_form
+      - browser_network_requests
+      - browser_network_request
+    request_timeout_seconds: 60
+```
+
+测试站点地址来自环境变量：
+
+```powershell
+$env:AGENTIC_QA_BASE_URL = "https://qa.example.test"
+```
+
+run 的 goal 描述页面动作，ExecutionProfile 选择同一个环境：
+
+```powershell
+$result = python -m harness run start demo `
+  "打开活动页，完成一次助力流程并生成实时接口发现报告" `
+  --artifact api_discovery_report `
+  --environment qa `
+  --base-url-env AGENTIC_QA_BASE_URL `
+  --allow-http-method GET `
+  --allow-http-method HEAD `
+  --allow-http-method OPTIONS `
+  --allow-http-method POST `
+  --allow-ui-mutations |
+  ConvertFrom-Json
+```
+
+缺少测试环境、base URL、UI mutation 授权、Playwright MCP 配置或两个网络工具时，run 在执行前或
+工具调用阶段返回明确错误。`analysis-only` 不启动实时浏览器。
+
 ## 系统响应
 
-`network.capture.inspect` 只读取本次 run 的冻结 SourceBundle。系统过滤常见静态资源，去掉
-origin 和 query value，把数字、UUID 等动态路径段归一化为 `{id}`，再按 method/path 合并重复
-调用。
+`network.capture.inspect` 只读取本次 run 的冻结 SourceBundle；`network.capture.live` 只读取
+本次受控 Playwright 会话。系统过滤常见静态资源，去掉 query value，把数字、UUID 和长 Token
+路径段归一化为 `{id}`，再按 method/origin/path 合并重复调用。
+
+实时任务向模型展示 allowlisted 页面动作和 `network.capture.live`。原始
+`browser_network_requests`、`browser_network_request` 与任意服务器代码执行工具不进入模型
+工具区。Harness 在内部读取网络详情，完成脱敏后才把强类型目录加入模型上下文和工具记录。
+
+`browser_navigate` 与新建 tab 的 URL 会和 ExecutionProfile 指向的 base URL 比较 origin。最终
+document 流量离开该 origin 时，实时采集返回权限错误。第三方 API 请求仍作为独立 origin 记录，
+不会与测试站点上的同路径接口合并。
 
 报告不会保存原始 header 值、query value、request body value 或完整 response body。body 只
 留下字段名与 JSON 类型摘要；Authorization、Cookie、Set-Cookie、token、session 和常见 PII
@@ -77,8 +149,9 @@ workspaces/<workspace>/published/api_discovery_report/current.md
 `contract_status` 保持未确认，method/path 为 `null`。
 
 脱敏观察目录的数据结构见
-[API Discovery JSON Schema](schemas/api-discovery.v1.schema.json)。该目录保存在本次 run 的
-`network.capture.inspect` 工具记录中，Markdown Candidate 是它的确定性审核视图。
+[API Discovery JSON Schema](schemas/api-discovery.v1.1.schema.json)。离线目录保存在
+`network.capture.inspect` 工具记录中，实时目录保存在 `network.capture.live` 工具记录中；
+Markdown Candidate 是它的确定性审核视图。
 
 ## 报告内容
 
@@ -106,4 +179,7 @@ workspaces/<workspace>/published/api_discovery_report/current.md
 | 抓包包含图片、脚本和字体 | 静态调用被过滤，不进入调用链 |
 | 同一接口使用不同数字 ID | 路径归一化后合并，调用次数和状态码汇总 |
 | 抓包包含 Token、Cookie 或手机号 | 原值不进入目录或 Markdown，仅记录脱敏位置和类型摘要 |
-| 需要在线执行页面并监听网络 | 当前版本尚未提供该链路；Playwright MCP 仍用于已配置的浏览器工具调用 |
+| 实时任务没有 frozen HAR/JSON | 系统切换到显式测试环境中的 Playwright MCP 实时发现 |
+| 页面跳转到不同 origin | 导航或采集阶段返回权限错误，不生成完成态 Candidate |
+| Playwright allowlist 缺少网络工具 | 启动校验报告 `browser_network_requests` 与 `browser_network_request` 缺口 |
+| 需要原始 HAR 文件 | 当前实时链路保留脱敏强类型目录；原始 HAR 的安全导出策略仍在评估 |

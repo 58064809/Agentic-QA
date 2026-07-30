@@ -71,6 +71,29 @@ def test_secret_assignments_and_private_keys_are_redacted_from_untrusted_text() 
     assert contains_likely_secret("Authorization: Bearer abc.def")
 
 
+def test_mcp_reported_error_is_not_treated_as_a_success() -> None:
+    snapshot = MCPToolSnapshot.freeze(
+        server="playwright",
+        transport="stdio",
+        listed_tools=[{"name": "browser_click", "inputSchema": {"type": "object"}}],
+        allowlist={"browser_click"},
+    )
+
+    with pytest.raises(RuntimeError, match="mcp_tool_reported_error:browser_click"):
+        snapshot.parse_result(
+            "browser_click",
+            {
+                "isError": True,
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "### Error\nAuthorization: Bearer secret-value",
+                    }
+                ],
+            },
+        )
+
+
 def test_playwright_mcp_config_rejects_arbitrary_stdio_commands() -> None:
     with pytest.raises(ValidationError):
         PlaywrightMCPConfig(
@@ -85,6 +108,22 @@ def test_playwright_mcp_config_requires_official_package() -> None:
             command="npx",
             args=("untrusted-package",),
             allowlist=frozenset({"browser_snapshot"}),
+        )
+
+
+def test_playwright_stdio_requires_isolation_and_blocked_service_workers() -> None:
+    with pytest.raises(ValidationError, match="isolated mode"):
+        PlaywrightMCPConfig(
+            command="npx",
+            args=("-y", "@playwright/mcp@latest"),
+            allowlist=frozenset({"browser_snapshot"}),
+        )
+
+
+def test_playwright_mcp_rejects_arbitrary_server_code_tools() -> None:
+    with pytest.raises(ValidationError, match="arbitrary-code"):
+        PlaywrightMCPConfig(
+            allowlist=frozenset({"browser_run_code_unsafe"}),
         )
 
 

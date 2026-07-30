@@ -16,6 +16,7 @@
 | 本地/远程 RAG、Playwright MCP、只读 PostgreSQL Tool | 已实现 | infrastructure adapters |
 | OpenAPI 3.x/Swagger 2.0 归一化与强类型 API Candidate | 已实现 | `domain/schemas/openapi.py`、`infrastructure/tools/openapi.py` |
 | 冻结 HAR/JSON 的离线 API Discovery 与脱敏报告 | 已实现 | `domain/schemas/api_discovery.py`、`infrastructure/tools/network_capture.py` |
+| 显式测试环境中的 Playwright MCP 实时接口发现 | 已实现 | `tools/playwright_network.py`、`network.capture.live` |
 | API cases、execution evidence、failure triage Schema | 已实现 | `src/harness/domain/schemas/` |
 
 ## 计划中
@@ -23,7 +24,7 @@
 | 能力 | 状态 | 验收边界 |
 |---|---|---|
 | Playwright MCP live smoke CI | 计划中 | 只针对明确测试环境和 allowlist |
-| Playwright 在线网络监听与 HAR 导出 | 计划中 | 显式测试环境授权；复用离线脱敏和 Review Gate |
+| 原始 HAR 的安全导出策略 | 计划中 | 评估 header/cookie 泄露和临时文件生命周期；当前实时链路直接生成脱敏强类型目录 |
 | 更多只读测试管理系统连接器 | 计划中 | 不扩大 Review/Execution 权限 |
 
 ## 明确不在当前范围

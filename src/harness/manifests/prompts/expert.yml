@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.phase-prompt-manifest.v1
 name: expert
-version: expert-structured-v3
+version: expert-structured-v4
 agents:
   - requirement_analyst
   - risk_strategist
@@ -33,4 +33,6 @@ trusted_input_fields:
   - source_fragments
   - allowed_artifacts
   - validation_feedback
+  - execution_profile
+  - test_base_url
 untrusted_input_fields: [goal, tool_results]

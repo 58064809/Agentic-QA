@@ -12,6 +12,7 @@ class StrictModel(BaseModel):
 class NetworkCall(StrictModel):
     sequence: int = Field(ge=1)
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"]
+    origin: str | None = None
     path: str = Field(min_length=1)
     status: int | None = Field(default=None, ge=100, le=599)
     resource_type: str = ""
@@ -23,6 +24,7 @@ class NetworkCall(StrictModel):
 class DiscoveredApiCandidate(StrictModel):
     candidate_id: str = Field(pattern=r"^DISC-\d{3}$")
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"]
+    origin: str | None = None
     path: str = Field(min_length=1)
     call_count: int = Field(ge=1)
     status_codes: list[int]
@@ -38,9 +40,9 @@ class DiscoveredApiCandidate(StrictModel):
 
 
 class ApiDiscoveryCatalog(StrictModel):
-    schema_version: Literal["agentic-qa.api-discovery.v1"] = "agentic-qa.api-discovery.v1"
+    schema_version: Literal["agentic-qa.api-discovery.v1.1"] = "agentic-qa.api-discovery.v1.1"
     source_path: str = Field(min_length=1)
-    capture_format: Literal["har", "simplified_json"]
+    capture_format: Literal["har", "simplified_json", "playwright_mcp"]
     observed_call_count: int = Field(ge=0)
     business_candidate_count: int = Field(ge=0)
     calls: list[NetworkCall] = Field(max_length=500)
