@@ -14,6 +14,7 @@
 | Agent/Skill/Tool manifests 与内置知识 | 已实现 | `src/harness/manifests/`、`knowledge/` |
 | 跨 AI AgentRequest 与本地 MCP stdio | 已实现 | `application/agent_request/`、`interfaces/mcp_server.py` |
 | 本地/远程 RAG、Playwright MCP、只读 PostgreSQL Tool | 已实现 | infrastructure adapters |
+| OpenAPI 3.x/Swagger 2.0 归一化与强类型 API Candidate | 已实现 | `domain/schemas/openapi.py`、`infrastructure/tools/openapi.py` |
 | API cases、execution evidence、failure triage Schema | 已实现 | `src/harness/domain/schemas/` |
 
 ## 计划中

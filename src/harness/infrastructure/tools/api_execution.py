@@ -60,10 +60,22 @@ def _execute_case(
     env: Mapping[str, str],
     request_func: Callable[..., Any],
 ) -> CaseExecutionEvidence:
-    method = str(case.request.method or "GET").upper()
-    path = str(case.request.path or "/")
+    method = str(case.request.method or "").upper()
+    path = str(case.request.path or "")
     started_at = datetime.now(tz=UTC)
     started_clock = perf_counter()
+    if case.contract_status != "confirmed" or not method or not path:
+        return CaseExecutionEvidence(
+            case_id=case.id,
+            title=case.title,
+            method=method,
+            path=path,
+            status="blocked",
+            started_at=started_at,
+            completed_at=datetime.now(tz=UTC),
+            duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
+            error="API contract is not confirmed",
+        )
     if path.startswith(("http://", "https://")):
         raise ValueError("API case path must be relative")
     if method not in profile.allowed_http_methods:

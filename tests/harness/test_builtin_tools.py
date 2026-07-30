@@ -147,11 +147,19 @@ def test_openapi_inspect_uses_frozen_source_when_path_is_under_sources(tmp_path:
         profile=ExecutionProfile(),
     )
     assert result["contract_status"] == "confirmed"
-    assert result["endpoints"] == [
-        {
-            "method": "GET",
-            "path": "/health",
-            "operation_id": "health",
-            "summary": "",
-        }
-    ]
+    assert result["schema_version"] == "agentic-qa.openapi-inspection.v1"
+    assert result["specification"] == "openapi"
+    assert result["endpoint_count"] == 1
+    assert result["endpoints"][0] == {
+        "method": "GET",
+        "path": "/health",
+        "operation_id": "health",
+        "summary": "",
+        "description": "",
+        "tags": [],
+        "deprecated": False,
+        "parameters": [],
+        "request_body": None,
+        "responses": [{"status": "200", "description": "ok", "content": {}}],
+        "security": [],
+    }

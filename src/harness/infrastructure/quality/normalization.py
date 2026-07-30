@@ -15,21 +15,20 @@ TABLE_DELIMITER = re.compile(r"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s
 
 class SafeMarkdownNormalizer:
     name = "safe-markdown-representation"
-    version = "1.0.0"
+    version = "1.1.0"
     configuration = QualityComponentConfiguration()
 
     def propose(self, context: QualityContext, content: str) -> NormalizationProposal:
-        del context, content
+        del content
+        kinds = [
+            NormalizationOperationKind.NORMALIZE_LINE_ENDINGS,
+            NormalizationOperationKind.TRIM_TRAILING_WHITESPACE,
+            NormalizationOperationKind.ENSURE_FINAL_NEWLINE,
+        ]
+        if context.artifact != "api_test_draft":
+            kinds.append(NormalizationOperationKind.NORMALIZE_MARKDOWN_TABLE_DELIMITER_SPACING)
         return NormalizationProposal(
-            operations=tuple(
-                NormalizationOperation(kind=kind)
-                for kind in (
-                    NormalizationOperationKind.NORMALIZE_LINE_ENDINGS,
-                    NormalizationOperationKind.TRIM_TRAILING_WHITESPACE,
-                    NormalizationOperationKind.ENSURE_FINAL_NEWLINE,
-                    NormalizationOperationKind.NORMALIZE_MARKDOWN_TABLE_DELIMITER_SPACING,
-                )
-            )
+            operations=tuple(NormalizationOperation(kind=kind) for kind in kinds)
         )
 
 

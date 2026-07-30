@@ -37,32 +37,27 @@
       "title": "ApiAssertion",
       "type": "object"
     },
-    "ApiRequest": {
+    "ConfirmedApiRequest": {
       "additionalProperties": false,
       "properties": {
         "method": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "HEAD",
+            "OPTIONS",
+            "TRACE"
           ],
-          "default": null,
-          "title": "Method"
+          "title": "Method",
+          "type": "string"
         },
         "path": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Path"
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
         },
         "headers": {
           "additionalProperties": true,
@@ -76,10 +71,14 @@
           "title": "Body"
         }
       },
-      "title": "ApiRequest",
+      "required": [
+        "method",
+        "path"
+      ],
+      "title": "ConfirmedApiRequest",
       "type": "object"
     },
-    "ApiTestCase": {
+    "ConfirmedApiTestCase": {
       "additionalProperties": false,
       "properties": {
         "id": {
@@ -103,12 +102,7 @@
           "type": "string"
         },
         "contract_status": {
-          "enum": [
-            "missing",
-            "pending_confirmation",
-            "partial",
-            "confirmed"
-          ],
+          "const": "confirmed",
           "title": "Contract Status",
           "type": "string"
         },
@@ -147,7 +141,7 @@
           "type": "array"
         },
         "request": {
-          "$ref": "#/$defs/ApiRequest"
+          "$ref": "#/$defs/ConfirmedApiRequest"
         },
         "assertions": {
           "items": {
@@ -182,7 +176,7 @@
         "variables",
         "cleanup"
       ],
-      "title": "ApiTestCase",
+      "title": "ConfirmedApiTestCase",
       "type": "object"
     },
     "SourceRef": {
@@ -233,9 +227,144 @@
       ],
       "title": "SourceRef",
       "type": "object"
+    },
+    "UnconfirmedApiRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "const": null,
+          "default": null,
+          "title": "Method",
+          "type": "null"
+        },
+        "path": {
+          "const": null,
+          "default": null,
+          "title": "Path",
+          "type": "null"
+        },
+        "headers": {
+          "additionalProperties": true,
+          "title": "Headers",
+          "type": "object"
+        },
+        "query": {
+          "title": "Query"
+        },
+        "body": {
+          "title": "Body"
+        }
+      },
+      "title": "UnconfirmedApiRequest",
+      "type": "object"
+    },
+    "UnconfirmedApiTestCase": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "priority": {
+          "enum": [
+            "P0",
+            "P1",
+            "P2",
+            "P3"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "contract_status": {
+          "enum": [
+            "missing",
+            "pending_confirmation",
+            "partial"
+          ],
+          "title": "Contract Status",
+          "type": "string"
+        },
+        "business_rule_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Business Rule Refs",
+          "type": "array"
+        },
+        "review_status": {
+          "const": "needs_human_review",
+          "title": "Review Status",
+          "type": "string"
+        },
+        "review_questions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Review Questions",
+          "type": "array"
+        },
+        "source_refs": {
+          "items": {
+            "$ref": "#/$defs/SourceRef"
+          },
+          "minItems": 1,
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "pending": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Pending",
+          "type": "array"
+        },
+        "request": {
+          "$ref": "#/$defs/UnconfirmedApiRequest"
+        },
+        "assertions": {
+          "items": {
+            "$ref": "#/$defs/ApiAssertion"
+          },
+          "title": "Assertions",
+          "type": "array"
+        },
+        "variables": {
+          "additionalProperties": true,
+          "title": "Variables",
+          "type": "object"
+        },
+        "cleanup": {
+          "items": {},
+          "title": "Cleanup",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "priority",
+        "contract_status",
+        "business_rule_refs",
+        "review_status",
+        "review_questions",
+        "source_refs",
+        "pending",
+        "request",
+        "assertions",
+        "variables",
+        "cleanup"
+      ],
+      "title": "UnconfirmedApiTestCase",
+      "type": "object"
     }
   },
-  "additionalProperties": true,
+  "additionalProperties": false,
   "properties": {
     "schema_version": {
       "const": "agentic-qa.api-cases.v1.1",
@@ -278,7 +407,23 @@
     },
     "cases": {
       "items": {
-        "$ref": "#/$defs/ApiTestCase"
+        "discriminator": {
+          "mapping": {
+            "confirmed": "#/$defs/ConfirmedApiTestCase",
+            "missing": "#/$defs/UnconfirmedApiTestCase",
+            "partial": "#/$defs/UnconfirmedApiTestCase",
+            "pending_confirmation": "#/$defs/UnconfirmedApiTestCase"
+          },
+          "propertyName": "contract_status"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/ConfirmedApiTestCase"
+          },
+          {
+            "$ref": "#/$defs/UnconfirmedApiTestCase"
+          }
+        ]
       },
       "minItems": 1,
       "title": "Cases",

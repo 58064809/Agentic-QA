@@ -22,12 +22,11 @@ from harness.infrastructure.manifests.registry import AgentRegistry, ToolRegistr
 from harness.infrastructure.persistence.filesystem import FilesystemStore
 from harness.infrastructure.rag.provider import RagProviderConfig, RagRetriever
 from harness.infrastructure.tools.api_execution import execute_api_cases
+from harness.infrastructure.tools.openapi import inspect_openapi
 from harness.infrastructure.tools.postgres_query import (
     PostgresSourceConfig,
     execute_read_only_query,
 )
-
-HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
 
 
 class ToolRuntime:
@@ -310,33 +309,7 @@ class ToolRuntime:
             payload = json.loads(text) if suffix.lower() == ".json" else yaml.safe_load(text)
         except (json.JSONDecodeError, yaml.YAMLError) as exc:
             raise ValueError("source is not a complete OpenAPI/Swagger document") from exc
-        if not isinstance(payload, dict) or not (payload.get("openapi") or payload.get("swagger")):
-            raise ValueError("source is not a complete OpenAPI/Swagger document")
-        paths = payload.get("paths")
-        if not isinstance(paths, dict) or not paths:
-            raise ValueError("OpenAPI document has no paths")
-        endpoints = []
-        for path, item in sorted(paths.items()):
-            if not isinstance(item, dict):
-                continue
-            for method, operation in item.items():
-                if method.lower() in HTTP_METHODS and isinstance(operation, dict):
-                    endpoints.append(
-                        {
-                            "method": method.upper(),
-                            "path": str(path),
-                            "operation_id": str(operation.get("operationId") or ""),
-                            "summary": str(operation.get("summary") or ""),
-                        }
-                    )
-        if not endpoints:
-            raise ValueError("OpenAPI document has no HTTP operations")
-        return {
-            "source": source,
-            "contract_status": "confirmed",
-            "endpoint_count": len(endpoints),
-            "endpoints": endpoints[:500],
-        }
+        return inspect_openapi(payload, source=source).model_dump(mode="json", by_alias=True)
 
     def _api_execute(
         self,

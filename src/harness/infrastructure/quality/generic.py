@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+import yaml
 from pydantic import ValidationError
 
 from harness.application.qa_design import parse_testcase_markdown
@@ -12,6 +13,7 @@ from harness.application.quality import (
     StrategyRequirements,
     StrategyResult,
 )
+from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
 
 PLACEHOLDER_MAPPING = re.compile(r"(?:暂无|未覆盖|待补充|后续设计|TODO|TBD)", re.IGNORECASE)
 UNSUPPORTED_IMPLEMENTATION = re.compile(
@@ -44,7 +46,7 @@ def _implementation_term_supported(term: str, marker: str, source_corpus: str) -
 
 class GenericArtifactStrategy:
     name = "generic-artifact-contracts"
-    version = "4.1.0"
+    version = "4.2.0"
     requirements = StrategyRequirements()
     configuration = QualityComponentConfiguration()
 
@@ -58,6 +60,8 @@ class GenericArtifactStrategy:
             issues.extend(self._testcase_issues(context, content))
         elif context.artifact == "requirement_analysis":
             issues.extend(self._requirement_issues(content))
+        elif context.artifact == "api_test_draft":
+            issues.extend(self._api_test_issues(context, content))
         return StrategyResult(issues=tuple(issues))
 
     def _testcase_issues(
@@ -128,6 +132,41 @@ class GenericArtifactStrategy:
                         )
                     )
         return issues
+
+    def _api_test_issues(
+        self,
+        context: QualityContext,
+        content: str,
+    ) -> list[QualityIssue]:
+        try:
+            payload = yaml.safe_load(content)
+            draft = ApiTestCasesDraft.model_validate(payload)
+        except (yaml.YAMLError, ValidationError) as exc:
+            return [
+                self._issue(
+                    "invalid_api_test_draft",
+                    f"api_test_draft must satisfy agentic-qa.api-cases.v1.1: {exc}",
+                )
+            ]
+        frozen_sources = {document.path for document in context.source_bundle.documents}
+        for case in draft.cases:
+            if case.contract_status != "confirmed":
+                continue
+            referenced_sources = {
+                reference.source_path
+                for reference in case.source_refs
+                if reference.source_type == "openapi" and reference.confidence == "high"
+            }
+            if not referenced_sources & frozen_sources:
+                return [
+                    self._issue(
+                        "confirmed_api_without_frozen_contract",
+                        f"{case.id} has no high-confidence OpenAPI reference in the "
+                        "frozen SourceBundle",
+                        case_id=case.id,
+                    )
+                ]
+        return []
 
     def _requirement_issues(self, content: str) -> list[QualityIssue]:
         issues: list[QualityIssue] = []

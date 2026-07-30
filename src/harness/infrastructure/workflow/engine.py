@@ -8,6 +8,7 @@ from threading import Lock
 from typing import Any
 from uuid import uuid4
 
+import yaml
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -38,6 +39,14 @@ from harness.domain.models import (
     StartRunCommand,
 )
 from harness.domain.review import validate_review_decision
+from harness.domain.schemas.api_test_cases import (
+    API_CASES_SCHEMA_VERSION,
+    ApiTestCasesDraft,
+    UnconfirmedApiTestCase,
+)
+from harness.domain.schemas.api_test_cases import (
+    SourceRef as ApiSourceRef,
+)
 from harness.domain.schemas.qa_design import (
     CoverageMapping,
     EvidenceLevel,
@@ -81,6 +90,7 @@ class AgentOutput(BaseModel):
     risk_catalog: RiskCatalog | None = None
     testcase_set: TestCaseSet | None = None
     testcase_patch: TestCasePatch | None = None
+    api_test_cases: ApiTestCasesDraft | None = None
     evidence: list[str] = Field(default_factory=list)
     pending: list[str] = Field(default_factory=list)
     tool_requests: list[ToolRequest] = Field(default_factory=list)
@@ -257,6 +267,8 @@ def default_recorded_artifact(artifact: str, goal: str) -> str:
         return _testcase_template(goal)
     if artifact == "requirement_analysis":
         return render_requirement_catalog(default_recorded_requirement_catalog(goal))
+    if artifact == "api_test_draft":
+        return _render_api_test_cases(default_recorded_api_test_cases(goal))
     title = artifact.replace("_", " ").title()
     return "\n".join(
         [
@@ -278,6 +290,44 @@ def default_recorded_artifact(artifact: str, goal: str) -> str:
             "",
             "- 补充可追踪需求来源、测试环境和验收规则。",
         ]
+    )
+
+
+def default_recorded_api_test_cases(goal: str) -> ApiTestCasesDraft:
+    source = ApiSourceRef(
+        source_type="user_goal",
+        source_path="user_goal",
+        chunk_id="goal",
+        locator="goal",
+        summary=goal,
+        confidence="low",
+    )
+    return ApiTestCasesDraft(
+        schema_version=API_CASES_SCHEMA_VERSION,
+        artifact_type="api_automation_cases",
+        status="needs_human_review",
+        human_review_required=True,
+        base_url_env="AGENTIC_QA_BASE_URL",
+        business_rules=[{"id": "GOAL-001", "summary": goal}],
+        source_refs=[source],
+        cases=[
+            UnconfirmedApiTestCase(
+                id="API-PENDING-001",
+                title="待 OpenAPI 契约确认后补充可执行 API 用例",
+                priority="P1",
+                contract_status="missing",
+                business_rule_refs=["GOAL-001"],
+                review_status="needs_human_review",
+                review_questions=["请提供完整 OpenAPI 3.x 或 Swagger 2.0 契约。"],
+                source_refs=[source],
+                pending=["endpoint method、path、参数、响应和安全定义待契约确认"],
+                request={"method": None, "path": None},
+                assertions=[],
+                variables={},
+                cleanup=[],
+            )
+        ],
+        review_questions=["请提供完整 OpenAPI 3.x 或 Swagger 2.0 契约。"],
     )
 
 
@@ -1668,6 +1718,29 @@ class HarnessEngine:
                             "artifacts": {"testcases": render_testcase_set(current_testcase_set)},
                         }
                     )
+                elif (
+                    manifest.name == "api_test_engineer"
+                    and "api_test_draft" in task.expected_outputs
+                ):
+                    if result.api_test_cases is None:
+                        raise ValueError("api_test_engineer omitted api_test_cases")
+                    _validate_api_test_cases(
+                        result.api_test_cases,
+                        tool_results=tool_results,
+                        requirement_catalog=requirement_catalog,
+                        source_bundle=source_bundle,
+                    )
+                    rendered = dict(result.artifacts)
+                    if "api_test_draft" in rendered:
+                        rendered.pop("api_test_draft")
+                        event(
+                            "redundant_model_artifacts_ignored",
+                            task_id=task.id,
+                            agent=manifest.name,
+                            artifacts=["api_test_draft"],
+                        )
+                    rendered["api_test_draft"] = _render_api_test_cases(result.api_test_cases)
+                    result = result.model_copy(update={"artifacts": rendered})
                 unexpected = set(result.artifacts) - set(task.expected_outputs)
                 if unexpected:
                     raise ValueError(
@@ -1725,7 +1798,7 @@ class HarnessEngine:
                 assessment = self.assessment.assess(
                     context=context,
                     content=content,
-                    media_type="text/markdown",
+                    media_type=_artifact_media_type(artifact),
                     strategy_names=strategy_names,
                 )
                 assessments[artifact] = assessment
@@ -2111,7 +2184,7 @@ class HarnessEngine:
             assessment = self.assessment.assess(
                 context=context,
                 content=content,
-                media_type="text/markdown",
+                media_type=_artifact_media_type(artifact),
                 strategy_names=strategy_names,
             )
             candidate, _created = self.store.commit_candidate(
@@ -2131,6 +2204,80 @@ def _is_invalid_structured_output(exc: RuntimeError) -> bool:
     return "model_gateway_error" in message and (
         "ValidationError" in message or "json_invalid" in message or "JSONDecodeError" in message
     )
+
+
+def _artifact_media_type(artifact: str) -> str:
+    return "application/yaml" if artifact == "api_test_draft" else "text/markdown"
+
+
+def _render_api_test_cases(cases: ApiTestCasesDraft) -> str:
+    return yaml.safe_dump(
+        cases.model_dump(mode="json"),
+        allow_unicode=True,
+        sort_keys=False,
+    )
+
+
+def _validate_api_test_cases(
+    cases: ApiTestCasesDraft,
+    *,
+    tool_results: list[dict[str, Any]],
+    requirement_catalog: RequirementCatalog | None,
+    source_bundle: SourceBundle,
+) -> None:
+    inspections = [
+        item.get("result")
+        for item in tool_results
+        if item.get("tool") == "openapi.inspect" and isinstance(item.get("result"), dict)
+    ]
+    confirmed_endpoints: dict[tuple[str, str], set[str]] = {}
+    for inspection in inspections:
+        if inspection.get("contract_status") != "confirmed":
+            continue
+        source = str(inspection.get("source") or "")
+        for endpoint in inspection.get("endpoints", []):
+            if not isinstance(endpoint, dict):
+                continue
+            key = (
+                str(endpoint.get("method") or "").upper(),
+                str(endpoint.get("path") or ""),
+            )
+            confirmed_endpoints.setdefault(key, set()).add(source)
+    known_rules = (
+        {rule.rule_id for rule in requirement_catalog.rules}
+        if requirement_catalog is not None
+        else set()
+    )
+    frozen_sources = {document.path for document in source_bundle.documents}
+    for case in cases.cases:
+        if known_rules:
+            unknown_rules = set(case.business_rule_refs) - known_rules
+            if unknown_rules:
+                raise ValueError(
+                    f"{case.id} references unknown requirement rules: {sorted(unknown_rules)}"
+                )
+        if case.contract_status != "confirmed":
+            continue
+        endpoint = (str(case.request.method or "").upper(), str(case.request.path or ""))
+        sources = confirmed_endpoints.get(endpoint)
+        if not sources:
+            raise ValueError(
+                f"{case.id} claims unverified endpoint {endpoint[0]} {endpoint[1]}; "
+                "call openapi.inspect on a complete frozen contract first"
+            )
+        frozen_endpoint_sources = sources & frozen_sources
+        if not frozen_endpoint_sources:
+            raise ValueError(f"{case.id} endpoint sources are not part of the frozen SourceBundle")
+        if not any(
+            reference.source_type == "openapi"
+            and reference.source_path in frozen_endpoint_sources
+            and reference.confidence == "high"
+            for reference in case.source_refs
+        ):
+            raise ValueError(
+                f"{case.id} confirmed endpoint lacks a high-confidence reference to "
+                f"one of {sorted(frozen_endpoint_sources)}"
+            )
 
 
 def _requirement_catalog_from_dependencies(
@@ -2521,6 +2668,14 @@ def _generation_source_selection(
                         "chunk_id": chunk_id,
                         "selection_reason": str(chunk.get("selection_reason") or "rag.retrieve"),
                     }
+        elif tool == "openapi.inspect":
+            source = str(result.get("source") or "")
+            if source:
+                selected[(source, None)] = {
+                    "source": source,
+                    "raw_sha256": hashes.get(source),
+                    "selection_reason": "openapi.inspect",
+                }
     return list(selected.values())
 
 
