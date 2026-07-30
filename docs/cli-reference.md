@@ -75,9 +75,11 @@ ArtifactVariant，因此不会出现在差异端点或发布版本中。
   并报告 `baseline_score` 与 `baseline_gap`，不会把人工基线当成待测产物；
 - 规则召回、覆盖率、幻觉率、重复率、边界/状态覆盖和可执行性评分。
 
-`eval live` 需要显式模型配置。它从脱敏 login-lock Golden source 生成真实隔离 Candidate，
-停在 Review Gate 后读取本次 `requirement_analysis/raw.md` 与 `testcases/raw.md` 计算规则召回、
-覆盖、幻觉、重复、边界/状态和可执行性分数；状态正确但质量分不足仍返回失败。设置
+`eval live` 需要显式模型配置。默认场景是脱敏的 `login-lock`；环境变量
+`AGENTIC_QA_LIVE_EVAL_CASE=lottery-assistance` 会切换到规则更密集的助力抽奖场景。系统生成真实
+隔离 Candidate，停在 Review Gate 后读取本次 `requirement_analysis/raw.md` 与
+`testcases/raw.md` 计算规则召回、覆盖、幻觉、重复、边界/状态和可执行性分数；状态正确但质量分
+不足仍返回失败。设置
 `AGENTIC_QA_LIVE_EVAL_OUTPUT` 时，只导出脱敏 `source-bundle.json`、两类 raw artifact、
 `quality-report.json` 与 `generation-report.json` 供人工审查，不导出整个 workspace。
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from contextlib import contextmanager
 from pathlib import Path
 from shutil import copyfile
@@ -348,13 +349,16 @@ def run_eval() -> dict[str, Any]:
     }
 
 
-def run_live_eval() -> dict[str, Any]:
+def run_live_eval(case_name: str | None = None) -> dict[str, Any]:
     from harness.infrastructure.llm.gateway import model_gateway_from_env
     from harness.testing.golden import evaluate_candidate_artifacts
 
     gateway = model_gateway_from_env()
     if gateway is None:
         raise RuntimeError("live eval requires an explicitly configured model API key")
+    selected_case = case_name or os.getenv("AGENTIC_QA_LIVE_EVAL_CASE", "").strip() or "login-lock"
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", selected_case):
+        raise ValueError("live eval case must be a lowercase kebab-case name")
     with TemporaryDirectory(prefix="agentic-qa-live-eval-") as temporary:
         harness = Harness(
             Path(temporary),
@@ -362,21 +366,27 @@ def run_live_eval() -> dict[str, Any]:
             checkpoint_provider=_EvalCheckpointProvider(),
         )
         workspace = harness.create_workspace(
-            CreateWorkspaceCommand(workspace_id="nightly-live-eval")
+            CreateWorkspaceCommand(workspace_id=f"live-eval-{selected_case}")
         )
-        working_case = Path.cwd() / "evals" / "cases" / "login-lock"
-        packaged_case = Path(__file__).resolve().parents[3] / "evals" / "cases" / "login-lock"
+        working_case = Path.cwd() / "evals" / "cases" / selected_case
+        packaged_case = Path(__file__).resolve().parents[3] / "evals" / "cases" / selected_case
         case_root = working_case if working_case.is_dir() else packaged_case
         if not case_root.is_dir():
-            raise FileNotFoundError("login-lock live eval case is unavailable")
-        (workspace / "sources/login-lock.md").write_text(
+            raise FileNotFoundError(f"{selected_case} live eval case is unavailable")
+        (workspace / f"sources/{selected_case}.md").write_text(
             (case_root / "source.md").read_text(encoding="utf-8"),
             encoding="utf-8",
         )
+        goal_path = case_root / "live-goal.txt"
+        goal = (
+            goal_path.read_text(encoding="utf-8").strip()
+            if goal_path.is_file()
+            else f"生成可追踪的 {selected_case} 需求目录和边界/状态测试用例"
+        )
         snapshot = harness.start_run(
             StartRunCommand(
-                workspace_id="nightly-live-eval",
-                goal="生成可追踪的登录锁定需求目录和边界/状态测试用例",
+                workspace_id=f"live-eval-{selected_case}",
+                goal=goal,
                 expected_artifacts=["requirement_analysis", "testcases"],
             )
         )
@@ -406,6 +416,7 @@ def run_live_eval() -> dict[str, Any]:
         )
         result = {
             "schema_version": "agentic-qa.harness.live-eval-result.v1",
+            "case": selected_case,
             "passed": structurally_complete and golden is not None and golden["passed"],
             "status": snapshot.status,
             "candidate_count": len(snapshot.candidates),

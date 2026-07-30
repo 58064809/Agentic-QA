@@ -527,6 +527,151 @@ def test_requirement_sources_are_extracted_per_file_with_generation_provenance(
     )
 
 
+def test_single_source_requirement_catalog_is_not_regenerated(tmp_path: Path) -> None:
+    recorded = recorded_model_gateway()
+    requirement_calls = 0
+
+    def respond(
+        *,
+        prompt: str,
+        response_model: type,
+        **kwargs: Any,
+    ) -> Any:
+        nonlocal requirement_calls
+        context = _prompt_context(prompt, response_model)
+        if context.get("task", {}).get("agent") == "requirement_analyst":
+            requirement_calls += 1
+        return recorded._callback(  # noqa: SLF001 - recorded gateway is a test fixture
+            prompt=prompt,
+            response_model=response_model,
+            **kwargs,
+        )
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    workspace = _create(harness)
+    (workspace / "sources/requirements.md").write_text(
+        "# 规则\n\n每位用户每天最多获得五次抽奖机会。",
+        encoding="utf-8",
+    )
+
+    snapshot = harness.start_run(
+        StartRunCommand(
+            workspace_id="demo",
+            goal="analyze lottery requirements",
+            expected_artifacts=["requirement_analysis"],
+        )
+    )
+
+    assert snapshot.status == "needs_human_review"
+    assert requirement_calls == 1
+    report = json.loads(
+        (tmp_path / snapshot.candidates[0].generation_report_path).read_text(encoding="utf-8")
+    )
+    assert len(report["model_calls"]) == 1
+    assert report["model_calls"][0]["outcome"] == "quality_accepted"
+
+
+def test_typed_requirement_output_ignores_redundant_markdown_without_retry(
+    tmp_path: Path,
+) -> None:
+    recorded = recorded_model_gateway()
+    merge_calls = 0
+
+    def respond(
+        *,
+        prompt: str,
+        response_model: type,
+        **kwargs: Any,
+    ) -> Any:
+        nonlocal merge_calls
+        context = _prompt_context(prompt, response_model)
+        payload = recorded._callback(  # noqa: SLF001 - recorded gateway is a test fixture
+            prompt=prompt,
+            response_model=response_model,
+            **kwargs,
+        )
+        if context.get("task", {}).get("agent") == "requirement_analyst" and context.get(
+            "source_fragments"
+        ):
+            merge_calls += 1
+            payload["artifacts"] = {"requirement_analysis": "# redundant model markdown"}
+        return payload
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    workspace = _create(harness)
+    (workspace / "sources/a.md").write_text("# A\n\n规则A。", encoding="utf-8")
+    (workspace / "sources/b.md").write_text("# B\n\n规则B。", encoding="utf-8")
+
+    snapshot = harness.start_run(
+        StartRunCommand(
+            workspace_id="demo",
+            goal="merge requirement sources",
+            expected_artifacts=["requirement_analysis"],
+        )
+    )
+
+    assert snapshot.status == "needs_human_review"
+    assert merge_calls == 1
+    events = [
+        json.loads(line)
+        for line in (workspace / f"runs/{snapshot.run_id}/events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    ignored = [item for item in events if item["type"] == "redundant_model_artifacts_ignored"]
+    assert len(ignored) == 1
+    assert ignored[0]["data"]["artifacts"] == ["requirement_analysis"]
+
+
+def test_typed_risk_output_ignores_redundant_markdown_without_retry(tmp_path: Path) -> None:
+    recorded = recorded_model_gateway()
+    risk_calls = 0
+
+    def respond(
+        *,
+        prompt: str,
+        response_model: type,
+        **kwargs: Any,
+    ) -> Any:
+        nonlocal risk_calls
+        context = _prompt_context(prompt, response_model)
+        payload = recorded._callback(  # noqa: SLF001 - recorded gateway is a test fixture
+            prompt=prompt,
+            response_model=response_model,
+            **kwargs,
+        )
+        if context.get("task", {}).get("agent") == "risk_strategist":
+            risk_calls += 1
+            payload["artifacts"] = {"risk_context": "# redundant model markdown"}
+        return payload
+
+    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    workspace = _create(harness)
+    (workspace / "sources/requirements.md").write_text(
+        "# 规则\n\n每位用户每天最多获得五次抽奖机会。",
+        encoding="utf-8",
+    )
+
+    snapshot = harness.start_run(StartRunCommand(workspace_id="demo", goal="design lottery tests"))
+
+    assert snapshot.status == "needs_human_review"
+    assert risk_calls == 1
+    events = [
+        json.loads(line)
+        for line in (workspace / f"runs/{snapshot.run_id}/events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    ignored = [
+        item
+        for item in events
+        if item["type"] == "redundant_model_artifacts_ignored"
+        and item["agent"] == "risk_strategist"
+    ]
+    assert len(ignored) == 1
+    assert ignored[0]["data"]["artifacts"] == ["risk_context"]
+
+
 def test_invalid_requirement_fragment_schema_uses_local_repair_without_replanning(
     tmp_path: Path,
 ) -> None:
@@ -588,7 +733,7 @@ def test_invalid_requirement_fragment_schema_uses_local_repair_without_replannin
         (tmp_path / snapshot.candidates[0].generation_report_path).read_text(encoding="utf-8")
     )
     assert report["model_calls"][0]["outcome"] == "invalid_structured_output"
-    assert report["model_calls"][1]["outcome"] == "completed"
+    assert report["model_calls"][1]["outcome"] == "quality_accepted"
 
 
 def test_test_designer_executes_bounded_rule_batches_and_merges_them(
@@ -612,7 +757,7 @@ def test_test_designer_executes_bounded_rule_batches_and_merges_them(
         if context.get("rule_batch"):
             batch_rule_ids.append(context["rule_batch"]["rule_ids"])
         if context.get("task", {}).get("agent") == "requirement_analyst" and context.get(
-            "source_fragments"
+            "source_content"
         ):
             catalog = payload["requirement_catalog"]
             template = catalog["rules"][0]
@@ -642,7 +787,7 @@ def test_test_designer_executes_bounded_rule_batches_and_merges_them(
         snapshot.errors,
         batch_rule_ids,
     )
-    assert [len(rule_ids) for rule_ids in batch_rule_ids] == [5, 2]
+    assert [len(rule_ids) for rule_ids in batch_rule_ids] == [6, 1]
     assert {rule_id for rule_ids in batch_rule_ids for rule_id in rule_ids} >= {
         f"BATCH-{index:03d}" for index in range(1, 7)
     }

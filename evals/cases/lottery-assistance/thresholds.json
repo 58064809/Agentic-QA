@@ -1,0 +1,34 @@
+{
+  "schema_version": "agentic-qa.golden-expectation.v1",
+  "must_extract_rules": [
+    "LOTTERY-001",
+    "LOTTERY-002",
+    "LOTTERY-003",
+    "LOTTERY-004",
+    "LOTTERY-005",
+    "LOTTERY-006"
+  ],
+  "must_cover_points": [
+    "LOTTERY-001",
+    "LOTTERY-002",
+    "LOTTERY-003",
+    "LOTTERY-004",
+    "LOTTERY-005",
+    "LOTTERY-006",
+    "boundary:4",
+    "boundary:5",
+    "boundary:6",
+    "transition:待发货->完成发货->已发货",
+    "transition:已发货->确认收货或达到签收时限->完成发放",
+    "type:并发",
+    "type:幂等",
+    "type:边界"
+  ],
+  "forbidden_inventions": [
+    "/api/lottery/draw",
+    "lottery_record_table",
+    "抽奖失败，请稍后重试",
+    "地址确认页"
+  ],
+  "minimum_score": 0.95
+}
