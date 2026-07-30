@@ -113,7 +113,7 @@ MAX_TESTCASE_BATCH_ATTEMPTS = 3
 MAX_QUALITY_REVISIONS = 5
 MAX_PLAN_REPAIRS = 3
 SOURCE_PREFETCH_AGENTS: frozenset[str] = frozenset()
-TESTCASE_RULE_BATCH_SIZE = 5
+TESTCASE_RULE_BATCH_SIZE = 6
 
 
 class _ModelUsageTracker:
@@ -931,6 +931,7 @@ class HarnessEngine:
         risk_catalog = _risk_catalog_from_dependencies(dependencies)
         source_files = [document.path for document in source_bundle.readable_documents]
         source_fragments: list[RequirementCatalog] = []
+        batched_seed: AgentOutput | None = None
         expert_prompt = self.prompt_compiler.compile(
             phase="expert",
             agent=manifest.name,
@@ -1096,7 +1097,15 @@ class HarnessEngine:
                         "outcome": "completed",
                     }
                 )
-        batched_seed: AgentOutput | None = None
+            if len(source_fragments) == 1:
+                fragment = source_fragments[0]
+                batched_seed = AgentOutput(
+                    summary="Use the validated single-source requirement catalog directly",
+                    requirement_catalog=fragment,
+                    evidence=[
+                        f"source_fragment:{reference.source}" for reference in fragment.sources
+                    ],
+                )
         if manifest.name == "test_designer":
             if requirement_catalog is None:
                 raise ValueError("test_designer has no RequirementCatalog dependency")
@@ -1566,12 +1575,15 @@ class HarnessEngine:
                 continue
             try:
                 if manifest.name == "requirement_analyst":
-                    if result.artifacts:
-                        raise ValueError(
-                            "requirement_analyst must return requirement_catalog, not Markdown"
-                        )
                     if result.requirement_catalog is None:
                         raise ValueError("requirement_analyst omitted requirement_catalog")
+                    if result.artifacts:
+                        event(
+                            "redundant_model_artifacts_ignored",
+                            task_id=task.id,
+                            agent=manifest.name,
+                            artifacts=sorted(result.artifacts),
+                        )
                     _validate_catalog_sources(result.requirement_catalog, source_bundle)
                     _validate_catalog_merge(source_fragments, result.requirement_catalog)
                     requirement_catalog = result.requirement_catalog
@@ -1582,12 +1594,17 @@ class HarnessEngine:
                         )
                     result = result.model_copy(update={"artifacts": rendered})
                 elif manifest.name == "risk_strategist":
-                    if result.artifacts:
-                        raise ValueError("risk_strategist must return risk_catalog, not Markdown")
                     if requirement_catalog is None:
                         raise ValueError("risk_strategist has no RequirementCatalog dependency")
                     if result.risk_catalog is None:
                         raise ValueError("risk_strategist omitted risk_catalog")
+                    if result.artifacts:
+                        event(
+                            "redundant_model_artifacts_ignored",
+                            task_id=task.id,
+                            agent=manifest.name,
+                            artifacts=sorted(result.artifacts),
+                        )
                     risk_catalog = result.risk_catalog
                     known_rules = {rule.rule_id for rule in requirement_catalog.rules}
                     unknown_rules = {
@@ -1600,13 +1617,19 @@ class HarnessEngine:
                         raise ValueError(
                             f"RiskCatalog references unknown rules: {sorted(unknown_rules)}"
                         )
+                    result = result.model_copy(update={"artifacts": {}})
                 elif manifest.name == "test_designer":
-                    if result.artifacts:
-                        raise ValueError("test_designer must return TestCaseSet, not Markdown")
                     if requirement_catalog is None:
                         raise ValueError("test_designer has no RequirementCatalog dependency")
                     if risk_catalog is None:
                         raise ValueError("test_designer has no RiskCatalog dependency")
+                    if result.artifacts:
+                        event(
+                            "redundant_model_artifacts_ignored",
+                            task_id=task.id,
+                            agent=manifest.name,
+                            artifacts=sorted(result.artifacts),
+                        )
                     if result.testcase_patch is not None:
                         if current_testcase_set is None:
                             raise ValueError("testcase_patch cannot precede an initial set")

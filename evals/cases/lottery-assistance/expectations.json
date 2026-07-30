@@ -1,0 +1,69 @@
+{
+  "schema_version": "agentic-qa.requirement-catalog.v1",
+  "sources": [{"source": "source.md", "section": "用户助力福利抽奖"}],
+  "actors": ["活动用户"],
+  "business_objects": ["抽奖机会", "抽奖流水", "奖品库存", "实物奖品订单"],
+  "flows": ["获得并累计抽奖机会", "执行幂等抽奖", "奖品库存扣减与实物履约"],
+  "rules": [
+    {
+      "rule_id": "LOTTERY-001",
+      "title": "每日最多获得五次机会",
+      "condition": "用户在同一自然日获得抽奖机会",
+      "outcome": "今日累计获得次数不超过5次",
+      "evidence_level": "confirmed",
+      "source_refs": [{"source": "source.md", "section": "用户助力福利抽奖"}],
+      "boundaries": [{"field": "daily_earned_count", "values": ["4", "5", "6"]}]
+    },
+    {
+      "rule_id": "LOTTERY-002",
+      "title": "跨日累计与每日计数重置",
+      "condition": "活动期间跨越每日00:00且用户仍有未使用机会",
+      "outcome": "只重置今日已获得次数，当前可抽次数继续累计",
+      "evidence_level": "confirmed",
+      "source_refs": [{"source": "source.md", "section": "用户助力福利抽奖"}]
+    },
+    {
+      "rule_id": "LOTTERY-003",
+      "title": "抽奖请求幂等与异常退还",
+      "condition": "同一抽奖请求发生网络重试或系统异常未产生有效结果",
+      "outcome": "同一请求只扣减一次且只产生一个结果；无有效结果时退还机会",
+      "evidence_level": "confirmed",
+      "source_refs": [{"source": "source.md", "section": "用户助力福利抽奖"}]
+    },
+    {
+      "rule_id": "LOTTERY-004",
+      "title": "库存耗尽与并发保护",
+      "condition": "奖品库存为0、全部耗尽或发生并发抽奖",
+      "outcome": "零库存奖品不再抽中，全部耗尽后停止抽奖，并发不得超发",
+      "evidence_level": "confirmed",
+      "source_refs": [{"source": "source.md", "section": "用户助力福利抽奖"}]
+    },
+    {
+      "rule_id": "LOTTERY-005",
+      "title": "实物奖品履约状态",
+      "condition": "用户获得实物奖品并进入履约流程",
+      "outcome": "奖品按待发货、已发货、完成发放顺序流转",
+      "evidence_level": "confirmed",
+      "source_refs": [{"source": "source.md", "section": "用户助力福利抽奖"}],
+      "state_transitions": [
+        {"from_state": "待发货", "event": "完成发货", "to_state": "已发货"},
+        {"from_state": "已发货", "event": "确认收货或达到签收时限", "to_state": "完成发放"}
+      ]
+    },
+    {
+      "rule_id": "LOTTERY-006",
+      "title": "实物奖品地址快照",
+      "condition": "用户确认实物奖品收货地址",
+      "outcome": "订单保存地址快照，后续地址簿变化不自动覆盖快照",
+      "evidence_level": "confirmed",
+      "source_refs": [{"source": "source.md", "section": "用户助力福利抽奖"}]
+    }
+  ],
+  "forbidden_inventions": [
+    "/api/lottery/draw",
+    "lottery_record_table",
+    "抽奖失败，请稍后重试",
+    "地址确认页"
+  ],
+  "pending_questions": ["物流签收时限未定义", "地址修改截止时间未定义"]
+}

@@ -3,7 +3,17 @@ name: Nightly live model eval
 on:
   schedule:
     - cron: "30 18 * * *"
+    - cron: "30 17 * * 0"
   workflow_dispatch:
+    inputs:
+      case:
+        description: Live eval case
+        required: true
+        default: login-lock
+        type: choice
+        options:
+          - login-lock
+          - lottery-assistance
 
 permissions:
   contents: read
@@ -24,6 +34,7 @@ jobs:
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           AGENTIC_QA_LIVE_EVAL_OUTPUT: ${{ runner.temp }}/agentic-qa-live-eval
+          AGENTIC_QA_LIVE_EVAL_CASE: ${{ inputs.case || (github.event.schedule == '30 17 * * 0' && 'lottery-assistance') || 'login-lock' }}
         run: python -m harness eval live | tee "${{ runner.temp }}/live-eval-result.json"
       - name: Upload review evidence
         if: always()

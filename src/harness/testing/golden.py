@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from harness.application.qa_design import (
 from harness.domain.models import StrictModel
 from harness.domain.schemas.qa_design import (
     RequirementCatalog,
+    RequirementRule,
     TestCaseSet,
     validate_testcase_set,
 )
@@ -156,24 +158,64 @@ def _covered_points(
     folded = rendered.casefold()
     for case in testcase_set.cases:
         points.add(f"type:{case.test_type}")
+        case_semantics = " ".join(
+            [
+                case.test_type,
+                case.title,
+                *case.preconditions,
+                *case.test_data,
+                *case.steps,
+                *case.expected_results,
+                *case.assertions,
+            ]
+        )
+        points.update(f"type:{name}" for name in _canonical_test_types(case_semantics))
     for rule in expected_catalog.rules:
         for boundary in rule.boundaries:
             points.update(
                 f"boundary:{value}" for value in boundary.values if value.casefold() in folded
             )
         for transition in rule.state_transitions:
-            if all(
-                value.casefold() in folded
-                for value in (
-                    transition.from_state,
-                    transition.event,
-                    transition.to_state,
-                )
+            if (
+                transition.from_state.casefold() in folded
+                and transition.to_state.casefold() in folded
+                and _transition_event_covered(transition.event, folded)
             ):
                 points.add(
                     f"transition:{transition.from_state}->{transition.event}->{transition.to_state}"
                 )
     return points
+
+
+def _canonical_test_types(value: str) -> set[str]:
+    folded = value.casefold()
+    aliases = {
+        "边界": ("边界", "boundary"),
+        "幂等": ("幂等", "idempot"),
+        "并发": ("并发", "concurr"),
+        "状态迁移": ("状态迁移", "状态流转", "transition"),
+        "异常": ("异常", "error", "failure"),
+        "反向": ("反向", "negative"),
+    }
+    return {
+        canonical
+        for canonical, markers in aliases.items()
+        if any(marker in folded for marker in markers)
+    }
+
+
+def _transition_event_covered(event: str, folded_rendered: str) -> bool:
+    alternatives = [
+        item.strip().casefold() for item in re.split(r"\s*(?:或|/|、)\s*", event) if item.strip()
+    ]
+    if any(item in folded_rendered for item in alternatives):
+        return True
+    rendered_grams = _character_bigrams(folded_rendered)
+    return any(
+        grams and len(grams & rendered_grams) / len(grams) >= 0.6
+        for item in alternatives
+        if (grams := _character_bigrams(item))
+    )
 
 
 def _rule_aliases(
@@ -185,9 +227,65 @@ def _rule_aliases(
     aliases = {rule_id: rule_id for rule_id in set(expected_ids) & set(candidate_ids)}
     unmatched_expected = [rule_id for rule_id in expected_ids if rule_id not in aliases]
     unmatched_candidate = [rule_id for rule_id in candidate_ids if rule_id not in aliases]
+    expected_by_id = {rule.rule_id: rule for rule in expected.rules}
+    candidate_by_id = {rule.rule_id: rule for rule in candidate.rules}
+    for candidate_id in unmatched_candidate:
+        scored = sorted(
+            (
+                (
+                    _rule_semantic_containment(
+                        candidate_by_id[candidate_id],
+                        expected_by_id[expected_id],
+                    ),
+                    expected_id,
+                )
+                for expected_id in unmatched_expected
+            ),
+            reverse=True,
+        )
+        if scored and scored[0][0] >= 0.28:
+            aliases[candidate_id] = scored[0][1]
+    unmatched_expected = [
+        rule_id for rule_id in unmatched_expected if rule_id not in set(aliases.values())
+    ]
+    unmatched_candidate = [rule_id for rule_id in unmatched_candidate if rule_id not in aliases]
     if len(unmatched_expected) == len(unmatched_candidate):
         aliases.update(zip(unmatched_candidate, unmatched_expected, strict=True))
     return aliases
+
+
+def _rule_semantic_containment(
+    candidate: RequirementRule,
+    expected: RequirementRule,
+) -> float:
+    candidate_grams = _character_bigrams(_rule_semantic_text(candidate))
+    expected_grams = _character_bigrams(_rule_semantic_text(expected))
+    if not candidate_grams or not expected_grams:
+        return 0.0
+    return len(candidate_grams & expected_grams) / min(
+        len(candidate_grams),
+        len(expected_grams),
+    )
+
+
+def _rule_semantic_text(rule: RequirementRule) -> str:
+    return " ".join(
+        [
+            rule.title,
+            rule.condition,
+            rule.outcome,
+            *(f"{boundary.field} {' '.join(boundary.values)}" for boundary in rule.boundaries),
+            *(
+                f"{transition.from_state} {transition.event} {transition.to_state}"
+                for transition in rule.state_transitions
+            ),
+        ]
+    )
+
+
+def _character_bigrams(value: str) -> set[str]:
+    normalized = re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", value.casefold())
+    return {normalized[index : index + 2] for index in range(max(len(normalized) - 1, 0))}
 
 
 def _alias_testcase_rules(

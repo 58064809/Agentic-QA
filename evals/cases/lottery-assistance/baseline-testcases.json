@@ -1,0 +1,217 @@
+{
+  "schema_version": "agentic-qa.test-case-set.v1",
+  "cases": [
+    {
+      "case_id": "TC-LOTTERY-001",
+      "rule_ids": ["LOTTERY-001"],
+      "title": "当日获得第4次机会",
+      "test_type": "边界",
+      "priority": "P0",
+      "preconditions": ["用户当日已获得3次机会"],
+      "test_data": ["daily_earned_count=4"],
+      "steps": ["完成一次有效获次行为", "读取今日已获得次数和当前可抽次数"],
+      "expected_results": ["今日已获得次数增加到4且机会到账"],
+      "assertions": ["今日已获得次数=4", "当前可抽次数增加1"],
+      "pending_items": [],
+      "covered_boundary_values": ["4"],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-LOTTERY-002",
+      "rule_ids": ["LOTTERY-001"],
+      "title": "当日获得第5次机会",
+      "test_type": "边界",
+      "priority": "P0",
+      "preconditions": ["用户当日已获得4次机会"],
+      "test_data": ["daily_earned_count=5"],
+      "steps": ["完成一次有效获次行为", "读取今日已获得次数和当前可抽次数"],
+      "expected_results": ["今日已获得次数增加到5且机会到账"],
+      "assertions": ["今日已获得次数=5", "当前可抽次数增加1"],
+      "pending_items": [],
+      "covered_boundary_values": ["5"],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-LOTTERY-003",
+      "rule_ids": ["LOTTERY-001"],
+      "title": "达到上限后第6次行为不再获次",
+      "test_type": "边界",
+      "priority": "P0",
+      "preconditions": ["用户当日已获得5次机会"],
+      "test_data": ["attempted_daily_earned_count=6"],
+      "steps": ["再次完成有效获次行为", "读取今日已获得次数和当前可抽次数"],
+      "expected_results": ["今日已获得次数保持5且不新增机会"],
+      "assertions": ["今日已获得次数=5", "当前可抽次数不变"],
+      "pending_items": [],
+      "covered_boundary_values": ["6"],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-LOTTERY-004",
+      "rule_ids": ["LOTTERY-002"],
+      "title": "未使用机会跨日累计为10次",
+      "test_type": "状态",
+      "priority": "P0",
+      "preconditions": ["第一天已获得5次且均未使用"],
+      "test_data": ["第二天再获得5次"],
+      "steps": ["跨越每日00:00", "第二天获得5次机会", "读取两个计数"],
+      "expected_results": ["今日已获得次数为5且当前可抽次数为10"],
+      "assertions": ["今日已获得次数=5", "当前可抽次数=10"],
+      "pending_items": [],
+      "covered_boundary_values": [],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-LOTTERY-005",
+      "rule_ids": ["LOTTERY-002"],
+      "title": "每日00点不清空当前可抽次数",
+      "test_type": "状态",
+      "priority": "P0",
+      "preconditions": ["00:00前今日已获得5次且当前可抽次数为3"],
+      "test_data": ["跨越每日00:00"],
+      "steps": ["推进到次日00:00后", "读取今日已获得次数和当前可抽次数"],
+      "expected_results": ["今日已获得次数重置为0，当前可抽次数保持3"],
+      "assertions": ["今日已获得次数=0", "当前可抽次数=3"],
+      "pending_items": [],
+      "covered_boundary_values": [],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-LOTTERY-006",
+      "rule_ids": ["LOTTERY-003"],
+      "title": "同一抽奖请求重试保持幂等",
+      "test_type": "幂等",
+      "priority": "P0",
+      "preconditions": ["用户有2次机会"],
+      "test_data": ["同一抽奖请求ID连续提交2次"],
+      "steps": ["提交第一次抽奖请求", "使用同一请求ID重试", "读取机会余额、流水和中奖记录"],
+      "expected_results": ["只扣减1次机会且只产生一条抽奖流水和一个结果"],
+      "assertions": ["机会余额=1", "该请求ID对应抽奖流水数=1", "该请求ID对应结果数=1"],
+      "pending_items": [],
+      "covered_boundary_values": [],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-LOTTERY-007",
+      "rule_ids": ["LOTTERY-003"],
+      "title": "系统异常未产生结果时退还机会",
+      "test_type": "异常",
+      "priority": "P0",
+      "preconditions": ["用户有1次机会"],
+      "test_data": ["制造未产生有效结果的系统异常"],
+      "steps": ["发起抽奖", "触发系统异常", "等待异常处理完成", "读取机会余额和抽奖结果"],
+      "expected_results": ["本次机会被退还且不存在有效抽奖结果"],
+      "assertions": ["机会余额恢复为1", "不存在本次有效抽奖结果"],
+      "pending_items": ["异常处理完成时限未定义"],
+      "covered_boundary_values": [],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-LOTTERY-008",
+      "rule_ids": ["LOTTERY-004"],
+      "title": "并发抽奖不造成库存超发",
+      "test_type": "并发",
+      "priority": "P0",
+      "preconditions": ["目标奖品库存为1", "多名用户均有抽奖机会"],
+      "test_data": ["并发提交多个可能命中目标奖品的抽奖请求"],
+      "steps": ["同时提交抽奖请求", "等待所有请求完成", "汇总中奖记录和库存"],
+      "expected_results": ["目标奖品最多产生1条中奖记录且库存不为负数"],
+      "assertions": ["目标奖品中奖记录数<=1", "目标奖品库存>=0"],
+      "pending_items": ["并发规模未定义"],
+      "covered_boundary_values": [],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-LOTTERY-009",
+      "rule_ids": ["LOTTERY-004"],
+      "title": "全部库存耗尽后停止抽奖",
+      "test_type": "反向",
+      "priority": "P0",
+      "preconditions": ["所有奖品库存均为0", "用户仍有抽奖机会"],
+      "test_data": ["发起一次抽奖"],
+      "steps": ["提交抽奖请求", "读取抽奖受理结果和机会余额"],
+      "expected_results": ["系统停止抽奖且不消耗机会"],
+      "assertions": ["未生成有效抽奖结果", "机会余额不变"],
+      "pending_items": ["停止抽奖后的展示文案未定义"],
+      "covered_boundary_values": [],
+      "covered_transitions": []
+    },
+    {
+      "case_id": "TC-LOTTERY-010",
+      "rule_ids": ["LOTTERY-005"],
+      "title": "实物奖品完成发货后进入已发货",
+      "test_type": "状态迁移",
+      "priority": "P0",
+      "preconditions": ["实物奖品状态为待发货"],
+      "test_data": ["完成发货"],
+      "steps": ["记录发货完成事件", "读取奖品状态"],
+      "expected_results": ["奖品状态更新为已发货"],
+      "assertions": ["奖品状态=已发货"],
+      "pending_items": [],
+      "covered_boundary_values": [],
+      "covered_transitions": [{"from_state": "待发货", "event": "完成发货", "to_state": "已发货"}]
+    },
+    {
+      "case_id": "TC-LOTTERY-011",
+      "rule_ids": ["LOTTERY-005"],
+      "title": "确认收货后进入完成发放",
+      "test_type": "状态迁移",
+      "priority": "P0",
+      "preconditions": ["实物奖品状态为已发货"],
+      "test_data": ["用户确认收货"],
+      "steps": ["提交确认收货", "读取奖品状态"],
+      "expected_results": ["奖品状态更新为完成发放"],
+      "assertions": ["奖品状态=完成发放"],
+      "pending_items": ["物流自动完成的具体签收时限未定义"],
+      "covered_boundary_values": [],
+      "covered_transitions": [{"from_state": "已发货", "event": "确认收货或达到签收时限", "to_state": "完成发放"}]
+    },
+    {
+      "case_id": "TC-LOTTERY-012",
+      "rule_ids": ["LOTTERY-006"],
+      "title": "确认地址后修改地址簿不覆盖订单快照",
+      "test_type": "数据一致性",
+      "priority": "P1",
+      "preconditions": ["实物奖品尚未保存地址快照"],
+      "test_data": ["确认地址A后将地址簿改为地址B"],
+      "steps": ["确认奖品收货地址A", "修改地址簿为地址B", "读取奖品订单地址"],
+      "expected_results": ["奖品订单仍保存地址A"],
+      "assertions": ["订单地址快照=地址A", "地址簿当前地址=地址B"],
+      "pending_items": ["地址修改截止时间未定义"],
+      "covered_boundary_values": [],
+      "covered_transitions": []
+    }
+  ],
+  "coverage": [
+    {
+      "rule_id": "LOTTERY-001",
+      "case_ids": ["TC-LOTTERY-001", "TC-LOTTERY-002", "TC-LOTTERY-003"],
+      "rationale": "覆盖每日上限前、上限值和超过上限"
+    },
+    {
+      "rule_id": "LOTTERY-002",
+      "case_ids": ["TC-LOTTERY-004", "TC-LOTTERY-005"],
+      "rationale": "覆盖跨日累计和每日计数重置"
+    },
+    {
+      "rule_id": "LOTTERY-003",
+      "case_ids": ["TC-LOTTERY-006", "TC-LOTTERY-007"],
+      "rationale": "覆盖重复请求幂等和异常退还"
+    },
+    {
+      "rule_id": "LOTTERY-004",
+      "case_ids": ["TC-LOTTERY-008", "TC-LOTTERY-009"],
+      "rationale": "覆盖并发库存保护和全部耗尽"
+    },
+    {
+      "rule_id": "LOTTERY-005",
+      "case_ids": ["TC-LOTTERY-010", "TC-LOTTERY-011"],
+      "rationale": "覆盖实物奖品完整状态链路"
+    },
+    {
+      "rule_id": "LOTTERY-006",
+      "case_ids": ["TC-LOTTERY-012"],
+      "rationale": "覆盖地址快照不被地址簿变化覆盖"
+    }
+  ]
+}
