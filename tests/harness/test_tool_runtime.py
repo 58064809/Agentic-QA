@@ -185,7 +185,163 @@ def test_model_only_sees_run_frozen_mcp_tools(tmp_path: Path) -> None:
     )
 
     visible = runtime.model_tools(agents.get("ui_test_engineer").tool_allowlist)
-    mcp = next(item for item in visible if item["name"] == "mcp.playwright")
-    variants = mcp["input_schema"]["oneOf"]
-    assert [item["properties"]["tool"]["const"] for item in variants] == ["browser_snapshot"]
-    assert variants[0]["properties"]["arguments"]["additionalProperties"] is False
+    mcp = next(item for item in visible if item["name"] == "mcp.playwright.browser_snapshot")
+    assert mcp["input_schema"]["additionalProperties"] is False
+
+
+def test_live_capture_facade_hides_raw_network_tools_and_enforces_origin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, snapshot = _started_run(tmp_path)
+    store, agents, tools = _runtime_dependencies(tmp_path)
+    monkeypatch.setenv("AGENTIC_QA_BASE_URL", "https://qa.example.test/app")
+    document_origin = "https://qa.example.test"
+    page_origin = "https://qa.example.test"
+
+    def caller(name: str, arguments: dict[str, object]) -> dict[str, object]:
+        if name == "browser_network_requests":
+            text = f"### Result\n1. [GET] {document_origin}/api/health => [200]"
+        elif name == "browser_network_request" and "part" not in arguments:
+            text = (
+                f"### Result\n#1 [GET] {document_origin}/api/health\n\n"
+                "  General\n"
+                "    status: [200]\n"
+                "    duration: 8ms\n"
+                "    type: document\n"
+                "    mimeType: application/json\n\n"
+                "  Response headers\n"
+                "    content-type: application/json\n"
+            )
+        elif name == "browser_network_request":
+            text = '### Result\n{"ok":true}'
+        else:
+            text = f"### Result\nnavigated\n### Page\n- Page URL: {page_origin}/app"
+        return {"content": [{"type": "text", "text": text}], "isError": False}
+
+    listed_tools = [
+        {
+            "name": "browser_navigate",
+            "inputSchema": {
+                "type": "object",
+                "required": ["url"],
+                "properties": {"url": {"type": "string"}},
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "browser_network_requests",
+            "inputSchema": {
+                "type": "object",
+                "required": ["static"],
+                "properties": {"static": {"type": "boolean"}},
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "browser_network_request",
+            "inputSchema": {
+                "type": "object",
+                "required": ["index"],
+                "properties": {
+                    "index": {"type": "integer"},
+                    "part": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+    ]
+    bridge = MCPBridge(
+        MCPToolSnapshot.freeze(
+            server="playwright",
+            transport="stdio",
+            listed_tools=listed_tools,
+            allowlist={item["name"] for item in listed_tools},
+        ),
+        caller,
+    )
+    runtime = ToolRuntime(
+        store=store,
+        agents=agents,
+        tools=tools,
+        budget=Budget(),
+        handlers={"mcp.playwright": bridge.tool_handler},
+    )
+    profile = ExecutionProfile(
+        environment="qa",
+        base_url_env="AGENTIC_QA_BASE_URL",
+        allow_ui_mutations=True,
+    )
+
+    visible = runtime.model_tools(agents.get("api_test_engineer").tool_allowlist)
+    projected_subtools = {
+        item["name"].removeprefix("mcp.playwright.")
+        for item in visible
+        if item["name"].startswith("mcp.playwright.")
+    }
+    assert projected_subtools == {"browser_navigate"}
+    assert "network.capture.live" in {item["name"] for item in visible}
+
+    with pytest.raises(PermissionError, match="only available through"):
+        runtime.call(
+            workspace="demo",
+            run_id=snapshot.run_id,
+            agent="api_test_engineer",
+            tool="mcp.playwright",
+            arguments={"tool": "browser_network_requests", "arguments": {"static": False}},
+            profile=profile,
+            idempotency_key="raw-network",
+        )
+    with pytest.raises(PermissionError, match="must match"):
+        runtime.call(
+            workspace="demo",
+            run_id=snapshot.run_id,
+            agent="api_test_engineer",
+            tool="mcp.playwright",
+            arguments={
+                "tool": "browser_navigate",
+                "arguments": {"url": "https://outside.example.test"},
+            },
+            profile=profile,
+            idempotency_key="outside-origin",
+        )
+
+    page_origin = "https://outside.example.test"
+    with pytest.raises(PermissionError, match="page left"):
+        runtime.call(
+            workspace="demo",
+            run_id=snapshot.run_id,
+            agent="api_test_engineer",
+            tool="mcp.playwright",
+            arguments={
+                "tool": "browser_navigate",
+                "arguments": {"url": "https://qa.example.test/app"},
+            },
+            profile=profile,
+            idempotency_key="redirected-navigation",
+        )
+    page_origin = "https://qa.example.test"
+
+    result = runtime.call(
+        workspace="demo",
+        run_id=snapshot.run_id,
+        agent="api_test_engineer",
+        tool="network.capture.live",
+        arguments={"max_requests": 25},
+        profile=profile,
+        idempotency_key="live-capture",
+    )
+    assert result["capture_format"] == "playwright_mcp"
+    assert result["candidates"][0]["origin"] == "https://qa.example.test"
+
+    document_origin = "https://outside.example.test"
+    with pytest.raises(PermissionError, match="left the configured test origin"):
+        runtime.call(
+            workspace="demo",
+            run_id=snapshot.run_id,
+            agent="api_test_engineer",
+            tool="network.capture.live",
+            arguments={"max_requests": 25},
+            profile=profile,
+            idempotency_key="redirected-capture",
+        )

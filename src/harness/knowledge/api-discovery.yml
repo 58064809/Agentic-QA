@@ -1,13 +1,19 @@
 schema_version: agentic-qa.harness.knowledge-spec.v1
 name: api-discovery
-version: 1.0.0
-purpose: 将冻结 HAR 或简化 JSON 转为可审核的接口观察报告。
+version: 1.1.0
+purpose: 将冻结抓包或受控 Playwright 会话转为可审核的接口观察报告。
 applies_to: [api-discovery]
 inputs:
   - SourceBundle 中的 UTF-8 HAR 或简化 JSON
   - network.capture.inspect 返回的脱敏观察目录
+  - 显式测试环境中的受控 Playwright MCP 会话
+  - network.capture.live 返回的脱敏观察目录
 procedure:
-  - 调用 network.capture.inspect 读取抓包来源。
+  - 存在冻结 HAR/JSON 时调用 network.capture.inspect 读取抓包来源。
+  - 不存在冻结抓包时，在显式 UI 测试环境中按用户目标执行 allowlisted Playwright 动作。
+  - 首次导航使用 trusted_context.test_base_url 的原值，不自行追加或猜测页面路径。
+  - 页面交互先通过 browser_snapshot 或 browser_find 获取当前页面的实际 target，再执行动作；target 使用返回的 ref 值本身，例如 e3，不添加 ref= 前缀。
+  - Playwright 动作返回成功后调用 network.capture.live；工具错误进入修订，原始网络详情不进入模型上下文。
   - 使用工具返回的调用链、候选、结构摘要、脱敏清单和限制生成报告。
   - 无业务接口候选时明确记录未发现候选。
 output_expectations:
@@ -15,6 +21,7 @@ output_expectations:
   - 接口证据标记为 playwright-network-capture 与 observed。
 evidence_policy:
   - source_path 和 entry locator 指向本次 run 的冻结 SourceBundle。
+  - 实时来源指向本次 run 的 network.capture.live 工具记录。
   - 报告不包含原始 header、query value、request body value 或 response body value。
 uncertainty_policy:
   - 抓包只证明一次或多次运行时观察，不证明字段必填性、枚举、错误码全集或权限规则。
@@ -25,4 +32,6 @@ prohibited_actions:
 deterministic_checks:
   - validator:network-capture-sanitizer
   - validator:api-discovery-provenance
+  - validator:execution-profile
+  - validator:playwright-origin
   - gate:review-gate

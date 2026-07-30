@@ -69,7 +69,7 @@ from harness.infrastructure.persistence.filesystem import FilesystemStore
 from harness.infrastructure.prompts import PromptCompiler
 from harness.infrastructure.quality import QualityStrategyRegistry
 from harness.infrastructure.quality.assessment import CandidateAssessmentService
-from harness.infrastructure.tools.runtime import ToolRuntime
+from harness.infrastructure.tools.runtime import ToolRuntime, resolve_execution_base_url
 from harness.infrastructure.workflow.graph import HarnessState, compile_harness_graph
 
 UTC = timezone.utc
@@ -919,6 +919,10 @@ class HarnessEngine:
                 raise ValueError(
                     f"{artifact} 必须由 {expected_agent} 生成，不能委派给 {producers[0].agent}"
                 )
+            if artifact == "api_discovery_report" and producers[0].dependencies:
+                raise ValueError(
+                    "api_discovery_report producer must not depend on requirement or risk tasks"
+                )
             if artifact in DESIGN_ARTIFACTS:
                 requirement_tasks = [
                     task
@@ -952,6 +956,8 @@ class HarnessEngine:
         requirement_tasks = [task for task in plan.tasks if task.agent == "requirement_analyst"]
         if len(requirement_tasks) > 1:
             raise ValueError("QAPlan cannot split requirement facts across multiple model tasks")
+        if request.expected_artifacts == ["api_discovery_report"] and len(plan.tasks) != 1:
+            raise ValueError("standalone api_discovery_report requires exactly one task")
 
     def _run_task(
         self,
@@ -970,11 +976,42 @@ class HarnessEngine:
             raise RuntimeError("model is not configured")
         manifest = self.agents.get(task.agent)
         model_tool_allowlist = list(manifest.tool_allowlist)
+        live_test_base_url: str | None = None
         if task.expected_outputs == ["api_discovery_report"]:
-            # Raw captures can contain credentials and personal data. The model only
-            # receives the deterministic inspector's sanitized result for this task.
-            model_tool_allowlist = ["network.capture.inspect"]
+            if _expected_network_capture_sources(source_bundle):
+                # Raw captures can contain credentials and personal data. The model only
+                # receives the deterministic inspector's sanitized result for this task.
+                model_tool_allowlist = ["network.capture.inspect"]
+            else:
+                if (
+                    request.execution_profile.environment == "analysis-only"
+                    or not request.execution_profile.allow_ui_mutations
+                ):
+                    raise PermissionError(
+                        "live api_discovery_report requires an explicit UI-enabled "
+                        "test environment when no frozen capture exists"
+                    )
+                live_test_base_url = resolve_execution_base_url(request.execution_profile)
+                model_tool_allowlist = ["mcp.playwright", "network.capture.live"]
+        elif manifest.name == "api_test_engineer":
+            model_tool_allowlist = [
+                tool
+                for tool in model_tool_allowlist
+                if tool not in {"mcp.playwright", "network.capture.live"}
+            ]
         model_tools = runtime.model_tools(model_tool_allowlist)
+        if (
+            task.expected_outputs == ["api_discovery_report"]
+            and live_test_base_url is not None
+            and (
+                "network.capture.live" not in {tool["name"] for tool in model_tools}
+                or "mcp.playwright.browser_navigate" not in {tool["name"] for tool in model_tools}
+            )
+        ):
+            raise RuntimeError(
+                "live api_discovery_report requires configured Playwright MCP and "
+                "network.capture.live"
+            )
         available_tool_names = {item["name"] for item in model_tools}
         tool_results: list[dict[str, Any]] = []
         validation_feedback: list[dict[str, str]] = []
@@ -1543,6 +1580,10 @@ class HarnessEngine:
                                 ],
                                 "allowed_artifacts": task.expected_outputs,
                                 "validation_feedback": validation_feedback,
+                                "execution_profile": request.execution_profile.model_dump(
+                                    mode="json"
+                                ),
+                                "test_base_url": live_test_base_url,
                             },
                             untrusted_context={
                                 "goal": request.goal,
@@ -1616,19 +1657,33 @@ class HarnessEngine:
                         raise PermissionError(
                             f"{manifest.name} requested unavailable tool: {call.tool}"
                         )
+                    runtime_tool = call.tool
+                    runtime_arguments = call.arguments
+                    if call.tool.startswith("mcp.playwright."):
+                        runtime_tool = "mcp.playwright"
+                        runtime_arguments = {
+                            "tool": call.tool.removeprefix("mcp.playwright."),
+                            "arguments": call.arguments,
+                        }
                     key = call.idempotency_key or _tool_key(
-                        run_id, task.id, step, call.tool, call.arguments
+                        run_id, task.id, step, runtime_tool, runtime_arguments
                     )
                     value = runtime.call(
                         workspace=request.workspace_id,
                         run_id=run_id,
                         agent=manifest.name,
-                        tool=call.tool,
-                        arguments=call.arguments,
+                        tool=runtime_tool,
+                        arguments=runtime_arguments,
                         profile=request.execution_profile,
                         idempotency_key=key,
                     )
-                    tool_results.append({"tool": call.tool, "result": value})
+                    tool_results.append(
+                        {
+                            "tool": runtime_tool,
+                            "requested_tool": call.tool,
+                            "result": value,
+                        }
+                    )
                 continue
             try:
                 if manifest.name == "requirement_analyst":
@@ -1759,7 +1814,7 @@ class HarnessEngine:
                     if not discovery_catalogs:
                         raise ValueError(
                             "api_discovery_report requires network.capture.inspect on a "
-                            "frozen HAR or JSON capture"
+                            "frozen HAR/JSON capture or network.capture.live"
                         )
                     expected_capture_sources = _expected_network_capture_sources(source_bundle)
                     inspected_sources = {catalog.source_path for catalog in discovery_catalogs}
@@ -2268,17 +2323,25 @@ def _api_discovery_catalogs(
     frozen_sources = {document.path for document in source_bundle.documents}
     catalogs: dict[str, ApiDiscoveryCatalog] = {}
     for item in tool_results:
-        if item.get("tool") != "network.capture.inspect":
+        tool = item.get("tool")
+        if tool not in {"network.capture.inspect", "network.capture.live"}:
             continue
         raw = item.get("result")
         if not isinstance(raw, dict):
             continue
         catalog = ApiDiscoveryCatalog.model_validate(raw)
-        if catalog.source_path not in frozen_sources:
-            raise ValueError(
-                f"API discovery source is not part of the frozen SourceBundle: "
-                f"{catalog.source_path}"
-            )
+        if tool == "network.capture.inspect":
+            if catalog.source_path not in frozen_sources:
+                raise ValueError(
+                    f"API discovery source is not part of the frozen SourceBundle: "
+                    f"{catalog.source_path}"
+                )
+            if catalog.capture_format == "playwright_mcp":
+                raise ValueError("offline API discovery cannot claim a live Playwright source")
+        elif catalog.capture_format != "playwright_mcp" or not catalog.source_path.startswith(
+            "runtime/playwright-network-capture/"
+        ):
+            raise ValueError("live API discovery has invalid runtime provenance")
         if any(candidate.source_path != catalog.source_path for candidate in catalog.candidates):
             raise ValueError("API discovery candidate source does not match its catalog")
         catalogs[catalog.source_path] = catalog
@@ -2328,9 +2391,9 @@ def _render_api_discovery_report(
             "",
             "## 接口调用链",
             "",
-            "| 顺序 | 来源 | Method | Path | Status | Resource Type | 页面路径 | "
+            "| 顺序 | 来源 | Method | Origin | Path | Status | Resource Type | 页面路径 | "
             "耗时(ms) | 业务候选 |",
-            "|---:|---|---|---|---:|---|---|---:|---|",
+            "|---:|---|---|---|---|---:|---|---|---:|---|",
         ]
     )
     call_number = 0
@@ -2344,6 +2407,7 @@ def _render_api_discovery_report(
                         str(call_number),
                         _markdown_cell(catalog.source_path),
                         call.method,
+                        _markdown_cell(call.origin or "-"),
                         _markdown_cell(call.path),
                         str(call.status or ""),
                         _markdown_cell(call.resource_type or "-"),
@@ -2355,16 +2419,16 @@ def _render_api_discovery_report(
                 + " |"
             )
     if call_number == 0:
-        lines.append("| - | - | - | 未发现非静态网络调用 | - | - | - | - | 否 |")
+        lines.append("| - | - | - | - | 未发现非静态网络调用 | - | - | - | - | 否 |")
 
     lines.extend(
         [
             "",
             "## 业务接口候选清单",
             "",
-            "| 候选 | 来源 | Method | Path | 调用次数 | 状态码 | Query 字段 | "
+            "| 候选 | 来源 | Method | Origin | Path | 调用次数 | 状态码 | Query 字段 | "
             "平均耗时(ms) | 证据级别 |",
-            "|---|---|---|---|---:|---|---|---:|---|",
+            "|---|---|---|---|---|---:|---|---|---:|---|",
         ]
     )
     candidates = [(catalog, candidate) for catalog in catalogs for candidate in catalog.candidates]
@@ -2376,6 +2440,7 @@ def _render_api_discovery_report(
                     candidate.candidate_id,
                     _markdown_cell(catalog.source_path),
                     candidate.method,
+                    _markdown_cell(candidate.origin or "-"),
                     _markdown_cell(candidate.path),
                     str(candidate.call_count),
                     _markdown_cell(", ".join(map(str, candidate.status_codes)) or "-"),
@@ -2391,7 +2456,7 @@ def _render_api_discovery_report(
             + " |"
         )
     if not candidates:
-        lines.append("| - | - | - | 未发现业务接口候选 | 0 | - | - | - | observed |")
+        lines.append("| - | - | - | - | 未发现业务接口候选 | 0 | - | - | - | observed |")
 
     lines.extend(["", "## 请求与响应结构摘要", ""])
     if not candidates:
@@ -2964,6 +3029,14 @@ def _generation_source_selection(
                     "source": source,
                     "raw_sha256": hashes.get(source),
                     "selection_reason": "network.capture.inspect",
+                }
+        elif tool == "network.capture.live":
+            source = str(result.get("source_path") or "")
+            if source:
+                selected[(source, None)] = {
+                    "source": source,
+                    "raw_sha256": None,
+                    "selection_reason": "network.capture.live",
                 }
     return list(selected.values())
 

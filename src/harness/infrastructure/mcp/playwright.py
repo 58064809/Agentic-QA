@@ -25,7 +25,13 @@ class PlaywrightMCPConfig(BaseModel):
     )
     transport: Literal["stdio", "streamable_http"] = "stdio"
     command: Literal["npx", "npx.cmd"] | None = "npx"
-    args: tuple[str, ...] = ("-y", "@playwright/mcp@latest")
+    args: tuple[str, ...] = (
+        "-y",
+        "@playwright/mcp@latest",
+        "--isolated",
+        "--headless",
+        "--block-service-workers",
+    )
     url: HttpUrl | None = None
     allowlist: frozenset[str] = Field(min_length=1)
     request_timeout_seconds: int = Field(default=60, ge=1, le=300)
@@ -45,6 +51,12 @@ class PlaywrightMCPConfig(BaseModel):
     def validate_allowlist(cls, value: frozenset[str]) -> frozenset[str]:
         if any(not re.fullmatch(r"[a-z][a-z0-9_-]{0,127}", name) for name in value):
             raise ValueError("Playwright MCP allowlist contains an invalid tool name")
+        prohibited = sorted(value & {"browser_run_code", "browser_run_code_unsafe"})
+        if prohibited:
+            raise ValueError(
+                "Playwright MCP allowlist contains unsupported arbitrary-code tools: "
+                + ", ".join(prohibited)
+            )
         return value
 
     @model_validator(mode="after")
@@ -52,6 +64,10 @@ class PlaywrightMCPConfig(BaseModel):
         if self.transport == "stdio":
             if self.command is None or "@playwright/mcp@latest" not in self.args:
                 raise ValueError("Playwright stdio MCP requires npx and @playwright/mcp@latest")
+            if "--isolated" not in self.args or "--block-service-workers" not in self.args:
+                raise ValueError(
+                    "Playwright stdio MCP requires isolated mode and blocked service workers"
+                )
             if self.url is not None:
                 raise ValueError("Playwright stdio MCP cannot define url")
         else:
@@ -112,7 +128,16 @@ class MCPToolSnapshot(BaseModel):
     def parse_result(self, name: str, result: Any, *, max_chars: int = 100_000) -> Any:
         if name not in {tool.name for tool in self.tools}:
             raise PermissionError(f"MCP tool is not frozen for this run: {name}")
-        return sanitize_untrusted(result, max_chars=max_chars)
+        safe = sanitize_untrusted(result, max_chars=max_chars)
+        if isinstance(safe, dict) and (safe.get("isError") is True or safe.get("is_error") is True):
+            messages = [
+                str(item.get("text") or "")
+                for item in safe.get("content") or []
+                if isinstance(item, dict) and item.get("type") == "text"
+            ]
+            detail = " ".join(messages).replace("\r", " ").replace("\n", " ")[:300]
+            raise RuntimeError(f"mcp_tool_reported_error:{name}:{detail or 'unknown error'}")
+        return safe
 
     def validate_arguments(self, name: str, arguments: dict[str, Any]) -> None:
         tool = next((item for item in self.tools if item.name == name), None)

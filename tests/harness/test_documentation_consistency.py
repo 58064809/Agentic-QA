@@ -22,7 +22,7 @@ DOCS = ROOT / "docs"
 LINK = re.compile(r"\[[^]]+]\(([^)]+)\)")
 DIRECTIVE = re.compile(r"必须|不得|禁止|只允许|不能|不允许|应当|务必|不要|只能|不可")
 SCHEMAS = {
-    "api-discovery.v1.schema.json": ApiDiscoveryCatalog,
+    "api-discovery.v1.1.schema.json": ApiDiscoveryCatalog,
     "agent-request.v1.schema.json": AgentRequest,
     "agent-request-result.v1.schema.json": AgentRequestResult,
     "api-cases.v1.1.schema.json": ApiTestCasesDraft,

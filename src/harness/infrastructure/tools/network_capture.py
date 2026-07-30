@@ -43,12 +43,15 @@ UUID_SEGMENT = re.compile(
     re.IGNORECASE,
 )
 LONG_IDENTIFIER = re.compile(r"^(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_-]{16,}$")
+LONG_TOKEN = re.compile(r"^[A-Za-z0-9_-]{24,}$")
 
 
 def inspect_network_capture(payload: Any, *, source: str) -> ApiDiscoveryCatalog:
     capture_format, entries, pages = _capture_entries(payload)
     calls: list[NetworkCall] = []
-    candidate_observations: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    candidate_observations: dict[tuple[str, str | None, str], list[dict[str, Any]]] = defaultdict(
+        list
+    )
     redactions: set[str] = set()
 
     for entry_index, raw_entry in enumerate(entries[:2000], 1):
@@ -66,6 +69,7 @@ def inspect_network_capture(payload: Any, *, source: str) -> ApiDiscoveryCatalog
             NetworkCall(
                 sequence=sequence,
                 method=observation["method"],
+                origin=observation["origin"],
                 path=observation["path"],
                 status=observation["status"],
                 resource_type=observation["resource_type"],
@@ -75,13 +79,18 @@ def inspect_network_capture(payload: Any, *, source: str) -> ApiDiscoveryCatalog
             )
         )
         if candidate:
-            candidate_observations[(observation["method"], observation["path"])].append(observation)
+            candidate_observations[
+                (observation["method"], observation["origin"], observation["path"])
+            ].append(observation)
         if len(calls) >= 500:
             break
 
     candidates: list[DiscoveredApiCandidate] = []
-    for index, ((method, path), observations) in enumerate(
-        sorted(candidate_observations.items()),
+    for index, ((method, origin, path), observations) in enumerate(
+        sorted(
+            candidate_observations.items(),
+            key=lambda item: (item[0][0], item[0][1] or "", item[0][2]),
+        ),
         1,
     ):
         durations = [
@@ -91,6 +100,7 @@ def inspect_network_capture(payload: Any, *, source: str) -> ApiDiscoveryCatalog
             DiscoveredApiCandidate(
                 candidate_id=f"DISC-{index:03d}",
                 method=method,
+                origin=origin,
                 path=path,
                 call_count=len(observations),
                 status_codes=sorted(
@@ -235,6 +245,7 @@ def _observation(
     return {
         "entry_index": entry_index,
         "method": method,
+        "origin": _url_origin(parsed),
         "path": path,
         "status": normalized_status,
         "resource_type": resource_type,
@@ -382,6 +393,7 @@ def _normalized_path(path: str) -> str:
             segment.isdigit()
             or UUID_SEGMENT.fullmatch(segment)
             or LONG_IDENTIFIER.fullmatch(segment)
+            or LONG_TOKEN.fullmatch(segment)
         ):
             segments.append("{id}")
         else:
@@ -393,6 +405,21 @@ def _url_path(value: str) -> str | None:
     if not value:
         return None
     return _normalized_path(urlsplit(value).path or "/")
+
+
+def _url_origin(parsed: Any) -> str | None:
+    if parsed.scheme.casefold() not in {"http", "https"} or not parsed.hostname:
+        return None
+    host = parsed.hostname.casefold()
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    default_port = (parsed.scheme.casefold() == "http" and port == 80) or (
+        parsed.scheme.casefold() == "https" and port == 443
+    )
+    authority = host if port is None or default_port else f"{host}:{port}"
+    return f"{parsed.scheme.casefold()}://{authority}"
 
 
 def _is_static(observation: dict[str, Any]) -> bool:

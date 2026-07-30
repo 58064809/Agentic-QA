@@ -22,6 +22,18 @@
           "title": "Method",
           "type": "string"
         },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Origin"
+        },
         "path": {
           "minLength": 1,
           "title": "Path",
@@ -141,6 +153,18 @@
           "title": "Method",
           "type": "string"
         },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Origin"
+        },
         "path": {
           "minLength": 1,
           "title": "Path",
@@ -208,8 +232,8 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "const": "agentic-qa.api-discovery.v1",
-      "default": "agentic-qa.api-discovery.v1",
+      "const": "agentic-qa.api-discovery.v1.1",
+      "default": "agentic-qa.api-discovery.v1.1",
       "title": "Schema Version",
       "type": "string"
     },
@@ -221,7 +245,8 @@
     "capture_format": {
       "enum": [
         "har",
-        "simplified_json"
+        "simplified_json",
+        "playwright_mcp"
       ],
       "title": "Capture Format",
       "type": "string"

@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.skill-manifest.v3
 name: api-discovery
-description: 从冻结网络抓包中提取脱敏的接口观察证据。
+description: 从冻结抓包或受控 Playwright 会话中提取脱敏的接口观察证据。
 instructions:
   - id: skill.api-discovery.observation-only
     kind: contract
@@ -8,6 +8,13 @@ instructions:
     enforced_by: [validator:api-discovery-provenance]
   - id: skill.api-discovery.sanitized-output
     kind: safety
-    text: 报告只使用 network.capture.inspect 返回的脱敏结构，不复述原始 header、query value 或 body value。
+    text: 报告只使用 network.capture.inspect 或 network.capture.live 返回的脱敏结构，不复述原始 header、query value 或 body value。
     enforced_by: [validator:network-capture-sanitizer, gate:review-gate]
+  - id: skill.api-discovery.live-boundary
+    kind: safety
+    text: 实时发现使用显式 UI 测试环境、同源导航和冻结的 Playwright MCP allowlist。
+    enforced_by: [validator:execution-profile, validator:playwright-origin, allowlist:agent-tool-manifest]
+  - id: skill.api-discovery.live-actions
+    kind: guidance
+    text: 实时任务从 test_base_url 原值开始，页面动作使用当前 snapshot/find 返回的 ref 值本身作为 target，例如 e3，不添加 ref= 前缀；成功后再采集网络。
 knowledge_refs: [api-discovery]

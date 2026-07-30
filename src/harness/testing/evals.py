@@ -67,6 +67,9 @@ def recorded_model_gateway(*, use_fake_mcp: bool = False) -> CallableModelGatewa
             outputs = context["task"]["expected_outputs"]
             agent = context["task"]["agent"]
             allowed_tools = {item["name"] for item in tools}
+            playwright_tools = {
+                name for name in allowed_tools if name.startswith("mcp.playwright.")
+            }
             if (
                 agent == "api_test_engineer"
                 and "api_discovery_report" in outputs
@@ -97,10 +100,48 @@ def recorded_model_gateway(*, use_fake_mcp: bool = False) -> CallableModelGatewa
                         ],
                     }
             if (
-                use_fake_mcp
-                and "mcp.playwright" in allowed_tools
-                and not context.get("tool_results")
+                agent == "api_test_engineer"
+                and "api_discovery_report" in outputs
+                and "network.capture.live" in allowed_tools
+                and playwright_tools
             ):
+                tool_results = context.get("tool_results") or []
+                used_tools = {
+                    str(item.get("tool") or "") for item in tool_results if isinstance(item, dict)
+                }
+                if "mcp.playwright" not in used_tools:
+                    navigate_tool = next(
+                        name for name in playwright_tools if name.endswith(".browser_navigate")
+                    )
+                    return {
+                        "summary": "recorded live Playwright navigation request",
+                        "artifacts": {},
+                        "evidence": [],
+                        "pending": [],
+                        "tool_requests": [
+                            {
+                                "tool": navigate_tool,
+                                "arguments": {"url": context["test_base_url"]},
+                            }
+                        ],
+                    }
+                if "network.capture.live" not in used_tools:
+                    return {
+                        "summary": "recorded live Playwright network capture request",
+                        "artifacts": {},
+                        "evidence": [],
+                        "pending": [],
+                        "tool_requests": [
+                            {
+                                "tool": "network.capture.live",
+                                "arguments": {"max_requests": 25},
+                            }
+                        ],
+                    }
+            if use_fake_mcp and playwright_tools and not context.get("tool_results"):
+                snapshot_tool = next(
+                    name for name in playwright_tools if name.endswith(".browser_snapshot")
+                )
                 return {
                     "summary": "recorded Playwright request",
                     "artifacts": {},
@@ -108,11 +149,8 @@ def recorded_model_gateway(*, use_fake_mcp: bool = False) -> CallableModelGatewa
                     "pending": [],
                     "tool_requests": [
                         {
-                            "tool": "mcp.playwright",
-                            "arguments": {
-                                "tool": "browser_snapshot",
-                                "arguments": {},
-                            },
+                            "tool": snapshot_tool,
+                            "arguments": {},
                         }
                     ],
                 }
@@ -283,27 +321,88 @@ def run_offline_eval() -> dict[str, Any]:
     """Deterministic no-network scenario covering all first-release artifact routes."""
     with TemporaryDirectory(prefix="agentic-qa-eval-") as temporary:
         workspace_id = Path(temporary).name
-        mcp_calls = 0
+        mcp_calls: list[str] = []
 
-        def fake_playwright(_name: str, _arguments: dict[str, Any]) -> dict[str, Any]:
-            nonlocal mcp_calls
-            mcp_calls += 1
-            return {"page": "recorded", "elements": []}
+        def fake_playwright(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            mcp_calls.append(name)
+            if name == "browser_network_requests":
+                text = (
+                    "### Result\n"
+                    "1. [GET] https://qa.example.test/ => [200]\n"
+                    "2. [POST] https://qa.example.test/api/eval => [200]"
+                )
+            elif name == "browser_network_request" and arguments.get("index") == 1:
+                text = (
+                    "### Result\n#1 [GET] https://qa.example.test/\n\n"
+                    "  General\n"
+                    "    status: [200]\n"
+                    "    type: document\n"
+                )
+            elif name == "browser_network_request" and arguments.get("part"):
+                text = '### Result\n{"token":"recorded-secret","ok":true}'
+            elif name == "browser_network_request":
+                text = (
+                    "### Result\n#2 [POST] https://qa.example.test/api/eval\n\n"
+                    "  General\n"
+                    "    status: [200]\n"
+                    "    duration: 12ms\n"
+                    "    type: xhr\n"
+                    "    mimeType: application/json\n\n"
+                    "  Request headers\n"
+                    "    content-type: application/json\n"
+                    "    authorization: Bearer recorded-secret\n\n"
+                    "  Response headers\n"
+                    "    content-type: application/json\n"
+                )
+            else:
+                text = "### Result\nrecorded Playwright action"
+            return {"content": [{"type": "text", "text": text}], "isError": False}
 
+        listed_tools = [
+            {
+                "name": "browser_snapshot",
+                "inputSchema": {
+                    "type": "object",
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "browser_navigate",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["url"],
+                    "properties": {"url": {"type": "string"}},
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "browser_network_requests",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["static"],
+                    "properties": {"static": {"type": "boolean"}},
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "browser_network_request",
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["index"],
+                    "properties": {
+                        "index": {"type": "integer"},
+                        "part": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+            },
+        ]
         bridge = MCPBridge(
             MCPToolSnapshot.freeze(
                 server="playwright",
                 transport="stdio",
-                listed_tools=[
-                    {
-                        "name": "browser_snapshot",
-                        "inputSchema": {
-                            "type": "object",
-                            "additionalProperties": False,
-                        },
-                    }
-                ],
-                allowlist={"browser_snapshot"},
+                listed_tools=listed_tools,
+                allowlist={item["name"] for item in listed_tools},
             ),
             fake_playwright,
         )
@@ -384,13 +483,62 @@ execution:
                 ),
             ),
         )
+        live_workspace_id = f"{workspace_id}-live"
+        live_workspace = harness.create_workspace(
+            CreateWorkspaceCommand(workspace_id=live_workspace_id)
+        )
+        live_workspace.joinpath("workspace.yml").write_text(
+            f"""schema_version: agentic-qa.harness.workspace.v2
+id: {live_workspace_id}
+quality_policies: []
+execution:
+  environments:
+    recorded-test:
+      base_url_env: AGENTIC_QA_BASE_URL
+      allowed_http_methods: [GET, HEAD, OPTIONS, POST]
+      allow_ui_mutations: true
+      max_request_timeout_seconds: 10
+""",
+            encoding="utf-8",
+        )
+        previous_base_url = os.environ.get("AGENTIC_QA_BASE_URL")
+        os.environ["AGENTIC_QA_BASE_URL"] = "https://qa.example.test"
+        try:
+            live_snapshot = harness.start_run(
+                StartRunCommand(
+                    workspace_id=live_workspace_id,
+                    goal="离线评测：模拟实时 Playwright 接口发现",
+                    expected_artifacts=["api_discovery_report"],
+                    execution_profile=ExecutionProfile(
+                        environment="recorded-test",
+                        base_url_env="AGENTIC_QA_BASE_URL",
+                        allowed_http_methods=["GET", "HEAD", "OPTIONS", "POST"],
+                        allow_ui_mutations=True,
+                    ),
+                )
+            )
+        finally:
+            if previous_base_url is None:
+                os.environ.pop("AGENTIC_QA_BASE_URL", None)
+            else:
+                os.environ["AGENTIC_QA_BASE_URL"] = previous_base_url
+        live_report = (Path(temporary) / live_snapshot.candidates[0].path).read_text(
+            encoding="utf-8"
+        )
         checks = {
             "all_artifact_routes": generated,
             "review_gate_interrupt": gate_held,
-            "fake_playwright_mcp": mcp_calls == 2,
+            "fake_playwright_mcp": mcp_calls.count("browser_snapshot") == 2,
             "mcp_snapshot_frozen": any(
                 item.get("schema_version") == "agentic-qa.harness.mcp-tool-snapshot.v2"
                 for item in snapshot.tool_calls
+            ),
+            "live_api_discovery": (
+                live_snapshot.status == "needs_human_review"
+                and mcp_calls.count("browser_navigate") == 1
+                and mcp_calls.count("browser_network_requests") == 1
+                and "playwright_mcp" in live_report
+                and "recorded-secret" not in live_report
             ),
             "deterministic_promote": published.status == "published",
         }

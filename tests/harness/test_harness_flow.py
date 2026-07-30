@@ -12,6 +12,7 @@ from harness import (
     ArtifactDiffEndpoint,
     ArtifactVariant,
     CreateWorkspaceCommand,
+    ExecutionProfile,
     GetArtifactDiffQuery,
     Harness,
     ResumeRunCommand,
@@ -24,6 +25,7 @@ from harness.application.qa_design import parse_testcase_markdown
 from harness.domain.schemas.qa_design import CoverageMapping
 from harness.domain.schemas.qa_design import TestCaseSet as QATestCaseSet
 from harness.infrastructure.llm.gateway import CallableModelGateway
+from harness.infrastructure.mcp.playwright import MCPBridge, MCPToolSnapshot
 from harness.infrastructure.workflow.engine import (
     _targeted_testcase_patch_context,
     default_recorded_testcase_set,
@@ -202,6 +204,145 @@ def test_api_discovery_report_is_sanitized_and_stops_at_review_gate(tmp_path: Pa
 
     assert published.status == "published"
     assert (workspace / "published/api_discovery_report/current.md").is_file()
+
+
+def test_live_api_discovery_uses_playwright_facade_and_stops_at_review_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AGENTIC_QA_BASE_URL", "https://qa.example.test")
+    subtool_calls: list[str] = []
+
+    def caller(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        subtool_calls.append(name)
+        if name == "browser_network_requests":
+            text = (
+                "### Result\n"
+                "1. [GET] https://qa.example.test/ => [200]\n"
+                "2. [POST] https://qa.example.test/api/activities/123/assist"
+                "?token=live-secret => [200]"
+            )
+        elif name == "browser_network_request" and arguments.get("index") == 1:
+            text = (
+                "### Result\n#1 [GET] https://qa.example.test/\n\n"
+                "  General\n"
+                "    status: [200]\n"
+                "    duration: 10ms\n"
+                "    type: document\n"
+            )
+        elif name == "browser_network_request" and arguments.get("part") == "request-body":
+            text = '### Result\n{"phone":"13800138000","token":"live-secret"}'
+        elif name == "browser_network_request" and arguments.get("part") == "response-body":
+            text = '### Result\n{"accepted":true,"access_token":"response-secret"}'
+        elif name == "browser_network_request":
+            text = (
+                "### Result\n"
+                "#2 [POST] https://qa.example.test/api/activities/123/assist"
+                "?token=live-secret\n\n"
+                "  General\n"
+                "    status: [200]\n"
+                "    duration: 30ms\n"
+                "    type: xhr\n"
+                "    mimeType: application/json\n\n"
+                "  Request headers\n"
+                "    authorization: Bearer live-secret\n"
+                "    content-type: application/json\n\n"
+                "  Response headers\n"
+                "    content-type: application/json\n"
+            )
+        else:
+            text = "### Result\nnavigated\n### Page\n- Page URL: https://qa.example.test/\n"
+        return {"content": [{"type": "text", "text": text}], "isError": False}
+
+    listed_tools = [
+        {
+            "name": "browser_navigate",
+            "inputSchema": {
+                "type": "object",
+                "required": ["url"],
+                "properties": {"url": {"type": "string"}},
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "browser_network_requests",
+            "inputSchema": {
+                "type": "object",
+                "required": ["static"],
+                "properties": {"static": {"type": "boolean"}},
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "browser_network_request",
+            "inputSchema": {
+                "type": "object",
+                "required": ["index"],
+                "properties": {
+                    "index": {"type": "integer"},
+                    "part": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+    ]
+    bridge = MCPBridge(
+        MCPToolSnapshot.freeze(
+            server="playwright",
+            transport="stdio",
+            listed_tools=listed_tools,
+            allowlist={item["name"] for item in listed_tools},
+        ),
+        caller,
+    )
+    harness = Harness(
+        tmp_path,
+        model_gateway=recorded_model_gateway(),
+        tool_handlers={"mcp.playwright": bridge.tool_handler},
+    )
+    workspace = _create(harness)
+    config = yaml.safe_load((workspace / "workspace.yml").read_text(encoding="utf-8"))
+    config["execution"]["environments"]["qa"] = {
+        "base_url_env": "AGENTIC_QA_BASE_URL",
+        "allowed_http_methods": ["GET", "HEAD", "OPTIONS", "POST"],
+        "allow_ui_mutations": True,
+        "max_request_timeout_seconds": 10,
+    }
+    (workspace / "workspace.yml").write_text(
+        yaml.safe_dump(config, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    snapshot = harness.start_run(
+        StartRunCommand(
+            workspace_id="demo",
+            goal="打开测试站点并生成实时接口发现报告",
+            expected_artifacts=["api_discovery_report"],
+            execution_profile=ExecutionProfile(
+                environment="qa",
+                base_url_env="AGENTIC_QA_BASE_URL",
+                allowed_http_methods=["GET", "HEAD", "OPTIONS", "POST"],
+                allow_ui_mutations=True,
+                request_timeout_seconds=10,
+            ),
+        )
+    )
+
+    assert snapshot.status == "needs_human_review"
+    recorded_tools = [call["tool"] for call in snapshot.tool_calls]
+    assert recorded_tools.count("mcp.playwright") == 2  # frozen snapshot + navigation
+    assert recorded_tools.count("network.capture.live") == 1
+    assert subtool_calls.count("browser_navigate") == 1
+    assert subtool_calls.count("browser_network_requests") == 1
+    candidate = snapshot.candidates[0]
+    report = (tmp_path / candidate.path).read_text(encoding="utf-8")
+    assert "playwright_mcp" in report
+    assert "https://qa.example.test" in report
+    assert "/api/activities/{id}/assist" in report
+    assert "live-secret" not in report
+    assert "response-secret" not in report
+    assert "13800138000" not in report
+    assert not (workspace / "published/api_discovery_report/current.md").exists()
 
 
 def test_resume_is_separate_from_human_review(tmp_path: Path) -> None:

@@ -13,8 +13,14 @@ responsibilities:
     enforced_by: [schema:api-cases-v1.1, validator:delegated-artifact]
   - id: agent.api-test.discovery-evidence
     kind: contract
-    text: 网络抓包只形成 observed 接口候选，api_discovery_report 使用确定性脱敏目录渲染。
-    enforced_by: [validator:api-discovery-provenance, validator:network-capture-sanitizer]
+    text: 冻结抓包或受控 Playwright 会话只形成 observed 接口候选，api_discovery_report 使用确定性脱敏目录渲染。
+    enforced_by: [validator:api-discovery-provenance, validator:network-capture-sanitizer, validator:playwright-origin]
 skills: [api-testing, api-discovery]
-tool_allowlist: [workspace.read, openapi.inspect, network.capture.inspect, api.execute]
+tool_allowlist:
+  - workspace.read
+  - openapi.inspect
+  - network.capture.inspect
+  - network.capture.live
+  - mcp.playwright
+  - api.execute
 max_steps: 10

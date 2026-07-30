@@ -8,6 +8,7 @@ import unicodedata
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import urlsplit
 
 import yaml
 from jsonschema import ValidationError, validate
@@ -24,6 +25,7 @@ from harness.infrastructure.rag.provider import RagProviderConfig, RagRetriever
 from harness.infrastructure.tools.api_execution import execute_api_cases
 from harness.infrastructure.tools.network_capture import inspect_network_capture
 from harness.infrastructure.tools.openapi import inspect_openapi
+from harness.infrastructure.tools.playwright_network import inspect_playwright_network
 from harness.infrastructure.tools.postgres_query import (
     PostgresSourceConfig,
     execute_read_only_query,
@@ -64,6 +66,7 @@ class ToolRuntime:
             "network.capture.inspect": lambda workspace, run, arguments, _profile: (
                 self._network_capture_inspect(workspace, run, arguments)
             ),
+            "network.capture.live": self._network_capture_live,
             "api.execute": self._api_execute,
             "postgres.query": lambda workspace, _run, arguments, profile: self._postgres_query(
                 workspace, arguments, profile
@@ -88,30 +91,22 @@ class ToolRuntime:
             snapshot = getattr(owner, "snapshot", None)
             if snapshot is None:
                 continue
-            variants = [
-                {
-                    "type": "object",
-                    "required": ["tool", "arguments"],
-                    "properties": {
-                        "tool": {"const": tool.name},
-                        "arguments": tool.input_schema or {"type": "object"},
-                    },
-                    "additionalProperties": False,
-                }
-                for tool in snapshot.tools
-            ]
-            if not variants:
-                continue
-            projected = manifest.model_copy(
-                update={
-                    "description": (
-                        f"{manifest.description}；本 run 可用子工具："
-                        + ", ".join(tool.name for tool in snapshot.tools)
-                    ),
-                    "input_schema": {"oneOf": variants},
-                }
-            )
-            visible.append(projected.model_dump(mode="json"))
+            for tool in snapshot.tools:
+                if tool.name in {
+                    "browser_network_requests",
+                    "browser_network_request",
+                    "browser_run_code",
+                    "browser_run_code_unsafe",
+                }:
+                    continue
+                projected = manifest.model_copy(
+                    update={
+                        "name": f"{name}.{tool.name}",
+                        "description": tool.description or manifest.description,
+                        "input_schema": tool.input_schema or {"type": "object"},
+                    }
+                )
+                visible.append(projected.model_dump(mode="json"))
         return visible
 
     def call(
@@ -134,6 +129,8 @@ class ToolRuntime:
             raise PermissionError("state-changing test tools require an explicit test environment")
         if tool == "mcp.playwright" and not profile.allow_ui_mutations:
             raise PermissionError("Playwright mutations require allow_ui_mutations=true")
+        if tool == "mcp.playwright":
+            self._validate_direct_playwright_call(arguments, profile)
         try:
             validate(arguments, manifest.input_schema or {"type": "object"})
         except ValidationError as exc:
@@ -153,6 +150,8 @@ class ToolRuntime:
                 arguments=arguments,
                 profile=profile,
             )
+            if tool == "mcp.playwright":
+                self._validate_playwright_result(result, profile)
             safe = sanitize_untrusted(result)
             validate(safe, manifest.output_schema or {})
             payload = {
@@ -334,6 +333,92 @@ class ToolRuntime:
             raise ValueError("network capture is not valid JSON") from exc
         return inspect_network_capture(payload, source=source).model_dump(mode="json")
 
+    def _network_capture_live(
+        self,
+        _workspace: str,
+        run_id: str,
+        arguments: dict[str, Any],
+        profile: ExecutionProfile,
+    ) -> dict[str, Any]:
+        if profile.environment == "analysis-only" or not profile.allow_ui_mutations:
+            raise PermissionError(
+                "live network capture requires an explicit UI-enabled test environment"
+            )
+        handler = self.handlers.get("mcp.playwright")
+        owner = getattr(handler, "__self__", None)
+        snapshot = getattr(owner, "snapshot", None)
+        available = {tool.name for tool in snapshot.tools} if snapshot is not None else set()
+        required = {"browser_network_requests", "browser_network_request"}
+        missing = sorted(required - available)
+        if handler is None or missing:
+            raise RuntimeError(
+                "live network capture requires frozen Playwright MCP tools: "
+                + ", ".join(sorted(required))
+            )
+        catalog = inspect_playwright_network(
+            handler,
+            max_requests=int(arguments.get("max_requests") or 25),
+            source=f"runtime/playwright-network-capture/{run_id}",
+        )
+        base_origin = _normalized_origin(resolve_execution_base_url(profile))
+        document_origins = {
+            call.origin
+            for call in catalog.calls
+            if call.resource_type == "document" and call.origin is not None
+        }
+        unexpected = sorted(origin for origin in document_origins if origin != base_origin)
+        if unexpected:
+            raise PermissionError(
+                "Playwright navigation left the configured test origin: " + ", ".join(unexpected)
+            )
+        return catalog.model_dump(mode="json")
+
+    @staticmethod
+    def _validate_direct_playwright_call(
+        arguments: dict[str, Any],
+        profile: ExecutionProfile,
+    ) -> None:
+        subtool = str(arguments.get("tool") or "")
+        if subtool in {"browser_network_requests", "browser_network_request"}:
+            raise PermissionError(
+                "raw Playwright network tools are only available through network.capture.live"
+            )
+        if subtool in {"browser_run_code", "browser_run_code_unsafe"}:
+            raise PermissionError("arbitrary Playwright server code execution is not supported")
+        nested = arguments.get("arguments")
+        nested = nested if isinstance(nested, dict) else {}
+        navigation_url = (
+            nested.get("url")
+            if subtool == "browser_navigate"
+            or (subtool == "browser_tabs" and nested.get("action") == "new")
+            else None
+        )
+        if navigation_url is None:
+            return
+        expected_origin = _normalized_origin(resolve_execution_base_url(profile))
+        actual_origin = _normalized_origin(str(navigation_url))
+        if actual_origin != expected_origin:
+            raise PermissionError(
+                "Playwright navigation URL must match the configured test base URL origin"
+            )
+
+    @staticmethod
+    def _validate_playwright_result(result: Any, profile: ExecutionProfile) -> None:
+        if not isinstance(result, dict) or not profile.base_url_env:
+            return
+        expected_origin = _normalized_origin(resolve_execution_base_url(profile))
+        for item in result.get("content") or []:
+            if not isinstance(item, dict) or item.get("type") != "text":
+                continue
+            for line in str(item.get("text") or "").splitlines():
+                if not line.startswith("- Page URL:"):
+                    continue
+                actual_url = line.removeprefix("- Page URL:").strip()
+                if _normalized_origin(actual_url) != expected_origin:
+                    raise PermissionError(
+                        "Playwright page left the configured test base URL origin"
+                    )
+
     def _api_execute(
         self,
         workspace: str,
@@ -385,3 +470,37 @@ def _safe_record_name(tool: str, value: Any) -> str:
         json.dumps(value, sort_keys=True, ensure_ascii=False, default=str).encode()
     ).hexdigest()[:20]
     return f"{tool.replace('.', '-')}-{digest}"
+
+
+def resolve_execution_base_url(profile: ExecutionProfile) -> str:
+    if profile.environment == "analysis-only" or not profile.base_url_env:
+        raise PermissionError("Playwright requires an explicit test environment and base URL")
+    base_url = os.environ.get(profile.base_url_env, "").strip()
+    if not base_url:
+        raise ValueError(f"base URL environment variable is not set: {profile.base_url_env}")
+    _normalized_origin(base_url)
+    return base_url
+
+
+def _normalized_origin(value: str) -> str:
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme.casefold() not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError("test base URL must be an HTTP(S) URL without embedded credentials")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("test base URL has an invalid port") from exc
+    default_port = (parsed.scheme.casefold() == "http" and port == 80) or (
+        parsed.scheme.casefold() == "https" and port == 443
+    )
+    authority = (
+        parsed.hostname.casefold()
+        if port is None or default_port
+        else (f"{parsed.hostname.casefold()}:{port}")
+    )
+    return f"{parsed.scheme.casefold()}://{authority}"
