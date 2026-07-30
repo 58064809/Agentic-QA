@@ -123,6 +123,87 @@ def test_api_test_draft_is_typed_yaml_and_keeps_human_review_gate(tmp_path: Path
     assert (workspace / "published/api_test_draft/current.yml").is_file()
 
 
+def test_api_discovery_report_is_sanitized_and_stops_at_review_gate(tmp_path: Path) -> None:
+    recorded = recorded_model_gateway()
+    discovery_tools: list[set[str]] = []
+
+    class RecordingGateway:
+        def __getattr__(self, name: str) -> Any:
+            return getattr(recorded, name)
+
+        def structured(self, **kwargs: Any) -> Any:
+            prompt = json.loads(kwargs["prompt"])
+            task = prompt.get("trusted_context", {}).get("task", {})
+            if task.get("expected_outputs") == ["api_discovery_report"]:
+                discovery_tools.append({str(tool["name"]) for tool in kwargs.get("tools") or []})
+            return recorded.structured(**kwargs)
+
+    harness = Harness(tmp_path, model_gateway=RecordingGateway())
+    workspace = _create(harness)
+    (workspace / "sources/network-capture.json").write_text(
+        json.dumps(
+            {
+                "entries": [
+                    {
+                        "method": "POST",
+                        "url": "https://example.test/api/assist?token=secret-value",
+                        "status": 200,
+                        "resource_type": "xhr",
+                        "request_headers": {
+                            "Authorization": "Bearer secret-value",
+                        },
+                        "request_body": {
+                            "user_id": "user-1",
+                            "token": "secret-value",
+                            "```break": "untrusted-markdown",
+                        },
+                        "response_body": {"accepted": True},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    snapshot = harness.start_run(
+        StartRunCommand(
+            workspace_id="demo",
+            goal="基于冻结抓包生成接口发现报告",
+            expected_artifacts=["api_discovery_report"],
+        )
+    )
+
+    assert snapshot.status == "needs_human_review"
+    candidate = snapshot.candidates[0]
+    report = (tmp_path / candidate.path).read_text(encoding="utf-8")
+    assert candidate.partial is False
+    assert "## 接口调用链" in report
+    assert "POST" in report and "/api/assist" in report
+    assert "不代表完整 API 契约" in report
+    assert "secret-value" not in report
+    assert "```json" not in report
+    assert discovery_tools
+    assert all(tools == {"network.capture.inspect"} for tools in discovery_tools)
+    assert not (workspace / "published/api_discovery_report/current.md").exists()
+
+    published = harness.review_run(
+        ReviewRunCommand(
+            workspace_id="demo",
+            run_id=snapshot.run_id,
+            decision=ReviewDecision(
+                intent="approve",
+                target_artifact="api_discovery_report",
+                reason="人工确认观察证据与脱敏说明",
+                reviewed_by="qa_owner",
+                versions=[candidate.version_ref(ArtifactVariant.RAW)],
+            ),
+        )
+    )
+
+    assert published.status == "published"
+    assert (workspace / "published/api_discovery_report/current.md").is_file()
+
+
 def test_resume_is_separate_from_human_review(tmp_path: Path) -> None:
     harness = _harness(tmp_path)
     _create(harness)

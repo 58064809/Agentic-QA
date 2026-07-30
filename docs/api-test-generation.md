@@ -10,7 +10,7 @@ published 文件均为 YAML，数据契约是 `agentic-qa.api-cases.v1.1`。
 | SourceBundle 中完整且成功解析的 OpenAPI 3.x/Swagger 2.0 | confirmed | method/path、参数、请求体、响应、安全定义和契约断言 | high-confidence source ref |
 | 残缺或解析失败的 OpenAPI | partial/missing | 缺口与待确认草案 | 解析问题 |
 | Markdown/PRD | 不构成协议事实 | 业务场景、规则候选 | 待确认 endpoint |
-| 抓包/示例请求 | 作为观察样本 | 候选值与复现线索 | 非完整契约 |
+| [API Discovery 抓包](api-discovery.md) / 示例请求 | 作为观察样本 | 候选接口与复现线索 | observed / 非完整契约 |
 
 ## 操作与系统响应
 

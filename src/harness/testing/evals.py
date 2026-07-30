@@ -68,6 +68,35 @@ def recorded_model_gateway(*, use_fake_mcp: bool = False) -> CallableModelGatewa
             agent = context["task"]["agent"]
             allowed_tools = {item["name"] for item in tools}
             if (
+                agent == "api_test_engineer"
+                and "api_discovery_report" in outputs
+                and "network.capture.inspect" in allowed_tools
+                and not context.get("tool_results")
+            ):
+                capture_sources = [
+                    source
+                    for source in context.get("source_files", [])
+                    if source.casefold().endswith((".har", ".json"))
+                    and (
+                        "capture" in source.casefold()
+                        or "network" in source.casefold()
+                        or source.casefold().endswith(".har")
+                    )
+                ]
+                if capture_sources:
+                    return {
+                        "summary": "recorded network capture inspection request",
+                        "artifacts": {},
+                        "evidence": [],
+                        "pending": [],
+                        "tool_requests": [
+                            {
+                                "tool": "network.capture.inspect",
+                                "arguments": {"path": capture_sources[0]},
+                            }
+                        ],
+                    }
+            if (
                 use_fake_mcp
                 and "mcp.playwright" in allowed_tools
                 and not context.get("tool_results")
@@ -292,6 +321,25 @@ def run_offline_eval() -> dict[str, Any]:
         )
         (workspace / "sources/eval-scope.md").write_text(
             "# 离线评测范围\n\n本来源仅用于验证完整的候选、审核和发布链路。\n",
+            encoding="utf-8",
+        )
+        (workspace / "sources/network-capture.json").write_text(
+            json.dumps(
+                {
+                    "entries": [
+                        {
+                            "method": "POST",
+                            "url": "https://example.test/api/eval",
+                            "status": 200,
+                            "resource_type": "xhr",
+                            "request_headers": {"Authorization": "Bearer recorded-secret"},
+                            "request_body": {"case_id": "recorded", "token": "recorded-secret"},
+                            "response_body": {"ok": True},
+                            "duration_ms": 12,
+                        }
+                    ]
+                }
+            ),
             encoding="utf-8",
         )
         workspace.joinpath("workspace.yml").write_text(

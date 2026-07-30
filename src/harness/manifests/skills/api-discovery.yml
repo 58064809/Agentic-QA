@@ -1,0 +1,13 @@
+schema_version: agentic-qa.harness.skill-manifest.v3
+name: api-discovery
+description: 从冻结网络抓包中提取脱敏的接口观察证据。
+instructions:
+  - id: skill.api-discovery.observation-only
+    kind: contract
+    text: 抓包只形成 observed 候选，不确认完整 endpoint 契约。
+    enforced_by: [validator:api-discovery-provenance]
+  - id: skill.api-discovery.sanitized-output
+    kind: safety
+    text: 报告只使用 network.capture.inspect 返回的脱敏结构，不复述原始 header、query value 或 body value。
+    enforced_by: [validator:network-capture-sanitizer, gate:review-gate]
+knowledge_refs: [api-discovery]

@@ -1,0 +1,28 @@
+schema_version: agentic-qa.harness.knowledge-spec.v1
+name: api-discovery
+version: 1.0.0
+purpose: 将冻结 HAR 或简化 JSON 转为可审核的接口观察报告。
+applies_to: [api-discovery]
+inputs:
+  - SourceBundle 中的 UTF-8 HAR 或简化 JSON
+  - network.capture.inspect 返回的脱敏观察目录
+procedure:
+  - 调用 network.capture.inspect 读取抓包来源。
+  - 使用工具返回的调用链、候选、结构摘要、脱敏清单和限制生成报告。
+  - 无业务接口候选时明确记录未发现候选。
+output_expectations:
+  - 报告包含采集来源、调用链、业务接口候选、结构摘要、脱敏说明和待确认项。
+  - 接口证据标记为 playwright-network-capture 与 observed。
+evidence_policy:
+  - source_path 和 entry locator 指向本次 run 的冻结 SourceBundle。
+  - 报告不包含原始 header、query value、request body value 或 response body value。
+uncertainty_policy:
+  - 抓包只证明一次或多次运行时观察，不证明字段必填性、枚举、错误码全集或权限规则。
+prohibited_actions:
+  - 不把抓包候选描述为完整 OpenAPI/Swagger 契约。
+  - 不补写未观察到的 endpoint、字段、响应或业务规则。
+  - 不复述 Cookie、Token、PII 或完整响应正文。
+deterministic_checks:
+  - validator:network-capture-sanitizer
+  - validator:api-discovery-provenance
+  - gate:review-gate
