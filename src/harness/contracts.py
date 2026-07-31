@@ -12,6 +12,8 @@ from harness.application.agent_request import (
 from harness.domain.models import (
     AgentManifest,
     ApprovedArtifactVersion,
+    ArtifactAttachment,
+    ArtifactAttachmentRef,
     ArtifactCandidate,
     ArtifactDiffEndpoint,
     ArtifactDiffResult,
@@ -46,6 +48,8 @@ __all__ = [
     "AgentRequestCapabilities",
     "AgentRequestResult",
     "ApprovedArtifactVersion",
+    "ArtifactAttachment",
+    "ArtifactAttachmentRef",
     "ArtifactCandidate",
     "ArtifactDiffEndpoint",
     "ArtifactDiffResult",

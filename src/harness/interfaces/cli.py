@@ -157,15 +157,7 @@ def _review_versions(harness: Harness, args: argparse.Namespace) -> list[Artifac
             raise ValueError(
                 f"candidate 版本不可用或缺少质量 provenance: {artifact}/{variant.value}"
             )
-        refs.append(
-            ArtifactVersionRef(
-                artifact=artifact,
-                variant=variant,
-                content_sha256=version.content_sha256,
-                assessment_key=candidate.assessment_key,
-                quality_report_sha256=candidate.quality_report_sha256,
-            )
-        )
+        refs.append(candidate.version_ref(variant))
     return refs
 
 

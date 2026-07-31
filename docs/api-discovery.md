@@ -3,8 +3,9 @@
 API Discovery 把 Web、H5 或后台页面的网络流量整理成可审核的接口观察报告。系统支持两种来源：
 已有 HAR/简化 JSON，以及显式测试环境中的实时 Playwright MCP 会话。
 
-实时链路直接把浏览器网络详情转换为脱敏强类型目录，不落盘原始 HAR。原始 HAR 的安全导出仍在
-评估中，因为即使省略 response body，header、Cookie 和请求内容仍可能进入 HAR。
+实时链路直接把浏览器网络详情转换为脱敏强类型目录，不落盘原始 HAR。即使省略 response body，
+header、Cookie 和请求内容仍可能进入 HAR，因此当前产品使用哈希绑定的脱敏目录提供可携带导出，
+原始 HAR 不进入 Candidate 或 published。
 
 ## 场景
 
@@ -140,12 +141,17 @@ document 流量离开该 origin 时，实时采集返回权限错误。第三方
 
 ```text
 workspaces/<workspace>/candidates/<run_id>/api_discovery_report/raw.md
+workspaces/<workspace>/candidates/<run_id>/api_discovery_report/discovery-catalog.json
 ```
 
-人工审核并选择通过质量门的版本后，发布视图位于：
+`discovery-catalog.json` 与 Markdown、质量报告一起写入 create-only Candidate manifest。审核选择
+的强类型版本包含该附件的 SHA-256，因此附件发生变化时发布校验返回 hash 错误。
+
+人工审核并选择通过质量门的版本后，发布视图和脱敏机器目录位于：
 
 ```text
 workspaces/<workspace>/published/api_discovery_report/current.md
+workspaces/<workspace>/published/api_discovery_report/current.catalog.json
 ```
 
 报告中的候选证据类型固定为 `playwright-network-capture / observed`。后续
@@ -155,7 +161,8 @@ workspaces/<workspace>/published/api_discovery_report/current.md
 脱敏观察目录的数据结构见
 [API Discovery JSON Schema](schemas/api-discovery.v1.1.schema.json)。离线目录保存在
 `network.capture.inspect` 工具记录中，实时目录保存在 `network.capture.live` 工具记录中；
-Markdown Candidate 是它的确定性审核视图。
+Markdown Candidate 是它的确定性审核视图。可携带导出的封装结构见
+[API Discovery Export JSON Schema](schemas/api-discovery-export.v1.schema.json)。
 
 ## 报告内容
 
@@ -187,4 +194,5 @@ Markdown Candidate 是它的确定性审核视图。
 | 页面跳转到不同 origin | 导航或采集阶段返回权限错误，不生成完成态 Candidate |
 | Playwright allowlist 缺少网络工具 | 启动校验报告 `browser_network_requests` 与 `browser_network_request` 缺口 |
 | 普通本地测试没有浏览器或 Node.js | live smoke 默认跳过；独立 CI job 显式安装并运行官方 MCP 浏览器 |
-| 需要原始 HAR 文件 | 当前实时链路保留脱敏强类型目录；原始 HAR 的安全导出策略仍在评估 |
+| 需要携带或接入下游系统 | Candidate 和 published 提供哈希绑定的 `discovery-catalog.json` |
+| 需要原始 HAR 文件 | 原始 HAR 可能包含凭据和个人数据；系统不会把它加入 Candidate 或 published |

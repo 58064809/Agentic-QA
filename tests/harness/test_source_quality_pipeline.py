@@ -658,6 +658,23 @@ def test_candidate_manifest_media_type_is_restored(tmp_path: Path) -> None:
     assert restored.media_type == candidate.media_type
 
 
+def test_candidate_manifest_rejects_a_declared_raw_har_attachment(tmp_path: Path) -> None:
+    store, _, candidate = _direct_promotion_fixture(tmp_path)
+    candidate_root = (tmp_path / candidate.path).parent
+    raw_har = b'{"log":{"entries":[]}}\n'
+    (candidate_root / "raw-network.har").write_bytes(raw_har)
+    manifest_path = candidate_root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"]["raw-network.har"] = "sha256:" + hashlib.sha256(raw_har).hexdigest()
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="不受支持的文件"):
+        store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")
+
+
 def test_candidate_load_does_not_require_external_partial_or_evidence(tmp_path: Path) -> None:
     store, _, _ = _direct_promotion_fixture(tmp_path, partial=True)
     restored = store.load_candidate(workspace="demo", run_id="run-1", artifact="qa_report")

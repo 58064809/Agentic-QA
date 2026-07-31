@@ -58,6 +58,7 @@ def apply_review(
                 version is None
                 or selected.assessment_key != candidate.assessment_key
                 or selected.quality_report_sha256 != candidate.quality_report_sha256
+                or selected.attachments != candidate.version_ref(selected.variant).attachments
             ):
                 raise ValueError("审核选择与 candidate manifest 不匹配")
             report = store.load_quality_report(candidate)
