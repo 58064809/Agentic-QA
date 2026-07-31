@@ -128,6 +128,10 @@ $result = python -m harness run start demo `
 document 流量离开该 origin 时，实时采集返回权限错误。第三方 API 请求仍作为独立 origin 记录，
 不会与测试站点上的同路径接口合并。
 
+仓库 CI 中的 `playwright-mcp-live-smoke` job 使用本地临时 HTTP 服务和官方 Playwright MCP
+进程验证这条链路。测试页面触发一条带模拟敏感字段的 POST 请求，CI 检查接口归一化、字段结构、
+脱敏结果和 MCP 生命周期。该 job 不调用真实模型，也不访问业务测试环境。
+
 报告不会保存原始 header 值、query value、request body value 或完整 response body。body 只
 留下字段名与 JSON 类型摘要；Authorization、Cookie、Set-Cookie、token、session 和常见 PII
 字段会出现在脱敏清单中，不出现原值。
@@ -182,4 +186,5 @@ Markdown Candidate 是它的确定性审核视图。
 | 实时任务没有 frozen HAR/JSON | 系统切换到显式测试环境中的 Playwright MCP 实时发现 |
 | 页面跳转到不同 origin | 导航或采集阶段返回权限错误，不生成完成态 Candidate |
 | Playwright allowlist 缺少网络工具 | 启动校验报告 `browser_network_requests` 与 `browser_network_request` 缺口 |
+| 普通本地测试没有浏览器或 Node.js | live smoke 默认跳过；独立 CI job 显式安装并运行官方 MCP 浏览器 |
 | 需要原始 HAR 文件 | 当前实时链路保留脱敏强类型目录；原始 HAR 的安全导出策略仍在评估 |
