@@ -30,6 +30,8 @@ workspaces/<workspace>/published/api_test_draft/current.yml
 
 `api.execute` 读取这份 published YAML，并继续受 ExecutionProfile、workspace policy、环境变量和
 HTTP method allowlist 控制。请求位于 `request.method/path`，断言位于类型化 `assertions`。
+workspace 环境可以选择静态 token 或执行前登录取 token；认证头由执行器统一注入，不改变
+API Cases v1.1 文件。
 
 ## 示例
 
@@ -91,4 +93,6 @@ review_questions:
 | Candidate 已生成但执行工具拒绝 | `api.execute` 只读取人工审核后发布的 YAML |
 | 环境名称类似 production | ExecutionProfile 校验返回错误 |
 | POST 未在 allowlist | 执行证据记录为 blocked，不发送请求 |
+| 静态 token 环境变量为空 | `api.execute` 返回认证配置错误，不发送用例请求 |
+| 登录状态码或 token JSON 路径不匹配 | `api.execute` 返回认证错误，不发送后续用例请求 |
 | 请求或响应失败 | 证据记录 error/failed，不自动生成已确认 Bug |

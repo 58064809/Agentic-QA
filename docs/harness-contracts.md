@@ -20,6 +20,19 @@
 外部 AI 的 `AgentRequest` 和 MCP 是独立受限门面，不增加 Harness 的 Review 权限，也不改变上述
 七个方法；其契约见[跨 AI 接入](agent-integration.md)。
 
+## API 执行认证
+
+`ExecutionEnvironmentPolicy.api_auth` 是可选的判别联合：
+
+| `mode` | 强类型配置 | 执行行为 |
+|---|---|---|
+| `static_token` | `StaticTokenApiAuthentication` | 从直接 `token` 或 `token_env` 二选一取值，按 `ApiTokenInjection` 注入请求头 |
+| `login` | `LoginApiAuthentication` | 按 `ApiLoginRequest` 登录一次，从 `token_json_path` 提取并注入 token |
+
+认证配置属于 workspace 执行策略，不进入 API Cases v1.1。`LoginApiAuthentication` 当前接受相对
+POST 路径、预期状态码、JSON 点路径和 header 注入；敏感请求字段引用环境变量。配置解析、HTTP
+method allowlist 和执行器共同确定是否发送登录及后续请求。
+
 ## Candidate provenance
 
 | 字段 | 用途 |

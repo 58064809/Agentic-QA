@@ -3,9 +3,9 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from harness.domain.security import contains_likely_secret
 
@@ -85,11 +85,147 @@ class ExecutionProfile(StrictModel):
         return self
 
 
+ENV_REFERENCE = re.compile(r"^\$\{[A-Z_][A-Z0-9_]*\}$")
+HTTP_HEADER_NAME = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+SENSITIVE_AUTH_KEY = re.compile(
+    r"(authorization|cookie|token|secret|password|api[_-]?key)", re.IGNORECASE
+)
+
+
+class ApiTokenInjection(StrictModel):
+    location: Literal["header"] = "header"
+    name: str = Field(
+        default="Authorization",
+        pattern=r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$",
+    )
+    prefix: str = Field(default="Bearer", max_length=32)
+
+    @field_validator("prefix")
+    @classmethod
+    def validate_prefix(cls, value: str) -> str:
+        normalized = value.strip()
+        if "\r" in normalized or "\n" in normalized:
+            raise ValueError("token prefix cannot contain line breaks")
+        return normalized
+
+    @field_validator("name")
+    @classmethod
+    def reject_transport_headers(cls, value: str) -> str:
+        if value.casefold() in {"host", "content-length", "transfer-encoding", "connection"}:
+            raise ValueError("token injection cannot target a transport-controlled header")
+        return value
+
+
+class StaticTokenApiAuthentication(StrictModel):
+    mode: Literal["static_token"]
+    token: SecretStr | None = None
+    token_env: str | None = Field(default=None, pattern=r"^[A-Z_][A-Z0-9_]*$")
+    injection: ApiTokenInjection = Field(default_factory=ApiTokenInjection)
+
+    @model_validator(mode="after")
+    def validate_single_token_source(self) -> StaticTokenApiAuthentication:
+        configured = int(self.token is not None) + int(self.token_env is not None)
+        if configured != 1:
+            raise ValueError(
+                "static token authentication requires exactly one of token or token_env"
+            )
+        if self.token is not None and not self.token.get_secret_value().strip():
+            raise ValueError("static token cannot be empty")
+        return self
+
+
+class ApiLoginRequest(StrictModel):
+    method: Literal["POST"] = "POST"
+    path: str = Field(min_length=1)
+    headers: dict[str, str] = Field(default_factory=dict)
+    query: Any = Field(default_factory=dict)
+    body: Any = Field(default_factory=dict)
+
+    @field_validator("path")
+    @classmethod
+    def validate_relative_path(cls, value: str) -> str:
+        if (
+            not value.startswith("/")
+            or value.startswith("//")
+            or "?" in value
+            or "#" in value
+            or "\r" in value
+            or "\n" in value
+        ):
+            raise ValueError("API login path must be relative and start with '/'")
+        return value
+
+    @field_validator("headers")
+    @classmethod
+    def reject_transport_headers(cls, value: dict[str, str]) -> dict[str, str]:
+        forbidden = {"host", "content-length", "transfer-encoding", "connection"}
+        invalid = sorted(
+            name
+            for name, item in value.items()
+            if name.casefold() in forbidden
+            or not HTTP_HEADER_NAME.fullmatch(name)
+            or "\r" in item
+            or "\n" in item
+        )
+        if invalid:
+            raise ValueError(
+                "API login request contains invalid or transport-controlled headers: "
+                + ", ".join(invalid)
+            )
+        return value
+
+    @model_validator(mode="after")
+    def reject_inline_sensitive_values(self) -> ApiLoginRequest:
+        def inspect(value: Any, path: tuple[str, ...] = ()) -> None:
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    current = (*path, str(key))
+                    if SENSITIVE_AUTH_KEY.search(str(key)):
+                        if not isinstance(item, str) or not ENV_REFERENCE.fullmatch(item):
+                            raise ValueError(
+                                "sensitive API login values must use a ${ENV_NAME} reference: "
+                                + ".".join(current)
+                            )
+                    inspect(item, current)
+            elif isinstance(value, list):
+                for index, item in enumerate(value):
+                    inspect(item, (*path, str(index)))
+
+        inspect(self.headers, ("headers",))
+        inspect(self.query, ("query",))
+        inspect(self.body, ("body",))
+        return self
+
+
+class LoginApiAuthentication(StrictModel):
+    mode: Literal["login"]
+    request: ApiLoginRequest
+    token_json_path: str = Field(pattern=r"^\$(?:\.[A-Za-z_][A-Za-z0-9_-]*)+$")
+    expected_status_codes: list[int] = Field(default_factory=lambda: [200], min_length=1)
+    injection: ApiTokenInjection = Field(default_factory=ApiTokenInjection)
+
+    @field_validator("expected_status_codes")
+    @classmethod
+    def validate_expected_status_codes(cls, value: list[int]) -> list[int]:
+        if any(code < 100 or code > 599 for code in value):
+            raise ValueError("expected login status codes must be valid HTTP status codes")
+        if len(value) != len(set(value)):
+            raise ValueError("expected login status codes must be unique")
+        return value
+
+
+ApiAuthentication = Annotated[
+    StaticTokenApiAuthentication | LoginApiAuthentication,
+    Field(discriminator="mode"),
+]
+
+
 class ExecutionEnvironmentPolicy(StrictModel):
     base_url_env: str | None = Field(default=None, pattern=r"^[A-Z_][A-Z0-9_]*$")
     allowed_http_methods: list[str] = Field(default_factory=lambda: ["GET", "HEAD", "OPTIONS"])
     allow_ui_mutations: bool = False
     max_request_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    api_auth: ApiAuthentication | None = None
 
     @field_validator("allowed_http_methods")
     @classmethod

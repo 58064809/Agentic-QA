@@ -24,6 +24,9 @@
 | 变量 | 默认/状态 | 消费方式 |
 |---|---|---|
 | `AGENTIC_QA_BASE_URL` | 空 | ExecutionProfile 指定该变量名后，API 执行器读取地址 |
+| `QA_API_TOKEN` | 空，示例名 | 静态 token 认证示例；workspace 可以引用其他环境变量名 |
+| `QA_API_USER` | 空，示例名 | 登录认证用户名示例 |
+| `QA_API_PASSWORD` | 空，示例名 | 登录认证密码示例 |
 | `RAG_API_KEY` | 空 | 远程 embedding Provider 密钥 |
 | `AGENTIC_QA_RAG_API_KEY_ENV` | `RAG_API_KEY` | 指定 RAG 实际密钥变量名 |
 | `AGENTIC_QA_RAG_BASE_URL` | 空 | OpenAI-compatible embedding 地址 |
@@ -75,6 +78,94 @@ execution:
 
 非 `analysis-only` 的 ExecutionProfile 会匹配环境名和 `base_url_env`，并与 workspace 的方法、
 UI mutation 和超时上限比较。production-like 环境名被拒绝。
+
+#### 使用已有 token
+
+`static_token` 从命名环境变量读取一次 token，并覆盖每条 API 用例中同名的请求头：
+
+```yaml
+execution:
+  environments:
+    qa:
+      base_url_env: AGENTIC_QA_BASE_URL
+      allowed_http_methods: [GET, HEAD, OPTIONS, POST]
+      allow_ui_mutations: false
+      max_request_timeout_seconds: 10
+      api_auth:
+        mode: static_token
+        token_env: QA_API_TOKEN
+        injection:
+          location: header
+          name: Authorization
+          prefix: Bearer
+```
+
+当前 PowerShell 会话提供实际值：
+
+```powershell
+$env:QA_API_TOKEN = "<测试环境 token>"
+```
+
+也可以在本地 workspace 配置中直接填写：
+
+```yaml
+api_auth:
+  mode: static_token
+  token: "<测试环境 token>"
+  injection:
+    location: header
+    name: Authorization
+    prefix: Bearer
+```
+
+`token` 与 `token_env` 同时出现或同时缺少时，配置解析返回错误。直接 token 由 `SecretStr` 承载，
+模型序列化和校验对象展示为掩码；workspace 文件本身仍包含填写的原值。
+
+`prefix` 为空字符串时，请求头值就是 token 本身。`name` 可以承载 `Authorization`、
+`X-Access-Token` 等普通认证请求头；Host、Content-Length 等传输控制头会在配置解析时返回错误。
+
+#### 登录后获取 token
+
+`login` 在执行用例前发送一次 POST，按 JSON 点路径提取 token，再注入全部用例：
+
+```yaml
+execution:
+  environments:
+    qa:
+      base_url_env: AGENTIC_QA_BASE_URL
+      allowed_http_methods: [GET, HEAD, OPTIONS, POST]
+      allow_ui_mutations: false
+      max_request_timeout_seconds: 10
+      api_auth:
+        mode: login
+        request:
+          method: POST
+          path: /api/login
+          headers:
+            Content-Type: application/json
+          query: {}
+          body:
+            username: ${QA_API_USER}
+            password: ${QA_API_PASSWORD}
+        token_json_path: $.data.access_token
+        expected_status_codes: [200]
+        injection:
+          location: header
+          name: Authorization
+          prefix: Bearer
+```
+
+```powershell
+$env:QA_API_USER = "<测试账号>"
+$env:QA_API_PASSWORD = "<测试密码>"
+```
+
+登录地址始终拼接到该环境的 base URL，当前请求方法固定为 POST。POST 不在环境的
+`allowed_http_methods` 中时，执行在登录前返回权限错误。缺少环境变量、状态码不匹配、JSON 路径
+不存在或 token 不是非空字符串时，本次 `api.execute` 返回认证错误，不发送后续用例请求。
+
+两种模式都只在单次 `api.execute` 进程内持有 token。workspace 保存环境变量名和注入规则，不保存
+实际 token；API Cases 继续使用 `agentic-qa.api-cases.v1.1`，无需为每条用例复制认证头。
 
 ### RAG Provider
 
