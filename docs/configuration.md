@@ -108,6 +108,24 @@ data_sources:
 
 `postgres.query` 只接受单条 `SELECT/WITH`，使用只读事务，并限制超时与结果行数。
 
+### 只读 TestRail 测试资产
+
+```yaml
+data_sources:
+  test_management:
+    provider: testrail
+    schema_version: agentic-qa.harness.testrail-source.v1
+    base_url_env: TESTRAIL_URL
+    username_env: TESTRAIL_USER
+    api_key_env: TESTRAIL_API_KEY
+    timeout_seconds: 10
+    max_items: 100
+    max_response_bytes: 1048576
+```
+
+配置保存环境变量名称，实际地址和凭据由当前进程环境提供。连接器查询固定的 TestRail 项目、套件、
+章节和用例资源；完整场景和返回行为见[读取 TestRail 测试资产](test-management.md)。
+
 ## Source 摄取限制
 
 | 边界 | 默认值 | 超限行为 |

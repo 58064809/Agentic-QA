@@ -11,6 +11,10 @@ responsibilities:
     kind: contract
     text: 模型返回结构化目录，Markdown 由 Harness 确定性渲染。
     enforced_by: [validator:typed-output]
+  - id: agent.requirement.external-test-assets
+    kind: safety
+    text: 测试管理系统内容只用于参考既有覆盖，不会替代冻结来源或形成 confirmed 需求事实。
+    enforced_by: [validator:frozen-source-reference]
 skills: [requirement-analysis]
-tool_allowlist: [workspace.read, rag.retrieve]
+tool_allowlist: [workspace.read, rag.retrieve, test_management.read]
 max_steps: 8

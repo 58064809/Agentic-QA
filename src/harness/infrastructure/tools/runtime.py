@@ -30,6 +30,11 @@ from harness.infrastructure.tools.postgres_query import (
     PostgresSourceConfig,
     execute_read_only_query,
 )
+from harness.infrastructure.tools.test_management import (
+    TestManagementQuery,
+    TestRailSourceConfig,
+    read_testrail,
+)
 
 
 class ToolRuntime:
@@ -70,6 +75,11 @@ class ToolRuntime:
             "api.execute": self._api_execute,
             "postgres.query": lambda workspace, _run, arguments, profile: self._postgres_query(
                 workspace, arguments, profile
+            ),
+            "test_management.read": (
+                lambda workspace, _run, arguments, _profile: self._test_management_read(
+                    workspace, arguments
+                )
             ),
             "evidence.read": lambda workspace, _run, arguments, _profile: self._evidence_read(
                 workspace, arguments
@@ -220,6 +230,29 @@ class ToolRuntime:
             str(arguments.get("query") or ""),
             list(arguments.get("parameters") or []),
         )
+
+    def _test_management_read(
+        self,
+        workspace: str,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        payload = self.store.workspace_config(workspace)
+        data_sources = payload.get("data_sources") or {}
+        if not isinstance(data_sources, dict):
+            raise ValueError("workspace.yml data_sources must be an object")
+        raw_config = data_sources.get("test_management")
+        if raw_config is None:
+            raise PermissionError("test management is not configured in workspace.yml")
+        if not isinstance(raw_config, dict):
+            raise ValueError("workspace.yml data_sources.test_management must be an object")
+        provider = raw_config.get("provider")
+        if provider != "testrail":
+            raise ValueError(f"unsupported test management provider: {provider!r}")
+        config = TestRailSourceConfig.model_validate(
+            {key: value for key, value in raw_config.items() if key != "provider"}
+        )
+        query = TestManagementQuery.model_validate(arguments)
+        return read_testrail(config, query)
 
     def _safe_path(self, workspace: str, relative_value: Any) -> tuple[Path, Path]:
         root = self.store.require_workspace(workspace).resolve()

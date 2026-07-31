@@ -20,12 +20,13 @@
 | Playwright MCP live smoke CI | 已实现 | 本地临时站点、官方 MCP 进程、真实浏览器网络捕获与脱敏断言 |
 | API Discovery 脱敏目录导出 | 已实现 | Candidate manifest 哈希绑定；Review 后确定性发布 `current.catalog.json` |
 | API cases、execution evidence、failure triage Schema | 已实现 | `src/harness/domain/schemas/` |
+| TestRail 只读测试资产连接器 | 已实现 | 固定查询 allowlist、环境变量凭据、分页与响应预算、run 工具记录 |
 
 ## 计划中
 
 | 能力 | 状态 | 验收边界 |
 |---|---|---|
-| 更多只读测试管理系统连接器 | 计划中 | 不扩大 Review/Execution 权限 |
+| 更多只读测试管理系统连接器 | 计划中 | 在 TestRail 之外继续扩展，且不扩大 Review/Execution 权限 |
 
 ## 明确不在当前范围
 

@@ -1,0 +1,50 @@
+schema_version: agentic-qa.harness.tool-manifest.v2
+name: test_management.read
+provider: builtin
+description: 从 workspace 显式配置的 TestRail 读取项目、套件、章节或用例
+input_schema:
+  type: object
+  required: [operation]
+  properties:
+    operation:
+      type: string
+      enum: [list_projects, list_suites, list_sections, list_cases, get_case]
+    project_id: {type: integer, minimum: 1}
+    suite_id: {type: integer, minimum: 1}
+    section_id: {type: integer, minimum: 1}
+    case_id: {type: integer, minimum: 1}
+    limit: {type: integer, minimum: 1, maximum: 250}
+    offset: {type: integer, minimum: 0}
+  additionalProperties: false
+output_schema:
+  type: object
+  required: [schema_version, provider, operation, source, records, pagination]
+  properties:
+    schema_version: {const: agentic-qa.harness.test-management-result.v1}
+    provider: {const: testrail}
+    operation: {type: string}
+    source:
+      type: object
+      required: [origin, resource]
+      properties:
+        origin: {type: string, format: uri}
+        resource: {type: string, minLength: 1}
+      additionalProperties: false
+    records:
+      type: array
+      maxItems: 250
+      items: {type: object}
+    pagination:
+      type: object
+      required: [offset, limit, returned, next_offset, truncated]
+      properties:
+        offset: {type: integer, minimum: 0}
+        limit: {type: integer, minimum: 1, maximum: 250}
+        returned: {type: integer, minimum: 0, maximum: 250}
+        next_offset: {type: [integer, "null"], minimum: 0}
+        truncated: {type: boolean}
+      additionalProperties: false
+  additionalProperties: false
+risk: read_only
+timeout_seconds: 30
+idempotency: read

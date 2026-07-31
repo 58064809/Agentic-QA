@@ -7,5 +7,5 @@ responsibilities:
     kind: guidance
     text: 报告结论保持在已有证据范围内，并区分已执行、未执行和待确认内容。
 skills: [reporting]
-tool_allowlist: [workspace.read, evidence.read]
+tool_allowlist: [workspace.read, evidence.read, test_management.read]
 max_steps: 8
