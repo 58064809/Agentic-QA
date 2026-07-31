@@ -11,6 +11,8 @@ from harness.application.agent_request import (
 )
 from harness.domain.models import (
     AgentManifest,
+    ApiLoginRequest,
+    ApiTokenInjection,
     ApprovedArtifactVersion,
     ArtifactAttachment,
     ArtifactAttachmentRef,
@@ -27,6 +29,7 @@ from harness.domain.models import (
     ExecutionProfile,
     GetArtifactDiffQuery,
     HarnessEvent,
+    LoginApiAuthentication,
     PlanTask,
     QAPlan,
     ResumeRunCommand,
@@ -37,12 +40,15 @@ from harness.domain.models import (
     RunSnapshot,
     SkillManifest,
     StartRunCommand,
+    StaticTokenApiAuthentication,
     ToolManifest,
 )
 
 __all__ = [
     "AgentCandidateSummary",
     "AgentManifest",
+    "ApiLoginRequest",
+    "ApiTokenInjection",
     "AgentNextAction",
     "AgentRequest",
     "AgentRequestCapabilities",
@@ -73,6 +79,8 @@ __all__ = [
     "RunRef",
     "RunSnapshot",
     "SkillManifest",
+    "LoginApiAuthentication",
+    "StaticTokenApiAuthentication",
     "StartRunCommand",
     "SourceImportSummary",
     "ToolManifest",

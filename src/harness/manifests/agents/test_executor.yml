@@ -11,6 +11,10 @@ responsibilities:
     kind: safety
     text: 状态变更只通过 Agent 工具白名单和 ExecutionProfile 允许的操作发生。
     enforced_by: [allowlist:agent-tool-manifest, validator:execution-profile]
+  - id: agent.test-execution.authentication
+    kind: safety
+    text: API 认证由 workspace 的强类型环境配置确定，模型不生成或传递运行时 token。
+    enforced_by: [validator:execution-profile, validator:api-auth-config]
 skills: [test-execution]
 tool_allowlist: [workspace.read, api.execute, mcp.playwright, postgres.query, evidence.read]
 max_steps: 12

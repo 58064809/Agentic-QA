@@ -464,12 +464,14 @@ class ToolRuntime:
             raise ValueError("api.execute only accepts published API cases")
         payload = yaml.safe_load(target.read_text(encoding="utf-8"))
         cases = ApiTestCasesDraft.model_validate(payload)
+        policy = self.store.validate_execution_profile(workspace, profile)
         evidence = execute_api_cases(
             cases.cases,
             run_id=run_id,
             source_cases_path=target.relative_to(root).as_posix(),
             profile=profile,
             env=os.environ,
+            authentication=policy.api_auth if policy is not None else None,
         )
         return evidence.model_dump(mode="json")
 

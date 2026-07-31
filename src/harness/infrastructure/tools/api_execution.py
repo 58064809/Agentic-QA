@@ -7,7 +7,13 @@ from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any
 
-from harness.domain.models import ExecutionProfile
+from harness.domain.models import (
+    ApiAuthentication,
+    ApiTokenInjection,
+    ExecutionProfile,
+    LoginApiAuthentication,
+    StaticTokenApiAuthentication,
+)
 from harness.domain.schemas.api_test_cases import API_CASES_SCHEMA_VERSION, ApiTestCase
 from harness.domain.schemas.execution_evidence import (
     EXECUTION_EVIDENCE_SCHEMA_VERSION,
@@ -33,6 +39,27 @@ def _resolve(value: Any, env: Mapping[str, str]) -> Any:
     return value
 
 
+def _required_environment_references(value: Any) -> set[str]:
+    if isinstance(value, str):
+        return set(ENV_PLACEHOLDER_RE.findall(value))
+    if isinstance(value, list):
+        return set().union(*(_required_environment_references(item) for item in value), set())
+    if isinstance(value, dict):
+        return set().union(
+            *(_required_environment_references(item) for item in value.values()), set()
+        )
+    return set()
+
+
+def _resolve_required(value: Any, env: Mapping[str, str]) -> Any:
+    missing = sorted(name for name in _required_environment_references(value) if not env.get(name))
+    if missing:
+        raise RuntimeError(
+            "API authentication is missing environment values: " + ", ".join(missing)
+        )
+    return _resolve(value, env)
+
+
 def _json_path_exists(body: Any, path: str) -> bool:
     if not path.startswith("$."):
         return False
@@ -44,12 +71,88 @@ def _json_path_exists(body: Any, path: str) -> bool:
     return True
 
 
+def _json_path_value(body: Any, path: str) -> Any:
+    current = body
+    for part in path[2:].split("."):
+        if not isinstance(current, dict) or part not in current:
+            raise RuntimeError(f"API login response does not contain token path: {path}")
+        current = current[part]
+    return current
+
+
 def _sanitize_error(error: Exception, secrets: list[str]) -> str:
     message = URL_RE.sub("<redacted-url>", str(error))
     for secret in secrets:
         if secret:
             message = message.replace(secret, "<redacted>")
     return message[:1000]
+
+
+def _injected_header(injection: ApiTokenInjection, token: str) -> tuple[str, str]:
+    value = f"{injection.prefix} {token}" if injection.prefix else token
+    return injection.name, value
+
+
+def _authenticate(
+    auth: ApiAuthentication | None,
+    *,
+    base_url: str,
+    profile: ExecutionProfile,
+    env: Mapping[str, str],
+    request_func: Callable[..., Any],
+) -> tuple[tuple[str, str] | None, list[str]]:
+    if auth is None:
+        return None, []
+    if isinstance(auth, StaticTokenApiAuthentication):
+        token = (
+            auth.token.get_secret_value().strip()
+            if auth.token is not None
+            else env.get(str(auth.token_env), "").strip()
+        )
+        if not token:
+            raise RuntimeError(
+                f"API authentication token environment variable is not set: {auth.token_env}"
+            )
+        return _injected_header(auth.injection, token), [token]
+    if not isinstance(auth, LoginApiAuthentication):
+        raise TypeError(f"unsupported API authentication configuration: {type(auth).__name__}")
+    if auth.request.method not in profile.allowed_http_methods:
+        raise PermissionError(
+            f"API login method {auth.request.method} is not allowed by execution profile"
+        )
+    request = _resolve_required(auth.request.model_dump(mode="python"), env)
+    try:
+        response = request_func(
+            auth.request.method,
+            base_url.rstrip("/") + "/" + auth.request.path.lstrip("/"),
+            headers=dict(request.get("headers") or {}),
+            params=request.get("query"),
+            json=request.get("body"),
+            timeout=profile.request_timeout_seconds,
+        )
+        if int(response.status_code) not in set(auth.expected_status_codes):
+            raise RuntimeError(f"API login returned HTTP {int(response.status_code)}")
+        body = response.json()
+        token = _json_path_value(body, auth.token_json_path)
+        if not isinstance(token, str) or not token.strip():
+            raise RuntimeError("API login response token must be a non-empty string")
+        token = token.strip()
+        return _injected_header(auth.injection, token), [token]
+    except Exception as exc:
+        message = _sanitize_error(exc, [base_url, *env.values()])
+        raise RuntimeError(f"API authentication failed: {message}") from exc
+
+
+def _apply_authentication_header(
+    headers: dict[str, Any],
+    authentication_header: tuple[str, str] | None,
+) -> dict[str, Any]:
+    if authentication_header is None:
+        return headers
+    name, value = authentication_header
+    result = {key: item for key, item in headers.items() if key.casefold() != name.casefold()}
+    result[name] = value
+    return result
 
 
 def _execute_case(
@@ -59,6 +162,8 @@ def _execute_case(
     profile: ExecutionProfile,
     env: Mapping[str, str],
     request_func: Callable[..., Any],
+    authentication_header: tuple[str, str] | None,
+    authentication_secrets: list[str],
 ) -> CaseExecutionEvidence:
     method = str(case.request.method or "").upper()
     path = str(case.request.path or "")
@@ -92,10 +197,14 @@ def _execute_case(
         )
     try:
         request = _resolve(case.request.model_dump(mode="python"), env)
+        headers = _apply_authentication_header(
+            dict(request.get("headers") or {}),
+            authentication_header,
+        )
         response = request_func(
             method,
             base_url.rstrip("/") + "/" + path.lstrip("/"),
-            headers=dict(request.get("headers") or {}),
+            headers=headers,
             params=request.get("query"),
             json=request.get("body"),
             timeout=profile.request_timeout_seconds,
@@ -165,7 +274,10 @@ def _execute_case(
             started_at=started_at,
             completed_at=datetime.now(tz=UTC),
             duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
-            error=_sanitize_error(exc, [base_url, *env.values()]),
+            error=_sanitize_error(
+                exc,
+                [base_url, *env.values(), *authentication_secrets],
+            ),
         )
 
 
@@ -177,6 +289,7 @@ def execute_api_cases(
     profile: ExecutionProfile,
     env: Mapping[str, str] | None = None,
     request_func: Callable[..., Any] | None = None,
+    authentication: ApiAuthentication | None = None,
 ) -> ExecutionEvidence:
     if not cases:
         raise ValueError("no API cases to execute")
@@ -190,6 +303,13 @@ def execute_api_cases(
         import requests
 
         request_func = requests.request
+    authentication_header, authentication_secrets = _authenticate(
+        authentication,
+        base_url=base_url,
+        profile=profile,
+        env=runtime_env,
+        request_func=request_func,
+    )
     started_at = datetime.now(tz=UTC)
     results = [
         _execute_case(
@@ -198,6 +318,8 @@ def execute_api_cases(
             profile=profile,
             env=runtime_env,
             request_func=request_func,
+            authentication_header=authentication_header,
+            authentication_secrets=authentication_secrets,
         )
         for case in cases
     ]
