@@ -57,3 +57,11 @@ class ApiDiscoveryCatalog(StrictModel):
         if self.business_candidate_count != len(self.candidates):
             raise ValueError("business_candidate_count does not match candidates")
         return self
+
+
+class ApiDiscoveryExport(StrictModel):
+    schema_version: Literal["agentic-qa.api-discovery-export.v1"] = (
+        "agentic-qa.api-discovery-export.v1"
+    )
+    run_id: str = Field(min_length=1)
+    catalogs: list[ApiDiscoveryCatalog] = Field(min_length=1, max_length=50)

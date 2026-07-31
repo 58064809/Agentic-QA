@@ -12,7 +12,18 @@ from typing import Any
 @contextmanager
 def exclusive_file_lock(path: Path) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
-    handle = path.open("a+b")
+    try:
+        descriptor = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL)
+    except FileExistsError:
+        handle = path.open("r+b")
+    else:
+        try:
+            os.write(descriptor, b"0")
+            os.fsync(descriptor)
+            handle = os.fdopen(descriptor, "r+b")
+        except BaseException:
+            os.close(descriptor)
+            raise
     acquired = False
     try:
         if path.stat().st_size == 0:

@@ -40,7 +40,7 @@ from harness.domain.models import (
     StartRunCommand,
 )
 from harness.domain.review import validate_review_decision
-from harness.domain.schemas.api_discovery import ApiDiscoveryCatalog
+from harness.domain.schemas.api_discovery import ApiDiscoveryCatalog, ApiDiscoveryExport
 from harness.domain.schemas.api_test_cases import (
     API_CASES_SCHEMA_VERSION,
     ApiTestCasesDraft,
@@ -104,6 +104,7 @@ class _TaskExecution(BaseModel):
     output: AgentOutput
     assessments: dict[str, CandidateAssessment] = Field(default_factory=dict)
     quality_exhausted_artifacts: set[str] = Field(default_factory=set)
+    api_discovery_export: ApiDiscoveryExport | None = None
 
 
 ARTIFACT_AGENT = {
@@ -694,6 +695,11 @@ class HarnessEngine:
                         for artifact, assessment in execution.assessments.items()
                     },
                     "quality_exhausted_artifacts": sorted(execution.quality_exhausted_artifacts),
+                    "api_discovery_export": (
+                        execution.api_discovery_export.model_dump(mode="json")
+                        if execution.api_discovery_export is not None
+                        else None
+                    ),
                 }
                 event("agent_completed", task_id=task.id, agent=task.agent)
             except BudgetExceeded:
@@ -732,6 +738,11 @@ class HarnessEngine:
                         for artifact, value in result.get("assessments", {}).items()
                     }
                     quality_exhausted_artifacts = set(result.get("quality_exhausted_artifacts", []))
+                    api_discovery_export = (
+                        ApiDiscoveryExport.model_validate(result["api_discovery_export"])
+                        if result.get("api_discovery_export") is not None
+                        else None
+                    )
                     outputs[task_id] = output.model_dump(mode="json")
                     if task_id in pending:
                         pending.remove(task_id)
@@ -765,6 +776,11 @@ class HarnessEngine:
                                 assessment=assessment,
                                 partial=artifact in quality_exhausted_artifacts,
                                 evidence=output.evidence,
+                                api_discovery_export=(
+                                    api_discovery_export
+                                    if artifact == "api_discovery_report"
+                                    else None
+                                ),
                             )
                         if artifact not in {item["artifact"] for item in candidates}:
                             candidates.append(candidate.model_dump(mode="json"))
@@ -1026,6 +1042,7 @@ class HarnessEngine:
         source_files = [document.path for document in source_bundle.readable_documents]
         source_fragments: list[RequirementCatalog] = []
         batched_seed: AgentOutput | None = None
+        api_discovery_export: ApiDiscoveryExport | None = None
         expert_prompt = self.prompt_compiler.compile(
             phase="expert",
             agent=manifest.name,
@@ -1837,6 +1854,10 @@ class HarnessEngine:
                         discovery_catalogs,
                         run_id=run_id,
                     )
+                    api_discovery_export = ApiDiscoveryExport(
+                        run_id=run_id,
+                        catalogs=discovery_catalogs,
+                    )
                     result = result.model_copy(update={"artifacts": rendered})
                 unexpected = set(result.artifacts) - set(task.expected_outputs)
                 if unexpected:
@@ -2002,6 +2023,7 @@ class HarnessEngine:
                 output=result,
                 assessments=assessments,
                 quality_exhausted_artifacts={item["artifact"] for item in blockers},
+                api_discovery_export=api_discovery_export,
             )
         raise RuntimeError(f"agent step limit exceeded: {manifest.name}")
 

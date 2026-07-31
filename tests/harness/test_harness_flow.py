@@ -184,9 +184,24 @@ def test_api_discovery_report_is_sanitized_and_stops_at_review_gate(tmp_path: Pa
     assert "不代表完整 API 契约" in report
     assert "secret-value" not in report
     assert "```json" not in report
+    assert len(candidate.attachments) == 1
+    attachment = candidate.attachments[0]
+    assert attachment.name == "discovery-catalog.json"
+    catalog_text = (tmp_path / attachment.path).read_text(encoding="utf-8")
+    catalog_export = json.loads(catalog_text)
+    assert catalog_export["schema_version"] == "agentic-qa.api-discovery-export.v1"
+    assert catalog_export["run_id"] == snapshot.run_id
+    assert catalog_export["catalogs"][0]["candidates"][0]["path"] == "/api/assist"
+    assert "secret-value" not in catalog_text
+    candidate_files = {path.name for path in (tmp_path / candidate.path).parent.iterdir()}
+    assert "discovery-catalog.json" in candidate_files
+    assert not any(path.endswith(".har") for path in candidate_files)
     assert discovery_tools
     assert all(tools == {"network.capture.inspect"} for tools in discovery_tools)
     assert not (workspace / "published/api_discovery_report/current.md").exists()
+
+    approved_ref = candidate.version_ref(ArtifactVariant.RAW)
+    assert approved_ref.attachments[0].content_sha256 == attachment.content_sha256
 
     published = harness.review_run(
         ReviewRunCommand(
@@ -204,6 +219,12 @@ def test_api_discovery_report_is_sanitized_and_stops_at_review_gate(tmp_path: Pa
 
     assert published.status == "published"
     assert (workspace / "published/api_discovery_report/current.md").is_file()
+    published_catalog = workspace / "published/api_discovery_report/current.catalog.json"
+    assert published_catalog.read_text(encoding="utf-8") == catalog_text
+    history_catalog = (
+        workspace / "published/api_discovery_report/history" / f"{snapshot.run_id}.catalog.json"
+    )
+    assert history_catalog.read_text(encoding="utf-8") == catalog_text
 
 
 def test_live_api_discovery_uses_playwright_facade_and_stops_at_review_gate(
@@ -342,6 +363,11 @@ def test_live_api_discovery_uses_playwright_facade_and_stops_at_review_gate(
     assert "live-secret" not in report
     assert "response-secret" not in report
     assert "13800138000" not in report
+    live_catalog = (tmp_path / candidate.attachments[0].path).read_text(encoding="utf-8")
+    assert "playwright_mcp" in live_catalog
+    assert "live-secret" not in live_catalog
+    assert "response-secret" not in live_catalog
+    assert "13800138000" not in live_catalog
     assert not (workspace / "published/api_discovery_report/current.md").exists()
 
 

@@ -20,6 +20,7 @@ workspaces/<workspace_id>/
 │   ├── remediation.patch          # 可选，仅用于修订建议
 │   ├── quality-report.json
 │   ├── generation-report.json     # 可选；模型调用与质量修订审计
+│   ├── discovery-catalog.json     # API Discovery 的脱敏机器目录
 │   └── manifest.json
 ├── reviews/<run_id>/
 └── published/<artifact>/
@@ -61,5 +62,6 @@ workspaces/<workspace_id>/
 | `normalization.patch` | 否 | 审计表示层变化 |
 | `remediation.patch` | 否 | 修订建议；接受建议后由新 run 形成新的 raw |
 | `generation-report.json` | 否 | 记录 `llm_used`、每次模型调用结果和质量回灌次数 |
+| `discovery-catalog.json` | API Discovery 是 | 与审核版本一起进行 hash 选择，批准后发布为 `current.catalog.json` |
 
 发布选择与拒绝条件见 [Review Gate](review-gate.md)。

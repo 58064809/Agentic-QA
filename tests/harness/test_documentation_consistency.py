@@ -10,7 +10,7 @@ from urllib.parse import unquote
 import yaml
 
 from harness.application.agent_request import AgentRequest, AgentRequestResult
-from harness.domain.schemas.api_discovery import ApiDiscoveryCatalog
+from harness.domain.schemas.api_discovery import ApiDiscoveryCatalog, ApiDiscoveryExport
 from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.failure_triage import FailureTriage
@@ -23,6 +23,7 @@ LINK = re.compile(r"\[[^]]+]\(([^)]+)\)")
 DIRECTIVE = re.compile(r"必须|不得|禁止|只允许|不能|不允许|应当|务必|不要|只能|不可")
 SCHEMAS = {
     "api-discovery.v1.1.schema.json": ApiDiscoveryCatalog,
+    "api-discovery-export.v1.schema.json": ApiDiscoveryExport,
     "agent-request.v1.schema.json": AgentRequest,
     "agent-request-result.v1.schema.json": AgentRequestResult,
     "api-cases.v1.1.schema.json": ApiTestCasesDraft,

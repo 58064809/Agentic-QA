@@ -386,12 +386,23 @@ class ArtifactVersion(StrictModel):
     content_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
 
 
+class ArtifactAttachmentRef(StrictModel):
+    name: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{0,127}$")
+    media_type: str = Field(min_length=1)
+    content_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class ArtifactAttachment(ArtifactAttachmentRef):
+    path: str
+
+
 class ArtifactVersionRef(StrictModel):
     artifact: str
     variant: ArtifactVariant
     content_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     assessment_key: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     quality_report_sha256: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    attachments: tuple[ArtifactAttachmentRef, ...] = ()
 
 
 class ApprovedArtifactVersion(ArtifactVersionRef):
@@ -414,6 +425,7 @@ class ArtifactCandidate(StrictModel):
     generation_report_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     source_bundle_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     policy_versions: dict[str, str] = Field(default_factory=dict)
+    attachments: list[ArtifactAttachment] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -433,6 +445,14 @@ class ArtifactCandidate(StrictModel):
             content_sha256=version.content_sha256,
             assessment_key=self.assessment_key,
             quality_report_sha256=self.quality_report_sha256,
+            attachments=tuple(
+                ArtifactAttachmentRef(
+                    name=item.name,
+                    media_type=item.media_type,
+                    content_sha256=item.content_sha256,
+                )
+                for item in self.attachments
+            ),
         )
 
 

@@ -1,0 +1,339 @@
+{
+  "$defs": {
+    "ApiDiscoveryCatalog": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "agentic-qa.api-discovery.v1.1",
+          "default": "agentic-qa.api-discovery.v1.1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_path": {
+          "minLength": 1,
+          "title": "Source Path",
+          "type": "string"
+        },
+        "capture_format": {
+          "enum": [
+            "har",
+            "simplified_json",
+            "playwright_mcp"
+          ],
+          "title": "Capture Format",
+          "type": "string"
+        },
+        "observed_call_count": {
+          "minimum": 0,
+          "title": "Observed Call Count",
+          "type": "integer"
+        },
+        "business_candidate_count": {
+          "minimum": 0,
+          "title": "Business Candidate Count",
+          "type": "integer"
+        },
+        "calls": {
+          "items": {
+            "$ref": "#/$defs/NetworkCall"
+          },
+          "maxItems": 500,
+          "title": "Calls",
+          "type": "array"
+        },
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/DiscoveredApiCandidate"
+          },
+          "maxItems": 500,
+          "title": "Candidates",
+          "type": "array"
+        },
+        "redactions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Redactions",
+          "type": "array"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Limitations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_path",
+        "capture_format",
+        "observed_call_count",
+        "business_candidate_count",
+        "calls",
+        "candidates",
+        "redactions",
+        "limitations"
+      ],
+      "title": "ApiDiscoveryCatalog",
+      "type": "object"
+    },
+    "DiscoveredApiCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_id": {
+          "pattern": "^DISC-\\d{3}$",
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "HEAD",
+            "OPTIONS",
+            "TRACE"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Origin"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "call_count": {
+          "minimum": 1,
+          "title": "Call Count",
+          "type": "integer"
+        },
+        "status_codes": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Status Codes",
+          "type": "array"
+        },
+        "average_duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Average Duration Ms"
+        },
+        "query_parameters": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Query Parameters",
+          "type": "array"
+        },
+        "request_schema": {
+          "additionalProperties": true,
+          "title": "Request Schema",
+          "type": "object"
+        },
+        "response_schema": {
+          "additionalProperties": true,
+          "title": "Response Schema",
+          "type": "object"
+        },
+        "source_path": {
+          "minLength": 1,
+          "title": "Source Path",
+          "type": "string"
+        },
+        "locators": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Locators",
+          "type": "array"
+        },
+        "evidence_kind": {
+          "const": "playwright-network-capture",
+          "default": "playwright-network-capture",
+          "title": "Evidence Kind",
+          "type": "string"
+        },
+        "confidence": {
+          "const": "observed",
+          "default": "observed",
+          "title": "Confidence",
+          "type": "string"
+        },
+        "pending": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Pending",
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "method",
+        "path",
+        "call_count",
+        "status_codes",
+        "query_parameters",
+        "request_schema",
+        "response_schema",
+        "source_path",
+        "locators",
+        "pending"
+      ],
+      "title": "DiscoveredApiCandidate",
+      "type": "object"
+    },
+    "NetworkCall": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "HEAD",
+            "OPTIONS",
+            "TRACE"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Origin"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "maximum": 599,
+              "minimum": 100,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "resource_type": {
+          "default": "",
+          "title": "Resource Type",
+          "type": "string"
+        },
+        "page_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page Path"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        },
+        "business_candidate": {
+          "title": "Business Candidate",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sequence",
+        "method",
+        "path",
+        "business_candidate"
+      ],
+      "title": "NetworkCall",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.api-discovery-export.v1",
+      "default": "agentic-qa.api-discovery-export.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "catalogs": {
+      "items": {
+        "$ref": "#/$defs/ApiDiscoveryCatalog"
+      },
+      "maxItems": 50,
+      "minItems": 1,
+      "title": "Catalogs",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "catalogs"
+  ],
+  "title": "ApiDiscoveryExport",
+  "type": "object"
+}

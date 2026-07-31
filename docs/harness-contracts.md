@@ -30,6 +30,7 @@
 | `generation_report_path/sha256` | LLM 使用、模型路由、Token、重试与质量修订审计 |
 | `source_bundle_hash` | 绑定 run 的冻结来源 |
 | `policy_versions` | 记录参与评估的策略版本 |
+| `attachments` | 补充机器产物的路径、媒体类型和内容 hash；API Discovery 使用脱敏目录 |
 | `partial` | 从 Candidate Manifest 恢复；不是 Snapshot 的可信替代 |
 
 `ArtifactCandidate` 不持久化 `quality_passed`。所选 variant 是否可发布由 Review 服务和 Repository
@@ -44,6 +45,7 @@
 | `content_sha256` | 与实际版本文件不一致时发布校验失败 |
 | `assessment_key` | 与 Candidate 或质量报告不一致时发布校验失败 |
 | `quality_report_sha256` | 与已提交报告不一致时发布校验失败 |
+| `attachments` | 与 Candidate 附件名称、媒体类型或 hash 不一致时发布校验失败 |
 
 可使用 `candidate.version_ref(ArtifactVariant.RAW)` 构造。Approve 对每个目标恰好提供一个引用；CLI
 对应重复的 `--variant artifact=raw|normalized`。

@@ -20,6 +20,8 @@ from harness.application.quality import (
 )
 from harness.domain.models import (
     ApprovedArtifactVersion,
+    ArtifactAttachment,
+    ArtifactAttachmentRef,
     ArtifactCandidate,
     ArtifactDiffEndpoint,
     ArtifactDiffResult,
@@ -29,6 +31,7 @@ from harness.domain.models import (
     ReviewIntent,
     RunSnapshot,
 )
+from harness.domain.schemas.api_discovery import ApiDiscoveryExport
 from harness.infrastructure.persistence.common import (
     atomic_bytes,
     atomic_json,
@@ -80,6 +83,7 @@ class ArtifactReviewFilesystemRepository:
         assessment: CandidateAssessment,
         partial: bool = False,
         evidence: list[str] | None = None,
+        api_discovery_export: ApiDiscoveryExport | None = None,
     ) -> tuple[ArtifactCandidate, bool]:
         workspace_root = self.workspaces.require_workspace(workspace)
         run_root = workspace_root / "candidates" / run_id
@@ -88,7 +92,12 @@ class ArtifactReviewFilesystemRepository:
         extension = ARTIFACT_EXTENSIONS[artifact]
         with exclusive_file_lock(lock):
             if final.exists():
-                return self._load_committed(final, artifact, assessment)
+                return self._load_committed(
+                    final,
+                    artifact,
+                    assessment,
+                    api_discovery_export=api_discovery_export,
+                )
             staging_root = run_root / ".staging"
             staging_root.mkdir(parents=True, exist_ok=True)
             staging = Path(tempfile.mkdtemp(prefix=f"{artifact}.", dir=staging_root))
@@ -107,6 +116,16 @@ class ArtifactReviewFilesystemRepository:
                     files["normalization.patch"] = assessment.normalization_patch.encode("utf-8")
                 if assessment.remediation_patch:
                     files["remediation.patch"] = assessment.remediation_patch.encode("utf-8")
+                if api_discovery_export is not None:
+                    if artifact != "api_discovery_report":
+                        raise ValueError(
+                            "API discovery export can only accompany api_discovery_report"
+                        )
+                    if api_discovery_export.run_id != run_id:
+                        raise ValueError("API discovery export run_id does not match candidate")
+                    files["discovery-catalog.json"] = _json_bytes(
+                        api_discovery_export.model_dump(mode="json")
+                    )
                 hashes: dict[str, str] = {}
                 for name, content in files.items():
                     _write_fsynced(staging / name, content)
@@ -129,7 +148,12 @@ class ArtifactReviewFilesystemRepository:
                 _write_fsynced(staging / "manifest.json", _json_bytes(manifest))
                 self._sync_directory(staging)
                 if final.exists():
-                    return self._load_committed(final, artifact, assessment)
+                    return self._load_committed(
+                        final,
+                        artifact,
+                        assessment,
+                        api_discovery_export=api_discovery_export,
+                    )
                 os.rename(staging, final)
                 self._sync_directory(run_root)
             finally:
@@ -235,6 +259,13 @@ class ArtifactReviewFilesystemRepository:
                 published / "history" / "index.yml",
             ):
                 tracked[path] = path.read_bytes() if path.is_file() else None
+            catalog = source.parent / "discovery-catalog.json"
+            if catalog.is_file():
+                for path in (
+                    published / "current.catalog.json",
+                    published / "history" / f"{snapshot.run_id}.catalog.json",
+                ):
+                    tracked[path] = path.read_bytes() if path.is_file() else None
         promoted: dict[str, str] = {}
         try:
             for version in versions:
@@ -305,6 +336,25 @@ class ArtifactReviewFilesystemRepository:
         temporary = published / f".current.{snapshot.run_id}.tmp"
         shutil.copyfile(source, temporary)
         os.replace(temporary, current)
+        attachments: dict[str, dict[str, str]] = {}
+        catalog_source = source.parent / "discovery-catalog.json"
+        if catalog_source.is_file():
+            catalog_hash = _sha256_bytes(catalog_source.read_bytes())
+            catalog_current = published / "current.catalog.json"
+            catalog_history = history / f"{snapshot.run_id}.catalog.json"
+            if catalog_history.is_file():
+                if _sha256_bytes(catalog_history.read_bytes()) != catalog_hash:
+                    raise ValueError("published discovery catalog history hash mismatch")
+            else:
+                shutil.copyfile(catalog_source, catalog_history)
+            catalog_temporary = published / f".current.catalog.{snapshot.run_id}.tmp"
+            shutil.copyfile(catalog_source, catalog_temporary)
+            os.replace(catalog_temporary, catalog_current)
+            attachments["discovery-catalog.json"] = {
+                "path": catalog_history.relative_to(workspace).as_posix(),
+                "content_sha256": catalog_hash,
+                "media_type": "application/json",
+            }
         index_path = history / "index.yml"
         index: dict[str, Any] = {
             "schema_version": "agentic-qa.harness.history.v2",
@@ -315,7 +365,11 @@ class ArtifactReviewFilesystemRepository:
             if isinstance(loaded, dict):
                 index = loaded
         versions = list(index.get("versions") or [])
-        if not any(item.get("run_id") == snapshot.run_id for item in versions):
+        existing = next(
+            (item for item in versions if item.get("run_id") == snapshot.run_id),
+            None,
+        )
+        if existing is None:
             versions.append(
                 {
                     "run_id": snapshot.run_id,
@@ -323,9 +377,15 @@ class ArtifactReviewFilesystemRepository:
                     "content_sha256": version.content_sha256,
                     "assessment_key": version.assessment_key,
                     "path": history_target.relative_to(workspace).as_posix(),
+                    "attachments": attachments,
                     "published_at": datetime.now(tz=UTC).isoformat(),
                 }
             )
+        elif attachments:
+            recorded_attachments = existing.get("attachments")
+            if recorded_attachments not in (None, attachments):
+                raise ValueError("published discovery catalog index hash mismatch")
+            existing["attachments"] = attachments
         index["versions"] = versions
         atomic_text(index_path, yaml.safe_dump(index, allow_unicode=True, sort_keys=False))
         return current.relative_to(self.repo_root).as_posix()
@@ -365,6 +425,16 @@ class ArtifactReviewFilesystemRepository:
             raise ValueError("approved assessment key 与 candidate 不匹配")
         if candidate.quality_report_sha256 != version.quality_report_sha256:
             raise ValueError("approved quality report 与 candidate 不匹配")
+        expected_attachments = tuple(
+            ArtifactAttachmentRef(
+                name=item.name,
+                media_type=item.media_type,
+                content_sha256=item.content_sha256,
+            )
+            for item in candidate.attachments
+        )
+        if version.attachments != expected_attachments:
+            raise ValueError("approved attachments 与 candidate manifest 不匹配")
         if not candidate.quality_report_path:
             raise ValueError("candidate 缺少质量报告路径")
         report_path = (self.repo_root / candidate.quality_report_path).resolve()
@@ -424,6 +494,14 @@ class ArtifactReviewFilesystemRepository:
             raise ValueError("candidate version 路径越界或不存在")
         if _sha256_bytes(source.read_bytes()) != version.content_sha256:
             raise ValueError("candidate version 内容 hash 已变化")
+        for attachment in candidate.attachments:
+            attachment_path = (self.repo_root / attachment.path).resolve()
+            if (
+                attachment_path.parent != candidate_root
+                or not attachment_path.is_file()
+                or _sha256_bytes(attachment_path.read_bytes()) != attachment.content_sha256
+            ):
+                raise ValueError(f"candidate attachment 内容 hash 已变化: {attachment.name}")
         return source
 
     def _load_committed(
@@ -431,10 +509,19 @@ class ArtifactReviewFilesystemRepository:
         final: Path,
         artifact: str,
         assessment: CandidateAssessment,
+        *,
+        api_discovery_export: ApiDiscoveryExport | None,
     ) -> tuple[ArtifactCandidate, bool]:
         manifest = self._validated_manifest(final)
         if manifest["assessment_key"] != assessment.report.assessment_key:
             raise FileExistsError("candidate 已存在且 assessment key 不同，不允许覆盖")
+        expected_catalog_hash = (
+            _sha256_bytes(_json_bytes(api_discovery_export.model_dump(mode="json")))
+            if api_discovery_export is not None
+            else None
+        )
+        if manifest["files"].get("discovery-catalog.json") != expected_catalog_hash:
+            raise FileExistsError("candidate 已存在且 discovery catalog 不同，不允许覆盖")
         return self._candidate(final, artifact), False
 
     def _candidate(
@@ -448,6 +535,22 @@ class ArtifactReviewFilesystemRepository:
             GenerationProvenance.model_validate_json(generation_report.read_text(encoding="utf-8"))
         if manifest.get("artifact") != artifact:
             raise ValueError("candidate manifest artifact 不匹配")
+        attachments: list[ArtifactAttachment] = []
+        catalog_path = final / "discovery-catalog.json"
+        if catalog_path.name in manifest["files"]:
+            export = ApiDiscoveryExport.model_validate_json(
+                catalog_path.read_text(encoding="utf-8")
+            )
+            if artifact != "api_discovery_report" or export.run_id != manifest.get("run_id"):
+                raise ValueError("candidate discovery catalog provenance 不匹配")
+            attachments.append(
+                ArtifactAttachment(
+                    name=catalog_path.name,
+                    path=catalog_path.relative_to(self.repo_root).as_posix(),
+                    media_type="application/json",
+                    content_sha256=manifest["files"][catalog_path.name],
+                )
+            )
         extension = ARTIFACT_EXTENSIONS[artifact]
         versions = [
             ArtifactVersion(
@@ -500,6 +603,7 @@ class ArtifactReviewFilesystemRepository:
                 generation_report_sha256=manifest["files"].get("generation-report.json"),
                 source_bundle_hash=manifest.get("source_bundle_hash"),
                 policy_versions=policy_versions if isinstance(policy_versions, dict) else {},
+                attachments=attachments,
             )
         report = QualityReport.model_validate_json(report_path.read_text(encoding="utf-8"))
         if manifest["policy_versions"] != report.policy_versions:
@@ -542,6 +646,7 @@ class ArtifactReviewFilesystemRepository:
             generation_report_sha256=manifest["files"].get("generation-report.json"),
             source_bundle_hash=manifest["source_bundle_hash"],
             policy_versions=manifest["policy_versions"],
+            attachments=attachments,
         )
 
     @staticmethod
@@ -555,6 +660,23 @@ class ArtifactReviewFilesystemRepository:
         files = manifest.get("files")
         if not isinstance(files, dict) or not files:
             raise ValueError("candidate manifest files 无效")
+        artifact = manifest.get("artifact")
+        if artifact not in ARTIFACT_EXTENSIONS:
+            raise ValueError("candidate manifest artifact 不受支持")
+        extension = ARTIFACT_EXTENSIONS[artifact]
+        allowed_files = {
+            f"raw{extension}",
+            f"normalized{extension}",
+            "quality-report.json",
+            "generation-report.json",
+            "normalization.patch",
+            "remediation.patch",
+        }
+        if artifact == "api_discovery_report":
+            allowed_files.add("discovery-catalog.json")
+        unsupported = sorted(set(files) - allowed_files)
+        if unsupported:
+            raise ValueError(f"candidate manifest 包含不受支持的文件: {unsupported}")
         declared = {"manifest.json", *files}
         actual = {item.name for item in final.iterdir()}
         if actual != declared:
