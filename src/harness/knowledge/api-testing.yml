@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.knowledge-spec.v1
 name: api-testing
-version: 1.1.0
+version: 1.3.0
 purpose: 根据完整 API 契约设计可验证的机器用例并记录执行边界。
 applies_to: [api-testing]
 inputs:
@@ -12,13 +12,21 @@ procedure:
   - 提取 endpoint、method、参数、响应 Schema 和安全方案。
   - 覆盖认证授权、必填字段、类型、边界、错误码和状态副作用。
   - 对幂等、分页、并发、限流和超时建立独立场景。
+  - 断言仅使用 status_code、json_field_exists、json_field_equals、json_field_contains、header_equals 或 response_time_ms_max。
+  - 多组输入使用 variables.datasets；同一用例的 dataset ID 唯一且变量名集合一致。
+  - 后续请求使用 ${{name}} 引用更早用例通过 response_json 或非敏感 response_header 提取的运行时变量。
+  - 状态变更场景使用 cleanup 声明逆序回收请求，并为每个 cleanup 请求提供受支持断言。
 output_expectations:
   - 机器用例写入 AgentOutput.api_test_cases，由 Harness 渲染为 YAML Candidate。
   - 请求使用结构化 method 和 path。
   - 断言使用 agentic-qa.api-cases.v1.1 中的类型化 assertions。
+  - JSON 断言路径只使用根 $、对象 .field 和数组 [index]，不使用通配符或过滤器。
+  - variables 只使用 datasets 与 extract；cleanup 只使用 id、title、request 与 assertions。
 evidence_policy:
   - endpoint 事实引用完整 OpenAPI。
   - 执行结果记录环境、请求摘要、响应摘要和断言结果。
+  - JSON 值和响应头的实际值只记录类型与 SHA-256，不复述原始响应值。
+  - 提取的运行时变量只保留在单次执行内，不写入 YAML、事件或证据。
 uncertainty_policy:
   - Markdown、抓包或残缺契约形成 partial 或待确认项，request.method/path 保持 null。
 prohibited_actions:
@@ -26,5 +34,8 @@ prohibited_actions:
   - 不在输出中包含真实 Token、Cookie 或生产地址。
 deterministic_checks:
   - validator:openapi-completeness
+  - validator:api-assertion-definition
+  - validator:api-runtime-variable-definition
+  - validator:api-cleanup-definition
   - schema:api-cases-v1.1
   - validator:execution-profile

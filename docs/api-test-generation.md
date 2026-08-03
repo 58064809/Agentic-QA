@@ -33,6 +33,96 @@ HTTP method allowlist 控制。请求位于 `request.method/path`，断言位于
 workspace 环境可以选择静态 token 或执行前登录取 token；认证头由执行器统一注入，不改变
 API Cases v1.1 文件。
 
+## 场景变量、数据集与 cleanup
+
+`variables` 和 `cleanup` 保持 API Cases v1.1 的既有字段位置。Candidate 生成校验、通用质量门和
+执行前预检共同拒绝未知字段、非法路径、前向变量引用或错误 cleanup；历史 published 文件定义无效
+时记录 `blocked`，不发送该用例请求。
+
+运行时变量使用 `${{name}}`，与环境变量 `${ENV_NAME}` 区分。完整占位符保留数字、布尔、对象或
+数组类型；嵌入字符串时只接受标量。响应提取值仅在本次执行进程内保存，不写回 YAML 或 Evidence。
+
+```yaml
+variables:
+  datasets:
+    - id: one-item
+      values: {sku: SKU-001, quantity: 1}
+    - id: two-items
+      values: {sku: SKU-002, quantity: 2}
+  extract:
+    order_id:
+      source: response_json
+      path: $.data.id
+      required: true
+cleanup:
+  - id: delete-order
+    title: 删除本次创建的订单
+    request:
+      method: DELETE
+      path: /orders/${{order_id}}
+      headers: {}
+      query: {}
+      body: {}
+    assertions:
+      - type: status_code
+        expected: [204]
+```
+
+| 能力 | 规则 |
+|---|---|
+| `datasets` | 系统校验同一用例的数据集 ID 唯一且变量名集合相同；每个数据集产生独立 Evidence case |
+| `response_json` | 使用同一受限 JSON 路径语法提取 |
+| `response_header` | 头名大小写不敏感；拒绝 Cookie、Token 等敏感头名 |
+| 跨用例变量 | 系统校验引用来自更早用例声明的提取变量；上游未产生所需值时下游为 `blocked` |
+| cleanup | 主请求发出后登记，全部业务用例结束后逆序执行；每一步形成独立 Evidence case |
+
+一个带多个 datasets 的生产者会按顺序覆盖同名共享提取值，因此后续用例读取最后一次提取结果；每次
+迭代的 cleanup 会保留自己的变量快照。需要一一对应的完整业务链时，应生成多个显式场景用例。
+
+## 执行与 pytest 导出
+
+直接执行已发布用例：
+
+```powershell
+python -m harness api execute demo run-api-001 `
+  --environment qa `
+  --allow-http-method GET `
+  --allow-http-method POST `
+  --allow-http-method DELETE
+```
+
+确定性导出 pytest adapter：
+
+```powershell
+python -m harness api export-pytest demo
+```
+
+导出的 `workspaces/demo/exports/api_test_draft/test_api_cases.py` 不复制或重新生成测试逻辑，而是调用
+公开 Harness API 执行 published YAML。文件绑定源 SHA-256；published 发生变化后，旧 adapter 返回
+hash 不匹配，重新导出会生成与新版本绑定的文件。
+运行 pytest 前显式设置 `AGENTIC_QA_EXECUTION_ENVIRONMENT`、
+`AGENTIC_QA_ALLOWED_HTTP_METHODS`、base URL 和 workspace 策略。导出不批准 Candidate，也不改变
+published。
+
+## 支持的断言
+
+`assertions` 保持 `type`、`expected`、`path` 三字段结构。Candidate 生成与质量门会校验断言定义；
+未知类型或错误参数进入修订，历史 published 用例中的无效断言在发送认证或业务请求前记录为
+`blocked`。
+
+| `type` | 参数 | 判断 |
+|---|---|---|
+| `status_code` | `expected` 为状态码或非空状态码列表 | 实际状态码属于期望集合 |
+| `json_field_exists` | `path` | JSON 路径存在 |
+| `json_field_equals` | `path`、显式 `expected` | JSON 值深度等于期望值 |
+| `json_field_contains` | `path`、显式 `expected` | 对象递归包含子集、数组包含期望成员、字符串包含子串 |
+| `header_equals` | `path` 为非敏感响应头名、`expected` 为字符串 | 头名称不区分大小写，值精确相等 |
+| `response_time_ms_max` | `expected` 为 1–60000 的整数 | 收到响应前的请求耗时不超过上限 |
+
+JSON 路径支持根 `$`、对象字段 `.field` 和数组索引 `[index]`，例如
+`$.data.items[0].id`；通配符、过滤器和负数索引会被拒绝。值型 JSON 断言与响应头断言的执行证据
+只保存存在性、值类型和规范化 SHA-256，不保存原始响应值。
+
 ## 示例
 
 ```yaml
@@ -76,6 +166,14 @@ cases:
       - type: status_code
         expected: [200]
         path: null
+      - type: json_field_equals
+        path: $.data.accepted
+        expected: true
+      - type: header_equals
+        path: Content-Type
+        expected: application/json
+      - type: response_time_ms_max
+        expected: 1000
     variables: {}
     cleanup: []
 review_questions:
@@ -95,4 +193,6 @@ review_questions:
 | POST 未在 allowlist | 执行证据记录为 blocked，不发送请求 |
 | 静态 token 环境变量为空 | `api.execute` 返回认证配置错误，不发送用例请求 |
 | 登录状态码或 token JSON 路径不匹配 | `api.execute` 返回认证错误，不发送后续用例请求 |
+| 断言类型未知或参数错误 | Candidate 进入修订；历史 published 用例执行时记录 blocked 且不发送请求 |
+| JSON 或响应头断言失败 | 证据保留类型与 SHA-256 摘要，不写入原始响应值 |
 | 请求或响应失败 | 证据记录 error/failed，不自动生成已确认 Bug |

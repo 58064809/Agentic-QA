@@ -1,7 +1,7 @@
 schema_version: agentic-qa.harness.tool-manifest.v2
 name: test_management.read
 provider: builtin
-description: 从 workspace 显式配置的 TestRail 读取项目、套件、章节或用例
+description: 从 workspace 显式配置的 TestRail 或 Qase 读取项目、套件、章节或用例
 input_schema:
   type: object
   required: [operation]
@@ -10,6 +10,7 @@ input_schema:
       type: string
       enum: [list_projects, list_suites, list_sections, list_cases, get_case]
     project_id: {type: integer, minimum: 1}
+    project_code: {type: string, minLength: 2, maxLength: 10, pattern: "^[A-Za-z][A-Za-z0-9_-]{1,9}$"}
     suite_id: {type: integer, minimum: 1}
     section_id: {type: integer, minimum: 1}
     case_id: {type: integer, minimum: 1}
@@ -21,7 +22,7 @@ output_schema:
   required: [schema_version, provider, operation, source, records, pagination]
   properties:
     schema_version: {const: agentic-qa.harness.test-management-result.v1}
-    provider: {const: testrail}
+    provider: {type: string, enum: [testrail, qase]}
     operation: {type: string}
     source:
       type: object

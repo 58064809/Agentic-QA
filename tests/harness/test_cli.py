@@ -38,3 +38,26 @@ def test_run_cli_maps_explicit_execution_profile_arguments() -> None:
     assert profile.allowed_http_methods == ["GET", "POST"]
     assert profile.allow_ui_mutations is True
     assert profile.request_timeout_seconds == 30
+
+
+def test_api_cli_exposes_execute_and_deterministic_pytest_export() -> None:
+    execute = _parser().parse_args(
+        [
+            "api",
+            "execute",
+            "demo",
+            "run-api",
+            "--environment",
+            "qa",
+            "--allow-http-method",
+            "GET",
+            "--allow-http-method",
+            "POST",
+        ]
+    )
+    export = _parser().parse_args(["api", "export-pytest", "demo"])
+
+    assert execute.api_command == "execute"
+    assert execute.allowed_http_methods == ["GET", "POST"]
+    assert export.api_command == "export-pytest"
+    assert export.output_path == "exports/api_test_draft/test_api_cases.py"

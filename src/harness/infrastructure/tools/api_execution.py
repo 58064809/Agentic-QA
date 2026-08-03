@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any
@@ -14,7 +17,19 @@ from harness.domain.models import (
     LoginApiAuthentication,
     StaticTokenApiAuthentication,
 )
-from harness.domain.schemas.api_test_cases import API_CASES_SCHEMA_VERSION, ApiTestCase
+from harness.domain.schemas.api_test_cases import (
+    API_CASES_SCHEMA_VERSION,
+    VARIABLE_PLACEHOLDER,
+    ApiAssertion,
+    ApiCleanupStep,
+    ApiRequest,
+    ApiTestCase,
+    ApiVariableExtraction,
+    api_case_runtime_definition_errors,
+    json_path_tokens,
+    parse_api_case_variables,
+    parse_api_cleanup_steps,
+)
 from harness.domain.schemas.execution_evidence import (
     EXECUTION_EVIDENCE_SCHEMA_VERSION,
     AssertionEvidence,
@@ -25,8 +40,20 @@ from harness.domain.schemas.execution_evidence import (
 )
 
 ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)}")
+FULL_VARIABLE_PLACEHOLDER_RE = re.compile(r"^\$\{\{([A-Za-z_][A-Za-z0-9_]*)}}$")
 URL_RE = re.compile(r"https?://[^\s]+", re.IGNORECASE)
 UTC = timezone.utc
+
+
+class _MissingRuntimeVariable(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class _RequestOutcome:
+    evidence: CaseExecutionEvidence
+    extracted: dict[str, Any]
+    request_sent: bool
 
 
 def _resolve(value: Any, env: Mapping[str, str]) -> Any:
@@ -37,6 +64,44 @@ def _resolve(value: Any, env: Mapping[str, str]) -> Any:
     if isinstance(value, dict):
         return {key: _resolve(item, env) for key, item in value.items()}
     return value
+
+
+def _resolve_runtime_variables(value: Any, variables: Mapping[str, Any]) -> Any:
+    if isinstance(value, str):
+        exact = FULL_VARIABLE_PLACEHOLDER_RE.fullmatch(value)
+        if exact:
+            name = exact.group(1)
+            if name not in variables:
+                raise _MissingRuntimeVariable(f"runtime variable is unavailable: {name}")
+            return variables[name]
+
+        def replace(match: re.Match[str]) -> str:
+            name = match.group(1)
+            if name not in variables:
+                raise _MissingRuntimeVariable(f"runtime variable is unavailable: {name}")
+            item = variables[name]
+            if item is None or isinstance(item, dict | list):
+                raise _MissingRuntimeVariable(
+                    f"runtime variable must be scalar when embedded in text: {name}"
+                )
+            return str(item)
+
+        return VARIABLE_PLACEHOLDER.sub(replace, value)
+    if isinstance(value, list):
+        return [_resolve_runtime_variables(item, variables) for item in value]
+    if isinstance(value, dict):
+        return {key: _resolve_runtime_variables(item, variables) for key, item in value.items()}
+    return value
+
+
+def _runtime_redactions(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value] if value else []
+    if isinstance(value, list):
+        return [item for value_item in value for item in _runtime_redactions(value_item)]
+    if isinstance(value, dict):
+        return [item for value_item in value.values() for item in _runtime_redactions(value_item)]
+    return []
 
 
 def _required_environment_references(value: Any) -> set[str]:
@@ -60,15 +125,79 @@ def _resolve_required(value: Any, env: Mapping[str, str]) -> Any:
     return _resolve(value, env)
 
 
-def _json_path_exists(body: Any, path: str) -> bool:
-    if not path.startswith("$."):
-        return False
+def _json_path_lookup(body: Any, path: str) -> tuple[bool, Any]:
+    try:
+        tokens = json_path_tokens(path)
+    except ValueError:
+        return False, None
     current = body
-    for part in path[2:].split("."):
-        if not isinstance(current, dict) or part not in current:
-            return False
-        current = current[part]
-    return True
+    for token in tokens:
+        if isinstance(token, str):
+            if not isinstance(current, dict) or token not in current:
+                return False, None
+            current = current[token]
+        else:
+            if not isinstance(current, list) or token >= len(current):
+                return False, None
+            current = current[token]
+    return True, current
+
+
+def _json_contains(actual: Any, expected: Any) -> bool:
+    if isinstance(expected, dict):
+        return isinstance(actual, dict) and all(
+            key in actual and _json_contains(actual[key], value) for key, value in expected.items()
+        )
+    if isinstance(expected, list):
+        return isinstance(actual, list) and all(
+            any(_json_contains(candidate, item) for candidate in actual) for item in expected
+        )
+    if isinstance(expected, str):
+        return isinstance(actual, str) and expected in actual
+    return actual == expected
+
+
+def _json_type(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int | float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return "unknown"
+
+
+def _value_summary(value: Any, *, present: bool = True) -> dict[str, Any]:
+    if not present:
+        return {"present": False}
+    canonical = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=lambda _value: "<non-json-value>",
+    ).encode("utf-8")
+    return {
+        "present": True,
+        "type": _json_type(value),
+        "sha256": hashlib.sha256(canonical).hexdigest(),
+    }
+
+
+def _response_header(response: Any, name: str) -> tuple[bool, str | None]:
+    headers = getattr(response, "headers", {})
+    if not isinstance(headers, Mapping):
+        return False, None
+    for key, value in headers.items():
+        if str(key).casefold() == name.casefold():
+            return True, str(value)
+    return False, None
 
 
 def _json_path_value(body: Any, path: str) -> Any:
@@ -155,129 +284,279 @@ def _apply_authentication_header(
     return result
 
 
-def _execute_case(
-    case: ApiTestCase,
+def _evaluate_assertions(
+    assertions: list[ApiAssertion],
+    response: Any,
     *,
+    response_duration_ms: int,
+) -> tuple[list[AssertionEvidence], Any | None, bool]:
+    evidence: list[AssertionEvidence] = []
+    body: Any | None = None
+    body_loaded = False
+    for assertion in assertions:
+        if assertion.type == "status_code":
+            expected = assertion.expected
+            codes = (
+                {int(item) for item in expected} if isinstance(expected, list) else {int(expected)}
+            )
+            actual = int(response.status_code)
+            evidence.append(
+                AssertionEvidence(
+                    type=assertion.type,
+                    passed=actual in codes,
+                    expected=sorted(codes),
+                    actual=actual,
+                )
+            )
+        elif assertion.type == "json_field_exists":
+            if not body_loaded:
+                body = response.json()
+                body_loaded = True
+            found, _actual = _json_path_lookup(body, assertion.path or "")
+            evidence.append(
+                AssertionEvidence(
+                    type=assertion.type,
+                    passed=found,
+                    expected=True,
+                    actual=found,
+                    path=assertion.path,
+                )
+            )
+        elif assertion.type in {"json_field_equals", "json_field_contains"}:
+            if not body_loaded:
+                body = response.json()
+                body_loaded = True
+            found, actual = _json_path_lookup(body, assertion.path or "")
+            passed = found and (
+                actual == assertion.expected
+                if assertion.type == "json_field_equals"
+                else _json_contains(actual, assertion.expected)
+            )
+            evidence.append(
+                AssertionEvidence(
+                    type=assertion.type,
+                    passed=passed,
+                    expected=assertion.expected,
+                    actual=_value_summary(actual, present=found),
+                    path=assertion.path,
+                    message="raw response value omitted",
+                )
+            )
+        elif assertion.type == "header_equals":
+            found, actual_header = _response_header(response, assertion.path or "")
+            evidence.append(
+                AssertionEvidence(
+                    type=assertion.type,
+                    passed=found and actual_header == assertion.expected,
+                    expected=assertion.expected,
+                    actual=_value_summary(actual_header, present=found),
+                    path=assertion.path,
+                    message="raw response header value omitted",
+                )
+            )
+        elif assertion.type == "response_time_ms_max":
+            maximum = int(assertion.expected)
+            evidence.append(
+                AssertionEvidence(
+                    type=assertion.type,
+                    passed=response_duration_ms <= maximum,
+                    expected=maximum,
+                    actual=response_duration_ms,
+                )
+            )
+    return evidence, body, body_loaded
+
+
+def _extract_response_variables(
+    definitions: Mapping[str, ApiVariableExtraction],
+    response: Any,
+    *,
+    body: Any | None,
+    body_loaded: bool,
+) -> dict[str, Any]:
+    extracted: dict[str, Any] = {}
+    for name, definition in definitions.items():
+        if definition.source == "response_json":
+            if not body_loaded:
+                body = response.json()
+                body_loaded = True
+            found, value = _json_path_lookup(body, definition.path)
+        else:
+            found, value = _response_header(response, definition.path)
+        if not found:
+            if definition.required:
+                raise RuntimeError(f"required response variable extraction failed: {name}")
+            continue
+        extracted[name] = value
+    return extracted
+
+
+def _execute_request(
+    *,
+    case_id: str,
+    title: str,
+    request_definition: ApiRequest,
+    assertions: list[ApiAssertion],
+    extractions: Mapping[str, ApiVariableExtraction],
+    contract_confirmed: bool,
     base_url: str,
     profile: ExecutionProfile,
     env: Mapping[str, str],
+    runtime_variables: Mapping[str, Any],
+    runtime_redaction_values: Mapping[str, Any] | None,
     request_func: Callable[..., Any],
     authentication_header: tuple[str, str] | None,
     authentication_secrets: list[str],
-) -> CaseExecutionEvidence:
-    method = str(case.request.method or "").upper()
-    path = str(case.request.path or "")
+    definition_error: str | None = None,
+) -> _RequestOutcome:
+    method = str(request_definition.method or "").upper()
+    path = str(request_definition.path or "")
     started_at = datetime.now(tz=UTC)
     started_clock = perf_counter()
-    if case.contract_status != "confirmed" or not method or not path:
-        return CaseExecutionEvidence(
-            case_id=case.id,
-            title=case.title,
-            method=method,
-            path=path,
-            status="blocked",
-            started_at=started_at,
-            completed_at=datetime.now(tz=UTC),
-            duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
-            error="API contract is not confirmed",
+    if definition_error is not None:
+        definition_category = (
+            "API assertion definition is invalid"
+            if definition_error.startswith("assertions[")
+            else "API runtime definition is invalid"
+        )
+        return _RequestOutcome(
+            evidence=CaseExecutionEvidence(
+                case_id=case_id,
+                title=title,
+                method=method,
+                path=path,
+                status="blocked",
+                started_at=started_at,
+                completed_at=datetime.now(tz=UTC),
+                duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
+                error=f"{definition_category}: {definition_error}",
+            ),
+            extracted={},
+            request_sent=False,
+        )
+    if not contract_confirmed or not method or not path:
+        return _RequestOutcome(
+            evidence=CaseExecutionEvidence(
+                case_id=case_id,
+                title=title,
+                method=method,
+                path=path,
+                status="blocked",
+                started_at=started_at,
+                completed_at=datetime.now(tz=UTC),
+                duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
+                error="API contract is not confirmed",
+            ),
+            extracted={},
+            request_sent=False,
         )
     if path.startswith(("http://", "https://")):
         raise ValueError("API case path must be relative")
     if method not in profile.allowed_http_methods:
-        return CaseExecutionEvidence(
-            case_id=case.id,
-            title=case.title,
-            method=method,
-            path=path,
-            status="blocked",
-            started_at=started_at,
-            completed_at=datetime.now(tz=UTC),
-            duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
-            error=f"HTTP method {method} is not allowed by execution profile",
+        return _RequestOutcome(
+            evidence=CaseExecutionEvidence(
+                case_id=case_id,
+                title=title,
+                method=method,
+                path=path,
+                status="blocked",
+                started_at=started_at,
+                completed_at=datetime.now(tz=UTC),
+                duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
+                error=f"HTTP method {method} is not allowed by execution profile",
+            ),
+            extracted={},
+            request_sent=False,
         )
+    request_sent = False
+    redactions = [
+        base_url,
+        *env.values(),
+        *authentication_secrets,
+        *_runtime_redactions(runtime_redaction_values or {}),
+    ]
     try:
-        request = _resolve(case.request.model_dump(mode="python"), env)
+        request = _resolve_runtime_variables(
+            request_definition.model_dump(mode="python"), runtime_variables
+        )
+        request = _resolve(request, env)
+        resolved_path = str(request.get("path") or "")
+        if not resolved_path.startswith("/") or resolved_path.startswith("//"):
+            raise ValueError("resolved API case path must be relative and start with '/'")
         headers = _apply_authentication_header(
             dict(request.get("headers") or {}),
             authentication_header,
         )
+        request_sent = True
         response = request_func(
             method,
-            base_url.rstrip("/") + "/" + path.lstrip("/"),
+            base_url.rstrip("/") + "/" + resolved_path.lstrip("/"),
             headers=headers,
             params=request.get("query"),
             json=request.get("body"),
             timeout=profile.request_timeout_seconds,
         )
-        evidence: list[AssertionEvidence] = []
-        body: Any | None = None
-        for assertion in case.assertions:
-            if assertion.type == "status_code":
-                expected = assertion.expected
-                codes = (
-                    {int(item) for item in expected}
-                    if isinstance(expected, list)
-                    else {int(expected)}
-                )
-                actual = int(response.status_code)
-                evidence.append(
-                    AssertionEvidence(
-                        type=assertion.type,
-                        passed=actual in codes,
-                        expected=sorted(codes),
-                        actual=actual,
-                    )
-                )
-            elif assertion.type == "json_field_exists":
-                body = response.json() if body is None else body
-                passed = _json_path_exists(body, assertion.path or "")
-                evidence.append(
-                    AssertionEvidence(
-                        type=assertion.type,
-                        passed=passed,
-                        expected=True,
-                        actual=passed,
-                        path=assertion.path,
-                    )
-                )
-            else:
-                evidence.append(
-                    AssertionEvidence(
-                        type=assertion.type,
-                        passed=False,
-                        expected=assertion.expected,
-                        path=assertion.path,
-                        message="unsupported assertion type",
-                    )
-                )
+        response_duration_ms = max(0, int((perf_counter() - started_clock) * 1000))
+        evidence, body, body_loaded = _evaluate_assertions(
+            assertions,
+            response,
+            response_duration_ms=response_duration_ms,
+        )
+        extracted = _extract_response_variables(
+            extractions,
+            response,
+            body=body,
+            body_loaded=body_loaded,
+        )
         status = "passed" if evidence and all(item.passed for item in evidence) else "failed"
-        return CaseExecutionEvidence(
-            case_id=case.id,
-            title=case.title,
-            method=method,
-            path=path,
-            status=status,
-            started_at=started_at,
-            completed_at=datetime.now(tz=UTC),
-            duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
-            status_code=int(response.status_code),
-            assertions=evidence,
-            error=None if status == "passed" else "one or more assertions failed",
+        return _RequestOutcome(
+            evidence=CaseExecutionEvidence(
+                case_id=case_id,
+                title=title,
+                method=method,
+                path=path,
+                status=status,
+                started_at=started_at,
+                completed_at=datetime.now(tz=UTC),
+                duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
+                status_code=int(response.status_code),
+                assertions=evidence,
+                error=None if status == "passed" else "one or more assertions failed",
+            ),
+            extracted=extracted,
+            request_sent=True,
+        )
+    except _MissingRuntimeVariable as exc:
+        return _RequestOutcome(
+            evidence=CaseExecutionEvidence(
+                case_id=case_id,
+                title=title,
+                method=method,
+                path=path,
+                status="blocked",
+                started_at=started_at,
+                completed_at=datetime.now(tz=UTC),
+                duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
+                error=str(exc),
+            ),
+            extracted={},
+            request_sent=False,
         )
     except Exception as exc:
-        return CaseExecutionEvidence(
-            case_id=case.id,
-            title=case.title,
-            method=method,
-            path=path,
-            status="error",
-            started_at=started_at,
-            completed_at=datetime.now(tz=UTC),
-            duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
-            error=_sanitize_error(
-                exc,
-                [base_url, *env.values(), *authentication_secrets],
+        return _RequestOutcome(
+            evidence=CaseExecutionEvidence(
+                case_id=case_id,
+                title=title,
+                method=method,
+                path=path,
+                status="error",
+                started_at=started_at,
+                completed_at=datetime.now(tz=UTC),
+                duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
+                error=_sanitize_error(exc, redactions),
             ),
+            extracted={},
+            request_sent=request_sent,
         )
 
 
@@ -303,26 +582,114 @@ def execute_api_cases(
         import requests
 
         request_func = requests.request
-    authentication_header, authentication_secrets = _authenticate(
-        authentication,
-        base_url=base_url,
-        profile=profile,
-        env=runtime_env,
-        request_func=request_func,
+    definition_errors = api_case_runtime_definition_errors(cases)
+    has_executable_case = any(
+        definition_errors[index] is None
+        and case.contract_status == "confirmed"
+        and bool(case.request.method)
+        and bool(case.request.path)
+        and str(case.request.method).upper() in profile.allowed_http_methods
+        for index, case in enumerate(cases)
     )
-    started_at = datetime.now(tz=UTC)
-    results = [
-        _execute_case(
-            case,
+    if has_executable_case:
+        authentication_header, authentication_secrets = _authenticate(
+            authentication,
             base_url=base_url,
             profile=profile,
             env=runtime_env,
             request_func=request_func,
+        )
+    else:
+        authentication_header, authentication_secrets = None, []
+    started_at = datetime.now(tz=UTC)
+    results: list[CaseExecutionEvidence] = []
+    shared_variables: dict[str, Any] = {}
+    cleanup_queue: list[
+        tuple[ApiTestCase, ApiCleanupStep, str, str, dict[str, Any], dict[str, Any]]
+    ] = []
+    for index, case in enumerate(cases):
+        definition_error = definition_errors[index]
+        if definition_error is not None:
+            outcome = _execute_request(
+                case_id=case.id,
+                title=case.title,
+                request_definition=case.request,
+                assertions=case.assertions,
+                extractions={},
+                contract_confirmed=case.contract_status == "confirmed",
+                base_url=base_url,
+                profile=profile,
+                env=runtime_env,
+                runtime_variables=shared_variables,
+                runtime_redaction_values=shared_variables,
+                request_func=request_func,
+                authentication_header=authentication_header,
+                authentication_secrets=authentication_secrets,
+                definition_error=definition_error,
+            )
+            results.append(outcome.evidence)
+            continue
+
+        variable_definition = parse_api_case_variables(case.variables)
+        cleanup_steps = parse_api_cleanup_steps(case.cleanup)
+        datasets = variable_definition.datasets or [None]
+        for dataset in datasets:
+            dataset_values = {} if dataset is None else dataset.values
+            runtime_variables = {**shared_variables, **dataset_values}
+            case_id = case.id if dataset is None else f"{case.id}::{dataset.id}"
+            title = case.title if dataset is None else f"{case.title} [dataset:{dataset.id}]"
+            outcome = _execute_request(
+                case_id=case_id,
+                title=title,
+                request_definition=case.request,
+                assertions=case.assertions,
+                extractions=variable_definition.extract,
+                contract_confirmed=case.contract_status == "confirmed",
+                base_url=base_url,
+                profile=profile,
+                env=runtime_env,
+                runtime_variables=runtime_variables,
+                runtime_redaction_values=shared_variables,
+                request_func=request_func,
+                authentication_header=authentication_header,
+                authentication_secrets=authentication_secrets,
+            )
+            results.append(outcome.evidence)
+            if outcome.extracted:
+                shared_variables.update(outcome.extracted)
+            if outcome.request_sent:
+                cleanup_scope = {**runtime_variables, **outcome.extracted}
+                cleanup_redactions = {**shared_variables, **outcome.extracted}
+                for step in cleanup_steps:
+                    cleanup_queue.append(
+                        (
+                            case,
+                            step,
+                            case_id,
+                            title,
+                            cleanup_scope,
+                            cleanup_redactions,
+                        )
+                    )
+
+    for case, step, case_id, title, runtime_variables, redaction_values in reversed(cleanup_queue):
+        outcome = _execute_request(
+            case_id=f"{case_id}::cleanup::{step.id}",
+            title=f"{title} / cleanup: {step.title}",
+            request_definition=step.request,
+            assertions=step.assertions,
+            extractions={},
+            contract_confirmed=case.contract_status == "confirmed",
+            base_url=base_url,
+            profile=profile,
+            env=runtime_env,
+            runtime_variables=runtime_variables,
+            runtime_redaction_values=redaction_values,
+            request_func=request_func,
             authentication_header=authentication_header,
             authentication_secrets=authentication_secrets,
         )
-        for case in cases
-    ]
+        results.append(outcome.evidence)
     counts = {
         status: sum(item.status == status for item in results)
         for status in ("passed", "failed", "error", "blocked")

@@ -13,7 +13,10 @@ from harness.application.quality import (
     StrategyRequirements,
     StrategyResult,
 )
-from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
+from harness.domain.schemas.api_test_cases import (
+    ApiTestCasesDraft,
+    validate_api_case_runtime_definitions,
+)
 from harness.domain.security import contains_likely_secret
 
 PLACEHOLDER_MAPPING = re.compile(r"(?:暂无|未覆盖|待补充|后续设计|TODO|TBD)", re.IGNORECASE)
@@ -47,7 +50,7 @@ def _implementation_term_supported(term: str, marker: str, source_corpus: str) -
 
 class GenericArtifactStrategy:
     name = "generic-artifact-contracts"
-    version = "4.3.0"
+    version = "4.4.0"
     requirements = StrategyRequirements()
     configuration = QualityComponentConfiguration()
 
@@ -151,7 +154,24 @@ class GenericArtifactStrategy:
                     f"api_test_draft must satisfy agentic-qa.api-cases.v1.1: {exc}",
                 )
             ]
+        issues: list[QualityIssue] = []
         frozen_sources = {document.path for document in context.source_bundle.documents}
+        try:
+            validate_api_case_runtime_definitions(draft.cases)
+        except ValueError as exc:
+            assertion_error = "assertions[" in str(exc)
+            issues.append(
+                self._issue(
+                    "invalid_api_assertion"
+                    if assertion_error
+                    else "invalid_api_runtime_definition",
+                    (
+                        f"api_test_draft has invalid API assertions: {exc}"
+                        if assertion_error
+                        else f"api_test_draft has invalid variables or cleanup: {exc}"
+                    ),
+                )
+            )
         for case in draft.cases:
             if case.contract_status != "confirmed":
                 continue
@@ -161,15 +181,15 @@ class GenericArtifactStrategy:
                 if reference.source_type == "openapi" and reference.confidence == "high"
             }
             if not referenced_sources & frozen_sources:
-                return [
+                issues.append(
                     self._issue(
                         "confirmed_api_without_frozen_contract",
                         f"{case.id} has no high-confidence OpenAPI reference in the "
                         "frozen SourceBundle",
                         case_id=case.id,
                     )
-                ]
-        return []
+                )
+        return issues
 
     def _api_discovery_issues(self, content: str) -> list[QualityIssue]:
         required_sections = (

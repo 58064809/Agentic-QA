@@ -25,6 +25,8 @@ python -m harness [--repo-root PATH] <command>
 | `request run` | `request_file` | 导入允许根内的来源并幂等执行到 Review Gate |
 | `request schema` | 无 | 输出 AgentRequest v1 JSON Schema |
 | `mcp serve` | 无 | 启动受限的 stdio MCP Server |
+| `api execute` | `workspace_id run_id` | 按 workspace policy 执行 published API YAML |
+| `api export-pytest` | `workspace_id` | 从 published API YAML 确定性导出 pytest adapter |
 
 ## `run start`
 
@@ -62,6 +64,16 @@ ArtifactVariant，因此不会出现在差异端点或发布版本中。
 `request run` 接受 JSON/YAML。`local-sources/requirements/` 是默认允许根；额外根使用可重复的
 `--allow-source-root`。AgentRequest 固定为 analysis-only，不暴露 Review、approve、promote、shell
 或任意文件读取工具。
+
+## `api`
+
+`api execute` 默认读取 `published/api_test_draft/current.yml`。缺少显式
+`--environment` 或至少一个 `--allow-http-method` 时，CLI 返回参数错误；`--base-url-env` 默认是
+`AGENTIC_QA_BASE_URL`，所有值仍须通过 workspace policy 校验。
+
+`api export-pytest` 默认写入 `exports/api_test_draft/test_api_cases.py`。非 `published/` 来源或
+`exports/` 以外的输出返回错误；目标已存在时拒绝，显式 `--overwrite` 表示同意替换。导出文件
+绑定 published YAML 的 SHA-256，并在 pytest 执行时调用公开 Harness API。
 
 ## Eval
 

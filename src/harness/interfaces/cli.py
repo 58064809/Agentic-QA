@@ -13,7 +13,9 @@ from harness import (
     ArtifactVariant,
     ArtifactVersionRef,
     CreateWorkspaceCommand,
+    ExecuteApiCasesCommand,
     ExecutionProfile,
+    ExportApiPytestCommand,
     GetArtifactDiffQuery,
     Harness,
     ResumeRunCommand,
@@ -109,6 +111,25 @@ def _parser() -> argparse.ArgumentParser:
         dest="allowed_source_roots",
         help="追加允许导入的绝对路径；项目内 local-sources/requirements 始终可用",
     )
+    api = commands.add_parser("api")
+    api_commands = api.add_subparsers(dest="api_command", required=True)
+    api_execute = api_commands.add_parser("execute")
+    api_execute.add_argument("workspace_id")
+    api_execute.add_argument("run_id")
+    api_execute.add_argument("--cases-path", default="published/api_test_draft/current.yml")
+    api_execute.add_argument("--environment", required=True)
+    api_execute.add_argument("--base-url-env", default="AGENTIC_QA_BASE_URL")
+    api_execute.add_argument(
+        "--allow-http-method", action="append", dest="allowed_http_methods", required=True
+    )
+    api_execute.add_argument("--request-timeout-seconds", type=int, default=10)
+    api_execute.set_defaults(allow_ui_mutations=False)
+
+    api_export = api_commands.add_parser("export-pytest")
+    api_export.add_argument("workspace_id")
+    api_export.add_argument("--cases-path", default="published/api_test_draft/current.yml")
+    api_export.add_argument("--output-path", default="exports/api_test_draft/test_api_cases.py")
+    api_export.add_argument("--overwrite", action="store_true")
     return parser
 
 
@@ -199,7 +220,29 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         harness = Harness(Path(args.repo_root))
-        if args.command == "workspace":
+        if args.command == "api" and args.api_command == "execute":
+            _print(
+                harness.execute_api_cases(
+                    ExecuteApiCasesCommand(
+                        workspace_id=args.workspace_id,
+                        run_id=args.run_id,
+                        cases_path=args.cases_path,
+                        execution_profile=_execution_profile(args),
+                    )
+                )
+            )
+        elif args.command == "api" and args.api_command == "export-pytest":
+            _print(
+                harness.export_api_pytest(
+                    ExportApiPytestCommand(
+                        workspace_id=args.workspace_id,
+                        cases_path=args.cases_path,
+                        output_path=args.output_path,
+                        overwrite=args.overwrite,
+                    )
+                )
+            )
+        elif args.command == "workspace":
             print(
                 harness.create_workspace(
                     CreateWorkspaceCommand(

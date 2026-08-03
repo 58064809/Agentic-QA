@@ -8,7 +8,7 @@ from harness.application.source import (
     SourceDocument,
     SourceIngestionLimits,
 )
-from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
+from harness.domain.schemas.api_test_cases import ApiAssertion, ApiTestCasesDraft
 from harness.infrastructure.tools.openapi import inspect_openapi
 from harness.infrastructure.workflow.engine import _validate_api_test_cases
 
@@ -253,6 +253,29 @@ def test_confirmed_api_case_requires_endpoint_from_inspected_frozen_contract() -
         requirement_catalog=None,
         source_bundle=frozen,
     )
+    invalid_case = draft.cases[0].model_copy(
+        update={"assertions": [ApiAssertion(type="unknown_assertion")]}
+    )
+    invalid_draft = draft.model_copy(update={"cases": [invalid_case]})
+    with pytest.raises(ValueError, match="invalid API assertions"):
+        _validate_api_test_cases(
+            invalid_draft,
+            tool_results=[inspection],
+            requirement_catalog=None,
+            source_bundle=frozen,
+        )
+    invalid_runtime_case = draft.cases[0].model_copy(
+        update={
+            "request": draft.cases[0].request.model_copy(update={"path": "/assist/${{missing_id}}"})
+        }
+    )
+    with pytest.raises(ValueError, match="invalid API runtime definitions"):
+        _validate_api_test_cases(
+            draft.model_copy(update={"cases": [invalid_runtime_case]}),
+            tool_results=[inspection],
+            requirement_catalog=None,
+            source_bundle=frozen,
+        )
     with pytest.raises(ValueError, match="unverified endpoint"):
         _validate_api_test_cases(
             draft,

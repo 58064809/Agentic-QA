@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -15,13 +16,21 @@ from harness import (
 from harness.domain.models import ExecutionEnvironmentPolicy
 from harness.domain.schemas.api_test_cases import ApiTestCase
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
+from harness.infrastructure.tools import api_execution as execution_module
 from harness.infrastructure.tools.api_execution import execute_api_cases
 
 
 class FakeResponse:
-    def __init__(self, status_code: int, body: dict | None = None) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        body: object | None = None,
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.status_code = status_code
-        self._body = body or {}
+        self._body = {} if body is None else body
+        self.headers = headers or {}
 
     def json(self):
         return self._body
@@ -111,6 +120,12 @@ def _case(case_id: str, method: str, expected: int = 200) -> ApiTestCase:
     )
 
 
+def _case_with_assertions(assertions: list[dict[str, object]]) -> ApiTestCase:
+    payload = _case("API-ASSERTIONS", "GET").model_dump(mode="python")
+    payload["assertions"] = assertions
+    return ApiTestCase.model_validate(payload)
+
+
 def test_execution_records_pass_failure_and_policy_block() -> None:
     calls = []
 
@@ -143,6 +158,325 @@ def test_execution_records_pass_failure_and_policy_block() -> None:
     assert [item.status for item in evidence.cases] == ["passed", "failed", "blocked"]
     assert len(calls) == 2
     assert "secret.example.test" not in evidence.model_dump_json()
+
+
+def test_extended_assertions_pass_and_record_only_value_digests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    times = iter([0.0, 0.025, 0.026])
+    monkeypatch.setattr(execution_module, "perf_counter", lambda: next(times))
+    case = _case_with_assertions(
+        [
+            {
+                "type": "json_field_equals",
+                "path": "$.data.items[0].name",
+                "expected": "alpha",
+            },
+            {
+                "type": "json_field_equals",
+                "path": "$.data.optional",
+                "expected": None,
+            },
+            {
+                "type": "json_field_contains",
+                "path": "$.data.items",
+                "expected": [{"tags": ["safe"]}],
+            },
+            {
+                "type": "json_field_contains",
+                "path": "$.data.items[0].name",
+                "expected": "ph",
+            },
+            {
+                "type": "header_equals",
+                "path": "Content-Type",
+                "expected": "application/json",
+            },
+            {"type": "response_time_ms_max", "expected": 50},
+        ]
+    )
+
+    evidence = execute_api_cases(
+        [case],
+        run_id="run-assertions",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=lambda *_args, **_kwargs: FakeResponse(
+            200,
+            {
+                "data": {
+                    "optional": None,
+                    "items": [
+                        {
+                            "name": "alpha",
+                            "tags": ["safe", "sensitive-business-value"],
+                        }
+                    ],
+                }
+            },
+            headers={"content-type": "application/json"},
+        ),
+    )
+
+    result = evidence.cases[0]
+    assert result.status == "passed"
+    assert [item.passed for item in result.assertions] == [True] * 6
+    value_summary = result.assertions[0].actual
+    expected_digest = hashlib.sha256(
+        json.dumps(
+            "alpha",
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    assert value_summary == {
+        "present": True,
+        "type": "string",
+        "sha256": expected_digest,
+    }
+    assert result.assertions[1].actual["type"] == "null"
+    assert result.assertions[4].actual["type"] == "string"
+    assert result.assertions[5].actual == 25
+    serialized = evidence.model_dump_json()
+    assert "sensitive-business-value" not in serialized
+    assert "raw response value omitted" in serialized
+
+
+def test_extended_assertion_failures_include_missing_and_mismatch_summaries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    times = iter([0.0, 0.100, 0.101])
+    monkeypatch.setattr(execution_module, "perf_counter", lambda: next(times))
+    case = _case_with_assertions(
+        [
+            {"type": "json_field_equals", "path": "$.missing", "expected": 1},
+            {
+                "type": "json_field_contains",
+                "path": "$.items",
+                "expected": [{"state": "ready"}],
+            },
+            {"type": "header_equals", "path": "X-Request-Mode", "expected": "sync"},
+            {"type": "response_time_ms_max", "expected": 50},
+        ]
+    )
+
+    evidence = execute_api_cases(
+        [case],
+        run_id="run-assertions",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=lambda *_args, **_kwargs: FakeResponse(
+            200,
+            {"items": [{"state": "pending"}]},
+        ),
+    )
+
+    result = evidence.cases[0]
+    assert result.status == "failed"
+    assert [item.passed for item in result.assertions] == [False] * 4
+    assert result.assertions[0].actual == {"present": False}
+    assert result.assertions[2].actual == {"present": False}
+    assert result.assertions[3].actual == 100
+
+
+@pytest.mark.parametrize(
+    "assertion",
+    [
+        {"type": "unknown_assertion"},
+        {"type": "json_field_equals", "path": "$.items[*]", "expected": 1},
+        {"type": "json_field_equals", "path": "$.items"},
+        {"type": "header_equals", "path": "Set-Cookie", "expected": "value"},
+        {"type": "response_time_ms_max", "expected": 0},
+    ],
+)
+def test_invalid_assertions_are_blocked_before_authentication_or_business_request(
+    assertion: dict[str, object],
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def request(method: str, url: str, **_kwargs):
+        calls.append((method, url))
+        return FakeResponse(200, {"access_token": "must-not-be-used"})
+
+    evidence = execute_api_cases(
+        [_case_with_assertions([assertion])],
+        run_id="run-invalid-assertion",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET", "POST"],
+        ),
+        env={
+            "TEST_BASE_URL": "https://example.test",
+            "QA_API_TOKEN": "not-a-real-token",
+        },
+        request_func=request,
+        authentication=StaticTokenApiAuthentication(
+            mode="static_token",
+            token_env="QA_API_TOKEN",
+        ),
+    )
+
+    assert evidence.cases[0].status == "blocked"
+    assert "assertion definition is invalid" in str(evidence.cases[0].error)
+    assert calls == []
+
+
+def test_json_assertion_on_non_json_response_records_execution_error() -> None:
+    class NonJsonResponse(FakeResponse):
+        def json(self):
+            raise ValueError("response is not JSON")
+
+    evidence = execute_api_cases(
+        [_case_with_assertions([{"type": "json_field_equals", "path": "$.code", "expected": 0}])],
+        run_id="run-non-json",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=lambda *_args, **_kwargs: NonJsonResponse(200),
+    )
+
+    assert evidence.cases[0].status == "error"
+    assert evidence.cases[0].error == "response is not JSON"
+
+
+def test_response_extraction_flows_to_later_case_and_cleanup_without_evidence_leak() -> None:
+    create_payload = _case("API-CREATE", "POST").model_dump(mode="python")
+    create_payload["variables"] = {
+        "extract": {
+            "order_id": {
+                "source": "response_json",
+                "path": "$.data.id",
+            }
+        }
+    }
+    create_payload["cleanup"] = [
+        {
+            "id": "delete-order",
+            "title": "delete created order",
+            "request": {
+                "method": "DELETE",
+                "path": "/orders/${{order_id}}",
+            },
+            "assertions": [{"type": "status_code", "expected": 204}],
+        }
+    ]
+    read_payload = _case("API-READ", "GET").model_dump(mode="python")
+    read_payload["request"]["path"] = "/orders/${{order_id}}"
+    cases = [
+        ApiTestCase.model_validate(create_payload),
+        ApiTestCase.model_validate(read_payload),
+    ]
+    calls: list[tuple[str, str]] = []
+
+    def request(method: str, url: str, **_kwargs):
+        calls.append((method, url))
+        if method == "POST":
+            return FakeResponse(200, {"code": 0, "data": {"id": "private-order-42"}})
+        if method == "DELETE":
+            return FakeResponse(204)
+        return FakeResponse(200, {"code": 0})
+
+    evidence = execute_api_cases(
+        cases,
+        run_id="run-variable-chain",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET", "POST", "DELETE"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=request,
+    )
+
+    assert [item[0] for item in calls] == ["POST", "GET", "DELETE"]
+    assert calls[1][1].endswith("/orders/private-order-42")
+    assert calls[2][1].endswith("/orders/private-order-42")
+    assert evidence.summary.passed == 3
+    assert evidence.cases[1].path == "/orders/${{order_id}}"
+    assert evidence.cases[2].case_id == "API-CREATE::cleanup::delete-order"
+    assert "private-order-42" not in evidence.model_dump_json()
+
+
+def test_case_datasets_expand_requests_and_preserve_native_values() -> None:
+    payload = _case("API-DATASET", "POST").model_dump(mode="python")
+    payload["request"]["body"] = {
+        "sku": "${{sku}}",
+        "quantity": "${{quantity}}",
+    }
+    payload["variables"] = {
+        "datasets": [
+            {"id": "first", "values": {"sku": "A", "quantity": 1}},
+            {"id": "second", "values": {"sku": "B", "quantity": 2}},
+        ]
+    }
+    bodies: list[object] = []
+
+    evidence = execute_api_cases(
+        [ApiTestCase.model_validate(payload)],
+        run_id="run-datasets",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["POST"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=lambda _method, _url, **kwargs: (
+            bodies.append(kwargs["json"]) or FakeResponse(200, {"code": 0})
+        ),
+    )
+
+    assert bodies == [{"sku": "A", "quantity": 1}, {"sku": "B", "quantity": 2}]
+    assert [item.case_id for item in evidence.cases] == [
+        "API-DATASET::first",
+        "API-DATASET::second",
+    ]
+    assert evidence.summary.passed == 2
+
+
+def test_invalid_runtime_variable_definition_blocks_before_authentication() -> None:
+    payload = _case("API-MISSING-VAR", "GET").model_dump(mode="python")
+    payload["request"]["path"] = "/orders/${{unknown_id}}"
+    calls: list[bool] = []
+
+    evidence = execute_api_cases(
+        [ApiTestCase.model_validate(payload)],
+        run_id="run-missing-variable",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test", "QA_API_TOKEN": "runtime-token"},
+        authentication=StaticTokenApiAuthentication(
+            mode="static_token",
+            token_env="QA_API_TOKEN",
+        ),
+        request_func=lambda *_args, **_kwargs: calls.append(True),
+    )
+
+    assert evidence.cases[0].status == "blocked"
+    assert "not produced by an earlier case or dataset" in str(evidence.cases[0].error)
+    assert calls == []
 
 
 def test_execution_error_redacts_url_and_environment_secret() -> None:

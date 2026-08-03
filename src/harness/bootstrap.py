@@ -8,6 +8,7 @@ from harness.application.model_port import ModelGateway
 from harness.application.ports import CheckpointProvider
 from harness.application.use_cases import HarnessApplication
 from harness.domain.budget import BudgetLimits
+from harness.infrastructure.api_automation import FilesystemApiAutomationService
 from harness.infrastructure.llm.gateway import model_gateway_from_env
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.persistence.agent_workspace_provisioner import (
@@ -107,6 +108,7 @@ def build_application(
         runs=store,
         workflow=workflow,
         quality_policies=policies,
+        api_automation=FilesystemApiAutomationService(store),
         artifacts=store,
         agent_requests=agent_requests,
     )

@@ -20,13 +20,17 @@
 | Playwright MCP live smoke CI | 已实现 | 本地临时站点、官方 MCP 进程、真实浏览器网络捕获与脱敏断言 |
 | API Discovery 脱敏目录导出 | 已实现 | Candidate manifest 哈希绑定；Review 后确定性发布 `current.catalog.json` |
 | API cases、execution evidence、failure triage Schema | 已实现 | `src/harness/domain/schemas/` |
+| API 值、响应头与耗时断言 | 已实现 | Candidate 预检、受限 JSON 路径、安全摘要与执行证据 |
+| API 数据集、跨用例变量与 cleanup | 已实现 | v1.1 既有字段内的严格定义校验、内存变量作用域、逆序清理证据 |
+| published API YAML 的 pytest adapter | 已实现 | 公开强类型执行/导出契约、源 SHA-256 绑定、workspace policy 复用 |
 | TestRail 只读测试资产连接器 | 已实现 | 固定查询 allowlist、环境变量凭据、分页与响应预算、run 工具记录 |
+| Qase 只读测试资产连接器 | 已实现 | 独立强类型配置、固定 GET 端点、Token 环境变量、分页与响应预算 |
 
 ## 计划中
 
 | 能力 | 状态 | 验收边界 |
 |---|---|---|
-| 更多只读测试管理系统连接器 | 计划中 | 在 TestRail 之外继续扩展，且不扩大 Review/Execution 权限 |
+| 更多只读测试管理系统连接器 | 计划中 | 在 TestRail、Qase 之外继续扩展，且不扩大 Review/Execution 权限 |
 
 ## 明确不在当前范围
 

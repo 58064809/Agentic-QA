@@ -54,6 +54,36 @@ class TestRailSourceConfig(BaseModel):
         return base_url, values[self.username_env], values[self.api_key_env]
 
 
+class QaseSourceConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: str = Field(
+        default="agentic-qa.harness.qase-source.v1",
+        pattern=r"^agentic-qa\.harness\.qase-source\.v1$",
+    )
+    base_url_env: str = Field(pattern=r"^[A-Z_][A-Z0-9_]*$")
+    api_token_env: str = Field(pattern=r"^[A-Z_][A-Z0-9_]*$")
+    timeout_seconds: int = Field(default=10, ge=1, le=30)
+    max_items: int = Field(default=100, ge=1, le=100)
+    max_response_bytes: int = Field(default=1_048_576, ge=1024, le=2_097_152)
+
+    @model_validator(mode="after")
+    def validate_distinct_environment_names(self) -> QaseSourceConfig:
+        if self.base_url_env == self.api_token_env:
+            raise ValueError("Qase environment variable names must be distinct")
+        return self
+
+    def credentials(self, env: dict[str, str] | None = None) -> tuple[str, str]:
+        values = env if env is not None else os.environ
+        missing = [name for name in (self.base_url_env, self.api_token_env) if not values.get(name)]
+        if missing:
+            raise RuntimeError(
+                "Qase configuration is missing environment values: " + ", ".join(missing)
+            )
+        base_url = _validated_base_url(values[self.base_url_env], provider="Qase")
+        return base_url, values[self.api_token_env]
+
+
 class TestManagementQuery(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -99,6 +129,57 @@ class TestManagementQuery(BaseModel):
         return self
 
 
+class QaseTestManagementQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    operation: TestManagementOperation
+    project_code: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=10,
+        pattern=r"^[A-Za-z][A-Za-z0-9_-]{1,9}$",
+    )
+    suite_id: int | None = Field(default=None, ge=1)
+    case_id: int | None = Field(default=None, ge=1)
+    limit: int = Field(default=100, ge=1, le=100)
+    offset: int = Field(default=0, ge=0, le=100_000)
+
+    @model_validator(mode="after")
+    def validate_operation_arguments(self) -> QaseTestManagementQuery:
+        if self.operation == TestManagementOperation.LIST_SECTIONS:
+            raise ValueError("Qase does not support list_sections")
+        required: dict[TestManagementOperation, tuple[str, ...]] = {
+            TestManagementOperation.LIST_PROJECTS: (),
+            TestManagementOperation.LIST_SUITES: ("project_code",),
+            TestManagementOperation.LIST_CASES: ("project_code",),
+            TestManagementOperation.GET_CASE: ("project_code", "case_id"),
+            TestManagementOperation.LIST_SECTIONS: (),
+        }
+        missing = [name for name in required[self.operation] if getattr(self, name) is None]
+        if missing:
+            raise ValueError(
+                f"{self.operation.value} requires arguments: {', '.join(sorted(missing))}"
+            )
+        allowed: dict[TestManagementOperation, set[str]] = {
+            TestManagementOperation.LIST_PROJECTS: set(),
+            TestManagementOperation.LIST_SUITES: {"project_code"},
+            TestManagementOperation.LIST_CASES: {"project_code", "suite_id"},
+            TestManagementOperation.GET_CASE: {"project_code", "case_id"},
+            TestManagementOperation.LIST_SECTIONS: set(),
+        }
+        supplied = {
+            name
+            for name in ("project_code", "suite_id", "case_id")
+            if getattr(self, name) is not None
+        }
+        unexpected = sorted(supplied - allowed[self.operation])
+        if unexpected:
+            raise ValueError(
+                f"{self.operation.value} does not accept arguments: {', '.join(unexpected)}"
+            )
+        return self
+
+
 class TestManagementSource(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -122,7 +203,7 @@ class TestManagementResult(BaseModel):
     schema_version: Literal["agentic-qa.harness.test-management-result.v1"] = (
         "agentic-qa.harness.test-management-result.v1"
     )
-    provider: Literal["testrail"] = "testrail"
+    provider: Literal["testrail", "qase"]
     operation: TestManagementOperation
     source: TestManagementSource
     records: list[dict[str, Any]] = Field(max_length=250)
@@ -176,6 +257,7 @@ def read_testrail(
         raise RuntimeError("TestRail returned invalid UTF-8 JSON") from exc
     records, pagination = _normalize_response(payload, collection_key, query, limit)
     return TestManagementResult(
+        provider="testrail",
         operation=query.operation,
         source=TestManagementSource(
             origin=_origin(base_url),
@@ -186,7 +268,52 @@ def read_testrail(
     ).model_dump(mode="json")
 
 
-def _validated_base_url(value: str) -> str:
+def read_qase(
+    config: QaseSourceConfig,
+    query: QaseTestManagementQuery,
+    *,
+    env: dict[str, str] | None = None,
+    session: requests.Session | None = None,
+) -> dict[str, Any]:
+    base_url, api_token = config.credentials(env)
+    endpoint, parameters, collection = _qase_request_spec(query)
+    limit = min(query.limit, config.max_items)
+    if collection:
+        parameters.update({"limit": limit, "offset": query.offset})
+    url = f"{base_url}/v1/{endpoint}"
+    owns_session = session is None
+    client = session or requests.Session()
+    try:
+        response = client.get(
+            url,
+            params=parameters,
+            headers={"Accept": "application/json", "Token": api_token},
+            timeout=config.timeout_seconds,
+            allow_redirects=False,
+            stream=True,
+        )
+        payload = _decode_response(
+            response,
+            maximum=config.max_response_bytes,
+            provider="Qase",
+        )
+    finally:
+        if owns_session:
+            client.close()
+    records, pagination = _normalize_qase_response(payload, query, limit, collection=collection)
+    return TestManagementResult(
+        provider="qase",
+        operation=query.operation,
+        source=TestManagementSource(
+            origin=_origin(base_url),
+            resource=endpoint,
+        ),
+        records=records,
+        pagination=TestManagementPagination.model_validate(pagination),
+    ).model_dump(mode="json")
+
+
+def _validated_base_url(value: str, *, provider: str = "TestRail") -> str:
     candidate = value.strip().rstrip("/")
     parsed = urlsplit(candidate)
     if (
@@ -197,7 +324,7 @@ def _validated_base_url(value: str) -> str:
         or parsed.query
         or parsed.fragment
     ):
-        raise ValueError("TestRail base URL must be an HTTPS URL without credentials or query")
+        raise ValueError(f"{provider} base URL must be an HTTPS URL without credentials or query")
     return candidate
 
 
@@ -227,7 +354,50 @@ def _request_spec(
     return f"get_case/{query.case_id}", {}, None
 
 
-def _bounded_response_body(response: requests.Response, maximum: int) -> bytes:
+def _qase_request_spec(
+    query: QaseTestManagementQuery,
+) -> tuple[str, dict[str, int], bool]:
+    if query.operation == TestManagementOperation.LIST_PROJECTS:
+        return "project", {}, True
+    if query.operation == TestManagementOperation.LIST_SUITES:
+        return f"suite/{query.project_code}", {}, True
+    if query.operation == TestManagementOperation.LIST_CASES:
+        parameters = {"suite_id": query.suite_id} if query.suite_id is not None else {}
+        return f"case/{query.project_code}", parameters, True
+    return f"case/{query.project_code}/{query.case_id}", {}, False
+
+
+def _decode_response(
+    response: requests.Response,
+    *,
+    maximum: int,
+    provider: str,
+) -> Any:
+    if 300 <= response.status_code < 400:
+        raise RuntimeError(f"{provider} redirect was rejected to protect credentials")
+    if response.status_code < 200 or response.status_code >= 300:
+        raise RuntimeError(f"{provider} returned HTTP {response.status_code}")
+    content_length = response.headers.get("Content-Length")
+    if content_length:
+        try:
+            declared_size = int(content_length)
+        except ValueError as exc:
+            raise RuntimeError(f"{provider} returned an invalid Content-Length") from exc
+        if declared_size > maximum:
+            raise RuntimeError(f"{provider} response exceeds max_response_bytes")
+    raw = _bounded_response_body(response, maximum, provider=provider)
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"{provider} returned invalid UTF-8 JSON") from exc
+
+
+def _bounded_response_body(
+    response: requests.Response,
+    maximum: int,
+    *,
+    provider: str = "TestRail",
+) -> bytes:
     chunks: list[bytes] = []
     size = 0
     for chunk in response.iter_content(chunk_size=65_536):
@@ -235,7 +405,7 @@ def _bounded_response_body(response: requests.Response, maximum: int) -> bytes:
             continue
         size += len(chunk)
         if size > maximum:
-            raise RuntimeError("TestRail response exceeds max_response_bytes")
+            raise RuntimeError(f"{provider} response exceeds max_response_bytes")
         chunks.append(chunk)
     return b"".join(chunks)
 
@@ -269,6 +439,44 @@ def _normalize_response(
         records = records[:limit]
     if any(not isinstance(item, dict) for item in records):
         raise RuntimeError("TestRail records must be objects")
+    return records, {
+        "offset": query.offset,
+        "limit": limit,
+        "returned": len(records),
+        "next_offset": next_offset,
+        "truncated": next_offset is not None,
+    }
+
+
+def _normalize_qase_response(
+    payload: Any,
+    query: QaseTestManagementQuery,
+    limit: int,
+    *,
+    collection: bool,
+) -> tuple[list[dict[str, Any]], dict[str, int | bool | None]]:
+    if not isinstance(payload, dict) or payload.get("status") is not True:
+        raise RuntimeError("Qase response status is not successful")
+    result = payload.get("result")
+    if collection:
+        if not isinstance(result, dict) or not isinstance(result.get("entities"), list):
+            raise RuntimeError("Qase response is missing the result.entities collection")
+        records = result["entities"]
+        total_value = result.get("filtered", result.get("total"))
+        if not isinstance(total_value, int) or total_value < 0:
+            raise RuntimeError("Qase response is missing a valid result total")
+        if len(records) > limit:
+            records = records[:limit]
+        next_offset = (
+            query.offset + len(records) if query.offset + len(records) < total_value else None
+        )
+    else:
+        if not isinstance(result, dict):
+            raise RuntimeError("Qase case response must contain a result object")
+        records = [result]
+        next_offset = None
+    if any(not isinstance(item, dict) for item in records):
+        raise RuntimeError("Qase records must be objects")
     return records, {
         "offset": query.offset,
         "limit": limit,

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from harness.application.agent_request import AgentRequest, AgentRequestResult, AgentRequestService
 from harness.application.ports import (
+    ApiAutomationService,
     ArtifactReviewRepository,
     QualityStrategyCatalog,
     RunEventRepository,
@@ -12,8 +13,11 @@ from harness.application.ports import (
     WorkspaceRepository,
 )
 from harness.domain.models import (
+    ApiPytestExportResult,
     ArtifactDiffResult,
     CreateWorkspaceCommand,
+    ExecuteApiCasesCommand,
+    ExportApiPytestCommand,
     GetArtifactDiffQuery,
     HarnessEvent,
     ResumeRunCommand,
@@ -22,6 +26,7 @@ from harness.domain.models import (
     RunSnapshot,
     StartRunCommand,
 )
+from harness.domain.schemas.execution_evidence import ExecutionEvidence
 
 
 class HarnessApplication:
@@ -32,6 +37,7 @@ class HarnessApplication:
         runs: RunEventRepository,
         workflow: WorkflowRunner,
         quality_policies: QualityStrategyCatalog,
+        api_automation: ApiAutomationService | None = None,
         artifacts: ArtifactReviewRepository | None = None,
         agent_requests: AgentRequestService | None = None,
     ) -> None:
@@ -39,6 +45,7 @@ class HarnessApplication:
         self._runs = runs
         self._workflow = workflow
         self._quality_policies = quality_policies
+        self._api_automation = api_automation
         self._artifacts = artifacts
         self._agent_requests = agent_requests
 
@@ -67,6 +74,16 @@ class HarnessApplication:
         if self._artifacts is None:
             raise RuntimeError("artifact query repository is not configured")
         return self._artifacts.get_artifact_diff(query)
+
+    def execute_api_cases(self, command: ExecuteApiCasesCommand) -> ExecutionEvidence:
+        if self._api_automation is None:
+            raise RuntimeError("API automation service is not configured")
+        return self._api_automation.execute(command)
+
+    def export_api_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:
+        if self._api_automation is None:
+            raise RuntimeError("API automation service is not configured")
+        return self._api_automation.export_pytest(command)
 
     def resume_run(self, command: ResumeRunCommand) -> RunSnapshot:
         snapshot = self._runs.load_snapshot(command.workspace_id, command.run_id)

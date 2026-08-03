@@ -24,6 +24,12 @@
 | 变量 | 默认/状态 | 消费方式 |
 |---|---|---|
 | `AGENTIC_QA_BASE_URL` | 空 | ExecutionProfile 指定该变量名后，API 执行器读取地址 |
+| `AGENTIC_QA_EXECUTION_ENVIRONMENT` | 空 | 导出的 pytest adapter 要求显式测试环境名 |
+| `AGENTIC_QA_ALLOWED_HTTP_METHODS` | `GET,POST` 示例 | pytest adapter 的逗号分隔方法 allowlist；仍受 workspace policy 限制 |
+| `AGENTIC_QA_REQUEST_TIMEOUT_SECONDS` | `10` | pytest adapter 请求超时 |
+| `AGENTIC_QA_REPO_ROOT` | `.` | pytest adapter 定位 Agentic-QA 仓库 |
+| `AGENTIC_QA_WORKSPACE` | 空 | 可覆盖导出时绑定的 workspace ID |
+| `AGENTIC_QA_RUN_ID` | `pytest-api-export` | pytest 执行证据的 run ID |
 | `QA_API_TOKEN` | 空，示例名 | 静态 token 认证示例；workspace 可以引用其他环境变量名 |
 | `QA_API_USER` | 空，示例名 | 登录认证用户名示例 |
 | `QA_API_PASSWORD` | 空，示例名 | 登录认证密码示例 |
@@ -214,8 +220,23 @@ data_sources:
     max_response_bytes: 1048576
 ```
 
+Qase 使用同一个只读工具，但采用独立的强类型配置和项目代码参数：
+
+```yaml
+data_sources:
+  test_management:
+    provider: qase
+    schema_version: agentic-qa.harness.qase-source.v1
+    base_url_env: QASE_URL
+    api_token_env: QASE_API_TOKEN
+    timeout_seconds: 10
+    max_items: 100
+    max_response_bytes: 1048576
+```
+
 配置保存环境变量名称，实际地址和凭据由当前进程环境提供。连接器查询固定的 TestRail 项目、套件、
-章节和用例资源；完整场景和返回行为见[读取 TestRail 测试资产](test-management.md)。
+章节和用例资源，或固定的 Qase 项目、套件和用例资源；完整场景和返回行为见
+[读取测试管理资产](test-management.md)。
 
 ## Source 摄取限制
 

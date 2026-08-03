@@ -10,8 +10,11 @@ from harness.application.use_cases import HarnessApplication
 from harness.bootstrap import build_application
 from harness.domain.budget import BudgetLimits
 from harness.domain.models import (
+    ApiPytestExportResult,
     ArtifactDiffResult,
     CreateWorkspaceCommand,
+    ExecuteApiCasesCommand,
+    ExportApiPytestCommand,
     GetArtifactDiffQuery,
     HarnessEvent,
     ResumeRunCommand,
@@ -20,6 +23,7 @@ from harness.domain.models import (
     RunSnapshot,
     StartRunCommand,
 )
+from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.quality import QualityStrategyRegistry
 
@@ -67,6 +71,12 @@ class Harness:
 
     def get_artifact_diff(self, query: GetArtifactDiffQuery) -> ArtifactDiffResult:
         return self._application.get_artifact_diff(query)
+
+    def execute_api_cases(self, command: ExecuteApiCasesCommand) -> ExecutionEvidence:
+        return self._application.execute_api_cases(command)
+
+    def export_api_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:
+        return self._application.export_api_pytest(command)
 
     def resume_run(self, command: ResumeRunCommand) -> RunSnapshot:
         return self._application.resume_run(command)

@@ -31,8 +31,11 @@ from harness.infrastructure.tools.postgres_query import (
     execute_read_only_query,
 )
 from harness.infrastructure.tools.test_management import (
+    QaseSourceConfig,
+    QaseTestManagementQuery,
     TestManagementQuery,
     TestRailSourceConfig,
+    read_qase,
     read_testrail,
 )
 
@@ -246,13 +249,16 @@ class ToolRuntime:
         if not isinstance(raw_config, dict):
             raise ValueError("workspace.yml data_sources.test_management must be an object")
         provider = raw_config.get("provider")
-        if provider != "testrail":
-            raise ValueError(f"unsupported test management provider: {provider!r}")
-        config = TestRailSourceConfig.model_validate(
-            {key: value for key, value in raw_config.items() if key != "provider"}
-        )
-        query = TestManagementQuery.model_validate(arguments)
-        return read_testrail(config, query)
+        provider_config = {key: value for key, value in raw_config.items() if key != "provider"}
+        if provider == "testrail":
+            config = TestRailSourceConfig.model_validate(provider_config)
+            query = TestManagementQuery.model_validate(arguments)
+            return read_testrail(config, query)
+        if provider == "qase":
+            config = QaseSourceConfig.model_validate(provider_config)
+            query = QaseTestManagementQuery.model_validate(arguments)
+            return read_qase(config, query)
+        raise ValueError(f"unsupported test management provider: {provider!r}")
 
     def _safe_path(self, workspace: str, relative_value: Any) -> tuple[Path, Path]:
         root = self.store.require_workspace(workspace).resolve()

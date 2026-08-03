@@ -15,16 +15,20 @@ from harness.application.quality import (
 )
 from harness.application.source import SourceBundle
 from harness.domain.models import (
+    ApiPytestExportResult,
     ApprovedArtifactVersion,
     ArtifactCandidate,
     ArtifactDiffResult,
+    ExecuteApiCasesCommand,
     ExecutionProfile,
+    ExportApiPytestCommand,
     GetArtifactDiffQuery,
     HarnessEvent,
     ReviewDecision,
     RunSnapshot,
     StartRunCommand,
 )
+from harness.domain.schemas.execution_evidence import ExecutionEvidence
 
 
 class WorkspaceRepository(Protocol):
@@ -33,6 +37,12 @@ class WorkspaceRepository(Protocol):
     def validate_execution_profile(
         self, workspace: str, profile: ExecutionProfile
     ) -> object | None: ...
+
+
+class ApiAutomationService(Protocol):
+    def execute(self, command: ExecuteApiCasesCommand) -> ExecutionEvidence: ...
+
+    def export_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult: ...
 
 
 class ManagedAgentWorkspaceProvisioner(Protocol):

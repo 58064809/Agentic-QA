@@ -724,6 +724,41 @@ class RunRef(StrictModel):
         return normalize_workspace_id(value)
 
 
+class ExecuteApiCasesCommand(RunRef):
+    schema_version: Literal["agentic-qa.harness.execute-api-cases-command.v1"] = (
+        "agentic-qa.harness.execute-api-cases-command.v1"
+    )
+    cases_path: str = "published/api_test_draft/current.yml"
+    source_cases_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    execution_profile: ExecutionProfile
+
+
+class ExportApiPytestCommand(StrictModel):
+    schema_version: Literal["agentic-qa.harness.export-api-pytest-command.v1"] = (
+        "agentic-qa.harness.export-api-pytest-command.v1"
+    )
+    workspace_id: str = Field(min_length=1)
+    cases_path: str = "published/api_test_draft/current.yml"
+    output_path: str = "exports/api_test_draft/test_api_cases.py"
+    overwrite: bool = False
+
+    @field_validator("workspace_id")
+    @classmethod
+    def normalize_id(cls, value: str) -> str:
+        return normalize_workspace_id(value)
+
+
+class ApiPytestExportResult(StrictModel):
+    schema_version: Literal["agentic-qa.harness.api-pytest-export-result.v1"] = (
+        "agentic-qa.harness.api-pytest-export-result.v1"
+    )
+    workspace_id: str
+    source_cases_path: str
+    source_cases_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    output_path: str
+    output_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class GetArtifactDiffQuery(RunRef):
     schema_version: Literal["agentic-qa.harness.get-artifact-diff-query.v2"] = (
         "agentic-qa.harness.get-artifact-diff-query.v2"

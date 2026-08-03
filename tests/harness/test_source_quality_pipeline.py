@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+import yaml
 
 from harness.application.quality import (
     ArtifactVariant,
@@ -44,6 +45,7 @@ from harness.infrastructure.quality.normalization import (
     apply_safe_normalization,
 )
 from harness.infrastructure.quality.registry import QualityStrategyRegistry
+from harness.infrastructure.workflow.engine import default_recorded_api_test_cases
 
 
 class RequiresSourcesStrategy:
@@ -95,6 +97,90 @@ def _workspace_store(tmp_path: Path, limits: SourceIngestionLimits | None = None
     )
     store.create_run(snapshot)
     return store, workspace
+
+
+def test_generic_quality_rejects_unknown_api_assertion() -> None:
+    content = json.dumps(
+        {
+            "schema_version": "agentic-qa.api-cases.v1.1",
+            "artifact_type": "api_automation_cases",
+            "status": "needs_human_review",
+            "human_review_required": True,
+            "base_url_env": "AGENTIC_QA_BASE_URL",
+            "business_rules": ["RULE-001"],
+            "source_refs": [
+                {
+                    "source_type": "requirements",
+                    "source_path": "sources/requirements.md",
+                    "chunk_id": "rule-1",
+                    "locator": "RULE-001",
+                    "summary": "pending API contract",
+                    "confidence": "medium",
+                }
+            ],
+            "cases": [
+                {
+                    "id": "API-001",
+                    "title": "pending API case",
+                    "priority": "P1",
+                    "contract_status": "pending_confirmation",
+                    "business_rule_refs": ["RULE-001"],
+                    "review_status": "needs_human_review",
+                    "review_questions": ["confirm API contract"],
+                    "source_refs": [
+                        {
+                            "source_type": "requirements",
+                            "source_path": "sources/requirements.md",
+                            "chunk_id": "rule-1",
+                            "locator": "RULE-001",
+                            "summary": "pending API contract",
+                            "confidence": "medium",
+                        }
+                    ],
+                    "pending": ["complete OpenAPI contract"],
+                    "request": {"method": None, "path": None},
+                    "assertions": [{"type": "unknown_assertion"}],
+                    "variables": {},
+                    "cleanup": [],
+                }
+            ],
+            "review_questions": ["confirm API contract"],
+        }
+    )
+
+    result = GenericArtifactStrategy().evaluate(
+        QualityContext(
+            workspace_id="demo",
+            run_id="run-1",
+            artifact="api_test_draft",
+            source_bundle=_empty_bundle(),
+        ),
+        content,
+    )
+
+    assert [issue.code for issue in result.issues] == ["invalid_api_assertion"]
+
+
+def test_generic_quality_rejects_invalid_api_runtime_definition() -> None:
+    draft = default_recorded_api_test_cases("runtime validation")
+    invalid_case = draft.cases[0].model_copy(
+        update={"variables": {"extract": {"id": {"source": "response_json", "path": "$.data.id"}}}}
+    )
+    content = yaml.safe_dump(
+        draft.model_copy(update={"cases": [invalid_case]}).model_dump(mode="json")
+    )
+
+    result = GenericArtifactStrategy().evaluate(
+        QualityContext(
+            workspace_id="demo",
+            run_id="run-1",
+            artifact="api_test_draft",
+            source_bundle=_empty_bundle(),
+        ),
+        content,
+    )
+
+    assert [issue.code for issue in result.issues] == ["invalid_api_runtime_definition"]
 
 
 def test_source_bundle_preserves_warnings_hashes_and_run_snapshot(tmp_path: Path) -> None:

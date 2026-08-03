@@ -45,6 +45,7 @@ from harness.domain.schemas.api_test_cases import (
     API_CASES_SCHEMA_VERSION,
     ApiTestCasesDraft,
     UnconfirmedApiTestCase,
+    validate_api_case_runtime_definitions,
 )
 from harness.domain.schemas.api_test_cases import (
     SourceRef as ApiSourceRef,
@@ -2575,6 +2576,15 @@ def _validate_api_test_cases(
     requirement_catalog: RequirementCatalog | None,
     source_bundle: SourceBundle,
 ) -> None:
+    try:
+        validate_api_case_runtime_definitions(cases.cases)
+    except ValueError as exc:
+        category = (
+            "invalid API assertions"
+            if "assertions[" in str(exc)
+            else "invalid API runtime definitions"
+        )
+        raise ValueError(f"{category}: {exc}") from exc
     inspections = [
         item.get("result")
         for item in tool_results

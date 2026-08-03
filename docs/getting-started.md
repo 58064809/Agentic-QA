@@ -133,6 +133,44 @@ python -m harness run review demo $runId revise `
 修订不覆盖旧 Candidate。`resume` 只用于 planning、running 或 recoverable 状态的崩溃恢复；正常停在
 `needs_human_review` 或 `on_hold` 时应使用 `run review`。
 
+## 8. 从 Apifox 文档生成并执行 API 场景
+
+从 Apifox 导出完整 OpenAPI 3.x 或 Swagger 2.0 文件，连同 PRD、人工用例放入同一来源目录。通过
+AgentRequest/MCP 生成时将期望产物指定为 `api_test_draft`；通过 CLI 时可复制到 workspace
+`sources/` 后启动：
+
+```powershell
+Copy-Item D:\Docs\order-openapi.yaml .\workspaces\demo\sources\
+$apiRun = python -m harness run start demo "生成订单 API 自动化场景" `
+  --artifact api_test_draft |
+  ConvertFrom-Json
+```
+
+检查 Candidate、质量报告并使用第 6 步的人工审核命令批准 `api_test_draft`。发布后，在
+`workspace.yml` 的 `execution.environments.qa` 中配置 base URL 环境变量名、允许方法和超时上限，
+然后显式执行：
+
+```powershell
+$env:AGENTIC_QA_BASE_URL = "https://qa.example.test"
+python -m harness api execute demo run-api-001 `
+  --environment qa `
+  --allow-http-method GET `
+  --allow-http-method POST `
+  --allow-http-method DELETE
+```
+
+需要接入现有 pytest 流水线时，从已审核版本导出确定性 adapter：
+
+```powershell
+python -m harness api export-pytest demo
+$env:AGENTIC_QA_EXECUTION_ENVIRONMENT = "qa"
+$env:AGENTIC_QA_ALLOWED_HTTP_METHODS = "GET,POST,DELETE"
+pytest -q .\workspaces\demo\exports\api_test_draft\test_api_cases.py
+```
+
+adapter 绑定 published YAML 的 SHA-256；发布内容更新后需重新导出。它不会生成另一份业务脚本逻辑，
+也不会批准 Candidate，而是通过公开 Harness API 运行同一份数据集、变量提取、断言和 cleanup 语义。
+
 ## 常见失败
 
 | 错误 | 处理 |
