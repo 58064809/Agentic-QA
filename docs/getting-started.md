@@ -14,12 +14,14 @@
 Set-Location D:\TestHome\Agentic-QA
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev]" -c constraints.txt
 python -m harness --help
+.\scripts\cold-start-check.ps1
 ```
 
 本文使用 `python -m harness`，避免虚拟环境中残留旧 console entry point。重新执行 editable install
-后，`agentic-qa` 与它等价。
+后，`agentic-qa` 与它等价。`constraints.txt` 固定经过离线 Eval 和全量测试的依赖组合；修改
+`pyproject.toml` 依赖后需重新生成并验证 constraints。
 
 ## 2. 注入本机配置
 
@@ -30,6 +32,15 @@ $env:PG_LOCAL_PASSWORD = "<你的 PostgreSQL 密码>"
 
 PostgreSQL 默认连接：`localhost:5432/postgres`，用户为 `postgres`。不同连接通过 `PG_LOCAL_*`
 变量覆盖。`.env.example` 只是清单，CLI 不自动读取 `.env`；完整说明见[配置参考](configuration.md)。
+PostgreSQL 服务本身也需要处于可连接状态。注入配置后可执行：
+
+```powershell
+.\scripts\cold-start-check.ps1 -Runtime
+```
+
+该检查只报告使用的密钥环境变量名，不打印密钥值；同时使用只建立后立即关闭的连接验证 PostgreSQL。
+维护者需要运行完整仓库验收时使用 `-Full`，它会继续执行 Ruff、pytest、离线 Eval、严格文档构建和
+wheel 构建。
 
 ## 3. 创建 workspace 并放入来源
 

@@ -23,6 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "build>=1,<2",
   "pytest>=8,<10",
   "pytest-json-report>=1.5,<2",
   "ruff>=0.8,<1",
