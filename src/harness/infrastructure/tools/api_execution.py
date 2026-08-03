@@ -38,6 +38,7 @@ from harness.domain.schemas.execution_evidence import (
     ExecutionEvidence,
     ExecutionSummary,
 )
+from harness.domain.security import validate_api_request_transport
 
 ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)}")
 FULL_VARIABLE_PLACEHOLDER_RE = re.compile(r"^\$\{\{([A-Za-z_][A-Za-z0-9_]*)}}$")
@@ -101,6 +102,12 @@ def _runtime_redactions(value: Any) -> list[str]:
         return [item for value_item in value for item in _runtime_redactions(value_item)]
     if isinstance(value, dict):
         return [item for value_item in value.values() for item in _runtime_redactions(value_item)]
+    if value is None:
+        return ["None", "null"]
+    if isinstance(value, bool):
+        return [str(value), json.dumps(value)]
+    if isinstance(value, int | float):
+        return [str(value)]
     return []
 
 
@@ -154,6 +161,21 @@ def _json_contains(actual: Any, expected: Any) -> bool:
         )
     if isinstance(expected, str):
         return isinstance(actual, str) and expected in actual
+    return _json_strict_equal(actual, expected)
+
+
+def _json_strict_equal(actual: Any, expected: Any) -> bool:
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return actual.keys() == expected.keys() and all(
+            _json_strict_equal(actual[key], value) for key, value in expected.items()
+        )
+    if isinstance(expected, list):
+        return len(actual) == len(expected) and all(
+            _json_strict_equal(actual_item, expected_item)
+            for actual_item, expected_item in zip(actual, expected, strict=True)
+        )
     return actual == expected
 
 
@@ -211,9 +233,16 @@ def _json_path_value(body: Any, path: str) -> Any:
 
 def _sanitize_error(error: Exception, secrets: list[str]) -> str:
     message = URL_RE.sub("<redacted-url>", str(error))
-    for secret in secrets:
+    for secret in sorted(set(secrets), key=len, reverse=True):
         if secret:
-            message = message.replace(secret, "<redacted>")
+            if len(secret) <= 2:
+                message = re.sub(
+                    rf"(?<![A-Za-z0-9_]){re.escape(secret)}(?![A-Za-z0-9_])",
+                    "<redacted>",
+                    message,
+                )
+            else:
+                message = message.replace(secret, "<redacted>")
     return message[:1000]
 
 
@@ -328,7 +357,7 @@ def _evaluate_assertions(
                 body_loaded = True
             found, actual = _json_path_lookup(body, assertion.path or "")
             passed = found and (
-                actual == assertion.expected
+                _json_strict_equal(actual, assertion.expected)
                 if assertion.type == "json_field_equals"
                 else _json_contains(actual, assertion.expected)
             )
@@ -479,10 +508,23 @@ def _execute_request(
         request = _resolve_runtime_variables(
             request_definition.model_dump(mode="python"), runtime_variables
         )
+        missing_environment = sorted(
+            name for name in _required_environment_references(request) if not env.get(name)
+        )
+        if missing_environment:
+            raise _MissingRuntimeVariable(
+                "API request is missing environment values: " + ", ".join(missing_environment)
+            )
         request = _resolve(request, env)
         resolved_path = str(request.get("path") or "")
-        if not resolved_path.startswith("/") or resolved_path.startswith("//"):
-            raise ValueError("resolved API case path must be relative and start with '/'")
+        try:
+            validate_api_request_transport(
+                path=resolved_path,
+                headers=dict(request.get("headers") or {}),
+                label="resolved API request",
+            )
+        except ValueError as exc:
+            raise _MissingRuntimeVariable(str(exc)) from exc
         headers = _apply_authentication_header(
             dict(request.get("headers") or {}),
             authentication_header,
@@ -574,7 +616,7 @@ def execute_api_cases(
         raise ValueError("no API cases to execute")
     if profile.environment == "analysis-only" or not profile.base_url_env:
         raise PermissionError("API execution requires an explicit test environment")
-    runtime_env = env or os.environ
+    runtime_env = os.environ if env is None else env
     base_url = runtime_env.get(profile.base_url_env, "").strip()
     if not base_url:
         raise ValueError(f"base URL environment variable is not set: {profile.base_url_env}")
@@ -583,6 +625,28 @@ def execute_api_cases(
 
         request_func = requests.request
     definition_errors = api_case_runtime_definition_errors(cases)
+    for index, case in enumerate(cases):
+        if definition_errors[index] is not None:
+            continue
+        variables = parse_api_case_variables(case.variables)
+        cleanup = parse_api_cleanup_steps(case.cleanup)
+        environment_payloads = [
+            case.request.model_dump(mode="python"),
+            *(dataset.values for dataset in variables.datasets),
+            *(step.request.model_dump(mode="python") for step in cleanup),
+        ]
+        missing_environment = sorted(
+            {
+                name
+                for payload in environment_payloads
+                for name in _required_environment_references(payload)
+                if not runtime_env.get(name)
+            }
+        )
+        if missing_environment:
+            definition_errors[index] = "API case is missing environment values: " + ", ".join(
+                missing_environment
+            )
     has_executable_case = any(
         definition_errors[index] is None
         and case.contract_status == "confirmed"
@@ -649,17 +713,17 @@ def execute_api_cases(
                 profile=profile,
                 env=runtime_env,
                 runtime_variables=runtime_variables,
-                runtime_redaction_values=shared_variables,
+                runtime_redaction_values=runtime_variables,
                 request_func=request_func,
                 authentication_header=authentication_header,
                 authentication_secrets=authentication_secrets,
             )
             results.append(outcome.evidence)
-            if outcome.extracted:
+            if outcome.evidence.status == "passed" and outcome.extracted:
                 shared_variables.update(outcome.extracted)
             if outcome.request_sent:
                 cleanup_scope = {**runtime_variables, **outcome.extracted}
-                cleanup_redactions = {**shared_variables, **outcome.extracted}
+                cleanup_redactions = cleanup_scope
                 for step in cleanup_steps:
                     cleanup_queue.append(
                         (

@@ -565,7 +565,10 @@ def run_eval() -> dict[str, Any]:
 
 def run_live_eval(case_name: str | None = None) -> dict[str, Any]:
     from harness.infrastructure.llm.gateway import model_gateway_from_env
-    from harness.testing.golden import evaluate_candidate_artifacts
+    from harness.testing.golden import (
+        evaluate_api_candidate_artifact,
+        evaluate_candidate_artifacts,
+    )
 
     gateway = model_gateway_from_env()
     if gateway is None:
@@ -582,26 +585,33 @@ def run_live_eval(case_name: str | None = None) -> dict[str, Any]:
         workspace = harness.create_workspace(
             CreateWorkspaceCommand(workspace_id=f"live-eval-{selected_case}")
         )
-        working_case = Path.cwd() / "evals" / "cases" / selected_case
-        packaged_case = Path(__file__).resolve().parents[3] / "evals" / "cases" / selected_case
-        case_root = working_case if working_case.is_dir() else packaged_case
+        roots = [
+            Path.cwd() / "evals" / "cases" / selected_case,
+            Path.cwd() / "evals" / "api-cases" / selected_case,
+            Path(__file__).resolve().parents[3] / "evals" / "cases" / selected_case,
+            Path(__file__).resolve().parents[3] / "evals" / "api-cases" / selected_case,
+        ]
+        case_root = next((path for path in roots if path.is_dir()), roots[0])
         if not case_root.is_dir():
             raise FileNotFoundError(f"{selected_case} live eval case is unavailable")
-        (workspace / f"sources/{selected_case}.md").write_text(
-            (case_root / "source.md").read_text(encoding="utf-8"),
-            encoding="utf-8",
-        )
+        is_api_case = (case_root / "api-expectations.json").is_file()
+        for source in sorted(case_root.glob("source.*")):
+            suffix = source.name.removeprefix("source")
+            copyfile(source, workspace / "sources" / f"{selected_case}{suffix}")
         goal_path = case_root / "live-goal.txt"
         goal = (
             goal_path.read_text(encoding="utf-8").strip()
             if goal_path.is_file()
             else f"生成可追踪的 {selected_case} 需求目录和边界/状态测试用例"
         )
+        expected_artifacts = (
+            ["api_test_draft"] if is_api_case else ["requirement_analysis", "testcases"]
+        )
         snapshot = harness.start_run(
             StartRunCommand(
                 workspace_id=f"live-eval-{selected_case}",
                 goal=goal,
-                expected_artifacts=["requirement_analysis", "testcases"],
+                expected_artifacts=expected_artifacts,
             )
         )
         raw_artifacts: dict[str, str] = {}
@@ -619,7 +629,12 @@ def run_live_eval(case_name: str | None = None) -> dict[str, Any]:
                     encoding="utf-8"
                 )
         golden = None
-        if {"requirement_analysis", "testcases"}.issubset(raw_artifacts):
+        if is_api_case and "api_test_draft" in raw_artifacts:
+            golden = evaluate_api_candidate_artifact(
+                case_root,
+                api_cases_content=raw_artifacts["api_test_draft"],
+            )
+        elif {"requirement_analysis", "testcases"}.issubset(raw_artifacts):
             golden = evaluate_candidate_artifacts(
                 case_root,
                 requirement_content=raw_artifacts["requirement_analysis"],

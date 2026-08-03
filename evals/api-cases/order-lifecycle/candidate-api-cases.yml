@@ -1,0 +1,85 @@
+schema_version: agentic-qa.api-cases.v1.1
+artifact_type: api_automation_cases
+status: needs_human_review
+human_review_required: true
+base_url_env: AGENTIC_QA_BASE_URL
+business_rules: [ORDER-001]
+source_refs:
+  - &openapi_ref
+    source_type: openapi
+    source_path: sources/order-lifecycle.openapi.yml
+    chunk_id: orders
+    locator: /orders
+    summary: Order create, read, and delete operations
+    confidence: high
+cases:
+  - id: API-ORDER-CREATE
+    title: Create orders from controlled datasets
+    priority: P0
+    contract_status: confirmed
+    business_rule_refs: [ORDER-001]
+    review_status: needs_human_review
+    review_questions: [Confirm the QA fixture SKUs]
+    source_refs: [*openapi_ref]
+    pending: []
+    request:
+      method: POST
+      path: /orders
+      headers:
+        X-API-Key: ${QA_API_TOKEN}
+      query: {}
+      body:
+        sku: ${{sku}}
+        quantity: ${{quantity}}
+    assertions:
+      - {type: status_code, expected: 201}
+      - {type: json_field_equals, path: $.data.state, expected: created}
+      - {type: response_time_ms_max, expected: 1000}
+    variables:
+      datasets:
+        - id: single-item
+          values: {sku: SKU-EVAL-1, quantity: 1}
+        - id: multiple-items
+          values: {sku: SKU-EVAL-2, quantity: 2}
+      extract:
+        order_id: {source: response_json, path: $.data.id, required: true}
+    cleanup:
+      - id: delete-order
+        title: Delete the created order
+        request:
+          method: DELETE
+          path: /orders
+          headers:
+            X-API-Key: ${QA_API_TOKEN}
+          query:
+            id: ${{order_id}}
+          body: {}
+        assertions:
+          - {type: status_code, expected: 204}
+  - id: API-ORDER-READ
+    title: Read the most recently created order
+    priority: P0
+    contract_status: confirmed
+    business_rule_refs: [ORDER-001]
+    review_status: needs_human_review
+    review_questions: [Confirm last-dataset chaining is intended]
+    source_refs: [*openapi_ref]
+    pending: []
+    request:
+      method: GET
+      path: /orders
+      headers:
+        X-API-Key: ${QA_API_TOKEN}
+      query:
+        id: ${{order_id}}
+      body: {}
+    assertions:
+      - {type: status_code, expected: 200}
+      - type: json_field_contains
+        path: $.data
+        expected: {state: created}
+      - {type: header_equals, path: X-Resource-State, expected: created}
+    variables: {}
+    cleanup: []
+review_questions:
+  - Confirm the test environment, fixture SKUs, and cleanup authorization before promotion.

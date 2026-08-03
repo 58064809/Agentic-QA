@@ -42,6 +42,9 @@ def test_pytest_export_is_deterministic_and_bound_to_published_hash(tmp_path: Pa
     assert "ExecuteApiCasesCommand" in content
     assert first.source_cases_sha256 in content
     assert "AGENTIC_QA_EXECUTION_ENVIRONMENT" in content
+    assert '@pytest.mark.parametrize("case_id", EXPECTED_CASE_IDS' in content
+    assert "def test_published_api_case(" in content
+    assert "def test_published_api_scenario" not in content
     compile(content, str(output), "exec")
 
     with pytest.raises(FileExistsError):

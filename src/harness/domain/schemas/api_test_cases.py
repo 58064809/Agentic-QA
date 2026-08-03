@@ -5,6 +5,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from harness.domain.security import validate_api_data_safety, validate_api_request_safety
+
 API_CASES_SCHEMA_VERSION = "agentic-qa.api-cases.v1.1"
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"}
 SUPPORTED_API_ASSERTION_TYPES = frozenset(
@@ -275,6 +277,23 @@ def parse_api_cleanup_steps(value: list[Any]) -> list[ApiCleanupStep]:
     return steps
 
 
+def api_execution_case_ids(cases: list[ApiTestCase]) -> list[str]:
+    main_ids: list[str] = []
+    cleanup_ids: list[str] = []
+    for case in cases:
+        variables = parse_api_case_variables(case.variables)
+        cleanup = parse_api_cleanup_steps(case.cleanup)
+        instance_ids = (
+            [f"{case.id}::{dataset.id}" for dataset in variables.datasets]
+            if variables.datasets
+            else [case.id]
+        )
+        main_ids.extend(instance_ids)
+        for instance_id in instance_ids:
+            cleanup_ids.extend(f"{instance_id}::cleanup::{step.id}" for step in cleanup)
+    return [*main_ids, *reversed(cleanup_ids)]
+
+
 def variable_references(value: Any) -> set[str]:
     if isinstance(value, str):
         return set(VARIABLE_PLACEHOLDER.findall(value))
@@ -302,14 +321,40 @@ def api_case_runtime_definition_errors(cases: list[ApiTestCase]) -> list[str | N
     """Validate scenario semantics while preserving per-case execution blocking."""
     errors: list[str | None] = []
     available: set[str] = set()
+    seen_case_ids: set[str] = set()
     for case in cases:
         try:
+            if case.id in seen_case_ids:
+                raise ValueError(f"duplicate API case id: {case.id}")
+            seen_case_ids.add(case.id)
+            if "::" in case.id:
+                raise ValueError("API case ids cannot contain the reserved '::' separator")
             validate_api_assertion_definitions(case.assertions)
             variables = parse_api_case_variables(case.variables)
             cleanup = parse_api_cleanup_steps(case.cleanup)
             request_payload = case.request.model_dump(mode="python")
             _reject_malformed_variable_placeholders(request_payload)
             dataset_names = set(variables.datasets[0].values) if variables.datasets else set()
+            collisions = sorted(dataset_names & available)
+            if collisions:
+                raise ValueError(f"dataset variables shadow earlier extracted values: {collisions}")
+            collisions = sorted(set(variables.extract) & available)
+            if collisions:
+                raise ValueError(f"extracted variable names are already defined: {collisions}")
+            for dataset in variables.datasets:
+                validate_api_data_safety(
+                    dataset.values,
+                    label=f"API dataset {dataset.id}",
+                    allow_runtime_variables=False,
+                )
+            validate_api_request_safety(
+                path=case.request.path,
+                headers=case.request.headers,
+                query=case.request.query,
+                body=case.request.body,
+                label="API request",
+                allow_runtime_variables=True,
+            )
             missing = variable_references(request_payload) - available - dataset_names
             if missing:
                 raise ValueError(
@@ -320,6 +365,14 @@ def api_case_runtime_definition_errors(cases: list[ApiTestCase]) -> list[str | N
             for index, step in enumerate(cleanup):
                 payload = step.request.model_dump(mode="python")
                 _reject_malformed_variable_placeholders(payload)
+                validate_api_request_safety(
+                    path=step.request.path,
+                    headers=step.request.headers,
+                    query=step.request.query,
+                    body=step.request.body,
+                    label=f"API cleanup {step.id}",
+                    allow_runtime_variables=True,
+                )
                 missing = variable_references(payload) - cleanup_available
                 if missing:
                     raise ValueError(
@@ -339,6 +392,9 @@ def validate_api_case_runtime_definitions(cases: list[ApiTestCase]) -> None:
     for index, error in enumerate(api_case_runtime_definition_errors(cases)):
         if error is not None:
             raise ValueError(f"cases[{index}]: {error}")
+    ids = api_execution_case_ids(cases)
+    if len(ids) != len(set(ids)):
+        raise ValueError("expanded API execution evidence ids must be unique")
 
 
 class ApiTestCase(StrictModel):

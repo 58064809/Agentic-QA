@@ -7,7 +7,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from harness.domain.security import contains_likely_secret
+from harness.domain.security import contains_likely_secret, validate_api_request_safety
 
 CONTRACT_PREFIX = "agentic-qa.harness"
 UTC = timezone.utc
@@ -85,11 +85,7 @@ class ExecutionProfile(StrictModel):
         return self
 
 
-ENV_REFERENCE = re.compile(r"^\$\{[A-Z_][A-Z0-9_]*\}$")
 HTTP_HEADER_NAME = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
-SENSITIVE_AUTH_KEY = re.compile(
-    r"(authorization|cookie|token|secret|password|api[_-]?key)", re.IGNORECASE
-)
 
 
 class ApiTokenInjection(StrictModel):
@@ -176,24 +172,14 @@ class ApiLoginRequest(StrictModel):
 
     @model_validator(mode="after")
     def reject_inline_sensitive_values(self) -> ApiLoginRequest:
-        def inspect(value: Any, path: tuple[str, ...] = ()) -> None:
-            if isinstance(value, dict):
-                for key, item in value.items():
-                    current = (*path, str(key))
-                    if SENSITIVE_AUTH_KEY.search(str(key)):
-                        if not isinstance(item, str) or not ENV_REFERENCE.fullmatch(item):
-                            raise ValueError(
-                                "sensitive API login values must use a ${ENV_NAME} reference: "
-                                + ".".join(current)
-                            )
-                    inspect(item, current)
-            elif isinstance(value, list):
-                for index, item in enumerate(value):
-                    inspect(item, (*path, str(index)))
-
-        inspect(self.headers, ("headers",))
-        inspect(self.query, ("query",))
-        inspect(self.body, ("body",))
+        validate_api_request_safety(
+            path=self.path,
+            headers=self.headers,
+            query=self.query,
+            body=self.body,
+            label="API login request",
+            allow_runtime_variables=False,
+        )
         return self
 
 

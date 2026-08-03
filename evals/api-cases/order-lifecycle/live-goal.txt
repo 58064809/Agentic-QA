@@ -1,0 +1,1 @@
+Generate a reviewed Candidate for a data-driven order API scenario from the complete OpenAPI source. Cover both datasets, extract the created order ID, use it in the downstream read request, and declare cleanup. Use only supported assertions and environment references for secrets. Do not approve or publish the Candidate.

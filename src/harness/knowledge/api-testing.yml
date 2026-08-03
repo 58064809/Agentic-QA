@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.knowledge-spec.v1
 name: api-testing
-version: 1.3.0
+version: 1.4.0
 purpose: 根据完整 API 契约设计可验证的机器用例并记录执行边界。
 applies_to: [api-testing]
 inputs:
@@ -16,6 +16,8 @@ procedure:
   - 多组输入使用 variables.datasets；同一用例的 dataset ID 唯一且变量名集合一致。
   - 后续请求使用 ${{name}} 引用更早用例通过 response_json 或非敏感 response_header 提取的运行时变量。
   - 状态变更场景使用 cleanup 声明逆序回收请求，并为每个 cleanup 请求提供受支持断言。
+  - 环境变量使用 ${ENV_NAME}；每个请求引用的环境变量都需要在发送前解析成功。
+  - 数据集变量、跨用例提取变量和用例 ID 保持全场景唯一命名，不遮蔽更早定义。
 output_expectations:
   - 机器用例写入 AgentOutput.api_test_cases，由 Harness 渲染为 YAML Candidate。
   - 请求使用结构化 method 和 path。
@@ -27,6 +29,7 @@ evidence_policy:
   - 执行结果记录环境、请求摘要、响应摘要和断言结果。
   - JSON 值和响应头的实际值只记录类型与 SHA-256，不复述原始响应值。
   - 提取的运行时变量只保留在单次执行内，不写入 YAML、事件或证据。
+  - 只有全部断言通过的用例向后续用例发布提取变量；cleanup 仍使用本次请求的局部快照。
 uncertainty_policy:
   - Markdown、抓包或残缺契约形成 partial 或待确认项，request.method/path 保持 null。
 prohibited_actions:
@@ -37,5 +40,6 @@ deterministic_checks:
   - validator:api-assertion-definition
   - validator:api-runtime-variable-definition
   - validator:api-cleanup-definition
+  - validator:api-request-safety
   - schema:api-cases-v1.1
   - validator:execution-profile

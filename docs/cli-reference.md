@@ -73,26 +73,28 @@ ArtifactVariant，因此不会出现在差异端点或发布版本中。
 
 `api export-pytest` 默认写入 `exports/api_test_draft/test_api_cases.py`。非 `published/` 来源或
 `exports/` 以外的输出返回错误；目标已存在时拒绝，显式 `--overwrite` 表示同意替换。导出文件
-绑定 published YAML 的 SHA-256，并在 pytest 执行时调用公开 Harness API。
+绑定 published YAML 的 SHA-256，并在 pytest 执行时调用公开 Harness API。导出的测试按业务用例、
+dataset 实例和 cleanup Evidence ID 分项报告，场景请求在同一个 pytest session 中只执行一次。
 
 ## Eval
 
 `eval run` 不需要模型密钥，包含：
 
 - recorded workflow、MCP snapshot、Review Gate 和 deterministic promote；
-- login-lock、order-refund、coupon-boundary、settlement-rounding、
-  city-opening-rewards 五类脱敏 Golden Case。每个 Case 分别读取
+- login-lock、order-refund、coupon-boundary、settlement-rounding、lottery-assistance、
+  city-opening-rewards 六类脱敏设计 Golden Case。每个 Case 分别读取
   `expectations.json`、`baseline-testcases.json`、
   `candidate-requirement-catalog.json` 和 `candidate-testcases.md`；候选缺失时失败，
   并报告 `baseline_score` 与 `baseline_gap`，不会把人工基线当成待测产物；
 - 规则召回、覆盖率、幻觉率、重复率、边界/状态覆盖和可执行性评分。
+- order-lifecycle API Golden Case，确定性评分 dataset、提取、跨请求引用、cleanup、断言类型与安全定义。
 
 `eval live` 需要显式模型配置。默认场景是脱敏的 `login-lock`；环境变量
-`AGENTIC_QA_LIVE_EVAL_CASE=lottery-assistance` 会切换到规则更密集的助力抽奖场景。系统生成真实
-隔离 Candidate，停在 Review Gate 后读取本次 `requirement_analysis/raw.md` 与
-`testcases/raw.md` 计算规则召回、覆盖、幻觉、重复、边界/状态和可执行性分数；状态正确但质量分
-不足仍返回失败。设置
-`AGENTIC_QA_LIVE_EVAL_OUTPUT` 时，只导出脱敏 `source-bundle.json`、两类 raw artifact、
+`AGENTIC_QA_LIVE_EVAL_CASE=lottery-assistance` 会切换到规则更密集的助力抽奖场景；设置为
+`order-lifecycle` 时运行完整 OpenAPI 驱动的数据集、变量提取、跨请求引用与 cleanup API 场景。系统生成真实
+隔离 Candidate，停在 Review Gate 后读取本次 raw artifact；设计场景计算规则召回、覆盖、幻觉、
+重复、边界/状态和可执行性分数，API 场景计算数据驱动与请求链覆盖分数。状态正确但质量分不足仍返回
+失败。设置 `AGENTIC_QA_LIVE_EVAL_OUTPUT` 时，只导出脱敏 `source-bundle.json`、本次 raw artifact、
 `quality-report.json` 与 `generation-report.json` 供人工审查，不导出整个 workspace。
 
 ## 退出码

@@ -1,0 +1,73 @@
+openapi: 3.0.3
+info:
+  title: Order lifecycle evaluation API
+  version: 1.0.0
+servers:
+  - url: https://qa.example.test
+paths:
+  /orders:
+    post:
+      operationId: createOrder
+      summary: Create an order
+      parameters:
+        - in: header
+          name: X-API-Key
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sku, quantity]
+              properties:
+                sku: {type: string}
+                quantity: {type: integer, minimum: 1, maximum: 10}
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: {type: string}
+                      state: {type: string}
+    get:
+      operationId: getOrder
+      summary: Read an order by ID
+      parameters:
+        - in: query
+          name: id
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: Found
+          headers:
+            X-Resource-State:
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      id: {type: string}
+                      state: {type: string}
+    delete:
+      operationId: deleteOrder
+      summary: Delete an order by ID
+      parameters:
+        - in: query
+          name: id
+          required: true
+          schema: {type: string}
+      responses:
+        "204": {description: Deleted}

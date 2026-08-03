@@ -14,7 +14,10 @@ from harness import (
     StaticTokenApiAuthentication,
 )
 from harness.domain.models import ExecutionEnvironmentPolicy
-from harness.domain.schemas.api_test_cases import ApiTestCase
+from harness.domain.schemas.api_test_cases import (
+    ApiTestCase,
+    api_case_runtime_definition_errors,
+)
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.infrastructure.tools import api_execution as execution_module
 from harness.infrastructure.tools.api_execution import execute_api_cases
@@ -41,16 +44,20 @@ def _authenticated_api_server():
     requests_seen: list[tuple[str, str | None]] = []
 
     class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
         def do_POST(self):
             requests_seen.append((self.path, self.headers.get("Authorization")))
             if self.path != "/api/login":
                 self.send_response(404)
+                self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
             length = int(self.headers.get("Content-Length") or 0)
             credentials = json.loads(self.rfile.read(length))
             if credentials != {"username": "qa-user", "password": "qa-password"}:
                 self.send_response(401)
+                self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
             body = json.dumps({"data": {"access_token": "local-runtime-token"}}).encode()
@@ -65,6 +72,7 @@ def _authenticated_api_server():
             requests_seen.append((self.path, authorization))
             if self.path != "/api/api-local" or authorization != "Bearer local-runtime-token":
                 self.send_response(401)
+                self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
             body = json.dumps({"code": 0}).encode()
@@ -479,6 +487,277 @@ def test_invalid_runtime_variable_definition_blocks_before_authentication() -> N
     assert calls == []
 
 
+def test_missing_environment_reference_blocks_business_request() -> None:
+    payload = _case("API-MISSING-ENV", "POST").model_dump(mode="python")
+    payload["request"]["body"] = {"account": "${MISSING_ACCOUNT}"}
+    calls: list[bool] = []
+
+    evidence = execute_api_cases(
+        [ApiTestCase.model_validate(payload)],
+        run_id="run-missing-env",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["POST"],
+        ),
+        env={
+            "TEST_BASE_URL": "https://example.test",
+            "QA_API_TOKEN": "runtime-token",
+        },
+        authentication=StaticTokenApiAuthentication(
+            mode="static_token",
+            token_env="QA_API_TOKEN",
+        ),
+        request_func=lambda *_args, **_kwargs: calls.append(True),
+    )
+
+    assert evidence.cases[0].status == "blocked"
+    assert "MISSING_ACCOUNT" in str(evidence.cases[0].error)
+    assert calls == []
+
+
+def test_missing_environment_reference_blocks_cleanup_request() -> None:
+    payload = _case("API-CLEANUP-ENV", "POST").model_dump(mode="python")
+    payload["cleanup"] = [
+        {
+            "id": "cleanup-env",
+            "request": {
+                "method": "DELETE",
+                "path": "/records/cleanup",
+                "headers": {"X-Fixture": "${MISSING_FIXTURE}"},
+            },
+            "assertions": [{"type": "status_code", "expected": 204}],
+        }
+    ]
+    calls: list[str] = []
+
+    evidence = execute_api_cases(
+        [ApiTestCase.model_validate(payload)],
+        run_id="run-cleanup-env",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["POST", "DELETE"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=lambda method, _url, **_kwargs: (
+            calls.append(method) or FakeResponse(200, {"code": 0})
+        ),
+    )
+
+    assert calls == []
+    assert [case.status for case in evidence.cases] == ["blocked"]
+    assert "MISSING_FIXTURE" in str(evidence.cases[0].error)
+
+
+def test_failed_case_does_not_publish_extracted_variable_to_downstream() -> None:
+    producer = _case("API-PRODUCER", "POST", expected=201).model_dump(mode="python")
+    producer["variables"] = {
+        "extract": {"record_id": {"source": "response_json", "path": "$.data.id"}}
+    }
+    consumer = _case("API-CONSUMER", "GET").model_dump(mode="python")
+    consumer["request"]["path"] = "/records/${{record_id}}"
+    calls: list[str] = []
+
+    def request(method: str, url: str, **_kwargs):
+        calls.append(method)
+        return FakeResponse(200, {"code": 0, "data": {"id": "must-not-flow"}})
+
+    evidence = execute_api_cases(
+        [ApiTestCase.model_validate(producer), ApiTestCase.model_validate(consumer)],
+        run_id="run-failed-producer",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET", "POST"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=request,
+    )
+
+    assert calls == ["POST"]
+    assert [case.status for case in evidence.cases] == ["failed", "blocked"]
+    assert "must-not-flow" not in evidence.model_dump_json()
+
+
+def test_dataset_and_cleanup_values_are_redacted_from_errors() -> None:
+    payload = _case("API-REDACT-SCOPE", "POST").model_dump(mode="python")
+    payload["request"]["body"] = {"customer": "${{customer}}"}
+    payload["variables"] = {
+        "datasets": [{"id": "private", "values": {"customer": "private-customer"}}],
+        "extract": {"record_id": {"source": "response_json", "path": "$.data.id"}},
+    }
+    payload["cleanup"] = [
+        {
+            "id": "delete",
+            "request": {"method": "DELETE", "path": "/records/${{record_id}}"},
+            "assertions": [{"type": "status_code", "expected": 204}],
+        }
+    ]
+
+    def request(method: str, url: str, **kwargs):
+        if method == "POST":
+            return FakeResponse(200, {"code": 0, "data": {"id": "private-record"}})
+        raise RuntimeError(f"cleanup failed: {url} {kwargs} private-customer private-record")
+
+    evidence = execute_api_cases(
+        [ApiTestCase.model_validate(payload)],
+        run_id="run-redaction-scope",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["POST", "DELETE"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=request,
+    )
+
+    serialized = evidence.model_dump_json()
+    assert evidence.cases[-1].status == "error"
+    assert "private-customer" not in serialized
+    assert "private-record" not in serialized
+
+
+@pytest.mark.parametrize(
+    ("request_update", "message"),
+    [
+        ({"path": "//outside.test/path"}, "path"),
+        ({"path": "/safe?next=/outside"}, "path"),
+        ({"headers": {"Host": "outside.test"}}, "transport"),
+        ({"headers": {"X-Test": "safe\r\nInjected: true"}}, "header"),
+        ({"headers": {"Authorization": "Bearer inline-token"}}, "sensitive"),
+        ({"body": {"password": "inline-password"}}, "sensitive"),
+    ],
+)
+def test_ordinary_request_reuses_path_header_and_secret_safety_validation(
+    request_update: dict[str, object],
+    message: str,
+) -> None:
+    payload = _case("API-REQUEST-SAFETY", "POST").model_dump(mode="python")
+    payload["request"].update(request_update)
+    calls: list[bool] = []
+
+    evidence = execute_api_cases(
+        [ApiTestCase.model_validate(payload)],
+        run_id="run-request-safety",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["POST"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=lambda *_args, **_kwargs: calls.append(True),
+    )
+
+    assert evidence.cases[0].status == "blocked"
+    assert message in str(evidence.cases[0].error).lower()
+    assert calls == []
+
+
+def test_resolved_request_rejects_header_injection_before_sending() -> None:
+    payload = _case("API-RESOLVED-HEADER", "GET").model_dump(mode="python")
+    payload["request"]["headers"] = {"X-Fixture": "${UNSAFE_HEADER}"}
+    calls: list[bool] = []
+
+    evidence = execute_api_cases(
+        [ApiTestCase.model_validate(payload)],
+        run_id="run-resolved-header",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET"],
+        ),
+        env={
+            "TEST_BASE_URL": "https://example.test",
+            "UNSAFE_HEADER": "safe\r\nInjected: true",
+        },
+        request_func=lambda *_args, **_kwargs: calls.append(True),
+    )
+
+    assert evidence.cases[0].status == "blocked"
+    assert "header" in str(evidence.cases[0].error).lower()
+    assert calls == []
+
+
+def test_json_value_comparison_distinguishes_boolean_integer_and_float_types() -> None:
+    case = _case_with_assertions(
+        [
+            {"type": "json_field_equals", "path": "$.boolean", "expected": True},
+            {"type": "json_field_equals", "path": "$.integer", "expected": 1},
+            {
+                "type": "json_field_contains",
+                "path": "$.nested",
+                "expected": {"value": True},
+            },
+        ]
+    )
+
+    evidence = execute_api_cases(
+        [case],
+        run_id="run-strict-json-types",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=lambda *_args, **_kwargs: FakeResponse(
+            200,
+            {"boolean": 1, "integer": 1.0, "nested": {"value": 1}},
+        ),
+    )
+
+    assert [assertion.passed for assertion in evidence.cases[0].assertions] == [
+        False,
+        False,
+        False,
+    ]
+
+
+def test_runtime_definition_rejects_variable_shadowing_and_reserved_case_ids() -> None:
+    producer_payload = _case("API-PRODUCER", "POST").model_dump(mode="python")
+    producer_payload["variables"] = {
+        "extract": {"record_id": {"source": "response_json", "path": "$.data.id"}}
+    }
+    duplicate_payload = _case("API-DUPLICATE", "GET").model_dump(mode="python")
+    duplicate_payload["variables"] = {
+        "extract": {"record_id": {"source": "response_json", "path": "$.data.id"}}
+    }
+    shadow_payload = _case("API-SHADOW", "GET").model_dump(mode="python")
+    shadow_payload["variables"] = {
+        "datasets": [{"id": "shadow", "values": {"record_id": "local-value"}}]
+    }
+    reserved_payload = _case("API::RESERVED", "GET").model_dump(mode="python")
+
+    duplicate_errors = api_case_runtime_definition_errors(
+        [
+            ApiTestCase.model_validate(producer_payload),
+            ApiTestCase.model_validate(duplicate_payload),
+        ]
+    )
+    shadow_errors = api_case_runtime_definition_errors(
+        [
+            ApiTestCase.model_validate(producer_payload),
+            ApiTestCase.model_validate(shadow_payload),
+        ]
+    )
+    reserved_errors = api_case_runtime_definition_errors(
+        [ApiTestCase.model_validate(reserved_payload)]
+    )
+
+    assert duplicate_errors[0] is None
+    assert "already defined" in str(duplicate_errors[1])
+    assert "shadow" in str(shadow_errors[1])
+    assert "reserved" in str(reserved_errors[0])
+
+
 def test_execution_error_redacts_url_and_environment_secret() -> None:
     def request(method, url, **kwargs):
         raise RuntimeError(f"request failed for {url} token-secret")
@@ -556,7 +835,7 @@ def test_static_token_authentication_injects_configured_header_once_per_case() -
         return FakeResponse(200, {"code": 0})
 
     case = _case("API-STATIC", "GET")
-    case.request.headers["authorization"] = "stale-value"
+    case.request.headers["authorization"] = "${STALE_AUTHORIZATION}"
     evidence = execute_api_cases(
         [case],
         run_id="run-static",
@@ -569,6 +848,7 @@ def test_static_token_authentication_injects_configured_header_once_per_case() -
         env={
             "TEST_BASE_URL": "https://example.test",
             "QA_API_TOKEN": "runtime-static-token",
+            "STALE_AUTHORIZATION": "stale-value",
         },
         authentication=StaticTokenApiAuthentication(
             mode="static_token",

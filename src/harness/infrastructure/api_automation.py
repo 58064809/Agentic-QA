@@ -14,6 +14,7 @@ from harness.domain.models import (
 )
 from harness.domain.schemas.api_test_cases import (
     ApiTestCasesDraft,
+    api_execution_case_ids,
     validate_api_case_runtime_definitions,
 )
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
@@ -73,6 +74,7 @@ class FilesystemApiAutomationService:
             cases_path=source.relative_to(root).as_posix(),
             source_sha256=source_sha256,
             base_url_env=draft.base_url_env,
+            evidence_case_ids=api_execution_case_ids(draft.cases),
         )
         atomic_text(target, content)
         return ApiPytestExportResult(
@@ -90,12 +92,14 @@ def render_pytest_adapter(
     cases_path: str,
     source_sha256: str,
     base_url_env: str,
+    evidence_case_ids: list[str],
 ) -> str:
     values = {
         "workspace_id": json.dumps(workspace_id, ensure_ascii=False),
         "cases_path": json.dumps(cases_path, ensure_ascii=False),
         "source_sha256": json.dumps(source_sha256),
         "base_url_env": json.dumps(base_url_env),
+        "evidence_case_ids": json.dumps(evidence_case_ids, ensure_ascii=False),
     }
     return f"""# Generated deterministically by Agentic-QA. Do not add credentials here.
 from __future__ import annotations
@@ -103,12 +107,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+import pytest
+
 from harness import ExecuteApiCasesCommand, ExecutionProfile, Harness
 
 WORKSPACE_ID = {values["workspace_id"]}
 CASES_PATH = {values["cases_path"]}
 SOURCE_CASES_SHA256 = {values["source_sha256"]}
 BASE_URL_ENV = {values["base_url_env"]}
+EXPECTED_CASE_IDS = {values["evidence_case_ids"]}
 
 
 def _required_environment(name: str) -> str:
@@ -118,7 +125,8 @@ def _required_environment(name: str) -> str:
     return value
 
 
-def test_published_api_scenario() -> None:
+@pytest.fixture(scope="session")
+def _api_execution_results() -> dict[str, object]:
     environment = _required_environment("AGENTIC_QA_EXECUTION_ENVIRONMENT")
     methods = [
         item.strip().upper()
@@ -140,10 +148,21 @@ def test_published_api_scenario() -> None:
             execution_profile=profile,
         )
     )
-    unsuccessful = [
-        {{"case_id": case.case_id, "status": case.status, "error": case.error}}
-        for case in evidence.cases
-        if case.status != "passed"
-    ]
-    assert not unsuccessful, f"API scenario did not pass: {{unsuccessful}}"
+    results = {{case.case_id: case for case in evidence.cases}}
+    assert list(results) == EXPECTED_CASE_IDS, (
+        f"API execution evidence ids changed: expected={{EXPECTED_CASE_IDS}}, "
+        f"actual={{list(results)}}"
+    )
+    return results
+
+
+@pytest.mark.parametrize("case_id", EXPECTED_CASE_IDS, ids=EXPECTED_CASE_IDS)
+def test_published_api_case(
+    _api_execution_results: dict[str, object],
+    case_id: str,
+) -> None:
+    result = _api_execution_results[case_id]
+    assert result.status == "passed", (
+        f"API case {{case_id}} finished with {{result.status}}: {{result.error}}"
+    )
 """

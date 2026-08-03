@@ -1,0 +1,23 @@
+{
+  "schema_version": "agentic-qa.api-golden-expectation.v1",
+  "must_cover_points": [
+    "case:API-ORDER-CREATE",
+    "case:API-ORDER-READ",
+    "operation:POST /orders",
+    "operation:GET /orders",
+    "confirmed-openapi:API-ORDER-CREATE",
+    "confirmed-openapi:API-ORDER-READ",
+    "dataset:API-ORDER-CREATE:single-item",
+    "dataset:API-ORDER-CREATE:multiple-items",
+    "extract:API-ORDER-CREATE:order_id:response_json",
+    "reference:API-ORDER-READ:order_id",
+    "cleanup:API-ORDER-CREATE:delete-order:DELETE /orders",
+    "cleanup-reference:API-ORDER-CREATE:order_id",
+    "assertion:status_code",
+    "assertion:json_field_equals",
+    "assertion:json_field_contains",
+    "assertion:header_equals",
+    "assertion:response_time_ms_max"
+  ],
+  "minimum_score": 1.0
+}

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import Field
+import yaml
+from pydantic import Field, ValidationError
 
 from harness.application.qa_design import (
     parse_requirement_markdown,
@@ -12,6 +13,13 @@ from harness.application.qa_design import (
     render_requirement_catalog,
 )
 from harness.domain.models import StrictModel
+from harness.domain.schemas.api_test_cases import (
+    ApiTestCasesDraft,
+    parse_api_case_variables,
+    parse_api_cleanup_steps,
+    validate_api_case_runtime_definitions,
+    variable_references,
+)
 from harness.domain.schemas.qa_design import (
     RequirementCatalog,
     RequirementRule,
@@ -25,6 +33,14 @@ class GoldenExpectation(StrictModel):
     must_extract_rules: list[str] = Field(min_length=1)
     must_cover_points: list[str] = Field(min_length=1)
     forbidden_inventions: list[str] = Field(default_factory=list)
+    minimum_score: float = Field(ge=0, le=1)
+
+
+class ApiGoldenExpectation(StrictModel):
+    schema_version: Literal["agentic-qa.api-golden-expectation.v1"] = (
+        "agentic-qa.api-golden-expectation.v1"
+    )
+    must_cover_points: list[str] = Field(min_length=1)
     minimum_score: float = Field(ge=0, le=1)
 
 
@@ -141,12 +157,121 @@ def run_golden_eval(root: Path | None = None) -> dict[str, Any]:
     case_results = [
         evaluate_golden_case(path) for path in sorted(cases_root.iterdir()) if path.is_dir()
     ]
+    if root is not None:
+        api_cases_root = root.parent / "api-cases"
+    else:
+        api_source_tree_root = Path(__file__).resolve().parents[3] / "evals" / "api-cases"
+        api_working_tree_root = Path.cwd() / "evals" / "api-cases"
+        api_cases_root = (
+            api_working_tree_root if api_working_tree_root.is_dir() else api_source_tree_root
+        )
+    api_case_results = (
+        [
+            evaluate_api_golden_case(path)
+            for path in sorted(api_cases_root.iterdir())
+            if path.is_dir()
+        ]
+        if api_cases_root.is_dir()
+        else []
+    )
     return {
         "schema_version": "agentic-qa.harness.golden-eval-result.v1",
-        "passed": bool(case_results) and all(result["passed"] for result in case_results),
+        "passed": (
+            bool(case_results)
+            and bool(api_case_results)
+            and all(result["passed"] for result in [*case_results, *api_case_results])
+        ),
         "case_count": len(case_results),
         "cases": case_results,
+        "api_case_count": len(api_case_results),
+        "api_cases": api_case_results,
     }
+
+
+def evaluate_api_golden_case(case_root: Path) -> dict[str, Any]:
+    return evaluate_api_candidate_artifact(
+        case_root,
+        api_cases_content=(case_root / "candidate-api-cases.yml").read_text(encoding="utf-8"),
+        artifact_name="candidate-api-cases.yml",
+    )
+
+
+def evaluate_api_candidate_artifact(
+    case_root: Path,
+    *,
+    api_cases_content: str,
+    artifact_name: str = "generated api_test_draft/raw.yml",
+) -> dict[str, Any]:
+    expected = ApiGoldenExpectation.model_validate_json(
+        (case_root / "api-expectations.json").read_text(encoding="utf-8")
+    )
+    validation_issues: list[dict[str, Any]] = []
+    try:
+        payload = yaml.safe_load(api_cases_content)
+        candidate = ApiTestCasesDraft.model_validate(payload)
+        validate_api_case_runtime_definitions(candidate.cases)
+    except ValidationError as exc:
+        validation_issues = exc.errors(include_input=False, include_url=False)
+        candidate = None
+    except (TypeError, ValueError, yaml.YAMLError) as exc:
+        validation_issues = [{"type": type(exc).__name__, "msg": str(exc)}]
+        candidate = None
+
+    covered_points = _api_covered_points(candidate) if candidate is not None else set()
+    required_points = set(expected.must_cover_points)
+    covered = required_points & covered_points
+    coverage_rate = len(covered) / len(required_points)
+    score = coverage_rate if not validation_issues else 0.0
+    return {
+        "case": case_root.name,
+        "passed": score >= expected.minimum_score and not validation_issues,
+        "score": round(score, 4),
+        "minimum_score": expected.minimum_score,
+        "metrics": {
+            "coverage_rate": round(coverage_rate, 4),
+            "case_count": len(candidate.cases) if candidate is not None else 0,
+            "dataset_count": (
+                sum(
+                    len(parse_api_case_variables(case.variables).datasets)
+                    for case in candidate.cases
+                )
+                if candidate is not None
+                else 0
+            ),
+            "cleanup_count": (
+                sum(len(parse_api_cleanup_steps(case.cleanup)) for case in candidate.cases)
+                if candidate is not None
+                else 0
+            ),
+        },
+        "missing_coverage": sorted(required_points - covered_points),
+        "validation_issues": validation_issues,
+        "candidate_artifact": artifact_name,
+    }
+
+
+def _api_covered_points(candidate: ApiTestCasesDraft) -> set[str]:
+    points: set[str] = set()
+    for case in candidate.cases:
+        points.add(f"case:{case.id}")
+        points.add(f"operation:{case.request.method} {case.request.path}")
+        if case.contract_status == "confirmed":
+            points.add(f"confirmed-openapi:{case.id}")
+        variables = parse_api_case_variables(case.variables)
+        cleanup = parse_api_cleanup_steps(case.cleanup)
+        for dataset in variables.datasets:
+            points.add(f"dataset:{case.id}:{dataset.id}")
+        for name, extraction in variables.extract.items():
+            points.add(f"extract:{case.id}:{name}:{extraction.source}")
+        request_references = variable_references(case.request.model_dump(mode="python"))
+        points.update(f"reference:{case.id}:{name}" for name in request_references)
+        points.update(f"assertion:{assertion.type}" for assertion in case.assertions)
+        for step in cleanup:
+            points.add(f"cleanup:{case.id}:{step.id}:{step.request.method} {step.request.path}")
+            cleanup_references = variable_references(step.request.model_dump(mode="python"))
+            points.update(f"cleanup-reference:{case.id}:{name}" for name in cleanup_references)
+            points.update(f"assertion:{assertion.type}" for assertion in step.assertions)
+    return points
 
 
 def _covered_points(

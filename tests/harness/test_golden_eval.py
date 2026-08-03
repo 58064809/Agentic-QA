@@ -1,9 +1,17 @@
 from pathlib import Path
 from shutil import copytree
 
+import yaml
+
 from harness.domain.schemas.qa_design import RequirementCatalog
 from harness.testing.evals import recorded_model_gateway, run_live_eval
-from harness.testing.golden import _rule_aliases, evaluate_golden_case, run_golden_eval
+from harness.testing.golden import (
+    _rule_aliases,
+    evaluate_api_candidate_artifact,
+    evaluate_api_golden_case,
+    evaluate_golden_case,
+    run_golden_eval,
+)
 
 
 def test_golden_eval_measures_artifact_quality() -> None:
@@ -11,6 +19,8 @@ def test_golden_eval_measures_artifact_quality() -> None:
 
     assert result["passed"]
     assert result["case_count"] == 6
+    assert result["api_case_count"] == 1
+    assert result["api_cases"][0]["metrics"]["coverage_rate"] == 1
     assert all(case["score"] >= case["minimum_score"] for case in result["cases"])
     assert all(case["metrics"]["rule_recall"] == 1 for case in result["cases"])
     assert all(case["metrics"]["coverage_rate"] == 1 for case in result["cases"])
@@ -19,6 +29,25 @@ def test_golden_eval_measures_artifact_quality() -> None:
         case["candidate_artifacts"]["testcases"] == "candidate-testcases.md"
         for case in result["cases"]
     )
+
+
+def test_api_golden_eval_rejects_missing_data_flow_and_cleanup() -> None:
+    case_root = Path("evals/api-cases/order-lifecycle")
+    passing = evaluate_api_golden_case(case_root)
+    payload = yaml.safe_load((case_root / "candidate-api-cases.yml").read_text(encoding="utf-8"))
+    payload["cases"][0]["cleanup"] = []
+    payload["cases"][1]["request"]["query"]["id"] = "fixed-order"
+
+    result = evaluate_api_candidate_artifact(
+        case_root,
+        api_cases_content=yaml.safe_dump(payload, sort_keys=False),
+    )
+
+    assert passing["passed"]
+    assert passing["score"] == 1
+    assert not result["passed"]
+    assert 0 < result["score"] < 1
+    assert result["validation_issues"] == []
 
 
 def test_golden_eval_does_not_score_the_human_baseline_as_candidate(
@@ -113,3 +142,19 @@ def test_live_eval_selects_configured_case(monkeypatch) -> None:
     assert result["case"] == "lottery-assistance"
     assert result["status"] == "needs_human_review"
     assert result["golden"]["case"] == "lottery-assistance"
+
+
+def test_live_eval_scores_api_candidate_with_api_golden(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "harness.infrastructure.llm.gateway.model_gateway_from_env",
+        lambda: recorded_model_gateway(),
+    )
+
+    result = run_live_eval("order-lifecycle")
+
+    assert result["case"] == "order-lifecycle"
+    assert result["status"] == "needs_human_review"
+    assert result["candidate_count"] == 1
+    assert result["golden"] is not None
+    assert result["golden"]["candidate_artifact"] == "generated api_test_draft/raw.yml"
+    assert not result["passed"]

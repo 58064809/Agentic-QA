@@ -39,6 +39,10 @@ API Cases v1.1 文件。
 执行前预检共同拒绝未知字段、非法路径、前向变量引用或错误 cleanup；历史 published 文件定义无效
 时记录 `blocked`，不发送该用例请求。
 
+每个业务请求和 cleanup 请求都会在发送前解析其 `${ENV_NAME}` 引用；任一值缺失时，该请求记录为
+`blocked`。请求路径、Header 名称与换行、传输层 Header，以及认证/密钥类字段也使用与登录请求相同
+的安全校验。敏感字段值使用环境变量或已声明的运行时变量引用。
+
 运行时变量使用 `${{name}}`，与环境变量 `${ENV_NAME}` 区分。完整占位符保留数字、布尔、对象或
 数组类型；嵌入字符串时只接受标量。响应提取值仅在本次执行进程内保存，不写回 YAML 或 Evidence。
 
@@ -76,6 +80,11 @@ cleanup:
 | 跨用例变量 | 系统校验引用来自更早用例声明的提取变量；上游未产生所需值时下游为 `blocked` |
 | cleanup | 主请求发出后登记，全部业务用例结束后逆序执行；每一步形成独立 Evidence case |
 
+提取变量仅在生产者状态为 `passed` 时进入共享作用域。失败、错误或 blocked 的生产者不会向下游发布
+变量；已发出主请求的 cleanup 仍保留该次迭代的局部变量快照。数据集值、共享变量和 cleanup 局部值
+均进入错误信息脱敏作用域。跨用例变量重名、数据集遮蔽已有变量，以及占用 `::` Evidence ID 分隔符
+的用例 ID 会在 Candidate 校验阶段返回修订意见。
+
 一个带多个 datasets 的生产者会按顺序覆盖同名共享提取值，因此后续用例读取最后一次提取结果；每次
 迭代的 cleanup 会保留自己的变量快照。需要一一对应的完整业务链时，应生成多个显式场景用例。
 
@@ -104,6 +113,9 @@ hash 不匹配，重新导出会生成与新版本绑定的文件。
 `AGENTIC_QA_ALLOWED_HTTP_METHODS`、base URL 和 workspace 策略。导出不批准 Candidate，也不改变
 published。
 
+adapter 对每个业务用例、dataset 实例和 cleanup Evidence ID 生成独立 pytest item；底层场景在 session
+内只执行一次。这样流水线可以精确显示失败项，同时仍保持跨用例变量链和逆序 cleanup 语义。
+
 ## 支持的断言
 
 `assertions` 保持 `type`、`expected`、`path` 三字段结构。Candidate 生成与质量门会校验断言定义；
@@ -114,14 +126,15 @@ published。
 |---|---|---|
 | `status_code` | `expected` 为状态码或非空状态码列表 | 实际状态码属于期望集合 |
 | `json_field_exists` | `path` | JSON 路径存在 |
-| `json_field_equals` | `path`、显式 `expected` | JSON 值深度等于期望值 |
-| `json_field_contains` | `path`、显式 `expected` | 对象递归包含子集、数组包含期望成员、字符串包含子串 |
+| `json_field_equals` | `path`、显式 `expected` | JSON 值按严格类型深度等于期望值 |
+| `json_field_contains` | `path`、显式 `expected` | 对象递归包含子集、数组包含严格类型的期望成员、字符串包含子串 |
 | `header_equals` | `path` 为非敏感响应头名、`expected` 为字符串 | 头名称不区分大小写，值精确相等 |
 | `response_time_ms_max` | `expected` 为 1–60000 的整数 | 收到响应前的请求耗时不超过上限 |
 
 JSON 路径支持根 `$`、对象字段 `.field` 和数组索引 `[index]`，例如
 `$.data.items[0].id`；通配符、过滤器和负数索引会被拒绝。值型 JSON 断言与响应头断言的执行证据
 只保存存在性、值类型和规范化 SHA-256，不保存原始响应值。
+严格类型比较会区分 JSON 布尔值、整数和浮点数，例如 `true`、`1` 与 `1.0` 不互相等价。
 
 ## 示例
 
