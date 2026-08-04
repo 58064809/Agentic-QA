@@ -31,6 +31,7 @@ class OpenApiResponse(StrictModel):
     status: str = Field(min_length=1)
     description: str = ""
     content: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    headers: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class OpenApiEndpoint(StrictModel):

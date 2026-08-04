@@ -202,7 +202,24 @@ def _parameters(document: dict[str, Any], value: Any, specification: str) -> lis
         if not isinstance(schema, dict):
             schema = {
                 key: parameter[key]
-                for key in ("type", "format", "items", "enum", "default")
+                for key in (
+                    "type",
+                    "format",
+                    "items",
+                    "enum",
+                    "default",
+                    "multipleOf",
+                    "maximum",
+                    "exclusiveMaximum",
+                    "minimum",
+                    "exclusiveMinimum",
+                    "maxLength",
+                    "minLength",
+                    "pattern",
+                    "maxItems",
+                    "minItems",
+                    "uniqueItems",
+                )
                 if key in parameter
             }
         parameters.append(
@@ -295,9 +312,50 @@ def _responses(
                 status=str(status),
                 description=str(response.get("description") or ""),
                 content=content,
+                headers=_response_headers(document, response.get("headers"), specification),
             )
         )
     return responses
+
+
+def _response_headers(
+    document: dict[str, Any],
+    value: Any,
+    specification: str,
+) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, dict):
+        return {}
+    headers: dict[str, dict[str, Any]] = {}
+    for name, raw_header in value.items():
+        header = _resolve_object(document, raw_header)
+        if not isinstance(header, dict):
+            continue
+        schema = header.get("schema") if specification == "openapi" else None
+        if not isinstance(schema, dict):
+            schema = {
+                key: header[key]
+                for key in (
+                    "type",
+                    "format",
+                    "items",
+                    "enum",
+                    "default",
+                    "minimum",
+                    "maximum",
+                    "exclusiveMinimum",
+                    "exclusiveMaximum",
+                    "multipleOf",
+                    "minLength",
+                    "maxLength",
+                    "pattern",
+                    "minItems",
+                    "maxItems",
+                    "uniqueItems",
+                )
+                if key in header
+            }
+        headers[str(name)] = _resolved_schema(document, schema)
+    return headers
 
 
 def _content(document: dict[str, Any], value: Any) -> dict[str, dict[str, Any]]:

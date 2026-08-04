@@ -65,6 +65,16 @@ def test_api_golden_eval_scores_openapi_contract_semantics() -> None:
     assert not result["passed"]
     assert result["metrics"]["contract_semantic_rate"] < 1
     assert result["contract_issues"]
+    assert {issue["code"] for issue in result["contract_issues"]} >= {
+        "schema_mismatch",
+        "undeclared_response_status",
+        "undeclared_response_json_path",
+    }
+    assert any(
+        issue["instance_id"] == "API-ORDER-CREATE::single-item"
+        and issue["location"].startswith("request.body")
+        for issue in result["contract_issues"]
+    )
 
 
 def test_golden_eval_does_not_score_the_human_baseline_as_candidate(

@@ -7,6 +7,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import Field, ValidationError
 
+from harness.application.api_contract_validation import validate_api_contracts
 from harness.application.qa_design import (
     parse_requirement_markdown,
     parse_testcase_markdown,
@@ -14,11 +15,7 @@ from harness.application.qa_design import (
 )
 from harness.domain.models import StrictModel
 from harness.domain.schemas.api_test_cases import (
-    ApiAssertion,
-    ApiRequest,
     ApiTestCasesDraft,
-    ApiVariableExtraction,
-    json_path_tokens,
     parse_api_case_variables,
     parse_api_cleanup_steps,
     validate_api_case_runtime_definitions,
@@ -30,6 +27,7 @@ from harness.domain.schemas.qa_design import (
     TestCaseSet,
     validate_testcase_set,
 )
+from harness.infrastructure.tools.openapi import inspect_openapi
 
 
 class GoldenExpectation(StrictModel):
@@ -226,16 +224,37 @@ def evaluate_api_candidate_artifact(
     covered = required_points & covered_points
     coverage_rate = len(covered) / len(required_points)
     contract_rate = 0.0
-    contract_issues: list[str] = []
+    contract_issues: list[dict[str, Any]] = []
     contract_check_count = 0
     if candidate is not None:
         try:
             openapi = yaml.safe_load((case_root / "source.openapi.yml").read_text(encoding="utf-8"))
-            contract_rate, contract_issues, contract_check_count = _api_contract_semantics(
-                candidate, openapi
-            )
+            referenced_sources = {
+                reference.source_path
+                for case in candidate.cases
+                if case.contract_status == "confirmed"
+                for reference in case.source_refs
+                if reference.source_type == "openapi" and reference.confidence == "high"
+            }
+            if len(referenced_sources) != 1:
+                raise ValueError(
+                    "API Golden requires exactly one referenced complete OpenAPI source"
+                )
+            inspection = inspect_openapi(openapi, source=next(iter(referenced_sources)))
+            contract_result = validate_api_contracts(candidate, [inspection])
+            contract_rate = contract_result.semantic_rate
+            contract_check_count = contract_result.check_count
+            contract_issues = [issue.model_dump(mode="json") for issue in contract_result.issues]
         except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
-            contract_issues = [f"OpenAPI contract unavailable: {exc}"]
+            contract_issues = [
+                {
+                    "code": "openapi_contract_unavailable",
+                    "case_id": "",
+                    "instance_id": "",
+                    "location": "source.openapi.yml",
+                    "message": str(exc),
+                }
+            ]
     score = 0.6 * coverage_rate + 0.4 * contract_rate if not validation_issues else 0.0
     return {
         "case": case_root.name,
@@ -269,244 +288,6 @@ def evaluate_api_candidate_artifact(
         "contract_issues": contract_issues,
         "candidate_artifact": artifact_name,
     }
-
-
-def _api_contract_semantics(
-    candidate: ApiTestCasesDraft,
-    openapi: Any,
-) -> tuple[float, list[str], int]:
-    if not isinstance(openapi, dict) or not isinstance(openapi.get("paths"), dict):
-        raise ValueError("source.openapi.yml does not contain an OpenAPI paths object")
-    issues: list[str] = []
-    checks = 0
-    for case in candidate.cases:
-        variables = parse_api_case_variables(case.variables)
-        step_checks, step_issues = _api_operation_contract_checks(
-            label=case.id,
-            request=case.request,
-            assertions=case.assertions,
-            extractions=variables.extract,
-            openapi=openapi,
-        )
-        checks += step_checks
-        issues.extend(step_issues)
-        for cleanup in parse_api_cleanup_steps(case.cleanup):
-            step_checks, step_issues = _api_operation_contract_checks(
-                label=f"{case.id}::cleanup::{cleanup.id}",
-                request=cleanup.request,
-                assertions=cleanup.assertions,
-                extractions={},
-                openapi=openapi,
-            )
-            checks += step_checks
-            issues.extend(step_issues)
-    passed_checks = max(checks - len(issues), 0)
-    return passed_checks / max(checks, 1), issues, checks
-
-
-def _api_operation_contract_checks(
-    *,
-    label: str,
-    request: ApiRequest,
-    assertions: list[ApiAssertion],
-    extractions: dict[str, ApiVariableExtraction],
-    openapi: dict[str, Any],
-) -> tuple[int, list[str]]:
-    issues: list[str] = []
-    checks = 1
-    path_item = openapi["paths"].get(request.path)
-    operation = path_item.get(request.method.lower()) if isinstance(path_item, dict) else None
-    if not isinstance(operation, dict):
-        return checks, [f"{label}: operation {request.method} {request.path} is not in OpenAPI"]
-
-    parameters = []
-    for owner in (path_item, operation):
-        for parameter in owner.get("parameters", []):
-            resolved = _resolve_openapi_node(parameter, openapi)
-            if isinstance(resolved, dict):
-                parameters.append(resolved)
-    supplied = {
-        "query": request.query if isinstance(request.query, dict) else {},
-        "header": request.headers,
-    }
-    for location, values in supplied.items():
-        declared = {
-            str(parameter.get("name")).casefold(): parameter
-            for parameter in parameters
-            if parameter.get("in") == location and isinstance(parameter.get("name"), str)
-        }
-        for name in values:
-            checks += 1
-            if str(name).casefold() not in declared:
-                issues.append(f"{label}: undeclared {location} parameter {name}")
-        for name, parameter in declared.items():
-            if parameter.get("required") is True:
-                checks += 1
-                if name not in {str(item).casefold() for item in values}:
-                    issues.append(
-                        f"{label}: required {location} parameter {parameter['name']} is missing"
-                    )
-
-    request_body = operation.get("requestBody")
-    if request_body is not None:
-        request_body = _resolve_openapi_node(request_body, openapi)
-        schema = _openapi_json_schema(request_body, openapi)
-        if isinstance(schema, dict):
-            checks += 1
-            issues.extend(_json_object_contract_issues(label, request.body, schema, openapi))
-    elif request.body not in ({}, None):
-        checks += 1
-        issues.append(f"{label}: request body is not declared by OpenAPI")
-
-    responses = operation.get("responses", {})
-    if not isinstance(responses, dict):
-        responses = {}
-    selected_codes: set[str] = set()
-    for assertion in assertions:
-        if assertion.type == "status_code":
-            values = (
-                assertion.expected if isinstance(assertion.expected, list) else [assertion.expected]
-            )
-            for value in values:
-                checks += 1
-                code = str(value)
-                if code not in responses and "default" not in responses:
-                    issues.append(f"{label}: response status {code} is not declared by OpenAPI")
-                else:
-                    selected_codes.add(code if code in responses else "default")
-    if not selected_codes:
-        selected_codes = set(responses)
-    selected_responses = [
-        _resolve_openapi_node(responses[code], openapi)
-        for code in selected_codes
-        if code in responses
-    ]
-    response_schemas = [
-        schema
-        for response in selected_responses
-        if isinstance(response, dict)
-        if isinstance((schema := _openapi_json_schema(response, openapi)), dict)
-    ]
-    response_headers = {
-        str(name).casefold()
-        for response in selected_responses
-        if isinstance(response, dict) and isinstance(response.get("headers"), dict)
-        for name in response["headers"]
-    }
-    for assertion in assertions:
-        if assertion.type.startswith("json_field_"):
-            checks += 1
-            if not any(
-                _json_schema_has_path(schema, assertion.path or "$", openapi)
-                for schema in response_schemas
-            ):
-                issues.append(
-                    f"{label}: response JSON path {assertion.path} is not declared by OpenAPI"
-                )
-        elif assertion.type == "header_equals":
-            checks += 1
-            if (assertion.path or "").casefold() not in response_headers:
-                issues.append(
-                    f"{label}: response header {assertion.path} is not declared by OpenAPI"
-                )
-    for name, extraction in extractions.items():
-        checks += 1
-        if extraction.source == "response_json":
-            valid = any(
-                _json_schema_has_path(schema, extraction.path, openapi)
-                for schema in response_schemas
-            )
-        else:
-            valid = extraction.path.casefold() in response_headers
-        if not valid:
-            issues.append(
-                f"{label}: extraction {name} source {extraction.path} is not declared by OpenAPI"
-            )
-    return checks, issues
-
-
-def _resolve_openapi_node(value: Any, openapi: dict[str, Any]) -> Any:
-    seen: set[str] = set()
-    while isinstance(value, dict) and isinstance(value.get("$ref"), str):
-        reference = value["$ref"]
-        if not reference.startswith("#/") or reference in seen:
-            return value
-        seen.add(reference)
-        resolved: Any = openapi
-        for token in reference[2:].split("/"):
-            if not isinstance(resolved, dict):
-                return value
-            resolved = resolved.get(token.replace("~1", "/").replace("~0", "~"))
-        value = resolved
-    return value
-
-
-def _openapi_json_schema(owner: Any, openapi: dict[str, Any]) -> dict[str, Any] | None:
-    owner = _resolve_openapi_node(owner, openapi)
-    if not isinstance(owner, dict) or not isinstance(owner.get("content"), dict):
-        return None
-    content = owner["content"]
-    media = content.get("application/json")
-    if media is None:
-        media = next(
-            (value for name, value in content.items() if str(name).endswith("+json")),
-            None,
-        )
-    media = _resolve_openapi_node(media, openapi)
-    if not isinstance(media, dict):
-        return None
-    schema = _resolve_openapi_node(media.get("schema"), openapi)
-    return schema if isinstance(schema, dict) else None
-
-
-def _json_object_contract_issues(
-    label: str,
-    value: Any,
-    schema: dict[str, Any],
-    openapi: dict[str, Any],
-    path: str = "$",
-) -> list[str]:
-    schema = _resolve_openapi_node(schema, openapi)
-    if not isinstance(value, dict) or not isinstance(schema, dict):
-        return []
-    properties = schema.get("properties", {})
-    if not isinstance(properties, dict):
-        properties = {}
-    issues = [
-        f"{label}: request field {path}.{name} is not declared by OpenAPI"
-        for name in value
-        if name not in properties and schema.get("additionalProperties") is not True
-    ]
-    for name in schema.get("required", []):
-        if name not in value:
-            issues.append(f"{label}: required request field {path}.{name} is missing")
-    for name, item in value.items():
-        child = _resolve_openapi_node(properties.get(name), openapi)
-        if isinstance(child, dict):
-            issues.extend(
-                _json_object_contract_issues(label, item, child, openapi, f"{path}.{name}")
-            )
-    return issues
-
-
-def _json_schema_has_path(
-    schema: dict[str, Any],
-    path: str,
-    openapi: dict[str, Any],
-) -> bool:
-    current: Any = schema
-    for token in json_path_tokens(path):
-        current = _resolve_openapi_node(current, openapi)
-        if not isinstance(current, dict):
-            return False
-        if isinstance(token, int):
-            current = current.get("items")
-        else:
-            properties = current.get("properties")
-            if not isinstance(properties, dict) or token not in properties:
-                return False
-            current = properties[token]
-    return isinstance(_resolve_openapi_node(current, openapi), dict)
 
 
 def _api_covered_points(candidate: ApiTestCasesDraft) -> set[str]:

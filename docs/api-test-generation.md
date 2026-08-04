@@ -46,6 +46,20 @@ API Cases v1.1 文件。
 运行时变量使用 `${{name}}`，与环境变量 `${ENV_NAME}` 区分。完整占位符保留数字、布尔、对象或
 数组类型；嵌入字符串时只接受标量。响应提取值仅在本次执行进程内保存，不写回 YAML 或 Evidence。
 
+OpenAPI Path Parameter 不新增字段，而是放在现有 `request.path` 中。契约 `/orders/{id}` 对应
+`/orders/${{order_id}}`：首版只接受占满整个路径段的 `{name}` 与 `${{name}}`，不接受
+`/files/{id}.json` 这类嵌入式模板。变量来源限定为当前 dataset 或更早用例声明的提取值，并满足该
+Path Parameter 的 required、type、enum、pattern 和范围约束。静态段不一致、缺失或额外动态段，
+以及同时匹配多个 operation 的情况都会让 Candidate 进入修订。cleanup 继承所属主用例的 OpenAPI
+来源并遵循同一匹配规则。
+
+Candidate 校验、通用质量门和 API Golden 会把每个 dataset 分别展开到 path、query、headers 与
+body，再验证 operation、参数和 JSON request body Schema。完整占位符保留原生 JSON 类型；字符串
+内插仅接受标量。校验覆盖 required、enum、数值与长度范围、pattern、数组约束、组合 Schema 和
+`additionalProperties`。OpenAPI 默认允许额外对象属性；`additionalProperties: false` 关闭
+额外属性接收。若值来自上游 response extraction，生成期只验证变量来源、提取字段
+和静态结构，未知叶子值的类型延迟到执行期，不会用虚构示例代替。
+
 ```yaml
 variables:
   datasets:
@@ -74,7 +88,7 @@ cleanup:
 
 | 能力 | 规则 |
 |---|---|
-| `datasets` | 系统校验同一用例的数据集 ID 唯一且变量名集合相同；每个数据集产生独立 Evidence case |
+| `datasets` | 系统校验同一用例的数据集 ID 唯一且变量名集合相同；每个数据集独立展开并通过 OpenAPI Schema 校验，执行时产生独立 Evidence case |
 | `response_json` | 使用同一受限 JSON 路径语法提取 |
 | `response_header` | 头名大小写不敏感；拒绝 Cookie、Token 等敏感头名 |
 | 跨用例变量 | 系统校验引用来自更早用例声明的提取变量；上游未产生所需值时下游为 `blocked` |

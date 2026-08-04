@@ -5,6 +5,7 @@ import re
 import yaml
 from pydantic import ValidationError
 
+from harness.application.api_contract_validation import validate_api_contracts
 from harness.application.qa_design import parse_testcase_markdown
 from harness.application.quality import (
     QualityComponentConfiguration,
@@ -13,11 +14,13 @@ from harness.application.quality import (
     StrategyRequirements,
     StrategyResult,
 )
+from harness.application.source import SourceCompleteness
 from harness.domain.schemas.api_test_cases import (
     ApiTestCasesDraft,
     validate_api_case_runtime_definitions,
 )
 from harness.domain.security import contains_likely_secret
+from harness.infrastructure.tools.openapi import inspect_openapi
 
 PLACEHOLDER_MAPPING = re.compile(r"(?:暂无|未覆盖|待补充|后续设计|TODO|TBD)", re.IGNORECASE)
 UNSUPPORTED_IMPLEMENTATION = re.compile(
@@ -50,7 +53,7 @@ def _implementation_term_supported(term: str, marker: str, source_corpus: str) -
 
 class GenericArtifactStrategy:
     name = "generic-artifact-contracts"
-    version = "4.4.0"
+    version = "4.5.0"
     requirements = StrategyRequirements()
     configuration = QualityComponentConfiguration()
 
@@ -189,6 +192,46 @@ class GenericArtifactStrategy:
                         case_id=case.id,
                     )
                 )
+        referenced_openapi = {
+            reference.source_path
+            for case in draft.cases
+            for reference in case.source_refs
+            if case.contract_status == "confirmed"
+            and reference.source_type == "openapi"
+            and reference.confidence == "high"
+        }
+        inspections = []
+        for document in context.source_bundle.documents:
+            if (
+                document.path not in referenced_openapi
+                or document.completeness != SourceCompleteness.COMPLETE
+                or document.text is None
+            ):
+                continue
+            try:
+                inspections.append(
+                    inspect_openapi(yaml.safe_load(document.text), source=document.path)
+                )
+            except (TypeError, ValueError, yaml.YAMLError) as exc:
+                issues.append(
+                    self._issue(
+                        "openapi_contract_unavailable",
+                        f"{document.path} cannot be used for deterministic API validation: {exc}",
+                        source_path=document.path,
+                    )
+                )
+        if inspections:
+            result = validate_api_contracts(draft, inspections)
+            issues.extend(
+                self._issue(
+                    f"api_contract_{issue.code}",
+                    issue.message,
+                    case_id=issue.case_id,
+                    instance_id=issue.instance_id,
+                    location=issue.location,
+                )
+                for issue in result.issues
+            )
         return issues
 
     def _api_discovery_issues(self, content: str) -> list[QualityIssue]:

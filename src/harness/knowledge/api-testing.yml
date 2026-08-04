@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.knowledge-spec.v1
 name: api-testing
-version: 1.6.0
+version: 1.7.0
 purpose: 根据完整 API 契约设计可验证的机器用例并记录执行边界。
 applies_to: [api-testing]
 inputs:
@@ -14,6 +14,8 @@ procedure:
   - 对幂等、分页、并发、限流和超时建立独立场景。
   - 断言仅使用 status_code、json_field_exists、json_field_equals、json_field_contains、header_equals 或 response_time_ms_max。
   - 多组输入使用 variables.datasets；同一用例的 dataset ID 唯一且变量名集合一致。
+  - OpenAPI 路径参数使用完整路径段 ${{name}} 表示，例如 /orders/{id} 生成为 /orders/${{order_id}}；不生成嵌入式路径模板。
+  - 按 dataset 实例展开 path、query、headers 与 body，并以 OpenAPI 参数和 JSON Schema 逐实例校验。
   - 后续请求使用 ${{name}} 引用更早用例通过 response_json 或非敏感 response_header 提取的运行时变量。
   - 状态变更场景使用 cleanup 声明逆序回收请求，并为每个 cleanup 请求提供受支持断言。
   - 环境变量使用 ${ENV_NAME}；每个请求引用的环境变量都需要在发送前解析成功。
@@ -21,6 +23,8 @@ procedure:
 output_expectations:
   - 机器用例写入 AgentOutput.api_test_cases，由 Harness 渲染为 YAML Candidate。
   - 请求使用结构化 method 和 path。
+  - cleanup 继承主用例的 OpenAPI 来源，并使用与主请求相同的 operation 与 Schema 校验。
+  - 上游提取变量的来源和响应字段必须存在；生成期未知的叶子值类型延迟到执行期，不伪造示例值。
   - 断言使用 agentic-qa.api-cases.v1.1 中的类型化 assertions。
   - JSON 断言路径只使用根 $、对象 .field 和数组 [index]，不使用通配符或过滤器。
   - variables 只使用 datasets 与 extract；cleanup 只使用 id、title、request 与 assertions。
@@ -50,5 +54,6 @@ deterministic_checks:
   - validator:api-runtime-variable-definition
   - validator:api-cleanup-definition
   - validator:api-request-safety
+  - validator:api-openapi-contract-semantics
   - schema:api-cases-v1.1
   - validator:execution-profile

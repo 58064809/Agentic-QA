@@ -183,6 +183,45 @@ def test_generic_quality_rejects_invalid_api_runtime_definition() -> None:
     assert [issue.code for issue in result.issues] == ["invalid_api_runtime_definition"]
 
 
+def test_generic_quality_validates_each_dataset_against_frozen_openapi() -> None:
+    case_root = Path("evals/api-cases/order-lifecycle")
+    payload = yaml.safe_load((case_root / "candidate-api-cases.yml").read_text(encoding="utf-8"))
+    payload["cases"][0]["variables"]["datasets"][0]["values"]["quantity"] = 100
+    openapi_text = (case_root / "source.openapi.yml").read_text(encoding="utf-8")
+    bundle = SourceBundle(
+        parser_version="test",
+        limits=SourceIngestionLimits(),
+        documents=(
+            SourceDocument(
+                path="sources/order-lifecycle.openapi.yml",
+                raw_sha256="sha256:" + "0" * 64,
+                parsed_sha256="sha256:" + "1" * 64,
+                byte_size=len(openapi_text.encode("utf-8")),
+                text=openapi_text,
+                completeness=SourceCompleteness.COMPLETE,
+            ),
+        ),
+        completeness=SourceCompleteness.COMPLETE,
+        bundle_hash="sha256:" + "2" * 64,
+    )
+
+    result = GenericArtifactStrategy().evaluate(
+        QualityContext(
+            workspace_id="demo",
+            run_id="run-1",
+            artifact="api_test_draft",
+            source_bundle=bundle,
+        ),
+        yaml.safe_dump(payload, sort_keys=False),
+    )
+
+    contract_issues = [
+        issue for issue in result.issues if issue.code == "api_contract_schema_mismatch"
+    ]
+    assert len(contract_issues) == 1
+    assert contract_issues[0].details["instance_id"] == "API-ORDER-CREATE::single-item"
+
+
 def test_source_bundle_preserves_warnings_hashes_and_run_snapshot(tmp_path: Path) -> None:
     limits = SourceIngestionLimits(max_parsed_characters=10)
     store, workspace = _workspace_store(tmp_path, limits)

@@ -176,7 +176,7 @@ def test_openapi_inspect_uses_frozen_source_when_path_is_under_sources(tmp_path:
         "deprecated": False,
         "parameters": [],
         "request_body": None,
-        "responses": [{"status": "200", "description": "ok", "content": {}}],
+        "responses": [{"status": "200", "description": "ok", "content": {}, "headers": {}}],
         "security": [],
     }
 

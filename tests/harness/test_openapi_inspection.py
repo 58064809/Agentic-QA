@@ -54,6 +54,7 @@ def test_openapi_3_normalizes_parameters_body_responses_security_and_refs() -> N
                         "responses": {
                             "200": {
                                 "description": "accepted",
+                                "headers": {"X-Result": {"schema": {"type": "string"}}},
                                 "content": {
                                     "application/json": {
                                         "schema": {
@@ -83,6 +84,7 @@ def test_openapi_3_normalizes_parameters_body_responses_security_and_refs() -> N
     }
     assert endpoint["request_body"]["content"]["application/json"]["required"] == ["user_id"]
     assert endpoint["responses"][0]["status"] == "200"
+    assert endpoint["responses"][0]["headers"] == {"X-Result": {"type": "string"}}
     assert endpoint["security"] == [{"bearerAuth": []}]
 
 
@@ -240,11 +242,14 @@ def test_confirmed_api_case_requires_endpoint_from_inspected_frozen_contract() -
     )
     inspection = {
         "tool": "openapi.inspect",
-        "result": {
-            "source": "sources/openapi.yml",
-            "contract_status": "confirmed",
-            "endpoints": [{"method": "POST", "path": "/assist"}],
-        },
+        "result": inspect_openapi(
+            {
+                "openapi": "3.1.0",
+                "info": {"title": "Assist", "version": "1"},
+                "paths": {"/assist": {"post": {"responses": {"200": {"description": "accepted"}}}}},
+            },
+            source="sources/openapi.yml",
+        ).model_dump(mode="json", by_alias=True),
     }
 
     _validate_api_test_cases(
@@ -280,6 +285,52 @@ def test_confirmed_api_case_requires_endpoint_from_inspected_frozen_contract() -
         _validate_api_test_cases(
             draft,
             tool_results=[],
+            requirement_catalog=None,
+            source_bundle=frozen,
+        )
+
+    parameter_inspection = {
+        "tool": "openapi.inspect",
+        "result": inspect_openapi(
+            {
+                "openapi": "3.1.0",
+                "info": {"title": "Assist", "version": "1"},
+                "paths": {
+                    "/assist/{assist_id}": {
+                        "parameters": [
+                            {
+                                "name": "assist_id",
+                                "in": "path",
+                                "required": True,
+                                "schema": {"type": "integer", "minimum": 1, "maximum": 2},
+                            }
+                        ],
+                        "post": {"responses": {"200": {"description": "accepted"}}},
+                    }
+                },
+            },
+            source="sources/openapi.yml",
+        ).model_dump(mode="json", by_alias=True),
+    }
+    path_case = draft.cases[0].model_copy(
+        update={
+            "request": draft.cases[0].request.model_copy(update={"path": "/assist/${{assist_id}}"}),
+            "variables": {"datasets": [{"id": "valid", "values": {"assist_id": 1}}]},
+        }
+    )
+    _validate_api_test_cases(
+        draft.model_copy(update={"cases": [path_case]}),
+        tool_results=[parameter_inspection],
+        requirement_catalog=None,
+        source_bundle=frozen,
+    )
+    invalid_path_case = path_case.model_copy(
+        update={"variables": {"datasets": [{"id": "invalid", "values": {"assist_id": 3}}]}}
+    )
+    with pytest.raises(ValueError, match="invalid API contract semantics"):
+        _validate_api_test_cases(
+            draft.model_copy(update={"cases": [invalid_path_case]}),
+            tool_results=[parameter_inspection],
             requirement_catalog=None,
             source_bundle=frozen,
         )

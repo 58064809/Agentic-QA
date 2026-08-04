@@ -13,6 +13,7 @@ import yaml
 from langgraph.types import Command, interrupt
 from pydantic import BaseModel, ConfigDict, Field
 
+from harness.application.api_contract_validation import validate_api_contracts
 from harness.application.model_port import ModelGateway, ModelPolicy
 from harness.application.ports import CheckpointProvider
 from harness.application.qa_design import (
@@ -50,6 +51,7 @@ from harness.domain.schemas.api_test_cases import (
 from harness.domain.schemas.api_test_cases import (
     SourceRef as ApiSourceRef,
 )
+from harness.domain.schemas.openapi import OpenApiInspection
 from harness.domain.schemas.qa_design import (
     CoverageMapping,
     EvidenceLevel,
@@ -2585,24 +2587,15 @@ def _validate_api_test_cases(
             else "invalid API runtime definitions"
         )
         raise ValueError(f"{category}: {exc}") from exc
-    inspections = [
+    raw_inspections = [
         item.get("result")
         for item in tool_results
         if item.get("tool") == "openapi.inspect" and isinstance(item.get("result"), dict)
     ]
-    confirmed_endpoints: dict[tuple[str, str], set[str]] = {}
-    for inspection in inspections:
-        if inspection.get("contract_status") != "confirmed":
-            continue
-        source = str(inspection.get("source") or "")
-        for endpoint in inspection.get("endpoints", []):
-            if not isinstance(endpoint, dict):
-                continue
-            key = (
-                str(endpoint.get("method") or "").upper(),
-                str(endpoint.get("path") or ""),
-            )
-            confirmed_endpoints.setdefault(key, set()).add(source)
+    try:
+        inspections = [OpenApiInspection.model_validate(item) for item in raw_inspections]
+    except ValueError as exc:
+        raise ValueError(f"invalid OpenAPI inspection result: {exc}") from exc
     known_rules = (
         {rule.rule_id for rule in requirement_catalog.rules}
         if requirement_catalog is not None
@@ -2636,26 +2629,29 @@ def _validate_api_test_cases(
             )
         if case.contract_status != "confirmed":
             continue
-        endpoint = (str(case.request.method or "").upper(), str(case.request.path or ""))
-        sources = confirmed_endpoints.get(endpoint)
-        if not sources:
+        referenced_sources = {
+            reference.source_path
+            for reference in case.source_refs
+            if reference.source_type == "openapi" and reference.confidence == "high"
+        }
+        inspected_sources = {inspection.source for inspection in inspections}
+        if not referenced_sources & inspected_sources:
             raise ValueError(
-                f"{case.id} claims unverified endpoint {endpoint[0]} {endpoint[1]}; "
+                f"{case.id} claims unverified endpoint {case.request.method} "
+                f"{case.request.path}; "
                 "call openapi.inspect on a complete frozen contract first"
             )
-        frozen_endpoint_sources = sources & frozen_sources
+        frozen_endpoint_sources = referenced_sources & inspected_sources & frozen_sources
         if not frozen_endpoint_sources:
             raise ValueError(f"{case.id} endpoint sources are not part of the frozen SourceBundle")
-        if not any(
-            reference.source_type == "openapi"
-            and reference.source_path in frozen_endpoint_sources
-            and reference.confidence == "high"
-            for reference in case.source_refs
-        ):
-            raise ValueError(
-                f"{case.id} confirmed endpoint lacks a high-confidence reference to "
-                f"one of {sorted(frozen_endpoint_sources)}"
-            )
+    contract_result = validate_api_contracts(cases, inspections)
+    if contract_result.issues:
+        serialized = json.dumps(
+            [issue.model_dump(mode="json") for issue in contract_result.issues],
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        raise ValueError(f"invalid API contract semantics: {serialized}")
 
 
 def _requirement_catalog_from_dependencies(
