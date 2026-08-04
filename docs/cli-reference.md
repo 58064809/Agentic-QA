@@ -97,6 +97,10 @@ dataset 实例和 cleanup Evidence ID 分项报告，场景请求在同一个 py
 失败。设置 `AGENTIC_QA_LIVE_EVAL_OUTPUT` 时，只导出脱敏 `source-bundle.json`、本次 raw artifact、
 `quality-report.json` 与 `generation-report.json` 供人工审查，不导出整个 workspace。
 
+Nightly 每周单独运行 `order-lifecycle` API Live Eval，并上传 `api_test_draft` 的 raw、质量报告和生成报告。
+API Golden 除能力点覆盖外，还按同一 OpenAPI 核对 operation、必填与未知参数、请求体字段、响应码、
+响应 JSON 路径、响应头和提取来源；契约语义不一致时评分低于满分。
+
 ## 退出码
 
 | 退出码 | 含义 |

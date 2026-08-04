@@ -9,7 +9,7 @@ Agentic-QA 是面向测试工作的模块化 Agent Harness：测试主管规划�
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]" -c constraints.txt
+python -m pip install -e ".[dev,docs]" -c constraints.txt
 
 $env:DEEPSEEK_API_KEY = "<你的模型密钥>"
 $env:PG_LOCAL_PASSWORD = "<你的 PostgreSQL 密码>"

@@ -30,10 +30,12 @@ class FakeResponse:
         body: object | None = None,
         *,
         headers: dict[str, str] | None = None,
+        url: str | None = None,
     ) -> None:
         self.status_code = status_code
         self._body = {} if body is None else body
         self.headers = headers or {}
+        self.url = url
 
     def json(self):
         return self._body
@@ -168,6 +170,97 @@ def test_execution_records_pass_failure_and_policy_block() -> None:
     assert "secret.example.test" not in evidence.model_dump_json()
 
 
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "file:///tmp/api",
+        "https://user@example.test/api",
+        "https://example.test/api?target=outside",
+        "https://example.test/api#fragment",
+        "https://example.test/api/../admin",
+    ],
+)
+def test_execution_rejects_unsafe_base_url_before_authentication(base_url: str) -> None:
+    calls: list[bool] = []
+
+    with pytest.raises(ValueError, match="base URL"):
+        execute_api_cases(
+            [_case("API-BASE-URL", "GET")],
+            run_id="run-base-url",
+            source_cases_path="published/api_test_draft/current.yml",
+            profile=ExecutionProfile(
+                environment="qa",
+                base_url_env="TEST_BASE_URL",
+                allowed_http_methods=["GET"],
+            ),
+            env={"TEST_BASE_URL": base_url},
+            request_func=lambda *_args, **_kwargs: calls.append(True),
+        )
+
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/orders/../admin",
+        "/orders/%2e%2e/admin",
+        "/orders/%252e%252e/admin",
+        "/orders\\admin",
+    ],
+)
+def test_execution_rejects_final_path_escape_before_sending(path: str) -> None:
+    payload = _case("API-PATH-ESCAPE", "GET").model_dump(mode="python")
+    payload["request"]["path"] = path
+    calls: list[bool] = []
+
+    evidence = execute_api_cases(
+        [ApiTestCase.model_validate(payload)],
+        run_id="run-path-escape",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test/api"},
+        request_func=lambda *_args, **_kwargs: calls.append(True),
+    )
+
+    assert evidence.cases[0].status == "blocked"
+    assert calls == []
+
+
+def test_execution_pins_final_url_path_origin_and_redirect_policy() -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def request(_method: str, url: str, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResponse(
+            200,
+            {"code": 0},
+            url="https://outside.test/api/api-final-url",
+        )
+
+    evidence = execute_api_cases(
+        [_case("API-FINAL-URL", "GET")],
+        run_id="run-final-url",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test/api"},
+        request_func=request,
+    )
+
+    assert calls[0][0] == "https://example.test/api/api/api-final-url"
+    assert calls[0][1]["allow_redirects"] is False
+    assert evidence.cases[0].status == "error"
+    assert "origin" in str(evidence.cases[0].error).lower()
+
+
 def test_extended_assertions_pass_and_record_only_value_digests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -251,7 +344,11 @@ def test_extended_assertions_pass_and_record_only_value_digests(
     assert result.assertions[1].actual["type"] == "null"
     assert result.assertions[4].actual["type"] == "string"
     assert result.assertions[5].actual == 25
+    assert result.assertions[0].expected["type"] == "string"
+    assert result.assertions[4].expected["type"] == "string"
     serialized = evidence.model_dump_json()
+    assert "alpha" not in serialized
+    assert "application/json" not in serialized
     assert "sensitive-business-value" not in serialized
     assert "raw response value omitted" in serialized
 
@@ -581,6 +678,93 @@ def test_failed_case_does_not_publish_extracted_variable_to_downstream() -> None
     assert calls == ["POST"]
     assert [case.status for case in evidence.cases] == ["failed", "blocked"]
     assert "must-not-flow" not in evidence.model_dump_json()
+
+
+def test_partial_extraction_failure_keeps_successful_values_for_cleanup() -> None:
+    payload = _case("API-PARTIAL-EXTRACT", "POST").model_dump(mode="python")
+    payload["variables"] = {
+        "extract": {
+            "record_id": {"source": "response_json", "path": "$.data.id"},
+            "required_missing": {"source": "response_json", "path": "$.data.missing"},
+        }
+    }
+    payload["cleanup"] = [
+        {
+            "id": "delete",
+            "request": {"method": "DELETE", "path": "/records/${{record_id}}"},
+            "assertions": [{"type": "status_code", "expected": 204}],
+        }
+    ]
+    calls: list[tuple[str, str]] = []
+
+    def request(method: str, url: str, **_kwargs):
+        calls.append((method, url))
+        if method == "POST":
+            return FakeResponse(200, {"code": 0, "data": {"id": "cleanup-id"}})
+        return FakeResponse(204)
+
+    evidence = execute_api_cases(
+        [ApiTestCase.model_validate(payload)],
+        run_id="run-partial-extraction",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["POST", "DELETE"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=request,
+    )
+
+    assert [item.status for item in evidence.cases] == ["error", "passed"]
+    assert calls == [
+        ("POST", "https://example.test/api/api-partial-extract"),
+        ("DELETE", "https://example.test/records/cleanup-id"),
+    ]
+    assert "cleanup-id" not in evidence.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "assertion",
+    [
+        {"type": "json_field_equals", "path": "$.access_token", "expected": "value"},
+        {
+            "type": "json_field_contains",
+            "path": "$.data",
+            "expected": {"password": "guess-value"},
+        },
+        {
+            "type": "json_field_equals",
+            "path": "$.data.message",
+            "expected": "Bearer secret-value",
+        },
+        {
+            "type": "header_equals",
+            "path": "X-Debug",
+            "expected": "token=secret-value",
+        },
+    ],
+)
+def test_sensitive_assertion_expected_is_blocked_before_request(
+    assertion: dict[str, object],
+) -> None:
+    calls: list[bool] = []
+    evidence = execute_api_cases(
+        [_case_with_assertions([assertion])],
+        run_id="run-sensitive-expected",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=lambda *_args, **_kwargs: calls.append(True),
+    )
+
+    assert evidence.cases[0].status == "blocked"
+    assert "sensitive" in str(evidence.cases[0].error).lower()
+    assert calls == []
 
 
 def test_dataset_and_cleanup_values_are_redacted_from_errors() -> None:

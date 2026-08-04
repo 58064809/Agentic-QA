@@ -50,6 +50,23 @@ def test_api_golden_eval_rejects_missing_data_flow_and_cleanup() -> None:
     assert result["validation_issues"] == []
 
 
+def test_api_golden_eval_scores_openapi_contract_semantics() -> None:
+    case_root = Path("evals/api-cases/order-lifecycle")
+    payload = yaml.safe_load((case_root / "candidate-api-cases.yml").read_text(encoding="utf-8"))
+    payload["cases"][0]["request"]["body"]["invented"] = "unsupported"
+    payload["cases"][0]["assertions"][0]["expected"] = 202
+    payload["cases"][1]["assertions"][1]["path"] = "$.data.unknown"
+
+    result = evaluate_api_candidate_artifact(
+        case_root,
+        api_cases_content=yaml.safe_dump(payload, sort_keys=False),
+    )
+
+    assert not result["passed"]
+    assert result["metrics"]["contract_semantic_rate"] < 1
+    assert result["contract_issues"]
+
+
 def test_golden_eval_does_not_score_the_human_baseline_as_candidate(
     tmp_path: Path,
 ) -> None:

@@ -5,7 +5,12 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from harness.domain.security import validate_api_data_safety, validate_api_request_safety
+from harness.domain.security import (
+    SECRET_KEY,
+    validate_api_assertion_expected_safety,
+    validate_api_data_safety,
+    validate_api_request_safety,
+)
 
 API_CASES_SCHEMA_VERSION = "agentic-qa.api-cases.v1.1"
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"}
@@ -227,6 +232,16 @@ def validate_api_assertion_definition(assertion: ApiAssertion) -> None:
                 raise ValueError("json_field_exists expected may only be omitted or true")
         elif not expected_is_set:
             raise ValueError(f"{assertion_type} assertion requires expected")
+        else:
+            if any(
+                isinstance(token, str) and SECRET_KEY.search(token)
+                for token in json_path_tokens(path)
+            ):
+                raise ValueError(f"{assertion_type} cannot target a sensitive JSON field")
+            validate_api_assertion_expected_safety(
+                assertion.expected,
+                label=f"{assertion_type} assertion",
+            )
         return
 
     if assertion_type == "header_equals":
@@ -243,6 +258,10 @@ def validate_api_assertion_definition(assertion: ApiAssertion) -> None:
             or "\n" in assertion.expected
         ):
             raise ValueError("header_equals expected must be a string without line breaks")
+        validate_api_assertion_expected_safety(
+            assertion.expected,
+            label="header_equals assertion",
+        )
         return
 
     if path is not None:

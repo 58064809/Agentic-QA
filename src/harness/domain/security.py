@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 SECRET_KEY = re.compile(r"(authorization|cookie|token|secret|password|api[_-]?key)", re.I)
 ENV_REFERENCE = re.compile(r"^\$\{[A-Z_][A-Z0-9_]*\}$")
@@ -10,7 +11,7 @@ HTTP_HEADER_NAME = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 TRANSPORT_HEADERS = frozenset({"host", "content-length", "transfer-encoding", "connection"})
 BEARER = re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]+")
 SECRET_ASSIGNMENT = re.compile(
-    r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|cookie|secret|password)\b"
+    r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|token|cookie|secret|password)\b"
     r"(\s*[:=]\s*)[\"']?([^\s,;\"']{6,})[\"']?"
 )
 PRIVATE_KEY = re.compile(r"-----BEGIN [A-Z ]*PRIVAT\x45 K\x45Y-----")
@@ -66,6 +67,31 @@ def validate_api_data_safety(
             raise ValueError(f"{label} contains a likely inline secret: {'.'.join(path)}")
 
 
+def validate_api_assertion_expected_safety(
+    value: Any,
+    *,
+    label: str,
+    path: tuple[str, ...] = (),
+) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            current = (*path, str(key))
+            if SECRET_KEY.search(str(key)):
+                raise ValueError(
+                    f"{label} contains a sensitive expected field: {'.'.join(current)}"
+                )
+            validate_api_assertion_expected_safety(item, label=label, path=current)
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            validate_api_assertion_expected_safety(
+                item,
+                label=label,
+                path=(*path, str(index)),
+            )
+    elif isinstance(value, str) and contains_likely_secret(value):
+        raise ValueError(f"{label} contains a likely sensitive expected value")
+
+
 def validate_api_request_safety(
     *,
     path: str | None,
@@ -111,6 +137,8 @@ def validate_api_request_transport(
         or "\n" in path
     ):
         raise ValueError(f"{label} path must be relative, query-free, and start with '/'")
+    if path is not None:
+        _validate_api_url_path(path, label=f"{label} path")
     invalid_headers = sorted(
         name
         for name, item in headers.items()
@@ -125,6 +153,88 @@ def validate_api_request_transport(
             f"{label} contains invalid or transport-controlled headers: "
             + ", ".join(invalid_headers)
         )
+
+
+def validate_api_base_url(value: str) -> str:
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme.casefold() not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            "API base URL must be an HTTP(S) origin/path without credentials, query, or fragment"
+        )
+    _api_origin(value, label="API base URL")
+    _validate_api_url_path(parsed.path or "/", label="API base URL path")
+    return value.rstrip("/")
+
+
+def build_api_request_url(base_url: str, request_path: str) -> str:
+    normalized_base = validate_api_base_url(base_url)
+    validate_api_request_transport(path=request_path, headers={}, label="resolved API request")
+    final_url = normalized_base + "/" + request_path.lstrip("/")
+    parsed_base = urlsplit(normalized_base)
+    parsed_final = urlsplit(final_url)
+    if _api_origin(final_url, label="final API URL") != _api_origin(
+        normalized_base, label="API base URL"
+    ):
+        raise ValueError("final API URL origin differs from the configured base URL")
+    expected_path = parsed_base.path.rstrip("/") + "/" + request_path.lstrip("/")
+    if parsed_final.path != expected_path:
+        raise ValueError("final API URL path differs from the configured base path")
+    _validate_api_url_path(parsed_final.path, label="final API URL path")
+    return final_url
+
+
+def validate_api_response_url(response_url: Any, *, requested_url: str) -> None:
+    if not isinstance(response_url, str) or not response_url.strip():
+        return
+    if _api_origin(response_url, label="final response URL") != _api_origin(
+        requested_url, label="requested API URL"
+    ):
+        raise ValueError("final response URL origin differs from the requested API URL")
+    response_path = urlsplit(response_url).path
+    requested_path = urlsplit(requested_url).path
+    _validate_api_url_path(response_path, label="final response URL path")
+    if response_path != requested_path:
+        raise ValueError("final response URL path differs from the requested API URL")
+
+
+def _api_origin(value: str, *, label: str) -> tuple[str, str, int]:
+    parsed = urlsplit(value)
+    if parsed.scheme.casefold() not in {"http", "https"} or not parsed.hostname:
+        raise ValueError(f"{label} must use an HTTP(S) origin")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError(f"{label} cannot contain credentials")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"{label} has an invalid port") from exc
+    effective_port = port or (443 if parsed.scheme.casefold() == "https" else 80)
+    return parsed.scheme.casefold(), parsed.hostname.casefold(), effective_port
+
+
+def _validate_api_url_path(path: str, *, label: str) -> None:
+    decoded = path
+    for _ in range(4):
+        folded = decoded.casefold()
+        if "\\" in decoded or any(token in folded for token in ("%2f", "%5c", "%2e", "%3f", "%23")):
+            raise ValueError(f"{label} contains an encoded or alternate path separator")
+        unquoted = unquote(decoded)
+        if unquoted == decoded:
+            break
+        decoded = unquoted
+    if any(ord(character) < 32 or ord(character) == 127 for character in decoded):
+        raise ValueError(f"{label} contains an encoded control character")
+    segments = decoded.split("/")
+    if "\\" in decoded or any(segment in {".", ".."} for segment in segments):
+        raise ValueError(f"{label} contains a path traversal segment")
+    if "//" in decoded:
+        raise ValueError(f"{label} contains an empty path segment")
 
 
 def _sanitize_text(value: str, *, max_chars: int) -> str:

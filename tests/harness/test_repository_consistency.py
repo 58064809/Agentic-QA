@@ -115,6 +115,7 @@ def test_repository_contracts_are_consistent() -> None:
     pyproject = _read(root / "pyproject.toml")
     constraints = _read(root / "constraints.txt")
     cold_start_script = _read(root / "scripts/cold-start-check.ps1")
+    nightly = _read(root / ".github/workflows/nightly-live-eval.yml")
     if '"build>=1,<2"' not in pyproject or "build==" not in constraints:
         errors.append("wheel 构建工具未同时声明在 dev 依赖与 constraints")
     if "--index-url" in constraints or "--trusted-host" in constraints:
@@ -123,6 +124,15 @@ def test_repository_contracts_are_consistent() -> None:
         errors.append("冷启动检查未间接读取所选模型密钥环境变量")
     if 'Write-Output "model key: configured via $keyEnvironment"' not in cold_start_script:
         errors.append("冷启动检查应只报告模型密钥环境变量名")
+    if '".[dev,docs]" -c constraints.txt' not in _read(root / "README.md"):
+        errors.append("fresh clone 安装未包含冷启动完整依赖与 constraints")
+    for marker in (
+        "order-lifecycle",
+        "api_test_draft/raw.yml",
+        '".[dev]" -c constraints.txt',
+    ):
+        if marker not in nightly:
+            errors.append(f"Nightly API Live Eval 缺少配置: {marker}")
 
     docs_text = "\n".join(_read(path) for path in (root / "docs").glob("*.md"))
     for obsolete in (

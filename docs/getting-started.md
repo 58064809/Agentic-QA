@@ -14,7 +14,7 @@
 Set-Location D:\TestHome\Agentic-QA
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]" -c constraints.txt
+python -m pip install -e ".[dev,docs]" -c constraints.txt
 python -m harness --help
 .\scripts\cold-start-check.ps1
 ```
@@ -186,7 +186,7 @@ adapter 绑定 published YAML 的 SHA-256；发布内容更新后需重新导出
 
 | 错误 | 处理 |
 |---|---|
-| `No module named 'harness.cli'` | 重新执行 `python -m pip install -e ".[dev]"`，或使用 `python -m harness` |
+| `No module named 'harness.cli'` | 重新执行 `python -m pip install -e ".[dev,docs]" -c constraints.txt`，或使用 `python -m harness` |
 | 未配置模型 | 确认当前 shell 可读取模型 API Key |
 | PostgreSQL password 未设置 | 设置 `PG_LOCAL_PASSWORD` 并确认服务运行 |
 | approve 要求 variant | 检查 diff 后明确选择 `artifact=raw|normalized` |

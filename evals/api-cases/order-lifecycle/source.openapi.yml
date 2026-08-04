@@ -41,6 +41,10 @@ paths:
       operationId: getOrder
       summary: Read an order by ID
       parameters:
+        - in: header
+          name: X-API-Key
+          required: true
+          schema: {type: string}
         - in: query
           name: id
           required: true
@@ -65,6 +69,10 @@ paths:
       operationId: deleteOrder
       summary: Delete an order by ID
       parameters:
+        - in: header
+          name: X-API-Key
+          required: true
+          schema: {type: string}
         - in: query
           name: id
           required: true

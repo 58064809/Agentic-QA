@@ -4,6 +4,7 @@ on:
   schedule:
     - cron: "30 18 * * *"
     - cron: "30 17 * * 0"
+    - cron: "30 16 * * 0"
   workflow_dispatch:
     inputs:
       case:
@@ -14,6 +15,7 @@ on:
         options:
           - login-lock
           - lottery-assistance
+          - order-lifecycle
 
 permissions:
   contents: read
@@ -29,12 +31,14 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install
-        run: python -m pip install --upgrade pip ".[dev]"
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]" -c constraints.txt
       - name: Run live candidate eval
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           AGENTIC_QA_LIVE_EVAL_OUTPUT: ${{ runner.temp }}/agentic-qa-live-eval
-          AGENTIC_QA_LIVE_EVAL_CASE: ${{ inputs.case || (github.event.schedule == '30 17 * * 0' && 'lottery-assistance') || 'login-lock' }}
+          AGENTIC_QA_LIVE_EVAL_CASE: ${{ inputs.case || (github.event.schedule == '30 16 * * 0' && 'order-lifecycle') || (github.event.schedule == '30 17 * * 0' && 'lottery-assistance') || 'login-lock' }}
         run: python -m harness eval live | tee "${{ runner.temp }}/live-eval-result.json"
       - name: Upload review evidence
         if: always()
@@ -51,3 +55,6 @@ jobs:
             ${{ runner.temp }}/agentic-qa-live-eval/testcases/raw.md
             ${{ runner.temp }}/agentic-qa-live-eval/testcases/quality-report.json
             ${{ runner.temp }}/agentic-qa-live-eval/testcases/generation-report.json
+            ${{ runner.temp }}/agentic-qa-live-eval/api_test_draft/raw.yml
+            ${{ runner.temp }}/agentic-qa-live-eval/api_test_draft/quality-report.json
+            ${{ runner.temp }}/agentic-qa-live-eval/api_test_draft/generation-report.json

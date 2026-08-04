@@ -38,7 +38,12 @@ from harness.domain.schemas.execution_evidence import (
     ExecutionEvidence,
     ExecutionSummary,
 )
-from harness.domain.security import validate_api_request_transport
+from harness.domain.security import (
+    build_api_request_url,
+    validate_api_base_url,
+    validate_api_request_transport,
+    validate_api_response_url,
+)
 
 ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)}")
 FULL_VARIABLE_PLACEHOLDER_RE = re.compile(r"^\$\{\{([A-Za-z_][A-Za-z0-9_]*)}}$")
@@ -280,14 +285,17 @@ def _authenticate(
         )
     request = _resolve_required(auth.request.model_dump(mode="python"), env)
     try:
+        request_url = build_api_request_url(base_url, auth.request.path)
         response = request_func(
             auth.request.method,
-            base_url.rstrip("/") + "/" + auth.request.path.lstrip("/"),
+            request_url,
             headers=dict(request.get("headers") or {}),
             params=request.get("query"),
             json=request.get("body"),
             timeout=profile.request_timeout_seconds,
+            allow_redirects=False,
         )
+        validate_api_response_url(getattr(response, "url", None), requested_url=request_url)
         if int(response.status_code) not in set(auth.expected_status_codes):
             raise RuntimeError(f"API login returned HTTP {int(response.status_code)}")
         body = response.json()
@@ -365,7 +373,7 @@ def _evaluate_assertions(
                 AssertionEvidence(
                     type=assertion.type,
                     passed=passed,
-                    expected=assertion.expected,
+                    expected=_value_summary(assertion.expected, present=True),
                     actual=_value_summary(actual, present=found),
                     path=assertion.path,
                     message="raw response value omitted",
@@ -377,7 +385,7 @@ def _evaluate_assertions(
                 AssertionEvidence(
                     type=assertion.type,
                     passed=found and actual_header == assertion.expected,
-                    expected=assertion.expected,
+                    expected=_value_summary(assertion.expected, present=True),
                     actual=_value_summary(actual_header, present=found),
                     path=assertion.path,
                     message="raw response header value omitted",
@@ -402,22 +410,26 @@ def _extract_response_variables(
     *,
     body: Any | None,
     body_loaded: bool,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[str]]:
     extracted: dict[str, Any] = {}
+    missing_required: list[str] = []
     for name, definition in definitions.items():
-        if definition.source == "response_json":
-            if not body_loaded:
-                body = response.json()
-                body_loaded = True
-            found, value = _json_path_lookup(body, definition.path)
-        else:
-            found, value = _response_header(response, definition.path)
+        try:
+            if definition.source == "response_json":
+                if not body_loaded:
+                    body = response.json()
+                    body_loaded = True
+                found, value = _json_path_lookup(body, definition.path)
+            else:
+                found, value = _response_header(response, definition.path)
+        except Exception:
+            found, value = False, None
         if not found:
             if definition.required:
-                raise RuntimeError(f"required response variable extraction failed: {name}")
+                missing_required.append(name)
             continue
         extracted[name] = value
-    return extracted
+    return extracted, missing_required
 
 
 def _execute_request(
@@ -529,27 +541,51 @@ def _execute_request(
             dict(request.get("headers") or {}),
             authentication_header,
         )
+        request_url = build_api_request_url(base_url, resolved_path)
         request_sent = True
         response = request_func(
             method,
-            base_url.rstrip("/") + "/" + resolved_path.lstrip("/"),
+            request_url,
             headers=headers,
             params=request.get("query"),
             json=request.get("body"),
             timeout=profile.request_timeout_seconds,
+            allow_redirects=False,
         )
+        validate_api_response_url(getattr(response, "url", None), requested_url=request_url)
         response_duration_ms = max(0, int((perf_counter() - started_clock) * 1000))
         evidence, body, body_loaded = _evaluate_assertions(
             assertions,
             response,
             response_duration_ms=response_duration_ms,
         )
-        extracted = _extract_response_variables(
+        extracted, missing_required = _extract_response_variables(
             extractions,
             response,
             body=body,
             body_loaded=body_loaded,
         )
+        if missing_required:
+            return _RequestOutcome(
+                evidence=CaseExecutionEvidence(
+                    case_id=case_id,
+                    title=title,
+                    method=method,
+                    path=path,
+                    status="error",
+                    started_at=started_at,
+                    completed_at=datetime.now(tz=UTC),
+                    duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
+                    status_code=int(response.status_code),
+                    assertions=evidence,
+                    error=(
+                        "required response variable extraction failed: "
+                        + ", ".join(missing_required)
+                    ),
+                ),
+                extracted=extracted,
+                request_sent=True,
+            )
         status = "passed" if evidence and all(item.passed for item in evidence) else "failed"
         return _RequestOutcome(
             evidence=CaseExecutionEvidence(
@@ -620,6 +656,7 @@ def execute_api_cases(
     base_url = runtime_env.get(profile.base_url_env, "").strip()
     if not base_url:
         raise ValueError(f"base URL environment variable is not set: {profile.base_url_env}")
+    base_url = validate_api_base_url(base_url)
     if request_func is None:
         import requests
 
