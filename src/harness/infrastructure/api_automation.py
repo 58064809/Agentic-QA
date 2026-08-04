@@ -56,6 +56,7 @@ class FilesystemApiAutomationService:
             profile=command.execution_profile,
             env=os.environ,
             authentication=policy.api_auth if policy is not None else None,
+            trusted_origins=policy.trusted_origins if policy is not None else None,
         )
 
     def export_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:

@@ -18,7 +18,7 @@ from harness.domain.models import ExecutionProfile
 from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.failure_triage import FailureTriage
-from harness.domain.security import sanitize_untrusted
+from harness.domain.security import sanitize_untrusted, validate_api_base_url_policy
 from harness.infrastructure.manifests.registry import AgentRegistry, ToolRegistry
 from harness.infrastructure.persistence.filesystem import FilesystemStore
 from harness.infrastructure.rag.provider import RagProviderConfig, RagRetriever
@@ -142,6 +142,14 @@ class ToolRuntime:
             raise PermissionError("state-changing test tools require an explicit test environment")
         if tool == "mcp.playwright" and not profile.allow_ui_mutations:
             raise PermissionError("Playwright mutations require allow_ui_mutations=true")
+        if tool in {"mcp.playwright", "network.capture.live"}:
+            policy = self.store.validate_execution_profile(workspace, profile)
+            if policy is None:
+                raise PermissionError("live browser tools require a workspace execution policy")
+            validate_api_base_url_policy(
+                resolve_execution_base_url(profile),
+                trusted_origins=policy.trusted_origins,
+            )
         if tool == "mcp.playwright":
             self._validate_direct_playwright_call(arguments, profile)
         try:
@@ -478,6 +486,7 @@ class ToolRuntime:
             profile=profile,
             env=os.environ,
             authentication=policy.api_auth if policy is not None else None,
+            trusted_origins=policy.trusted_origins if policy is not None else None,
         )
         return evidence.model_dump(mode="json")
 

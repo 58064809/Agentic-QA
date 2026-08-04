@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.knowledge-spec.v1
 name: api-testing
-version: 1.5.0
+version: 1.6.0
 purpose: 根据完整 API 契约设计可验证的机器用例并记录执行边界。
 applies_to: [api-testing]
 inputs:
@@ -25,10 +25,12 @@ output_expectations:
   - JSON 断言路径只使用根 $、对象 .field 和数组 [index]，不使用通配符或过滤器。
   - variables 只使用 datasets 与 extract；cleanup 只使用 id、title、request 与 assertions。
 evidence_policy:
+  - Workspace Policy 的 trusted_origins 只接受 HTTPS Origin，实际 base URL 在认证前匹配该 allowlist。
   - base URL 只接受 HTTP(S) Origin 与安全基础路径；最终 URL 必须保持同一 Origin 和基础路径，且请求不跟随重定向。
   - 断言不得指向 Token、Cookie、密码等敏感字段，也不得把疑似密钥写入 expected。
   - 断言 expected 与实际 JSON/响应头值均只记录类型和规范化 SHA-256，不记录原值。
   - 部分变量提取失败时保留已成功的本次局部提取供 cleanup 使用，但不向下游用例发布。
+  - 断言求值异常不跳过变量提取；成功提取值仅用于本次 cleanup，主用例仍记录 error。
   - endpoint 事实引用完整 OpenAPI。
   - 执行结果记录环境、请求摘要、响应摘要和断言结果。
   - JSON 值和响应头的实际值只记录类型与 SHA-256，不复述原始响应值。
@@ -40,6 +42,7 @@ prohibited_actions:
   - 不根据残缺来源补全 endpoint、响应字段或业务规则。
   - 不在输出中包含真实 Token、Cookie 或生产地址。
 deterministic_checks:
+  - validator:workspace-trusted-api-origin
   - validator:api-url-origin-and-path
   - validator:api-assertion-expected-safety
   - validator:openapi-completeness

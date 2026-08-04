@@ -161,11 +161,14 @@ def test_live_eval_selects_configured_case(monkeypatch) -> None:
     assert result["golden"]["case"] == "lottery-assistance"
 
 
-def test_live_eval_scores_api_candidate_with_api_golden(monkeypatch) -> None:
+def test_live_eval_scores_api_candidate_with_api_golden(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         "harness.infrastructure.llm.gateway.model_gateway_from_env",
         lambda: recorded_model_gateway(),
     )
+
+    output_root = tmp_path / "api-live-eval-artifacts"
+    monkeypatch.setenv("AGENTIC_QA_LIVE_EVAL_OUTPUT", str(output_root))
 
     result = run_live_eval("order-lifecycle")
 
@@ -175,3 +178,7 @@ def test_live_eval_scores_api_candidate_with_api_golden(monkeypatch) -> None:
     assert result["golden"] is not None
     assert result["golden"]["candidate_artifact"] == "generated api_test_draft/raw.yml"
     assert not result["passed"]
+    assert (output_root / "api_test_draft/raw.yml").is_file()
+    assert not (output_root / "api_test_draft/raw.md").exists()
+    assert (output_root / "api_test_draft/quality-report.json").is_file()
+    assert (output_root / "api_test_draft/generation-report.json").is_file()

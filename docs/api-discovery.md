@@ -66,6 +66,7 @@ execution:
   environments:
     qa:
       base_url_env: AGENTIC_QA_BASE_URL
+      trusted_origins: [https://qa.example.test]
       allowed_http_methods: [GET, HEAD, OPTIONS, POST]
       allow_ui_mutations: true
       max_request_timeout_seconds: 10

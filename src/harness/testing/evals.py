@@ -448,11 +448,16 @@ quality_policies: []
 execution:
   environments:
     recorded-test:
+      base_url_env: AGENTIC_QA_BASE_URL
+      trusted_origins: [https://qa.example.test]
+      allowed_http_methods: [GET, HEAD, OPTIONS, POST]
       allow_ui_mutations: true
       max_request_timeout_seconds: 10
 """,
             encoding="utf-8",
         )
+        previous_base_url = os.environ.get("AGENTIC_QA_BASE_URL")
+        os.environ["AGENTIC_QA_BASE_URL"] = "https://qa.example.test"
         snapshot = harness.start_run(
             StartRunCommand(
                 workspace_id=workspace_id,
@@ -460,10 +465,16 @@ execution:
                 expected_artifacts=list(ARTIFACT_TYPES),
                 execution_profile=ExecutionProfile(
                     environment="recorded-test",
+                    base_url_env="AGENTIC_QA_BASE_URL",
+                    allowed_http_methods=["GET", "HEAD", "OPTIONS", "POST"],
                     allow_ui_mutations=True,
                 ),
             )
         )
+        if previous_base_url is None:
+            os.environ.pop("AGENTIC_QA_BASE_URL", None)
+        else:
+            os.environ["AGENTIC_QA_BASE_URL"] = previous_base_url
         candidate_types = {candidate.artifact for candidate in snapshot.candidates}
         generated = candidate_types == set(ARTIFACT_TYPES)
         gate_held = snapshot.status == "needs_human_review"
@@ -495,6 +506,7 @@ execution:
   environments:
     recorded-test:
       base_url_env: AGENTIC_QA_BASE_URL
+      trusted_origins: [https://qa.example.test]
       allowed_http_methods: [GET, HEAD, OPTIONS, POST]
       allow_ui_mutations: true
       max_request_timeout_seconds: 10
@@ -683,7 +695,8 @@ def _export_live_eval_artifacts(
             None,
         )
         if raw_version is not None:
-            copyfile(repo_root / raw_version.path, artifact_root / "raw.md")
+            raw_source = repo_root / raw_version.path
+            copyfile(raw_source, artifact_root / raw_source.name)
         for source_path, output_name in (
             (candidate.quality_report_path, "quality-report.json"),
             (candidate.generation_report_path, "generation-report.json"),

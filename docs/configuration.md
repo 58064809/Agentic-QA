@@ -77,6 +77,7 @@ execution:
   environments:
     qa:
       base_url_env: AGENTIC_QA_BASE_URL
+      trusted_origins: [https://qa.example.test]
       allowed_http_methods: [GET, HEAD, OPTIONS, POST]
       allow_ui_mutations: false
       max_request_timeout_seconds: 10
@@ -84,6 +85,10 @@ execution:
 
 非 `analysis-only` 的 ExecutionProfile 会匹配环境名和 `base_url_env`，并与 workspace 的方法、
 UI mutation 和超时上限比较。production-like 环境名被拒绝。
+
+配置了 `base_url_env` 的环境同时要求至少一个 `trusted_origins`。可信项只接受不带路径、凭据、查询或
+片段的 HTTPS Origin；执行器在认证和业务请求发出前，将环境变量中的实际 base URL Origin 与该列表
+匹配。这样即使同名环境变量被错误覆盖为 HTTP 或其他主机，请求也会在本地终止。
 
 #### 使用已有 token
 
@@ -94,6 +99,7 @@ execution:
   environments:
     qa:
       base_url_env: AGENTIC_QA_BASE_URL
+      trusted_origins: [https://qa.example.test]
       allowed_http_methods: [GET, HEAD, OPTIONS, POST]
       allow_ui_mutations: false
       max_request_timeout_seconds: 10
@@ -139,6 +145,7 @@ execution:
   environments:
     qa:
       base_url_env: AGENTIC_QA_BASE_URL
+      trusted_origins: [https://qa.example.test]
       allowed_http_methods: [GET, HEAD, OPTIONS, POST]
       allow_ui_mutations: false
       max_request_timeout_seconds: 10

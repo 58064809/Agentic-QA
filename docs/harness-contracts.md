@@ -28,6 +28,9 @@ pytest adapter 固定来源 YAML 的 SHA-256，执行时重新校验 hash。它�
 
 ## API 执行认证
 
+`ExecutionEnvironmentPolicy` 在声明 `base_url_env` 时同时保存非空 `trusted_origins`；每项是纯 HTTPS
+Origin。公开 Harness API 和内置 `api.execute` 都在认证前校验实际 base URL 是否命中该 allowlist。
+
 `ExecutionEnvironmentPolicy.api_auth` 是可选的判别联合：
 
 | `mode` | 强类型配置 | 执行行为 |

@@ -458,7 +458,9 @@ def test_json_assertion_on_non_json_response_records_execution_error() -> None:
     )
 
     assert evidence.cases[0].status == "error"
-    assert evidence.cases[0].error == "response is not JSON"
+    assert evidence.cases[0].error == "json_field_equals evaluation raised ValueError"
+    assert not evidence.cases[0].assertions[0].passed
+    assert "response is not JSON" not in evidence.model_dump_json()
 
 
 def test_response_extraction_flows_to_later_case_and_cleanup_without_evidence_leak() -> None:
@@ -722,6 +724,58 @@ def test_partial_extraction_failure_keeps_successful_values_for_cleanup() -> Non
         ("DELETE", "https://example.test/records/cleanup-id"),
     ]
     assert "cleanup-id" not in evidence.model_dump_json()
+
+
+def test_assertion_exception_keeps_extracted_header_for_cleanup() -> None:
+    payload = _case("API-ASSERTION-ERROR", "POST").model_dump(mode="python")
+    payload["variables"] = {
+        "extract": {
+            "record_id": {
+                "source": "response_header",
+                "path": "X-Record-Id",
+            }
+        }
+    }
+    payload["cleanup"] = [
+        {
+            "id": "delete",
+            "request": {"method": "DELETE", "path": "/records/${{record_id}}"},
+            "assertions": [{"type": "status_code", "expected": 204}],
+        }
+    ]
+    calls: list[tuple[str, str]] = []
+
+    class InvalidJsonResponse(FakeResponse):
+        def json(self):
+            raise ValueError("private response content")
+
+    def request(method: str, url: str, **_kwargs):
+        calls.append((method, url))
+        if method == "POST":
+            return InvalidJsonResponse(200, headers={"X-Record-Id": "cleanup-id"})
+        return FakeResponse(204)
+
+    evidence = execute_api_cases(
+        [ApiTestCase.model_validate(payload)],
+        run_id="run-assertion-error-cleanup",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["POST", "DELETE"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=request,
+    )
+
+    assert [item.status for item in evidence.cases] == ["error", "passed"]
+    assert calls == [
+        ("POST", "https://example.test/api/api-assertion-error"),
+        ("DELETE", "https://example.test/records/cleanup-id"),
+    ]
+    serialized = evidence.model_dump_json()
+    assert "private response content" not in serialized
+    assert "cleanup-id" not in serialized
 
 
 @pytest.mark.parametrize(
@@ -1307,6 +1361,7 @@ def test_workspace_execution_policy_parses_static_and_login_authentication() -> 
     static = ExecutionEnvironmentPolicy.model_validate(
         {
             "base_url_env": "TEST_BASE_URL",
+            "trusted_origins": ["https://example.test/"],
             "api_auth": {
                 "mode": "static_token",
                 "token_env": "QA_API_TOKEN",
@@ -1316,6 +1371,7 @@ def test_workspace_execution_policy_parses_static_and_login_authentication() -> 
     login = ExecutionEnvironmentPolicy.model_validate(
         {
             "base_url_env": "TEST_BASE_URL",
+            "trusted_origins": ["https://example.test"],
             "api_auth": {
                 "mode": "login",
                 "request": {
@@ -1329,3 +1385,54 @@ def test_workspace_execution_policy_parses_static_and_login_authentication() -> 
 
     assert isinstance(static.api_auth, StaticTokenApiAuthentication)
     assert isinstance(login.api_auth, LoginApiAuthentication)
+    assert static.trusted_origins == ["https://example.test"]
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        {"base_url_env": "TEST_BASE_URL"},
+        {
+            "base_url_env": "TEST_BASE_URL",
+            "trusted_origins": ["http://example.test"],
+        },
+        {
+            "base_url_env": "TEST_BASE_URL",
+            "trusted_origins": ["https://example.test/api"],
+        },
+    ],
+)
+def test_workspace_execution_policy_requires_https_trusted_origins(
+    policy: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError):
+        ExecutionEnvironmentPolicy.model_validate(policy)
+
+
+@pytest.mark.parametrize(
+    ("base_url", "message"),
+    [
+        ("http://example.test", "HTTPS"),
+        ("https://outside.test", "not trusted"),
+    ],
+)
+def test_execution_enforces_workspace_trusted_origins_before_request(
+    base_url: str,
+    message: str,
+) -> None:
+    calls: list[bool] = []
+    with pytest.raises(ValueError, match=message):
+        execute_api_cases(
+            [_case("API-TRUSTED-ORIGIN", "GET")],
+            run_id="run-trusted-origin",
+            source_cases_path="published/api_test_draft/current.yml",
+            profile=ExecutionProfile(
+                environment="qa",
+                base_url_env="TEST_BASE_URL",
+                allowed_http_methods=["GET"],
+            ),
+            env={"TEST_BASE_URL": base_url},
+            request_func=lambda *_args, **_kwargs: calls.append(True),
+            trusted_origins=["https://example.test"],
+        )
+    assert calls == []

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from harness import CreateWorkspaceCommand, Harness, StartRunCommand
 from harness.budget import Budget
@@ -193,7 +194,18 @@ def test_live_capture_facade_hides_raw_network_tools_and_enforces_origin(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _, snapshot = _started_run(tmp_path)
+    workspace, snapshot = _started_run(tmp_path)
+    config = yaml.safe_load((workspace / "workspace.yml").read_text(encoding="utf-8"))
+    config["execution"]["environments"]["qa"] = {
+        "base_url_env": "AGENTIC_QA_BASE_URL",
+        "trusted_origins": ["https://qa.example.test"],
+        "allowed_http_methods": ["GET", "HEAD", "OPTIONS"],
+        "allow_ui_mutations": True,
+    }
+    (workspace / "workspace.yml").write_text(
+        yaml.safe_dump(config, sort_keys=False),
+        encoding="utf-8",
+    )
     store, agents, tools = _runtime_dependencies(tmp_path)
     monkeypatch.setenv("AGENTIC_QA_BASE_URL", "https://qa.example.test/app")
     document_origin = "https://qa.example.test"

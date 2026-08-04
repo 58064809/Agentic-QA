@@ -325,6 +325,7 @@ def test_live_api_discovery_uses_playwright_facade_and_stops_at_review_gate(
     config = yaml.safe_load((workspace / "workspace.yml").read_text(encoding="utf-8"))
     config["execution"]["environments"]["qa"] = {
         "base_url_env": "AGENTIC_QA_BASE_URL",
+        "trusted_origins": ["https://qa.example.test"],
         "allowed_http_methods": ["GET", "HEAD", "OPTIONS", "POST"],
         "allow_ui_mutations": True,
         "max_request_timeout_seconds": 10,

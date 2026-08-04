@@ -41,6 +41,7 @@ from harness.domain.schemas.execution_evidence import (
 from harness.domain.security import (
     build_api_request_url,
     validate_api_base_url,
+    validate_api_base_url_policy,
     validate_api_request_transport,
     validate_api_response_url,
 )
@@ -326,82 +327,97 @@ def _evaluate_assertions(
     response: Any,
     *,
     response_duration_ms: int,
-) -> tuple[list[AssertionEvidence], Any | None, bool]:
+) -> tuple[list[AssertionEvidence], Any | None, bool, list[str]]:
     evidence: list[AssertionEvidence] = []
+    errors: list[str] = []
     body: Any | None = None
     body_loaded = False
     for assertion in assertions:
-        if assertion.type == "status_code":
-            expected = assertion.expected
-            codes = (
-                {int(item) for item in expected} if isinstance(expected, list) else {int(expected)}
-            )
-            actual = int(response.status_code)
-            evidence.append(
-                AssertionEvidence(
-                    type=assertion.type,
-                    passed=actual in codes,
-                    expected=sorted(codes),
-                    actual=actual,
+        try:
+            if assertion.type == "status_code":
+                expected = assertion.expected
+                codes = (
+                    {int(item) for item in expected}
+                    if isinstance(expected, list)
+                    else {int(expected)}
                 )
-            )
-        elif assertion.type == "json_field_exists":
-            if not body_loaded:
-                body = response.json()
-                body_loaded = True
-            found, _actual = _json_path_lookup(body, assertion.path or "")
+                actual = int(response.status_code)
+                evidence.append(
+                    AssertionEvidence(
+                        type=assertion.type,
+                        passed=actual in codes,
+                        expected=sorted(codes),
+                        actual=actual,
+                    )
+                )
+            elif assertion.type == "json_field_exists":
+                if not body_loaded:
+                    body = response.json()
+                    body_loaded = True
+                found, _actual = _json_path_lookup(body, assertion.path or "")
+                evidence.append(
+                    AssertionEvidence(
+                        type=assertion.type,
+                        passed=found,
+                        expected=True,
+                        actual=found,
+                        path=assertion.path,
+                    )
+                )
+            elif assertion.type in {"json_field_equals", "json_field_contains"}:
+                if not body_loaded:
+                    body = response.json()
+                    body_loaded = True
+                found, actual = _json_path_lookup(body, assertion.path or "")
+                passed = found and (
+                    _json_strict_equal(actual, assertion.expected)
+                    if assertion.type == "json_field_equals"
+                    else _json_contains(actual, assertion.expected)
+                )
+                evidence.append(
+                    AssertionEvidence(
+                        type=assertion.type,
+                        passed=passed,
+                        expected=_value_summary(assertion.expected, present=True),
+                        actual=_value_summary(actual, present=found),
+                        path=assertion.path,
+                        message="raw response value omitted",
+                    )
+                )
+            elif assertion.type == "header_equals":
+                found, actual_header = _response_header(response, assertion.path or "")
+                evidence.append(
+                    AssertionEvidence(
+                        type=assertion.type,
+                        passed=found and actual_header == assertion.expected,
+                        expected=_value_summary(assertion.expected, present=True),
+                        actual=_value_summary(actual_header, present=found),
+                        path=assertion.path,
+                        message="raw response header value omitted",
+                    )
+                )
+            elif assertion.type == "response_time_ms_max":
+                maximum = int(assertion.expected)
+                evidence.append(
+                    AssertionEvidence(
+                        type=assertion.type,
+                        passed=response_duration_ms <= maximum,
+                        expected=maximum,
+                        actual=response_duration_ms,
+                    )
+                )
+        except Exception as exc:
+            error = f"{assertion.type} evaluation raised {type(exc).__name__}"
+            errors.append(error)
             evidence.append(
                 AssertionEvidence(
                     type=assertion.type,
-                    passed=found,
-                    expected=True,
-                    actual=found,
+                    passed=False,
                     path=assertion.path,
+                    message=error,
                 )
             )
-        elif assertion.type in {"json_field_equals", "json_field_contains"}:
-            if not body_loaded:
-                body = response.json()
-                body_loaded = True
-            found, actual = _json_path_lookup(body, assertion.path or "")
-            passed = found and (
-                _json_strict_equal(actual, assertion.expected)
-                if assertion.type == "json_field_equals"
-                else _json_contains(actual, assertion.expected)
-            )
-            evidence.append(
-                AssertionEvidence(
-                    type=assertion.type,
-                    passed=passed,
-                    expected=_value_summary(assertion.expected, present=True),
-                    actual=_value_summary(actual, present=found),
-                    path=assertion.path,
-                    message="raw response value omitted",
-                )
-            )
-        elif assertion.type == "header_equals":
-            found, actual_header = _response_header(response, assertion.path or "")
-            evidence.append(
-                AssertionEvidence(
-                    type=assertion.type,
-                    passed=found and actual_header == assertion.expected,
-                    expected=_value_summary(assertion.expected, present=True),
-                    actual=_value_summary(actual_header, present=found),
-                    path=assertion.path,
-                    message="raw response header value omitted",
-                )
-            )
-        elif assertion.type == "response_time_ms_max":
-            maximum = int(assertion.expected)
-            evidence.append(
-                AssertionEvidence(
-                    type=assertion.type,
-                    passed=response_duration_ms <= maximum,
-                    expected=maximum,
-                    actual=response_duration_ms,
-                )
-            )
-    return evidence, body, body_loaded
+    return evidence, body, body_loaded, errors
 
 
 def _extract_response_variables(
@@ -554,7 +570,7 @@ def _execute_request(
         )
         validate_api_response_url(getattr(response, "url", None), requested_url=request_url)
         response_duration_ms = max(0, int((perf_counter() - started_clock) * 1000))
-        evidence, body, body_loaded = _evaluate_assertions(
+        evidence, body, body_loaded, assertion_errors = _evaluate_assertions(
             assertions,
             response,
             response_duration_ms=response_duration_ms,
@@ -582,6 +598,24 @@ def _execute_request(
                         "required response variable extraction failed: "
                         + ", ".join(missing_required)
                     ),
+                ),
+                extracted=extracted,
+                request_sent=True,
+            )
+        if assertion_errors:
+            return _RequestOutcome(
+                evidence=CaseExecutionEvidence(
+                    case_id=case_id,
+                    title=title,
+                    method=method,
+                    path=path,
+                    status="error",
+                    started_at=started_at,
+                    completed_at=datetime.now(tz=UTC),
+                    duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
+                    status_code=int(response.status_code),
+                    assertions=evidence,
+                    error="; ".join(assertion_errors),
                 ),
                 extracted=extracted,
                 request_sent=True,
@@ -647,6 +681,7 @@ def execute_api_cases(
     env: Mapping[str, str] | None = None,
     request_func: Callable[..., Any] | None = None,
     authentication: ApiAuthentication | None = None,
+    trusted_origins: list[str] | None = None,
 ) -> ExecutionEvidence:
     if not cases:
         raise ValueError("no API cases to execute")
@@ -656,7 +691,11 @@ def execute_api_cases(
     base_url = runtime_env.get(profile.base_url_env, "").strip()
     if not base_url:
         raise ValueError(f"base URL environment variable is not set: {profile.base_url_env}")
-    base_url = validate_api_base_url(base_url)
+    base_url = (
+        validate_api_base_url_policy(base_url, trusted_origins=trusted_origins)
+        if trusted_origins is not None
+        else validate_api_base_url(base_url)
+    )
     if request_func is None:
         import requests
 

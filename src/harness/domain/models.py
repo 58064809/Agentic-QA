@@ -7,7 +7,11 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from harness.domain.security import contains_likely_secret, validate_api_request_safety
+from harness.domain.security import (
+    contains_likely_secret,
+    validate_api_request_safety,
+    validate_api_trusted_origin,
+)
 
 CONTRACT_PREFIX = "agentic-qa.harness"
 UTC = timezone.utc
@@ -208,6 +212,7 @@ ApiAuthentication = Annotated[
 
 class ExecutionEnvironmentPolicy(StrictModel):
     base_url_env: str | None = Field(default=None, pattern=r"^[A-Z_][A-Z0-9_]*$")
+    trusted_origins: list[str] = Field(default_factory=list)
     allowed_http_methods: list[str] = Field(default_factory=lambda: ["GET", "HEAD", "OPTIONS"])
     allow_ui_mutations: bool = False
     max_request_timeout_seconds: int = Field(default=10, ge=1, le=60)
@@ -220,6 +225,18 @@ class ExecutionEnvironmentPolicy(StrictModel):
         if not methods:
             raise ValueError("allowed_http_methods cannot be empty")
         return methods
+
+    @field_validator("trusted_origins")
+    @classmethod
+    def normalize_trusted_origins(cls, value: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(validate_api_trusted_origin(item) for item in value))
+        return normalized
+
+    @model_validator(mode="after")
+    def require_trusted_origin_for_base_url(self) -> ExecutionEnvironmentPolicy:
+        if self.base_url_env is not None and not self.trusted_origins:
+            raise ValueError("workspace API execution policy requires trusted_origins")
+        return self
 
 
 class StartRunCommand(StrictModel):

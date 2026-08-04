@@ -116,6 +116,7 @@ def test_repository_contracts_are_consistent() -> None:
     constraints = _read(root / "constraints.txt")
     cold_start_script = _read(root / "scripts/cold-start-check.ps1")
     nightly = _read(root / ".github/workflows/nightly-live-eval.yml")
+    ci = _read(root / ".github/workflows/ci.yml")
     if '"build>=1,<2"' not in pyproject or "build==" not in constraints:
         errors.append("wheel 构建工具未同时声明在 dev 依赖与 constraints")
     if "--index-url" in constraints or "--trusted-host" in constraints:
@@ -133,6 +134,9 @@ def test_repository_contracts_are_consistent() -> None:
     ):
         if marker not in nightly:
             errors.append(f"Nightly API Live Eval 缺少配置: {marker}")
+
+    if ci.count("-c constraints.txt") < 2 or "cache-dependency-path: constraints.txt" not in ci:
+        errors.append("CI dependency installation is not locked by constraints.txt")
 
     docs_text = "\n".join(_read(path) for path in (root / "docs").glob("*.md"))
     for obsolete in (

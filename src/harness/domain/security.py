@@ -173,6 +173,37 @@ def validate_api_base_url(value: str) -> str:
     return value.rstrip("/")
 
 
+def validate_api_trusted_origin(value: str) -> str:
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme.casefold() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("trusted API origins must be HTTPS origins without paths or credentials")
+    _scheme, host, port = _api_origin(value, label="trusted API origin")
+    host_text = f"[{host}]" if ":" in host else host
+    return f"https://{host_text}" + (f":{port}" if port != 443 else "")
+
+
+def validate_api_base_url_policy(value: str, *, trusted_origins: list[str]) -> str:
+    normalized = validate_api_base_url(value)
+    if urlsplit(normalized).scheme.casefold() != "https":
+        raise ValueError("workspace policy requires an HTTPS API base URL")
+    actual_origin = _api_origin(normalized, label="API base URL")
+    allowed_origins = {
+        _api_origin(validate_api_trusted_origin(origin), label="trusted API origin")
+        for origin in trusted_origins
+    }
+    if actual_origin not in allowed_origins:
+        raise ValueError("API base URL origin is not trusted by workspace policy")
+    return normalized
+
+
 def build_api_request_url(base_url: str, request_path: str) -> str:
     normalized_base = validate_api_base_url(base_url)
     validate_api_request_transport(path=request_path, headers={}, label="resolved API request")

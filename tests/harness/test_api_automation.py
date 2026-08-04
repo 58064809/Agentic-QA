@@ -73,6 +73,7 @@ def test_public_api_execution_rejects_export_hash_drift_before_request(tmp_path:
     config = yaml.safe_load(workspace_config.read_text(encoding="utf-8"))
     config["execution"]["environments"]["qa"] = {
         "base_url_env": "AGENTIC_QA_BASE_URL",
+        "trusted_origins": ["https://qa.example.test"],
         "allowed_http_methods": ["GET"],
     }
     workspace_config.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
@@ -83,6 +84,35 @@ def test_public_api_execution_rejects_export_hash_drift_before_request(tmp_path:
                 workspace_id="demo",
                 run_id="pytest-api",
                 source_cases_sha256="0" * 64,
+                execution_profile=ExecutionProfile(
+                    environment="qa",
+                    base_url_env="AGENTIC_QA_BASE_URL",
+                    allowed_http_methods=["GET"],
+                ),
+            )
+        )
+
+
+def test_public_api_execution_enforces_workspace_trusted_origin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _publish_cases(tmp_path, "demo")
+    workspace_config = tmp_path / "workspaces" / "demo" / "workspace.yml"
+    config = yaml.safe_load(workspace_config.read_text(encoding="utf-8"))
+    config["execution"]["environments"]["qa"] = {
+        "base_url_env": "AGENTIC_QA_BASE_URL",
+        "trusted_origins": ["https://qa.example.test"],
+        "allowed_http_methods": ["GET"],
+    }
+    workspace_config.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    monkeypatch.setenv("AGENTIC_QA_BASE_URL", "https://outside.example.test")
+
+    with pytest.raises(ValueError, match="not trusted"):
+        Harness(tmp_path).execute_api_cases(
+            ExecuteApiCasesCommand(
+                workspace_id="demo",
+                run_id="untrusted-origin",
                 execution_profile=ExecutionProfile(
                     environment="qa",
                     base_url_env="AGENTIC_QA_BASE_URL",
