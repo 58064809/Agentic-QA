@@ -24,6 +24,7 @@ from harness import (
     ReviewDecision,
     ReviewIntent,
     ReviewRunCommand,
+    RunApiScenarioCommand,
     RunRef,
     StartRunCommand,
 )
@@ -134,6 +135,10 @@ def _parser() -> argparse.ArgumentParser:
     api_prepare.add_argument("--request-timeout-seconds", type=int, default=10)
     api_prepare.add_argument("--api-auth-config")
     api_prepare.add_argument("--quality-policy", action="append", dest="quality_policies")
+    api_run = api_commands.add_parser("run")
+    api_run.add_argument("workspace_id")
+    api_run.add_argument("execution_id")
+    api_run.add_argument("--environment", required=True)
     api_execute = api_commands.add_parser("execute")
     api_execute.add_argument("workspace_id")
     api_execute.add_argument("run_id")
@@ -283,6 +288,16 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         harness = Harness(Path(args.repo_root))
+        if args.command == "api" and args.api_command == "run":
+            result = harness.run_api_scenario(
+                RunApiScenarioCommand(
+                    workspace_id=args.workspace_id,
+                    execution_id=args.execution_id,
+                    environment=args.environment,
+                )
+            )
+            _print(result)
+            return 0 if result.status == "passed" else 1
         if args.command == "api" and args.api_command == "execute":
             _print(
                 harness.execute_api_cases(

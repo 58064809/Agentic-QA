@@ -6,6 +6,7 @@ from pathlib import Path
 from harness.application.agent_request import AgentRequest, AgentRequestResult, AgentRequestService
 from harness.application.ports import (
     ApiAutomationService,
+    ApiScenarioRunner,
     ArtifactReviewRepository,
     QualityStrategyCatalog,
     RunEventRepository,
@@ -25,10 +26,12 @@ from harness.domain.models import (
     HarnessEvent,
     ResumeRunCommand,
     ReviewRunCommand,
+    RunApiScenarioCommand,
     RunRef,
     RunSnapshot,
     StartRunCommand,
 )
+from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 
 
@@ -43,6 +46,7 @@ class HarnessApplication:
         api_automation: ApiAutomationService | None = None,
         artifacts: ArtifactReviewRepository | None = None,
         agent_requests: AgentRequestService | None = None,
+        api_scenario_runner: ApiScenarioRunner | None = None,
     ) -> None:
         self._workspaces = workspaces
         self._runs = runs
@@ -51,6 +55,7 @@ class HarnessApplication:
         self._api_automation = api_automation
         self._artifacts = artifacts
         self._agent_requests = agent_requests
+        self._api_scenario_runner = api_scenario_runner
 
     def create_workspace(self, command: CreateWorkspaceCommand) -> Path:
         self._quality_policies.require(command.quality_policies)
@@ -82,6 +87,11 @@ class HarnessApplication:
         if self._api_automation is None:
             raise RuntimeError("API automation service is not configured")
         return self._api_automation.execute(command)
+
+    def run_api_scenario(self, command: RunApiScenarioCommand) -> RunApiScenarioResult:
+        if self._api_scenario_runner is None:
+            raise RuntimeError("API scenario runner is not configured")
+        return self._api_scenario_runner.run(command)
 
     def export_api_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:
         if self._api_automation is None:

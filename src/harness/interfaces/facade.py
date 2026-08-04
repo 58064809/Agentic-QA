@@ -21,10 +21,12 @@ from harness.domain.models import (
     HarnessEvent,
     ResumeRunCommand,
     ReviewRunCommand,
+    RunApiScenarioCommand,
     RunRef,
     RunSnapshot,
     StartRunCommand,
 )
+from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.quality import QualityStrategyRegistry
@@ -81,6 +83,9 @@ class Harness:
 
     def execute_api_cases(self, command: ExecuteApiCasesCommand) -> ExecutionEvidence:
         return self._application.execute_api_cases(command)
+
+    def run_api_scenario(self, command: RunApiScenarioCommand) -> RunApiScenarioResult:
+        return self._application.run_api_scenario(command)
 
     def export_api_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:
         return self._application.export_api_pytest(command)

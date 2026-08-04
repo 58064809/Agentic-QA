@@ -12,14 +12,18 @@ from typing import Any
 from langgraph.checkpoint.memory import InMemorySaver
 
 from harness.contracts import (
+    ApiScenarioPrepareCommand,
     ArtifactVariant,
     CreateWorkspaceCommand,
+    ExecutionEnvironmentPolicy,
     ExecutionProfile,
     ReviewDecision,
     ReviewRunCommand,
+    RunRef,
     StartRunCommand,
 )
 from harness.domain.models import ARTIFACT_TYPES
+from harness.domain.schemas.api_test_cases import SourceRef as ApiSourceRef
 from harness.domain.schemas.qa_design import RiskCatalog, RiskItem, SourceReference
 from harness.harness import Harness
 from harness.infrastructure.llm.gateway import CallableModelGateway
@@ -183,6 +187,36 @@ def recorded_model_gateway(*, use_fake_mcp: bool = False) -> CallableModelGatewa
                         ],
                     }
                 )
+                manual_inspection = next(
+                    (
+                        item.get("result")
+                        for item in context.get("tool_results", [])
+                        if item.get("tool") == "manual-test-cases.inspect"
+                    ),
+                    None,
+                )
+                if isinstance(manual_inspection, dict):
+                    manual_refs = [
+                        ApiSourceRef(
+                            source_type="manual-test-case",
+                            source_path=str(item["source_path"]),
+                            chunk_id=str(item["case_id"]),
+                            locator=f"case_id={item['case_id']}",
+                            summary=str(item["title"]),
+                            confidence="high",
+                        )
+                        for item in manual_inspection.get("cases", [])
+                        if isinstance(item, dict)
+                    ]
+                    draft = draft.model_copy(
+                        update={
+                            "source_refs": [*draft.source_refs, *manual_refs],
+                            "cases": [
+                                case.model_copy(update={"source_refs": manual_refs})
+                                for case in draft.cases
+                            ],
+                        }
+                    )
                 payload["api_test_cases"] = draft.model_dump(mode="json")
             if agent == "requirement_analyst":
                 payload["artifacts"] = {}
@@ -589,14 +623,6 @@ def run_live_eval(case_name: str | None = None) -> dict[str, Any]:
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", selected_case):
         raise ValueError("live eval case must be a lowercase kebab-case name")
     with TemporaryDirectory(prefix="agentic-qa-live-eval-") as temporary:
-        harness = Harness(
-            Path(temporary),
-            model_gateway=gateway,
-            checkpoint_provider=_EvalCheckpointProvider(),
-        )
-        workspace = harness.create_workspace(
-            CreateWorkspaceCommand(workspace_id=f"live-eval-{selected_case}")
-        )
         roots = [
             Path.cwd() / "evals" / "cases" / selected_case,
             Path.cwd() / "evals" / "api-cases" / selected_case,
@@ -607,25 +633,55 @@ def run_live_eval(case_name: str | None = None) -> dict[str, Any]:
         if not case_root.is_dir():
             raise FileNotFoundError(f"{selected_case} live eval case is unavailable")
         is_api_case = (case_root / "api-expectations.json").is_file()
-        for source in sorted(case_root.glob("source.*")):
-            suffix = source.name.removeprefix("source")
-            copyfile(source, workspace / "sources" / f"{selected_case}{suffix}")
         goal_path = case_root / "live-goal.txt"
         goal = (
             goal_path.read_text(encoding="utf-8").strip()
             if goal_path.is_file()
             else f"生成可追踪的 {selected_case} 需求目录和边界/状态测试用例"
         )
-        expected_artifacts = (
-            ["api_test_draft"] if is_api_case else ["requirement_analysis", "testcases"]
-        )
-        snapshot = harness.start_run(
-            StartRunCommand(
-                workspace_id=f"live-eval-{selected_case}",
-                goal=goal,
-                expected_artifacts=expected_artifacts,
+        if is_api_case:
+            harness = Harness(
+                Path(temporary),
+                model_gateway=gateway,
+                checkpoint_provider=_EvalCheckpointProvider(),
+                allowed_source_roots=[case_root],
             )
-        )
+            prepared = harness.prepare_api_scenario(
+                ApiScenarioPrepareCommand(
+                    source_directory=str(case_root.resolve()),
+                    workspace_id=f"live-eval-{selected_case}",
+                    goal=goal,
+                    environment="recorded-test",
+                    execution_policy=ExecutionEnvironmentPolicy(
+                        base_url_env="AGENTIC_QA_BASE_URL",
+                        trusted_origins=["https://qa.example.test"],
+                        allowed_http_methods=["GET", "HEAD", "OPTIONS", "POST", "DELETE"],
+                    ),
+                )
+            )
+            snapshot = harness.get_run(
+                RunRef(workspace_id=prepared.workspace_id, run_id=prepared.run_id)
+            )
+            workspace = Path(temporary) / "workspaces" / prepared.workspace_id
+        else:
+            harness = Harness(
+                Path(temporary),
+                model_gateway=gateway,
+                checkpoint_provider=_EvalCheckpointProvider(),
+            )
+            workspace = harness.create_workspace(
+                CreateWorkspaceCommand(workspace_id=f"live-eval-{selected_case}")
+            )
+            for source in sorted(case_root.glob("source.*")):
+                suffix = source.name.removeprefix("source")
+                copyfile(source, workspace / "sources" / f"{selected_case}{suffix}")
+            snapshot = harness.start_run(
+                StartRunCommand(
+                    workspace_id=f"live-eval-{selected_case}",
+                    goal=goal,
+                    expected_artifacts=["requirement_analysis", "testcases"],
+                )
+            )
         raw_artifacts: dict[str, str] = {}
         for candidate in snapshot.candidates:
             raw_version = next(
@@ -664,6 +720,7 @@ def run_live_eval(case_name: str | None = None) -> dict[str, Any]:
             "errors": snapshot.errors,
             "model_usage": snapshot.model_usage,
             "golden": golden,
+            "generation_mode": "api_fast" if is_api_case else "standard",
         }
         output_root = os.getenv("AGENTIC_QA_LIVE_EVAL_OUTPUT", "").strip()
         if output_root:

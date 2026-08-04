@@ -245,7 +245,11 @@ class ApiScenarioPrepareCommand(StrictModel):
     )
     source_directory: str = Field(min_length=1)
     goal: str = Field(min_length=1)
-    environment: str = Field(min_length=1)
+    environment: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
     execution_policy: ExecutionEnvironmentPolicy
     workspace_id: str | None = None
     request_id: str | None = Field(
@@ -272,6 +276,8 @@ class ApiScenarioPrepareCommand(StrictModel):
     @classmethod
     def reject_production_environment(cls, value: str) -> str:
         ExecutionProfile(environment=value)
+        if value == "analysis-only":
+            raise ValueError("API scenario prepare requires an explicit QA environment")
         return value
 
     @model_validator(mode="after")
@@ -829,6 +835,36 @@ class ExecuteApiCasesCommand(RunRef):
     cases_path: str = "published/api_test_draft/current.yml"
     source_cases_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     execution_profile: ExecutionProfile
+
+
+class RunApiScenarioCommand(StrictModel):
+    schema_version: Literal["agentic-qa.harness.run-api-scenario-command.v1"] = (
+        "agentic-qa.harness.run-api-scenario-command.v1"
+    )
+    workspace_id: str = Field(min_length=1)
+    execution_id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
+    environment: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
+
+    @field_validator("workspace_id")
+    @classmethod
+    def normalize_id(cls, value: str) -> str:
+        return normalize_workspace_id(value)
+
+    @field_validator("environment")
+    @classmethod
+    def reject_production_environment(cls, value: str) -> str:
+        ExecutionProfile(environment=value)
+        if value == "analysis-only":
+            raise ValueError("API scenario run requires an explicit QA environment")
+        return value
 
 
 class ExportApiPytestCommand(StrictModel):

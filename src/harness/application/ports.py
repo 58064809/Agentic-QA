@@ -27,9 +27,11 @@ from harness.domain.models import (
     GetArtifactDiffQuery,
     HarnessEvent,
     ReviewDecision,
+    RunApiScenarioCommand,
     RunSnapshot,
     StartRunCommand,
 )
+from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 
 
@@ -45,6 +47,10 @@ class ApiAutomationService(Protocol):
     def execute(self, command: ExecuteApiCasesCommand) -> ExecutionEvidence: ...
 
     def export_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult: ...
+
+
+class ApiScenarioRunner(Protocol):
+    def run(self, command: RunApiScenarioCommand) -> RunApiScenarioResult: ...
 
 
 class ManagedAgentWorkspaceProvisioner(Protocol):

@@ -182,7 +182,26 @@ python -m harness run review $apiWorkspace $apiRunId approve `
 若只有 raw 版本，省略 diff，并仍显式选择 `api_test_draft=raw`。人工用例无法由 OpenAPI 确认时，
 系统会将这类 Candidate 保留为 unconfirmed/pending 场景；未映射 ID、partial、blocker 或来源哈希漂移均会阻止发布。
 
-当前兼容入口 `api execute` 仍可执行已发布 YAML；持久化的 `api run` 试跑报告入口见下一阶段交付。
+发布后，实际 base URL 和认证值只放在运行环境中。`api run` 从 workspace policy 派生 Origin、方法、
+认证和超时，不在 CLI 重复接收这些安全策略：
+
+```powershell
+$env:AGENTIC_QA_BASE_URL = "https://qa.example.test"
+$env:QA_API_TOKEN = "<QA 环境 Token>"
+python -m harness api run $apiWorkspace trial-001 --environment qa
+```
+
+完成后可审查以下 create-only 产物：
+
+```text
+workspaces/<workspace>/executions/trial-001/manifest.json
+workspaces/<workspace>/executions/trial-001/evidence.json
+workspaces/<workspace>/executions/trial-001/summary.md
+```
+
+同一 execution ID 不会再次发送请求。进程在请求阶段中断时，manifest 保持或转为 `indeterminate`；
+确认环境状态后使用新的 ID，不自动重放写请求。全部用例通过时退出码为 0；报告已落盘但含
+failed/error/blocked 时为 1；配置、预检或命令错误为 2。
 
 需要接入现有 pytest 流水线时，从已审核版本导出确定性 adapter：
 
@@ -207,5 +226,6 @@ adapter 绑定 published YAML 的 SHA-256；发布内容更新后需重新导出
 | approve 被质量门拒绝 | 查看 `quality-report.json`，修正后创建新 run |
 | 旧 run 未读取新 sources | 这是冻结行为；创建新 run |
 | AgentRequest 路径被拒绝 | 放入 `local-sources/requirements/`，或通过 `--allow-source-root` 追加外部目录 |
+| execution ID 已存在 | 查看该目录 manifest；不重放，确认环境状态后使用新 ID |
 
 全部命令和参数见 [CLI 参考](cli-reference.md)。

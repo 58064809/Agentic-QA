@@ -44,6 +44,7 @@ from harness.domain.models import (
     ReviewDecision,
     ReviewIntent,
     ReviewRunCommand,
+    RunApiScenarioCommand,
     RunRef,
     RunSnapshot,
     SkillManifest,
@@ -51,6 +52,7 @@ from harness.domain.models import (
     StaticTokenApiAuthentication,
     ToolManifest,
 )
+from harness.domain.schemas.api_scenario import RunApiScenarioResult
 
 __all__ = [
     "AgentCandidateSummary",
@@ -92,6 +94,8 @@ __all__ = [
     "ReviewDecision",
     "ReviewIntent",
     "ReviewRunCommand",
+    "RunApiScenarioCommand",
+    "RunApiScenarioResult",
     "RunRef",
     "RunSnapshot",
     "SkillManifest",

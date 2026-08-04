@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -20,7 +21,16 @@ from harness.domain.schemas.api_test_cases import (
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.infrastructure.persistence.common import atomic_text
 from harness.infrastructure.persistence.filesystem import FilesystemStore
-from harness.infrastructure.tools.api_execution import execute_api_cases
+from harness.infrastructure.tools.api_execution import (
+    execute_api_cases,
+    validate_api_execution_preflight,
+)
+
+
+@dataclass(frozen=True)
+class ApiExecutionPreflight:
+    source_cases_path: str
+    source_cases_sha256: str
 
 
 class FilesystemApiAutomationService:
@@ -57,6 +67,27 @@ class FilesystemApiAutomationService:
             env=os.environ,
             authentication=policy.api_auth if policy is not None else None,
             trusted_origins=policy.trusted_origins if policy is not None else None,
+        )
+
+    def preflight(self, command: ExecuteApiCasesCommand) -> ApiExecutionPreflight:
+        root, target, draft, source_sha256 = self._published_cases(
+            command.workspace_id, command.cases_path
+        )
+        if command.source_cases_sha256 is not None and source_sha256 != command.source_cases_sha256:
+            raise ValueError("published API cases hash changed before execution")
+        policy = self._store.validate_execution_profile(
+            command.workspace_id, command.execution_profile
+        )
+        validate_api_execution_preflight(
+            draft.cases,
+            profile=command.execution_profile,
+            env=os.environ,
+            authentication=policy.api_auth if policy is not None else None,
+            trusted_origins=policy.trusted_origins if policy is not None else None,
+        )
+        return ApiExecutionPreflight(
+            source_cases_path=target.relative_to(root).as_posix(),
+            source_cases_sha256=source_sha256,
         )
 
     def export_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:
