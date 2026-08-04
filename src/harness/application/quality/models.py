@@ -45,6 +45,7 @@ class StrategyResult(FrozenModel):
     issues: tuple[QualityIssue, ...] = ()
     actions: tuple[str, ...] = ()
     remediation_patch: str | None = None
+    metrics: dict[str, Any] = Field(default_factory=dict)
 
 
 class NormalizationOperationKind(str, Enum):
@@ -79,6 +80,7 @@ class StrategyAudit(FrozenModel):
     requirements: StrategyRequirements
     actions: tuple[str, ...] = ()
     issues: tuple[QualityIssue, ...] = ()
+    metrics: dict[str, Any] = Field(default_factory=dict)
 
 
 class VariantAssessment(FrozenModel):

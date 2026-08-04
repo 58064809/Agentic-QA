@@ -144,31 +144,45 @@ python -m harness run review demo $runId revise `
 修订不覆盖旧 Candidate。`resume` 只用于 planning、running 或 recoverable 状态的崩溃恢复；正常停在
 `needs_human_review` 或 `on_hold` 时应使用 `run review`。
 
-## 8. 从 Apifox 文档生成并执行 API 场景
+## 8. 从 Apifox 目录生成 API Candidate
 
-从 Apifox 导出完整 OpenAPI 3.x 或 Swagger 2.0 文件，连同 PRD、人工用例放入同一来源目录。通过
-AgentRequest/MCP 生成时将期望产物指定为 `api_test_draft`；通过 CLI 时可复制到 workspace
-`sources/` 后启动：
-
-```powershell
-Copy-Item D:\Docs\order-openapi.yaml .\workspaces\demo\sources\
-$apiRun = python -m harness run start demo "生成订单 API 自动化场景" `
-  --artifact api_test_draft |
-  ConvertFrom-Json
-```
-
-检查 Candidate、质量报告并使用第 6 步的人工审核命令批准 `api_test_draft`。发布后，在
-`workspace.yml` 的 `execution.environments.qa` 中配置 base URL 环境变量名、允许方法和超时上限，
-然后显式执行：
+从 Apifox 导出自包含的 OpenAPI 3.x 或 Swagger 2.0 文件，并将它与至少一份标准 11 列人工用例放在
+同一目录。人工用例可使用同序表头的 Markdown、CSV（支持 UTF-8 BOM），或强类型
+`agentic-qa.test-case-set.v1` YAML。目录中的其他文件只进入 ignored 清单，不发送给模型。
 
 ```powershell
-$env:AGENTIC_QA_BASE_URL = "https://qa.example.test"
-python -m harness api execute demo run-api-001 `
+$prepared = python -m harness api prepare D:\Docs\order-api `
+  --workspace-id order-api `
   --environment qa `
+  --base-url-env AGENTIC_QA_BASE_URL `
+  --trusted-origin https://qa.example.test `
   --allow-http-method GET `
   --allow-http-method POST `
-  --allow-http-method DELETE
+  --allow-http-method DELETE |
+  ConvertFrom-Json
+$apiRunId = $prepared.run_id
+$apiWorkspace = $prepared.workspace_id
 ```
+
+`api prepare` 安全导入并冻结整个目录，但只把归一化 OpenAPI 与人工用例交给单个 API Agent；它不调用
+模型 Planner、Requirement 或 Risk Agent。重复相同请求返回同一 run。输出直接给出来源分类、Candidate、
+质量报告、生成报告和下一步审核信息，并始终停在 Review Gate。
+
+先检查差异，再批准明确版本：
+
+```powershell
+python -m harness run diff $apiWorkspace $apiRunId api_test_draft --before raw --after normalized
+python -m harness run review $apiWorkspace $apiRunId approve `
+  --artifact api_test_draft `
+  --variant api_test_draft=raw `
+  --reason "已核对人工用例映射、契约、数据链和 cleanup" `
+  --reviewed-by "qa-owner"
+```
+
+若只有 raw 版本，省略 diff，并仍显式选择 `api_test_draft=raw`。人工用例无法由 OpenAPI 确认时，
+系统会将这类 Candidate 保留为 unconfirmed/pending 场景；未映射 ID、partial、blocker 或来源哈希漂移均会阻止发布。
+
+当前兼容入口 `api execute` 仍可执行已发布 YAML；持久化的 `api run` 试跑报告入口见下一阶段交付。
 
 需要接入现有 pytest 流水线时，从已审核版本导出确定性 adapter：
 

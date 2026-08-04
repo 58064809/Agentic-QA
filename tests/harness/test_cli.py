@@ -41,6 +41,19 @@ def test_run_cli_maps_explicit_execution_profile_arguments() -> None:
 
 
 def test_api_cli_exposes_execute_and_deterministic_pytest_export() -> None:
+    prepare = _parser().parse_args(
+        [
+            "api",
+            "prepare",
+            "D:/sources/order-api",
+            "--environment",
+            "qa",
+            "--trusted-origin",
+            "https://qa.example.test",
+            "--allow-http-method",
+            "POST",
+        ]
+    )
     execute = _parser().parse_args(
         [
             "api",
@@ -57,6 +70,10 @@ def test_api_cli_exposes_execute_and_deterministic_pytest_export() -> None:
     )
     export = _parser().parse_args(["api", "export-pytest", "demo"])
 
+    assert prepare.api_command == "prepare"
+    assert prepare.base_url_env == "AGENTIC_QA_BASE_URL"
+    assert prepare.trusted_origins == ["https://qa.example.test"]
+    assert prepare.allowed_http_methods == ["POST"]
     assert execute.api_command == "execute"
     assert execute.allowed_http_methods == ["GET", "POST"]
     assert export.api_command == "export-pytest"

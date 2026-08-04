@@ -67,6 +67,10 @@ from harness.domain.schemas.qa_design import (
     validate_testcase_set,
 )
 from harness.domain.security import sanitize_untrusted
+from harness.infrastructure.api_scenario_sources import (
+    inspect_api_scenario_sources,
+    validate_manual_case_mapping,
+)
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.persistence.filesystem import FilesystemStore
 from harness.infrastructure.prompts import PromptCompiler
@@ -216,6 +220,36 @@ def build_default_plan(request: StartRunCommand) -> QAPlan:
     return QAPlan(
         tasks=tasks,
         rationale="需求目录只生成一次；风险与测试设计消费同一强类型事实源。",
+    )
+
+
+def build_api_fast_plan() -> QAPlan:
+    return QAPlan(
+        tasks=[
+            PlanTask(
+                id="assemble_api_scenarios",
+                objective=(
+                    "Map every frozen manual test case to confirmed OpenAPI operations or an "
+                    "explicit unconfirmed pending scenario"
+                ),
+                agent="api_test_engineer",
+                inputs=["normalized_openapi", "manual_test_cases"],
+                expected_outputs=["api_test_draft"],
+                evidence_requirements=[
+                    EvidenceRequirement(
+                        kind="trace",
+                        description=(
+                            "Every manual test case ID has a high-confidence "
+                            "manual-test-case source reference"
+                        ),
+                    )
+                ],
+            )
+        ],
+        rationale=(
+            "API fast mode uses one deterministic assembly task; endpoint facts remain bounded "
+            "by the frozen OpenAPI inspection."
+        ),
     )
 
 
@@ -568,6 +602,19 @@ class HarnessEngine:
         request = snapshot.request
 
         def planner(_state: HarnessState) -> dict[str, Any]:
+            if request.generation_mode == "api_fast":
+                inspect_api_scenario_sources(source_bundle)
+                plan = build_api_fast_plan()
+                self._validate_plan(plan, request)
+                ready = [plan.tasks[0].id]
+                event("plan_created", task_count=1, revision=plan.revision)
+                event("tasks_delegated", task_ids=ready)
+                return {
+                    "plan": plan.model_dump(mode="json"),
+                    "pending_tasks": ready,
+                    "status": "running",
+                    "delegations": [{"task_ids": ready, "revision": plan.revision}],
+                }
             if self.model is None:  # guarded by execute, retained for type narrowing
                 raise RuntimeError("model is not configured")
             route = self.model_policy.for_planner(request)
@@ -942,6 +989,10 @@ class HarnessEngine:
                 raise ValueError(
                     "api_discovery_report producer must not depend on requirement or risk tasks"
                 )
+            if request.generation_mode == "api_fast":
+                if len(plan.tasks) != 1 or producers[0].dependencies:
+                    raise ValueError("api_fast requires one dependency-free API assembly task")
+                continue
             if artifact in DESIGN_ARTIFACTS:
                 requirement_tasks = [
                     task
@@ -1043,6 +1094,11 @@ class HarnessEngine:
         requirement_catalog = _requirement_catalog_from_dependencies(dependencies)
         risk_catalog = _risk_catalog_from_dependencies(dependencies)
         source_files = [document.path for document in source_bundle.readable_documents]
+        api_source_inspection = None
+        if request.generation_mode == "api_fast":
+            api_source_inspection = inspect_api_scenario_sources(source_bundle)
+            source_files = list(api_source_inspection.recognized_paths)
+            tool_results.extend(api_source_inspection.model_tool_results())
         source_fragments: list[RequirementCatalog] = []
         batched_seed: AgentOutput | None = None
         api_discovery_export: ApiDiscoveryExport | None = None
@@ -1811,6 +1867,7 @@ class HarnessEngine:
                         tool_results=tool_results,
                         requirement_catalog=requirement_catalog,
                         source_bundle=source_bundle,
+                        api_source_inspection=api_source_inspection,
                     )
                     rendered = dict(result.artifacts)
                     if "api_test_draft" in rendered:
@@ -2577,6 +2634,7 @@ def _validate_api_test_cases(
     tool_results: list[dict[str, Any]],
     requirement_catalog: RequirementCatalog | None,
     source_bundle: SourceBundle,
+    api_source_inspection: Any | None = None,
 ) -> None:
     try:
         validate_api_case_runtime_definitions(cases.cases)
@@ -2652,6 +2710,8 @@ def _validate_api_test_cases(
             sort_keys=True,
         )
         raise ValueError(f"invalid API contract semantics: {serialized}")
+    if api_source_inspection is not None:
+        validate_manual_case_mapping(cases, api_source_inspection)
 
 
 def _requirement_catalog_from_dependencies(
@@ -3050,6 +3110,19 @@ def _generation_source_selection(
                     "raw_sha256": hashes.get(source),
                     "selection_reason": "openapi.inspect",
                 }
+        elif tool == "manual-test-cases.inspect":
+            for case in result.get("cases") or []:
+                if not isinstance(case, dict):
+                    continue
+                source = str(case.get("source_path") or "")
+                case_id = str(case.get("case_id") or "") or None
+                if source:
+                    selected[(source, case_id)] = {
+                        "source": source,
+                        "raw_sha256": hashes.get(source),
+                        "chunk_id": case_id,
+                        "selection_reason": "manual-test-cases.inspect",
+                    }
         elif tool == "network.capture.inspect":
             source = str(result.get("source_path") or "")
             if source:

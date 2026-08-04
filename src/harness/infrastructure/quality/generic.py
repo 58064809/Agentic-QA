@@ -20,6 +20,10 @@ from harness.domain.schemas.api_test_cases import (
     validate_api_case_runtime_definitions,
 )
 from harness.domain.security import contains_likely_secret
+from harness.infrastructure.api_scenario_sources import (
+    inspect_api_scenario_sources,
+    validate_manual_case_mapping,
+)
 from harness.infrastructure.tools.openapi import inspect_openapi
 
 PLACEHOLDER_MAPPING = re.compile(r"(?:暂无|未覆盖|待补充|后续设计|TODO|TBD)", re.IGNORECASE)
@@ -63,15 +67,17 @@ class GenericArtifactStrategy:
             return StrategyResult(
                 issues=(self._issue("empty_artifact", "artifact content cannot be empty"),)
             )
+        metrics: dict[str, object] = {}
         if context.artifact == "testcases":
             issues.extend(self._testcase_issues(context, content))
         elif context.artifact == "requirement_analysis":
             issues.extend(self._requirement_issues(content))
         elif context.artifact == "api_test_draft":
-            issues.extend(self._api_test_issues(context, content))
+            api_issues, metrics = self._api_test_issues(context, content)
+            issues.extend(api_issues)
         elif context.artifact == "api_discovery_report":
             issues.extend(self._api_discovery_issues(content))
-        return StrategyResult(issues=tuple(issues))
+        return StrategyResult(issues=tuple(issues), metrics=metrics)
 
     def _testcase_issues(
         self,
@@ -146,17 +152,20 @@ class GenericArtifactStrategy:
         self,
         context: QualityContext,
         content: str,
-    ) -> list[QualityIssue]:
+    ) -> tuple[list[QualityIssue], dict[str, object]]:
         try:
             payload = yaml.safe_load(content)
             draft = ApiTestCasesDraft.model_validate(payload)
         except (yaml.YAMLError, ValidationError) as exc:
-            return [
-                self._issue(
-                    "invalid_api_test_draft",
-                    f"api_test_draft must satisfy agentic-qa.api-cases.v1.1: {exc}",
-                )
-            ]
+            return (
+                [
+                    self._issue(
+                        "invalid_api_test_draft",
+                        f"api_test_draft must satisfy agentic-qa.api-cases.v1.1: {exc}",
+                    )
+                ],
+                {},
+            )
         issues: list[QualityIssue] = []
         frozen_sources = {document.path for document in context.source_bundle.documents}
         try:
@@ -232,7 +241,21 @@ class GenericArtifactStrategy:
                 )
                 for issue in result.issues
             )
-        return issues
+        metrics: dict[str, object] = {}
+        try:
+            scenario_sources = inspect_api_scenario_sources(
+                context.source_bundle, require_complete=False
+            )
+            if scenario_sources.manual_cases:
+                metrics = validate_manual_case_mapping(draft, scenario_sources)
+        except (TypeError, ValueError, yaml.YAMLError) as exc:
+            issues.append(
+                self._issue(
+                    "invalid_manual_test_case_mapping",
+                    f"api_test_draft must map every frozen manual test case: {exc}",
+                )
+            )
+        return issues, metrics
 
     def _api_discovery_issues(self, content: str) -> list[QualityIssue]:
         required_sections = (

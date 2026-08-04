@@ -1,0 +1,376 @@
+from __future__ import annotations
+
+import csv
+import hashlib
+import io
+import json
+from pathlib import Path
+
+import pytest
+import yaml
+
+from harness import ApiScenarioPrepareCommand, ExecutionEnvironmentPolicy, Harness
+from harness.application.qa_design import TESTCASE_HEADERS
+from harness.application.source import (
+    SourceBundle,
+    SourceCompleteness,
+    SourceDocument,
+    SourceIngestionLimits,
+)
+from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
+from harness.infrastructure.api_scenario_sources import (
+    inspect_api_scenario_sources,
+    validate_manual_case_mapping,
+)
+from harness.infrastructure.llm.gateway import CallableModelGateway
+
+
+def _sha(value: str) -> str:
+    return f"sha256:{hashlib.sha256(value.encode('utf-8')).hexdigest()}"
+
+
+def _bundle(files: dict[str, str]) -> SourceBundle:
+    documents = tuple(
+        SourceDocument(
+            path=path,
+            raw_sha256=_sha(text),
+            parsed_sha256=_sha(text),
+            byte_size=len(text.encode()),
+            text=text,
+            completeness=SourceCompleteness.COMPLETE,
+        )
+        for path, text in files.items()
+    )
+    return SourceBundle(
+        parser_version="test",
+        limits=SourceIngestionLimits(),
+        documents=documents,
+        completeness=SourceCompleteness.COMPLETE,
+        bundle_hash=_sha("".join(files.values())),
+    )
+
+
+def _openapi(*, external_ref: bool = False) -> str:
+    schema = {"$ref": "schemas.yml#/Order"} if external_ref else {"type": "object"}
+    return yaml.safe_dump(
+        {
+            "openapi": "3.0.3",
+            "info": {"title": "Orders", "version": "1"},
+            "paths": {
+                "/orders": {
+                    "post": {
+                        "requestBody": {
+                            "required": True,
+                            "content": {"application/json": {"schema": schema}},
+                        },
+                        "responses": {"201": {"description": "created"}},
+                    }
+                }
+            },
+        },
+        allow_unicode=True,
+        sort_keys=False,
+    )
+
+
+def _row(case_id: str = "TC-ORDER-001") -> list[str]:
+    return [
+        case_id,
+        "ORDER-001",
+        "create order",
+        "API",
+        "P1",
+        "QA environment is available",
+        "sku=demo",
+        "POST the order request",
+        "HTTP status is 201",
+        "status_code equals 201",
+        "-",
+    ]
+
+
+def _csv(case_id: str = "TC-ORDER-001", *, bom: bool = False) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    writer.writerow(TESTCASE_HEADERS)
+    writer.writerow(_row(case_id))
+    return ("\ufeff" if bom else "") + output.getvalue()
+
+
+def _markdown() -> str:
+    return "\n".join(
+        [
+            "# Manual cases",
+            "",
+            "| " + " | ".join(TESTCASE_HEADERS) + " |",
+            "|" + "|".join(["---"] * 11) + "|",
+            "| " + " | ".join(_row()) + " |",
+        ]
+    )
+
+
+def _testcase_yaml() -> str:
+    return yaml.safe_dump(
+        {
+            "schema_version": "agentic-qa.test-case-set.v1",
+            "cases": [
+                {
+                    "case_id": "TC-ORDER-001",
+                    "rule_ids": ["ORDER-001"],
+                    "title": "create order",
+                    "test_type": "API",
+                    "priority": "P1",
+                    "preconditions": ["QA environment is available"],
+                    "test_data": ["sku=demo"],
+                    "steps": ["POST the order request"],
+                    "expected_results": ["HTTP status is 201"],
+                    "assertions": ["status_code equals 201"],
+                }
+            ],
+            "coverage": [
+                {
+                    "rule_id": "ORDER-001",
+                    "case_ids": ["TC-ORDER-001"],
+                    "rationale": "manual source",
+                }
+            ],
+        },
+        allow_unicode=True,
+        sort_keys=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "manual"),
+    [
+        ("sources/cases.csv", _csv(bom=True)),
+        ("sources/cases.md", _markdown()),
+        ("sources/cases.yml", _testcase_yaml()),
+    ],
+)
+def test_inspection_recognizes_supported_manual_formats(path: str, manual: str) -> None:
+    inspection = inspect_api_scenario_sources(
+        _bundle(
+            {
+                "sources/openapi.yml": _openapi(),
+                path: manual,
+                "sources/notes.txt": "ignored",
+            }
+        )
+    )
+
+    assert inspection.summary.manual_case_ids == ["TC-ORDER-001"]
+    assert inspection.summary.manual_case_files[0].path == path
+    assert inspection.summary.ignored_files[0].path == "sources/notes.txt"
+    assert set(inspection.recognized_paths) == {"sources/openapi.yml", path}
+
+
+def test_inspection_rejects_duplicate_case_ids_across_files() -> None:
+    with pytest.raises(ValueError, match="globally unique"):
+        inspect_api_scenario_sources(
+            _bundle(
+                {
+                    "sources/openapi.yml": _openapi(),
+                    "sources/a.csv": _csv(),
+                    "sources/b.csv": _csv(),
+                }
+            )
+        )
+
+
+def test_inspection_rejects_bad_csv_and_external_openapi_refs() -> None:
+    with pytest.raises(ValueError, match="exact ordered 11-column"):
+        inspect_api_scenario_sources(
+            _bundle({"sources/openapi.yml": _openapi(), "sources/cases.csv": "id,title\n1,x"})
+        )
+    with pytest.raises(ValueError, match="external OpenAPI reference"):
+        inspect_api_scenario_sources(
+            _bundle(
+                {
+                    "sources/openapi.yml": _openapi(external_ref=True),
+                    "sources/cases.csv": _csv(),
+                }
+            )
+        )
+
+
+def test_inspection_requires_both_contract_and_manual_cases() -> None:
+    with pytest.raises(ValueError, match="manual test-case"):
+        inspect_api_scenario_sources(_bundle({"sources/openapi.yml": _openapi()}))
+    with pytest.raises(ValueError, match="OpenAPI"):
+        inspect_api_scenario_sources(_bundle({"sources/cases.csv": _csv()}))
+
+
+def test_manual_mapping_requires_every_case_id() -> None:
+    inspection = inspect_api_scenario_sources(
+        _bundle({"sources/openapi.yml": _openapi(), "sources/cases.csv": _csv()})
+    )
+    draft = ApiTestCasesDraft.model_validate(
+        {
+            "schema_version": "agentic-qa.api-cases.v1.1",
+            "artifact_type": "api_automation_cases",
+            "status": "needs_human_review",
+            "human_review_required": True,
+            "base_url_env": "AGENTIC_QA_BASE_URL",
+            "business_rules": ["ORDER-001"],
+            "source_refs": [
+                {
+                    "source_type": "openapi",
+                    "source_path": "sources/openapi.yml",
+                    "chunk_id": "POST /orders",
+                    "locator": "paths./orders.post",
+                    "summary": "create order",
+                    "confidence": "high",
+                }
+            ],
+            "cases": [
+                {
+                    "id": "api-order-pending",
+                    "title": "pending mapping",
+                    "priority": "P1",
+                    "contract_status": "pending_confirmation",
+                    "business_rule_refs": ["ORDER-001"],
+                    "review_status": "needs_human_review",
+                    "review_questions": ["Confirm endpoint"],
+                    "source_refs": [
+                        {
+                            "source_type": "openapi",
+                            "source_path": "sources/openapi.yml",
+                            "chunk_id": "POST /orders",
+                            "locator": "paths./orders.post",
+                            "summary": "create order",
+                            "confidence": "high",
+                        }
+                    ],
+                    "pending": ["Endpoint is not confirmed"],
+                    "request": {"method": None, "path": None},
+                    "assertions": [],
+                    "variables": {},
+                    "cleanup": [],
+                }
+            ],
+            "review_questions": ["Review mappings"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="do not map all"):
+        validate_manual_case_mapping(draft, inspection)
+
+
+def test_prepare_uses_one_api_agent_without_model_planner(tmp_path: Path) -> None:
+    source_dir = tmp_path / "input"
+    source_dir.mkdir()
+    (source_dir / "openapi.yml").write_text(_openapi(), encoding="utf-8")
+    (source_dir / "cases.csv").write_text(_csv(), encoding="utf-8")
+    (source_dir / "notes.txt").write_text("must remain ignored", encoding="utf-8")
+    planner_calls = 0
+    agent_calls = 0
+
+    def respond(*, prompt: str, response_model: type, **_kwargs: object) -> object:
+        nonlocal planner_calls, agent_calls
+        if response_model.__name__ == "QAPlan":
+            planner_calls += 1
+            raise AssertionError("api_fast must not call the model planner")
+        agent_calls += 1
+        envelope = json.loads(prompt)
+        context = {
+            **envelope.get("trusted_context", {}),
+            **envelope.get("untrusted_context", {}),
+        }
+        assert "notes.txt" not in prompt
+        results = context["tool_results"]
+        openapi_result = next(
+            item["result"] for item in results if item["tool"] == "openapi.inspect"
+        )
+        manual_result = next(
+            item["result"] for item in results if item["tool"] == "manual-test-cases.inspect"
+        )
+        openapi_path = openapi_result["source"]
+        manual_path = manual_result["cases"][0]["source_path"]
+        openapi_ref = {
+            "source_type": "openapi",
+            "source_path": openapi_path,
+            "chunk_id": "POST /orders",
+            "locator": "paths./orders.post",
+            "summary": "create order",
+            "confidence": "high",
+        }
+        manual_ref = {
+            "source_type": "manual-test-case",
+            "source_path": manual_path,
+            "chunk_id": "TC-ORDER-001",
+            "locator": "case_id=TC-ORDER-001",
+            "summary": "create order",
+            "confidence": "high",
+        }
+        return {
+            "summary": "assembled manual API scenario",
+            "artifacts": {},
+            "api_test_cases": {
+                "schema_version": "agentic-qa.api-cases.v1.1",
+                "artifact_type": "api_automation_cases",
+                "status": "needs_human_review",
+                "human_review_required": True,
+                "base_url_env": "AGENTIC_QA_BASE_URL",
+                "business_rules": ["ORDER-001"],
+                "source_refs": [openapi_ref, manual_ref],
+                "cases": [
+                    {
+                        "id": "api-order-create",
+                        "title": "create order",
+                        "priority": "P1",
+                        "contract_status": "confirmed",
+                        "business_rule_refs": ["ORDER-001"],
+                        "review_status": "needs_human_review",
+                        "review_questions": ["Review test data"],
+                        "source_refs": [openapi_ref, manual_ref],
+                        "pending": [],
+                        "request": {"method": "POST", "path": "/orders", "body": {}},
+                        "assertions": [{"type": "status_code", "expected": 201}],
+                        "variables": {"datasets": [], "extract": {}},
+                        "cleanup": [],
+                    }
+                ],
+                "review_questions": ["Review before publication"],
+            },
+            "evidence": [openapi_path, manual_path],
+            "pending": [],
+            "tool_requests": [],
+        }
+
+    harness = Harness(
+        tmp_path / "repo",
+        model_gateway=CallableModelGateway(respond),
+        allowed_source_roots=[source_dir],
+    )
+    command = ApiScenarioPrepareCommand(
+        source_directory=str(source_dir),
+        goal="assemble order API scenarios",
+        environment="qa",
+        execution_policy=ExecutionEnvironmentPolicy(
+            base_url_env="AGENTIC_QA_BASE_URL",
+            trusted_origins=["https://qa.example.test"],
+            allowed_http_methods=["GET", "POST"],
+        ),
+    )
+    result = harness.prepare_api_scenario(command)
+    repeated = harness.prepare_api_scenario(command)
+
+    assert result.status == "needs_human_review"
+    assert result.next_action == "human_review_required"
+    assert result.sources.manual_case_ids == ["TC-ORDER-001"]
+    assert result.sources.ignored_files[0].path.endswith("notes.txt")
+    assert result.candidate.candidate_path.endswith("api_test_draft/raw.yml")
+    assert repeated.run_id == result.run_id
+    assert planner_calls == 0
+    assert agent_calls == 1
+    quality_report = json.loads(
+        (tmp_path / "repo" / result.candidate.quality_report_path).read_text(encoding="utf-8")
+    )
+    metrics = quality_report["variants"][0]["strategies"][0]["metrics"]
+    assert metrics == {
+        "manual_case_total": 1,
+        "manual_case_confirmed": 1,
+        "manual_case_unconfirmed": 0,
+        "manual_case_unmapped_ids": [],
+    }

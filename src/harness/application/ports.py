@@ -16,10 +16,12 @@ from harness.application.quality import (
 from harness.application.source import SourceBundle
 from harness.domain.models import (
     ApiPytestExportResult,
+    ApiScenarioSourceSummary,
     ApprovedArtifactVersion,
     ArtifactCandidate,
     ArtifactDiffResult,
     ExecuteApiCasesCommand,
+    ExecutionEnvironmentPolicy,
     ExecutionProfile,
     ExportApiPytestCommand,
     GetArtifactDiffQuery,
@@ -46,7 +48,13 @@ class ApiAutomationService(Protocol):
 
 
 class ManagedAgentWorkspaceProvisioner(Protocol):
-    def prepare(self, request: AgentRequest) -> PreparedAgentWorkspace: ...
+    def prepare(
+        self,
+        request: AgentRequest,
+        *,
+        generation_mode: str = "standard",
+        execution_environments: dict[str, ExecutionEnvironmentPolicy] | None = None,
+    ) -> PreparedAgentWorkspace: ...
 
     def request_lock(self, prepared: PreparedAgentWorkspace) -> AbstractContextManager[None]: ...
 
@@ -90,6 +98,10 @@ class SourceBundleRepository(Protocol):
     def create_source_bundle(self, workspace: str, run_id: str) -> SourceBundle: ...
 
     def load_source_bundle(self, workspace: str, run_id: str) -> SourceBundle: ...
+
+
+class ApiScenarioSourceCatalog(Protocol):
+    def inspect(self, workspace: str, run_id: str) -> ApiScenarioSourceSummary: ...
 
 
 class QualityStrategy(Protocol):

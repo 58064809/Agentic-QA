@@ -25,6 +25,7 @@ python -m harness [--repo-root PATH] <command>
 | `request run` | `request_file` | 导入允许根内的来源并幂等执行到 Review Gate |
 | `request schema` | 无 | 输出 AgentRequest v1 JSON Schema |
 | `mcp serve` | 无 | 启动受限的 stdio MCP Server |
+| `api prepare` | `source_directory` | 幂等导入 API 目录，经单 Agent 快线生成 Candidate |
 | `api execute` | `workspace_id run_id` | 按 workspace policy 执行 published API YAML |
 | `api export-pytest` | `workspace_id` | 从 published API YAML 确定性导出 pytest adapter |
 
@@ -66,6 +67,26 @@ ArtifactVariant，因此不会出现在差异端点或发布版本中。
 或任意文件读取工具。
 
 ## `api`
+
+`api prepare SOURCE_DIRECTORY` 要求目录内至少有一份自包含 OpenAPI 3.x/Swagger 2.0 和一份合法人工
+用例。支持标准 11 列 Markdown/CSV 与 `agentic-qa.test-case-set.v1` YAML；外部 `$ref`、重复用例 ID、
+错误列数或非法 YAML 在模型调用前失败。其他文件列入 ignored 清单。
+
+| `api prepare` 参数 | 默认值 | 系统行为 |
+|---|---|---|
+| `--goal` | 组装契约约束 API 场景 | 只描述场景组装目标，不接受疑似密钥 |
+| `--workspace-id` / `--request-id` | 自动派生 / 空 | 相同请求与来源哈希返回同一 run |
+| `--environment` | 必填 | 拒绝 production-like 名称 |
+| `--base-url-env` | `AGENTIC_QA_BASE_URL` | 只保存环境变量名，不保存 URL 值 |
+| `--trusted-origin` | 必填、可重复 | 只接受 HTTPS Origin |
+| `--allow-http-method` | 必填、可重复 | 冻结为 workspace 方法 allowlist |
+| `--request-timeout-seconds` | `10` | 作为 workspace 最大请求超时，接受 1–60 |
+| `--api-auth-config` | 空 | JSON/YAML 认证配置；静态 Token 只接受 `token_env` |
+| `--quality-policy` | 空 | 可重复选择已注册质量策略 |
+
+快线固定只创建一个 `api_test_engineer` 任务，跳过模型 Planner、Requirement 和 Risk 任务，但保留质量
+修订循环及人工 Review Gate。系统要求每个人工用例 ID 均由 `manual-test-case` source ref 映射；契约无法确认的
+步骤保持 pending/unconfirmed，不补造 endpoint。
 
 `api execute` 默认读取 `published/api_test_draft/current.yml`。缺少显式
 `--environment` 或至少一个 `--allow-http-method` 时，CLI 返回参数错误；`--base-url-env` 默认是
