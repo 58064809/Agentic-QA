@@ -9,7 +9,16 @@ from pathlib import Path
 import pytest
 import yaml
 
-from harness import ApiScenarioPrepareCommand, ExecutionEnvironmentPolicy, Harness
+from harness import (
+    ApiScenarioPrepareCommand,
+    ArtifactVariant,
+    ExecutionEnvironmentPolicy,
+    Harness,
+    ReviewDecision,
+    ReviewRunCommand,
+    RunApiScenarioCommand,
+    RunRef,
+)
 from harness.application.qa_design import TESTCASE_HEADERS
 from harness.application.source import (
     SourceBundle,
@@ -257,7 +266,10 @@ def test_manual_mapping_requires_every_case_id() -> None:
         validate_manual_case_mapping(draft, inspection)
 
 
-def test_prepare_uses_one_api_agent_without_model_planner(tmp_path: Path) -> None:
+def test_prepare_review_and_run_vertical_loop_uses_one_api_agent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     source_dir = tmp_path / "input"
     source_dir.mkdir()
     (source_dir / "openapi.yml").write_text(_openapi(), encoding="utf-8")
@@ -374,3 +386,57 @@ def test_prepare_uses_one_api_agent_without_model_planner(tmp_path: Path) -> Non
         "manual_case_unconfirmed": 0,
         "manual_case_unmapped_ids": [],
     }
+
+    snapshot = harness.get_run(RunRef(workspace_id=result.workspace_id, run_id=result.run_id))
+    candidate = snapshot.candidates[0]
+    published = harness.review_run(
+        ReviewRunCommand(
+            workspace_id=result.workspace_id,
+            run_id=result.run_id,
+            decision=ReviewDecision(
+                intent="approve",
+                target_artifact="api_test_draft",
+                reason="reviewed local vertical-loop fixture",
+                reviewed_by="qa_owner",
+                versions=[candidate.version_ref(ArtifactVariant.RAW)],
+            ),
+        )
+    )
+    assert published.status == "published"
+
+    requests_seen: list[tuple[str, str]] = []
+
+    class Response:
+        status_code = 201
+        headers = {"X-Business": "must-not-be-persisted"}
+
+        def __init__(self, url: str) -> None:
+            self.url = url
+
+        def json(self) -> object:
+            return {"message": "must-not-be-persisted"}
+
+    def request(method: str, url: str, **_kwargs: object) -> Response:
+        requests_seen.append((method, url))
+        return Response(url)
+
+    monkeypatch.setenv("AGENTIC_QA_BASE_URL", "https://qa.example.test")
+    monkeypatch.setattr("requests.request", request)
+    execution = harness.run_api_scenario(
+        RunApiScenarioCommand(
+            workspace_id=result.workspace_id,
+            execution_id="vertical-loop-001",
+            environment="qa",
+        )
+    )
+
+    assert execution.status == "passed"
+    assert requests_seen == [("POST", "https://qa.example.test/orders")]
+    execution_root = (
+        tmp_path / "repo" / "workspaces" / result.workspace_id / "executions" / "vertical-loop-001"
+    )
+    persisted = "\n".join(
+        (execution_root / name).read_text(encoding="utf-8")
+        for name in ("manifest.json", "evidence.json", "summary.md")
+    )
+    assert "must-not-be-persisted" not in persisted
