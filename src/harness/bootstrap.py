@@ -9,6 +9,8 @@ from harness.application.ports import CheckpointProvider
 from harness.application.use_cases import HarnessApplication
 from harness.domain.budget import BudgetLimits
 from harness.infrastructure.api_automation import FilesystemApiAutomationService
+from harness.infrastructure.api_scenario_run import FilesystemApiScenarioRunService
+from harness.infrastructure.api_scenario_sources import FilesystemApiScenarioSourceCatalog
 from harness.infrastructure.llm.gateway import model_gateway_from_env
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.persistence.agent_workspace_provisioner import (
@@ -102,13 +104,16 @@ def build_application(
             runs=store,
             workflow=workflow,
             quality_policies=policies,
+            api_scenario_sources=FilesystemApiScenarioSourceCatalog(store),
         )
+    api_automation = FilesystemApiAutomationService(store)
     return HarnessApplication(
         workspaces=store,
         runs=store,
         workflow=workflow,
         quality_policies=policies,
-        api_automation=FilesystemApiAutomationService(store),
+        api_automation=api_automation,
+        api_scenario_runner=FilesystemApiScenarioRunService(store, api_automation),
         artifacts=store,
         agent_requests=agent_requests,
     )

@@ -6,6 +6,7 @@ from pathlib import Path
 from harness.application.agent_request import AgentRequest, AgentRequestResult, AgentRequestService
 from harness.application.ports import (
     ApiAutomationService,
+    ApiScenarioRunner,
     ArtifactReviewRepository,
     QualityStrategyCatalog,
     RunEventRepository,
@@ -14,6 +15,9 @@ from harness.application.ports import (
 )
 from harness.domain.models import (
     ApiPytestExportResult,
+    ApiScenarioCandidateSummary,
+    ApiScenarioPrepareCommand,
+    ApiScenarioPrepareResult,
     ArtifactDiffResult,
     CreateWorkspaceCommand,
     ExecuteApiCasesCommand,
@@ -22,10 +26,12 @@ from harness.domain.models import (
     HarnessEvent,
     ResumeRunCommand,
     ReviewRunCommand,
+    RunApiScenarioCommand,
     RunRef,
     RunSnapshot,
     StartRunCommand,
 )
+from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 
 
@@ -40,6 +46,7 @@ class HarnessApplication:
         api_automation: ApiAutomationService | None = None,
         artifacts: ArtifactReviewRepository | None = None,
         agent_requests: AgentRequestService | None = None,
+        api_scenario_runner: ApiScenarioRunner | None = None,
     ) -> None:
         self._workspaces = workspaces
         self._runs = runs
@@ -48,6 +55,7 @@ class HarnessApplication:
         self._api_automation = api_automation
         self._artifacts = artifacts
         self._agent_requests = agent_requests
+        self._api_scenario_runner = api_scenario_runner
 
     def create_workspace(self, command: CreateWorkspaceCommand) -> Path:
         self._quality_policies.require(command.quality_policies)
@@ -80,6 +88,11 @@ class HarnessApplication:
             raise RuntimeError("API automation service is not configured")
         return self._api_automation.execute(command)
 
+    def run_api_scenario(self, command: RunApiScenarioCommand) -> RunApiScenarioResult:
+        if self._api_scenario_runner is None:
+            raise RuntimeError("API scenario runner is not configured")
+        return self._api_scenario_runner.run(command)
+
     def export_api_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:
         if self._api_automation is None:
             raise RuntimeError("API automation service is not configured")
@@ -104,3 +117,43 @@ class HarnessApplication:
         if self._agent_requests is None:
             raise RuntimeError("agent request service is not configured")
         return self._agent_requests.submit(request)
+
+    def prepare_api_scenario(self, command: ApiScenarioPrepareCommand) -> ApiScenarioPrepareResult:
+        if self._agent_requests is None:
+            raise RuntimeError("API scenario prepare is not configured")
+        result = self._agent_requests.submit_api_fast(
+            AgentRequest(
+                request_id=command.request_id,
+                workspace_id=command.workspace_id,
+                goal=command.goal,
+                source_paths=[command.source_directory],
+                expected_artifacts=["api_test_draft"],
+                quality_policies=command.quality_policies,
+            ),
+            execution_environments={command.environment: command.execution_policy},
+        )
+        sources = self._agent_requests.inspect_api_sources(result.workspace_id, result.run_id)
+        snapshot = self._runs.load_snapshot(result.workspace_id, result.run_id)
+        candidates = [item for item in snapshot.candidates if item.artifact == "api_test_draft"]
+        if len(candidates) != 1:
+            raise RuntimeError("API scenario prepare requires exactly one API Candidate")
+        candidate = candidates[0]
+        if candidate.quality_report_path is None:
+            raise RuntimeError("API Candidate has no quality report")
+        return ApiScenarioPrepareResult(
+            request_key=result.request_key,
+            workspace_id=result.workspace_id,
+            run_id=result.run_id,
+            status=result.status,
+            environment=command.environment,
+            sources=sources,
+            candidate=ApiScenarioCandidateSummary(
+                status=candidate.status,
+                partial=bool(candidate.partial),
+                versions=candidate.versions,
+                candidate_path=candidate.path,
+                quality_report_path=candidate.quality_report_path,
+                generation_report_path=candidate.generation_report_path,
+            ),
+            next_action="human_review_required",
+        )

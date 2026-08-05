@@ -683,46 +683,17 @@ def execute_api_cases(
     authentication: ApiAuthentication | None = None,
     trusted_origins: list[str] | None = None,
 ) -> ExecutionEvidence:
-    if not cases:
-        raise ValueError("no API cases to execute")
-    if profile.environment == "analysis-only" or not profile.base_url_env:
-        raise PermissionError("API execution requires an explicit test environment")
-    runtime_env = os.environ if env is None else env
-    base_url = runtime_env.get(profile.base_url_env, "").strip()
-    if not base_url:
-        raise ValueError(f"base URL environment variable is not set: {profile.base_url_env}")
-    base_url = (
-        validate_api_base_url_policy(base_url, trusted_origins=trusted_origins)
-        if trusted_origins is not None
-        else validate_api_base_url(base_url)
+    runtime_env, base_url, definition_errors = _prepare_api_execution(
+        cases,
+        profile=profile,
+        env=env,
+        authentication=authentication,
+        trusted_origins=trusted_origins,
     )
     if request_func is None:
         import requests
 
         request_func = requests.request
-    definition_errors = api_case_runtime_definition_errors(cases)
-    for index, case in enumerate(cases):
-        if definition_errors[index] is not None:
-            continue
-        variables = parse_api_case_variables(case.variables)
-        cleanup = parse_api_cleanup_steps(case.cleanup)
-        environment_payloads = [
-            case.request.model_dump(mode="python"),
-            *(dataset.values for dataset in variables.datasets),
-            *(step.request.model_dump(mode="python") for step in cleanup),
-        ]
-        missing_environment = sorted(
-            {
-                name
-                for payload in environment_payloads
-                for name in _required_environment_references(payload)
-                if not runtime_env.get(name)
-            }
-        )
-        if missing_environment:
-            definition_errors[index] = "API case is missing environment values: " + ", ".join(
-                missing_environment
-            )
     has_executable_case = any(
         definition_errors[index] is None
         and case.contract_status == "confirmed"
@@ -858,3 +829,94 @@ def execute_api_cases(
         ),
         cases=results,
     )
+
+
+def validate_api_execution_preflight(
+    cases: list[ApiTestCase],
+    *,
+    profile: ExecutionProfile,
+    env: Mapping[str, str] | None = None,
+    authentication: ApiAuthentication | None = None,
+    trusted_origins: list[str] | None = None,
+) -> None:
+    _prepare_api_execution(
+        cases,
+        profile=profile,
+        env=env,
+        authentication=authentication,
+        trusted_origins=trusted_origins,
+    )
+
+
+def _prepare_api_execution(
+    cases: list[ApiTestCase],
+    *,
+    profile: ExecutionProfile,
+    env: Mapping[str, str] | None,
+    authentication: ApiAuthentication | None,
+    trusted_origins: list[str] | None,
+) -> tuple[Mapping[str, str], str, list[str | None]]:
+    if not cases:
+        raise ValueError("no API cases to execute")
+    if profile.environment == "analysis-only" or not profile.base_url_env:
+        raise PermissionError("API execution requires an explicit test environment")
+    runtime_env = os.environ if env is None else env
+    base_url = runtime_env.get(profile.base_url_env, "").strip()
+    if not base_url:
+        raise ValueError(f"base URL environment variable is not set: {profile.base_url_env}")
+    base_url = (
+        validate_api_base_url_policy(base_url, trusted_origins=trusted_origins)
+        if trusted_origins is not None
+        else validate_api_base_url(base_url)
+    )
+    definition_errors = api_case_runtime_definition_errors(cases)
+    for index, case in enumerate(cases):
+        if definition_errors[index] is not None:
+            continue
+        variables = parse_api_case_variables(case.variables)
+        cleanup = parse_api_cleanup_steps(case.cleanup)
+        environment_payloads = [
+            case.request.model_dump(mode="python"),
+            *(dataset.values for dataset in variables.datasets),
+            *(step.request.model_dump(mode="python") for step in cleanup),
+        ]
+        missing_environment = sorted(
+            {
+                name
+                for payload in environment_payloads
+                for name in _required_environment_references(payload)
+                if not runtime_env.get(name)
+            }
+        )
+        if missing_environment:
+            definition_errors[index] = "API case is missing environment values: " + ", ".join(
+                missing_environment
+            )
+    has_executable_case = any(
+        definition_errors[index] is None
+        and case.contract_status == "confirmed"
+        and bool(case.request.method)
+        and bool(case.request.path)
+        and str(case.request.method).upper() in profile.allowed_http_methods
+        for index, case in enumerate(cases)
+    )
+    if has_executable_case and isinstance(authentication, StaticTokenApiAuthentication):
+        token = (
+            authentication.token.get_secret_value().strip()
+            if authentication.token is not None
+            else runtime_env.get(str(authentication.token_env), "").strip()
+        )
+        if not token:
+            raise RuntimeError(
+                "API authentication token environment variable is not set: "
+                f"{authentication.token_env}"
+            )
+    elif has_executable_case and isinstance(authentication, LoginApiAuthentication):
+        if authentication.request.method not in profile.allowed_http_methods:
+            raise PermissionError(
+                f"API login method {authentication.request.method} is not allowed by "
+                "execution profile"
+            )
+        _resolve_required(authentication.request.model_dump(mode="python"), runtime_env)
+        build_api_request_url(base_url, authentication.request.path)
+    return runtime_env, base_url, definition_errors

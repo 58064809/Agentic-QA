@@ -9,11 +9,13 @@ import yaml
 
 from harness import (
     AgentRequest,
+    ApiScenarioPrepareCommand,
     ArtifactDiffEndpoint,
     ArtifactVariant,
     ArtifactVersionRef,
     CreateWorkspaceCommand,
     ExecuteApiCasesCommand,
+    ExecutionEnvironmentPolicy,
     ExecutionProfile,
     ExportApiPytestCommand,
     GetArtifactDiffQuery,
@@ -22,6 +24,7 @@ from harness import (
     ReviewDecision,
     ReviewIntent,
     ReviewRunCommand,
+    RunApiScenarioCommand,
     RunRef,
     StartRunCommand,
 )
@@ -113,6 +116,29 @@ def _parser() -> argparse.ArgumentParser:
     )
     api = commands.add_parser("api")
     api_commands = api.add_subparsers(dest="api_command", required=True)
+    api_prepare = api_commands.add_parser("prepare")
+    api_prepare.add_argument("source_directory")
+    api_prepare.add_argument(
+        "--goal",
+        default="Assemble reviewed manual API test cases into contract-bounded API scenarios",
+    )
+    api_prepare.add_argument("--workspace-id")
+    api_prepare.add_argument("--request-id")
+    api_prepare.add_argument("--environment", required=True)
+    api_prepare.add_argument("--base-url-env", default="AGENTIC_QA_BASE_URL")
+    api_prepare.add_argument(
+        "--trusted-origin", action="append", dest="trusted_origins", required=True
+    )
+    api_prepare.add_argument(
+        "--allow-http-method", action="append", dest="allowed_http_methods", required=True
+    )
+    api_prepare.add_argument("--request-timeout-seconds", type=int, default=10)
+    api_prepare.add_argument("--api-auth-config")
+    api_prepare.add_argument("--quality-policy", action="append", dest="quality_policies")
+    api_run = api_commands.add_parser("run")
+    api_run.add_argument("workspace_id")
+    api_run.add_argument("execution_id")
+    api_run.add_argument("--environment", required=True)
     api_execute = api_commands.add_parser("execute")
     api_execute.add_argument("workspace_id")
     api_execute.add_argument("run_id")
@@ -196,6 +222,21 @@ def _load_agent_request(path: Path) -> AgentRequest:
     return AgentRequest.model_validate(payload)
 
 
+def _load_mapping(path: Path) -> dict[str, object]:
+    if not path.is_file():
+        raise FileNotFoundError(f"configuration file does not exist: {path}")
+    text = path.read_text(encoding="utf-8-sig")
+    if path.suffix.casefold() == ".json":
+        payload = json.loads(text)
+    elif path.suffix.casefold() in {".yaml", ".yml"}:
+        payload = yaml.safe_load(text)
+    else:
+        raise ValueError("configuration file must be .json, .yaml, or .yml")
+    if not isinstance(payload, dict):
+        raise ValueError("configuration file must contain an object")
+    return payload
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -219,7 +260,44 @@ def main(argv: list[str] | None = None) -> int:
             create_mcp_server(gateway).run(transport="stdio")
             return 0
 
+        if args.command == "api" and args.api_command == "prepare":
+            source_directory = Path(args.source_directory).resolve()
+            harness = Harness(Path(args.repo_root), allowed_source_roots=[source_directory])
+            policy: dict[str, object] = {
+                "base_url_env": args.base_url_env,
+                "trusted_origins": args.trusted_origins,
+                "allowed_http_methods": args.allowed_http_methods,
+                "max_request_timeout_seconds": args.request_timeout_seconds,
+                "allow_ui_mutations": False,
+            }
+            if args.api_auth_config:
+                policy["api_auth"] = _load_mapping(Path(args.api_auth_config))
+            _print(
+                harness.prepare_api_scenario(
+                    ApiScenarioPrepareCommand(
+                        source_directory=str(source_directory),
+                        goal=args.goal,
+                        workspace_id=args.workspace_id,
+                        request_id=args.request_id,
+                        environment=args.environment,
+                        execution_policy=ExecutionEnvironmentPolicy.model_validate(policy),
+                        quality_policies=args.quality_policies or [],
+                    )
+                )
+            )
+            return 0
+
         harness = Harness(Path(args.repo_root))
+        if args.command == "api" and args.api_command == "run":
+            result = harness.run_api_scenario(
+                RunApiScenarioCommand(
+                    workspace_id=args.workspace_id,
+                    execution_id=args.execution_id,
+                    environment=args.environment,
+                )
+            )
+            _print(result)
+            return 0 if result.status == "passed" else 1
         if args.command == "api" and args.api_command == "execute":
             _print(
                 harness.execute_api_cases(

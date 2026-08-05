@@ -11,6 +11,8 @@ from harness.bootstrap import build_application
 from harness.domain.budget import BudgetLimits
 from harness.domain.models import (
     ApiPytestExportResult,
+    ApiScenarioPrepareCommand,
+    ApiScenarioPrepareResult,
     ArtifactDiffResult,
     CreateWorkspaceCommand,
     ExecuteApiCasesCommand,
@@ -19,10 +21,12 @@ from harness.domain.models import (
     HarnessEvent,
     ResumeRunCommand,
     ReviewRunCommand,
+    RunApiScenarioCommand,
     RunRef,
     RunSnapshot,
     StartRunCommand,
 )
+from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.quality import QualityStrategyRegistry
@@ -44,6 +48,7 @@ class Harness:
         checkpoint_provider: CheckpointProvider | None = None,
         tool_handlers: dict[str, Any] | None = None,
         application: HarnessApplication | None = None,
+        allowed_source_roots: list[Path | str] | None = None,
     ) -> None:
         self._application = application or build_application(
             repo_root,
@@ -55,10 +60,14 @@ class Harness:
             quality_strategy_registry=quality_strategy_registry,
             checkpoint_provider=checkpoint_provider,
             tool_handlers=tool_handlers,
+            allowed_source_roots=allowed_source_roots,
         )
 
     def create_workspace(self, command: CreateWorkspaceCommand) -> Path:
         return self._application.create_workspace(command)
+
+    def prepare_api_scenario(self, command: ApiScenarioPrepareCommand) -> ApiScenarioPrepareResult:
+        return self._application.prepare_api_scenario(command)
 
     def start_run(self, command: StartRunCommand) -> RunSnapshot:
         return self._application.start_run(command)
@@ -74,6 +83,9 @@ class Harness:
 
     def execute_api_cases(self, command: ExecuteApiCasesCommand) -> ExecutionEvidence:
         return self._application.execute_api_cases(command)
+
+    def run_api_scenario(self, command: RunApiScenarioCommand) -> RunApiScenarioResult:
+        return self._application.run_api_scenario(command)
 
     def export_api_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:
         return self._application.export_api_pytest(command)

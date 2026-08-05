@@ -178,6 +178,7 @@ class CandidateAssessmentService:
                         requirements=strategy.requirements,
                         actions=result.actions,
                         issues=result.issues,
+                        metrics=result.metrics,
                     )
                 )
                 issues.extend(result.issues)
