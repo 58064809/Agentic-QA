@@ -145,6 +145,42 @@ def test_swagger_2_normalizes_body_response_and_server() -> None:
     assert endpoint["responses"][0]["content"] == {"application/json": {"type": "object"}}
 
 
+def test_openapi_inspection_decodes_percent_encoded_local_reference_parts() -> None:
+    inspection = inspect_openapi(
+        {
+            "openapi": "3.1.0",
+            "info": {"title": "Encoded ref", "version": "1"},
+            "paths": {
+                "/status": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "ok",
+                                "content": {
+                                    "application/json": {
+                                        "schema": {"$ref": "#/components/schemas/Wrapper%3F"}
+                                    }
+                                },
+                            }
+                        }
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "Wrapper?": {
+                        "type": "object",
+                        "properties": {"ok": {"type": "boolean"}},
+                    }
+                }
+            },
+        },
+        source="sources/openapi.json",
+    )
+
+    assert inspection.endpoints[0].responses[0].content["application/json"]["type"] == "object"
+
+
 @pytest.mark.parametrize(
     "payload, message",
     [
@@ -316,6 +352,10 @@ def test_confirmed_api_case_requires_endpoint_from_inspected_frozen_contract() -
         update={
             "request": draft.cases[0].request.model_copy(update={"path": "/assist/${{assist_id}}"}),
             "variables": {"datasets": [{"id": "valid", "values": {"assist_id": 1}}]},
+            "source_refs": [
+                reference.model_copy(update={"locator": "POST /assist/{assist_id}"})
+                for reference in draft.cases[0].source_refs
+            ],
         }
     )
     _validate_api_test_cases(

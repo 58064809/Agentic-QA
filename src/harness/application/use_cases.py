@@ -6,8 +6,10 @@ from pathlib import Path
 from harness.application.agent_request import AgentRequest, AgentRequestResult, AgentRequestService
 from harness.application.ports import (
     ApiAutomationService,
+    ApiProjectChecker,
     ApiScenarioRunner,
     ArtifactReviewRepository,
+    LocalConfigChecker,
     QualityStrategyCatalog,
     RunEventRepository,
     WorkflowRunner,
@@ -21,6 +23,7 @@ from harness.domain.models import (
     ArtifactDiffResult,
     CreateWorkspaceCommand,
     ExecuteApiCasesCommand,
+    ExecutionProfile,
     ExportApiPytestCommand,
     GetArtifactDiffQuery,
     HarnessEvent,
@@ -31,8 +34,16 @@ from harness.domain.models import (
     RunSnapshot,
     StartRunCommand,
 )
+from harness.domain.schemas.api_execution_reporting import (
+    GenerateApiAllureReportCommand,
+    GenerateApiAllureReportResult,
+    ResumeApiCleanupCommand,
+    ResumeApiCleanupResult,
+)
+from harness.domain.schemas.api_project import ApiProjectCheckCommand, ApiProjectCheckResult
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
+from harness.domain.schemas.local_config import AgenticQaLocalConfig, LocalConfigCheckResult
 
 
 class HarnessApplication:
@@ -47,6 +58,9 @@ class HarnessApplication:
         artifacts: ArtifactReviewRepository | None = None,
         agent_requests: AgentRequestService | None = None,
         api_scenario_runner: ApiScenarioRunner | None = None,
+        api_project_checker: ApiProjectChecker | None = None,
+        local_config_checker: LocalConfigChecker | None = None,
+        local_config: AgenticQaLocalConfig | None = None,
     ) -> None:
         self._workspaces = workspaces
         self._runs = runs
@@ -56,19 +70,39 @@ class HarnessApplication:
         self._artifacts = artifacts
         self._agent_requests = agent_requests
         self._api_scenario_runner = api_scenario_runner
+        self._api_project_checker = api_project_checker
+        self._local_config_checker = local_config_checker
+        self._local_config = local_config
+
+    def check_local_config(self) -> LocalConfigCheckResult:
+        if self._local_config_checker is None:
+            raise RuntimeError("local configuration checker is not configured")
+        return self._local_config_checker.check()
 
     def create_workspace(self, command: CreateWorkspaceCommand) -> Path:
-        self._quality_policies.require(command.quality_policies)
+        defaults = (
+            self._local_config.workspace_defaults.quality_policies if self._local_config else []
+        )
+        policies = list(dict.fromkeys([*defaults, *command.quality_policies]))
+        self._quality_policies.require(policies)
         return self._workspaces.init_workspace(
             command.workspace_id,
-            quality_policies=command.quality_policies,
+            quality_policies=policies,
         )
 
     def start_run(self, command: StartRunCommand) -> RunSnapshot:
+        if "api_test_draft" in command.expected_artifacts:
+            raise ValueError(
+                "API test generation requires project preflight; use api prepare instead"
+            )
         self._workspaces.validate_execution_profile(command.workspace_id, command.execution_profile)
         return self._workflow.start(command)
 
     def stream_run(self, command: StartRunCommand) -> Iterator[HarnessEvent]:
+        if "api_test_draft" in command.expected_artifacts:
+            raise ValueError(
+                "API test generation requires project preflight; use api prepare instead"
+            )
         self._workspaces.validate_execution_profile(command.workspace_id, command.execution_profile)
         return self._workflow.stream(command)
 
@@ -88,10 +122,27 @@ class HarnessApplication:
             raise RuntimeError("API automation service is not configured")
         return self._api_automation.execute(command)
 
+    def api_execution_profile(self, workspace: str, environment: str) -> ExecutionProfile:
+        if self._api_automation is None:
+            raise RuntimeError("API automation service is not configured")
+        return self._api_automation.execution_profile(workspace, environment)
+
     def run_api_scenario(self, command: RunApiScenarioCommand) -> RunApiScenarioResult:
         if self._api_scenario_runner is None:
             raise RuntimeError("API scenario runner is not configured")
         return self._api_scenario_runner.run(command)
+
+    def generate_api_allure_report(
+        self, command: GenerateApiAllureReportCommand
+    ) -> GenerateApiAllureReportResult:
+        if self._api_scenario_runner is None:
+            raise RuntimeError("API scenario runner is not configured")
+        return self._api_scenario_runner.generate_allure_report(command)
+
+    def resume_api_cleanup(self, command: ResumeApiCleanupCommand) -> ResumeApiCleanupResult:
+        if self._api_scenario_runner is None:
+            raise RuntimeError("API scenario runner is not configured")
+        return self._api_scenario_runner.resume_cleanup(command)
 
     def export_api_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:
         if self._api_automation is None:
@@ -116,11 +167,40 @@ class HarnessApplication:
     def submit_agent_request(self, request: AgentRequest) -> AgentRequestResult:
         if self._agent_requests is None:
             raise RuntimeError("agent request service is not configured")
+        if "api_test_draft" in request.expected_artifacts:
+            raise ValueError(
+                "API test generation requires project preflight; use api prepare instead"
+            )
         return self._agent_requests.submit(request)
+
+    def check_api_project(self, command: ApiProjectCheckCommand) -> ApiProjectCheckResult:
+        if self._api_project_checker is None:
+            raise RuntimeError("API project checker is not configured")
+        return self._api_project_checker.check(command)
 
     def prepare_api_scenario(self, command: ApiScenarioPrepareCommand) -> ApiScenarioPrepareResult:
         if self._agent_requests is None:
             raise RuntimeError("API scenario prepare is not configured")
+        if self._api_project_checker is None:
+            raise RuntimeError("API project checker is not configured")
+        preflight = self._api_project_checker.check(
+            ApiProjectCheckCommand(
+                source_directory=command.source_directory,
+                environment=command.environment,
+                execution_policy=command.execution_policy,
+            )
+        )
+        if not preflight.ready or preflight.execution_policy is None:
+            details = "; ".join(
+                f"{issue.code} at {issue.location}: {issue.remediation}"
+                for issue in preflight.issues
+            )
+            raise ValueError(f"API project preflight failed: {details}")
+        execution_policy = preflight.execution_policy
+        defaults = (
+            self._local_config.workspace_defaults.quality_policies if self._local_config else []
+        )
+        quality_policies = list(dict.fromkeys([*defaults, *command.quality_policies]))
         result = self._agent_requests.submit_api_fast(
             AgentRequest(
                 request_id=command.request_id,
@@ -128,9 +208,14 @@ class HarnessApplication:
                 goal=command.goal,
                 source_paths=[command.source_directory],
                 expected_artifacts=["api_test_draft"],
-                quality_policies=command.quality_policies,
+                quality_policies=quality_policies,
             ),
-            execution_environments={command.environment: command.execution_policy},
+            execution_environments={command.environment: execution_policy},
+            api_project_binding={
+                "service": str(preflight.service),
+                "environment": command.environment,
+                "structural_sha256": str(preflight.structural_sha256),
+            },
         )
         sources = self._agent_requests.inspect_api_sources(result.workspace_id, result.run_id)
         snapshot = self._runs.load_snapshot(result.workspace_id, result.run_id)

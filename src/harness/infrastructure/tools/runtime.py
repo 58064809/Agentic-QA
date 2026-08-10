@@ -3,7 +3,6 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
-import os
 import unicodedata
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
@@ -18,7 +17,13 @@ from harness.domain.models import ExecutionProfile
 from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.failure_triage import FailureTriage
+from harness.domain.schemas.local_config import (
+    AgenticQaLocalConfig,
+    LocalQaseConfig,
+    LocalTestRailConfig,
+)
 from harness.domain.security import sanitize_untrusted, validate_api_base_url_policy
+from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 from harness.infrastructure.manifests.registry import AgentRegistry, ToolRegistry
 from harness.infrastructure.persistence.filesystem import FilesystemStore
 from harness.infrastructure.rag.provider import RagProviderConfig, RagRetriever
@@ -52,6 +57,7 @@ class ToolRuntime:
         budget: Budget,
         handlers: dict[str, Callable[[dict[str, Any]], Any]] | None = None,
         on_call: Callable[[dict[str, Any]], None] | None = None,
+        local_config: AgenticQaLocalConfig | None = None,
     ) -> None:
         self.store = store
         self.agents = agents
@@ -59,6 +65,9 @@ class ToolRuntime:
         self.budget = budget
         self.handlers = handlers or {}
         self.on_call = on_call
+        self.local_config = (
+            local_config or FilesystemLocalConfigLoader(store.repo_root).load_required()
+        )
         self._builtin_handlers: dict[
             str, Callable[[str, str, dict[str, Any], ExecutionProfile], Any]
         ] = {
@@ -147,11 +156,16 @@ class ToolRuntime:
             if policy is None:
                 raise PermissionError("live browser tools require a workspace execution policy")
             validate_api_base_url_policy(
-                resolve_execution_base_url(profile),
+                resolve_execution_base_url(
+                    profile,
+                    store=self.store,
+                    local_config=self.local_config,
+                    workspace=workspace,
+                ),
                 trusted_origins=policy.trusted_origins,
             )
         if tool == "mcp.playwright":
-            self._validate_direct_playwright_call(arguments, profile)
+            self._validate_direct_playwright_call(workspace, arguments, profile)
         try:
             validate(arguments, manifest.input_schema or {"type": "object"})
         except ValidationError as exc:
@@ -172,7 +186,7 @@ class ToolRuntime:
                 profile=profile,
             )
             if tool == "mcp.playwright":
-                self._validate_playwright_result(result, profile)
+                self._validate_playwright_result(workspace, result, profile)
             safe = sanitize_untrusted(result)
             validate(safe, manifest.output_schema or {})
             payload = {
@@ -228,14 +242,17 @@ class ToolRuntime:
     ) -> dict[str, Any]:
         if profile.environment == "analysis-only":
             raise PermissionError("PostgreSQL access requires an explicit test environment")
-        payload = self.store.workspace_config(workspace)
-        data_sources = payload.get("data_sources") or {}
-        if not isinstance(data_sources, dict):
-            raise ValueError("workspace.yml data_sources must be an object")
-        raw_config = data_sources.get("postgres")
-        if raw_config is None:
-            raise PermissionError("PostgreSQL is not configured in workspace.yml")
-        config = PostgresSourceConfig.model_validate(raw_config)
+        value = self.local_config.postgres
+        config = PostgresSourceConfig(
+            host=value.host,
+            port=value.port,
+            database=value.database,
+            user=value.user,
+            password=value.password,
+            connect_timeout_seconds=value.connect_timeout_seconds,
+            statement_timeout_ms=value.statement_timeout_ms,
+            max_rows=value.max_rows,
+        )
         return execute_read_only_query(
             config,
             str(arguments.get("query") or ""),
@@ -247,26 +264,29 @@ class ToolRuntime:
         workspace: str,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
-        payload = self.store.workspace_config(workspace)
-        data_sources = payload.get("data_sources") or {}
-        if not isinstance(data_sources, dict):
-            raise ValueError("workspace.yml data_sources must be an object")
-        raw_config = data_sources.get("test_management")
-        if raw_config is None:
-            raise PermissionError("test management is not configured in workspace.yml")
-        if not isinstance(raw_config, dict):
-            raise ValueError("workspace.yml data_sources.test_management must be an object")
-        provider = raw_config.get("provider")
-        provider_config = {key: value for key, value in raw_config.items() if key != "provider"}
-        if provider == "testrail":
-            config = TestRailSourceConfig.model_validate(provider_config)
+        value = self.local_config.test_management
+        if isinstance(value, LocalTestRailConfig):
+            config = TestRailSourceConfig(
+                base_url=value.base_url,
+                username=value.username,
+                api_key=value.api_key,
+                timeout_seconds=value.timeout_seconds,
+                max_items=value.max_items,
+                max_response_bytes=value.max_response_bytes,
+            )
             query = TestManagementQuery.model_validate(arguments)
             return read_testrail(config, query)
-        if provider == "qase":
-            config = QaseSourceConfig.model_validate(provider_config)
+        if isinstance(value, LocalQaseConfig):
+            config = QaseSourceConfig(
+                base_url=value.base_url,
+                api_token=value.api_token,
+                timeout_seconds=value.timeout_seconds,
+                max_items=value.max_items,
+                max_response_bytes=value.max_response_bytes,
+            )
             query = QaseTestManagementQuery.model_validate(arguments)
             return read_qase(config, query)
-        raise ValueError(f"unsupported test management provider: {provider!r}")
+        raise PermissionError("test management provider is disabled in agentic-qa.local.yml")
 
     def _safe_path(self, workspace: str, relative_value: Any) -> tuple[Path, Path]:
         root = self.store.require_workspace(workspace).resolve()
@@ -329,8 +349,15 @@ class ToolRuntime:
     def _rag_retrieve(
         self, workspace: str, run_id: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        raw_config = self.store.workspace_config(workspace).get("rag")
-        config = RagProviderConfig.from_workspace(raw_config)
+        value = self.local_config.rag
+        config = RagProviderConfig(
+            provider=value.provider,
+            api_key_env=value.api_key_env,
+            base_url=value.base_url,
+            model=value.model,
+            chunk_size=value.chunk_size,
+            chunk_overlap=value.chunk_overlap,
+        )
         max_chunks = min(max(int(arguments.get("max_chunks") or 8), 1), 20)
         return RagRetriever(self.store, config).retrieve(
             workspace,
@@ -382,7 +409,7 @@ class ToolRuntime:
 
     def _network_capture_live(
         self,
-        _workspace: str,
+        workspace: str,
         run_id: str,
         arguments: dict[str, Any],
         profile: ExecutionProfile,
@@ -407,7 +434,14 @@ class ToolRuntime:
             max_requests=int(arguments.get("max_requests") or 25),
             source=f"runtime/playwright-network-capture/{run_id}",
         )
-        base_origin = _normalized_origin(resolve_execution_base_url(profile))
+        base_origin = _normalized_origin(
+            resolve_execution_base_url(
+                profile,
+                store=self.store,
+                local_config=self.local_config,
+                workspace=workspace,
+            )
+        )
         document_origins = {
             call.origin
             for call in catalog.calls
@@ -420,8 +454,9 @@ class ToolRuntime:
             )
         return catalog.model_dump(mode="json")
 
-    @staticmethod
     def _validate_direct_playwright_call(
+        self,
+        workspace: str,
         arguments: dict[str, Any],
         profile: ExecutionProfile,
     ) -> None:
@@ -442,18 +477,33 @@ class ToolRuntime:
         )
         if navigation_url is None:
             return
-        expected_origin = _normalized_origin(resolve_execution_base_url(profile))
+        expected_origin = _normalized_origin(
+            resolve_execution_base_url(
+                profile,
+                store=self.store,
+                local_config=self.local_config,
+                workspace=workspace,
+            )
+        )
         actual_origin = _normalized_origin(str(navigation_url))
         if actual_origin != expected_origin:
             raise PermissionError(
                 "Playwright navigation URL must match the configured test base URL origin"
             )
 
-    @staticmethod
-    def _validate_playwright_result(result: Any, profile: ExecutionProfile) -> None:
+    def _validate_playwright_result(
+        self, workspace: str, result: Any, profile: ExecutionProfile
+    ) -> None:
         if not isinstance(result, dict) or not profile.base_url_env:
             return
-        expected_origin = _normalized_origin(resolve_execution_base_url(profile))
+        expected_origin = _normalized_origin(
+            resolve_execution_base_url(
+                profile,
+                store=self.store,
+                local_config=self.local_config,
+                workspace=workspace,
+            )
+        )
         for item in result.get("content") or []:
             if not isinstance(item, dict) or item.get("type") != "text":
                 continue
@@ -479,12 +529,25 @@ class ToolRuntime:
         payload = yaml.safe_load(target.read_text(encoding="utf-8"))
         cases = ApiTestCasesDraft.model_validate(payload)
         policy = self.store.validate_execution_profile(workspace, profile)
+        binding = self.store.workspace_config(workspace).get("api_project")
+        if not isinstance(binding, dict):
+            raise PermissionError("workspace is not bound to a configured API project")
+        loader = FilesystemLocalConfigLoader(self.store.repo_root)
+        project = loader.resolve_api_project(
+            self.local_config,
+            str(binding.get("service") or ""),
+            profile.environment,
+        )
+        if binding.get("structural_sha256") != project.structural_sha256:
+            raise PermissionError(
+                "API safety policy changed after prepare; rerun prepare and Review Gate"
+            )
         evidence = execute_api_cases(
             cases.cases,
             run_id=run_id,
             source_cases_path=target.relative_to(root).as_posix(),
             profile=profile,
-            env=os.environ,
+            env=project.runtime_values,
             authentication=policy.api_auth if policy is not None else None,
             trusted_origins=policy.trusted_origins if policy is not None else None,
         )
@@ -522,12 +585,36 @@ def _safe_record_name(tool: str, value: Any) -> str:
     return f"{tool.replace('.', '-')}-{digest}"
 
 
-def resolve_execution_base_url(profile: ExecutionProfile) -> str:
+def resolve_execution_base_url(
+    profile: ExecutionProfile,
+    *,
+    store: FilesystemStore,
+    local_config: AgenticQaLocalConfig,
+    workspace: str,
+) -> str:
     if profile.environment == "analysis-only" or not profile.base_url_env:
         raise PermissionError("Playwright requires an explicit test environment and base URL")
-    base_url = os.environ.get(profile.base_url_env, "").strip()
-    if not base_url:
-        raise ValueError(f"base URL environment variable is not set: {profile.base_url_env}")
+    loader = FilesystemLocalConfigLoader(store.repo_root)
+    binding = store.workspace_config(workspace).get("api_project")
+    candidates = []
+    if isinstance(binding, dict):
+        candidates.append(
+            loader.resolve_api_project(
+                local_config,
+                str(binding.get("service") or ""),
+                profile.environment,
+            )
+        )
+    else:
+        for service_name, service in local_config.api.services.items():
+            if profile.environment in service.environments:
+                candidates.append(
+                    loader.resolve_api_project(local_config, service_name, profile.environment)
+                )
+    matches = [item for item in candidates if item.policy.base_url_env == profile.base_url_env]
+    if len(matches) != 1:
+        raise ValueError("execution profile does not map to exactly one local API environment")
+    base_url = matches[0].runtime_values[profile.base_url_env]
     _normalized_origin(base_url)
     return base_url
 

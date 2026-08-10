@@ -1,0 +1,254 @@
+from __future__ import annotations
+
+import base64
+from typing import Annotated, Literal
+
+from pydantic import Field, field_validator, model_validator
+
+from harness.domain.models import ApiLoginSuccessCondition, ApiTokenInjection, StrictModel
+from harness.domain.security import validate_api_trusted_origin
+
+ENV_NAME_PATTERN = r"^[A-Z_][A-Z0-9_]*$"
+
+
+class LocalModelConfig(StrictModel):
+    provider: str = Field(min_length=1)
+    api_key_env: str = Field(pattern=ENV_NAME_PATTERN)
+    flash_model: str = Field(min_length=1)
+    pro_model: str = Field(min_length=1)
+    base_url: str | None = None
+    timeout_seconds: float = Field(default=180, gt=0, le=600)
+    max_output_tokens: int = Field(default=16384, ge=256, le=131072)
+
+
+class LocalRagConfig(StrictModel):
+    provider: Literal["local-lexical", "openai-compatible"] = "local-lexical"
+    api_key_env: str = Field(default="RAG_API_KEY", pattern=ENV_NAME_PATTERN)
+    base_url: str | None = None
+    model: str = Field(default="text-embedding-3-small", min_length=1)
+    chunk_size: int = Field(default=1200, ge=200, le=4000)
+    chunk_overlap: int = Field(default=400, ge=0, le=1000)
+
+    @model_validator(mode="after")
+    def validate_overlap(self) -> LocalRagConfig:
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("rag.chunk_overlap must be smaller than rag.chunk_size")
+        if self.provider == "openai-compatible" and not self.base_url:
+            raise ValueError("openai-compatible RAG requires rag.base_url")
+        return self
+
+
+class LocalPostgresConfig(StrictModel):
+    host: str = Field(min_length=1)
+    port: int = Field(default=5432, ge=1, le=65535)
+    database: str = Field(min_length=1)
+    user: str = Field(min_length=1)
+    password: str
+    connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
+    statement_timeout_ms: int = Field(default=10000, ge=100, le=60000)
+    max_rows: int = Field(default=200, ge=1, le=1000)
+
+
+class NoTestManagementConfig(StrictModel):
+    provider: Literal["none"] = "none"
+
+
+class LocalTestRailConfig(StrictModel):
+    provider: Literal["testrail"]
+    base_url: str = Field(min_length=1)
+    username: str = Field(min_length=1)
+    api_key: str = Field(min_length=1)
+    timeout_seconds: int = Field(default=10, ge=1, le=30)
+    max_items: int = Field(default=250, ge=1, le=250)
+    max_response_bytes: int = Field(default=1_048_576, ge=1024, le=2_097_152)
+
+
+class LocalQaseConfig(StrictModel):
+    provider: Literal["qase"]
+    base_url: str = Field(min_length=1)
+    api_token: str = Field(min_length=1)
+    timeout_seconds: int = Field(default=10, ge=1, le=30)
+    max_items: int = Field(default=100, ge=1, le=100)
+    max_response_bytes: int = Field(default=1_048_576, ge=1024, le=2_097_152)
+
+
+LocalTestManagementConfig = Annotated[
+    NoTestManagementConfig | LocalTestRailConfig | LocalQaseConfig,
+    Field(discriminator="provider"),
+]
+
+
+class LocalWorkspaceDefaults(StrictModel):
+    quality_policies: list[str] = Field(default_factory=list)
+    additional_source_roots: list[str] = Field(default_factory=list)
+
+    @field_validator("quality_policies", "additional_source_roots")
+    @classmethod
+    def unique_values(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value if item.strip()]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("values must be unique")
+        return normalized
+
+
+class LocalRuntimeConfig(StrictModel):
+    cleanup_journal_key: str = ""
+
+    @field_validator("cleanup_journal_key")
+    @classmethod
+    def validate_cleanup_journal_key(cls, value: str) -> str:
+        if not value:
+            return value
+        try:
+            decoded = base64.urlsafe_b64decode(value.encode("ascii"))
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError("cleanup_journal_key must be URL-safe base64") from exc
+        if len(decoded) != 32:
+            raise ValueError("cleanup_journal_key must decode to exactly 32 bytes")
+        return value
+
+
+class LocalApiEncryption(StrictModel):
+    algorithm: Literal["aes-128-cbc-pkcs7-base64-iv-prefix"]
+    key: str
+    fields: list[str] = Field(min_length=1)
+
+    @field_validator("fields")
+    @classmethod
+    def validate_fields(cls, value: list[str]) -> list[str]:
+        fields = list(dict.fromkeys(item.strip() for item in value if item.strip()))
+        if not fields or any(not item.replace("-", "_").isidentifier() for item in fields):
+            raise ValueError("encryption fields must be unique root JSON field names")
+        return fields
+
+
+class LocalPasswordLogin(StrictModel):
+    kind: Literal["password"]
+    request_path: str = Field(min_length=1)
+    username: str
+    password: str
+    token_json_path: str = Field(pattern=r"^\$(?:\.[A-Za-z_][A-Za-z0-9_-]*)+$")
+    expected_status_codes: list[int] = Field(default_factory=lambda: [200], min_length=1)
+    request_headers: dict[str, str] = Field(default_factory=dict)
+    injection: ApiTokenInjection = Field(default_factory=ApiTokenInjection)
+    encryption: LocalApiEncryption | None = None
+    success_condition: ApiLoginSuccessCondition | None = None
+
+
+class LocalSmsLogin(StrictModel):
+    kind: Literal["sms"]
+    request_path: str = Field(min_length=1)
+    tel_code: str
+    phone: str
+    sms_code: str
+    token_json_path: str = Field(pattern=r"^\$(?:\.[A-Za-z_][A-Za-z0-9_-]*)+$")
+    expected_status_codes: list[int] = Field(default_factory=lambda: [200], min_length=1)
+    request_headers: dict[str, str] = Field(default_factory=dict)
+    null_body_fields: list[str] = Field(default_factory=list)
+    injection: ApiTokenInjection = Field(default_factory=ApiTokenInjection)
+    encryption: LocalApiEncryption | None = None
+    success_condition: ApiLoginSuccessCondition | None = None
+
+
+class LocalStaticTokenLogin(StrictModel):
+    kind: Literal["static_token"]
+    token: str
+    injection: ApiTokenInjection = Field(default_factory=ApiTokenInjection)
+
+
+LocalApiLogin = Annotated[
+    LocalPasswordLogin | LocalSmsLogin | LocalStaticTokenLogin,
+    Field(discriminator="kind"),
+]
+
+
+class LocalApiAuthentication(StrictModel):
+    login: LocalApiLogin | None = None
+    fallback_token: str = ""
+    fallback_injection: ApiTokenInjection | None = None
+
+    @model_validator(mode="after")
+    def require_source(self) -> LocalApiAuthentication:
+        if self.login is None and not self.fallback_token.strip():
+            raise ValueError("auth requires login or fallback_token")
+        return self
+
+
+class LocalApiEnvironment(StrictModel):
+    base_url: str = Field(min_length=1)
+    trusted_origins: list[str] = Field(min_length=1)
+    allowed_http_methods: list[str] = Field(min_length=1)
+    timeout_seconds: int = Field(default=10, ge=1, le=60)
+    cleanup_exempt_operations: list[str] = Field(default_factory=list)
+    auth: LocalApiAuthentication
+
+    @field_validator("cleanup_exempt_operations")
+    @classmethod
+    def normalize_cleanup_exempt_operations(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            method, separator, path = item.strip().partition(" ")
+            canonical = f"{method.upper()} {path}"
+            if not separator or method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+                raise ValueError("cleanup exemptions must use canonical mutating METHOD /path")
+            if not path.startswith("/") or " " in path:
+                raise ValueError("cleanup exemption path must be a relative path template")
+            normalized.append(canonical)
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("cleanup exemptions must be unique")
+        return normalized
+
+    @field_validator("allowed_http_methods")
+    @classmethod
+    def normalize_methods(cls, value: list[str]) -> list[str]:
+        methods = list(dict.fromkeys(item.strip().upper() for item in value if item.strip()))
+        if not methods:
+            raise ValueError("allowed_http_methods cannot be empty")
+        return methods
+
+    @field_validator("trusted_origins")
+    @classmethod
+    def normalize_origins(cls, value: list[str]) -> list[str]:
+        return list(dict.fromkeys(validate_api_trusted_origin(item) for item in value))
+
+
+class LocalApiService(StrictModel):
+    source_directory: str = Field(min_length=1)
+    environments: dict[str, LocalApiEnvironment] = Field(min_length=1)
+
+
+class LocalApiConfig(StrictModel):
+    services: dict[str, LocalApiService] = Field(default_factory=dict)
+
+
+class AgenticQaLocalConfig(StrictModel):
+    schema_version: Literal["agentic-qa.local-config.v1"] = "agentic-qa.local-config.v1"
+    model: LocalModelConfig
+    rag: LocalRagConfig
+    postgres: LocalPostgresConfig
+    test_management: LocalTestManagementConfig
+    workspace_defaults: LocalWorkspaceDefaults = Field(default_factory=LocalWorkspaceDefaults)
+    runtime: LocalRuntimeConfig = Field(default_factory=LocalRuntimeConfig)
+    api: LocalApiConfig = Field(default_factory=LocalApiConfig)
+
+
+class LocalConfigIssue(StrictModel):
+    code: str = Field(min_length=1)
+    location: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+    remediation: str = Field(min_length=1)
+
+
+class LocalConfigCheckResult(StrictModel):
+    schema_version: Literal["agentic-qa.harness.local-config-check-result.v1"] = (
+        "agentic-qa.harness.local-config-check-result.v1"
+    )
+    ready: bool
+    config_path: str
+    issues: list[LocalConfigIssue] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_ready(self) -> LocalConfigCheckResult:
+        if self.ready != (not self.issues):
+            raise ValueError("ready must match issues")
+        return self

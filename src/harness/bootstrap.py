@@ -9,15 +9,20 @@ from harness.application.ports import CheckpointProvider
 from harness.application.use_cases import HarnessApplication
 from harness.domain.budget import BudgetLimits
 from harness.infrastructure.api_automation import FilesystemApiAutomationService
+from harness.infrastructure.api_project import FilesystemApiProjectChecker
 from harness.infrastructure.api_scenario_run import FilesystemApiScenarioRunService
 from harness.infrastructure.api_scenario_sources import FilesystemApiScenarioSourceCatalog
-from harness.infrastructure.llm.gateway import model_gateway_from_env
+from harness.infrastructure.llm.gateway import model_gateway_from_config
+from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.persistence.agent_workspace_provisioner import (
     ManagedAgentWorkspaceFilesystemProvisioner,
 )
 from harness.infrastructure.persistence.filesystem import FilesystemStore
-from harness.infrastructure.persistence.postgres_checkpoint import PostgresCheckpointProvider
+from harness.infrastructure.persistence.postgres_checkpoint import (
+    CheckpointPostgresConfig,
+    PostgresCheckpointProvider,
+)
 from harness.infrastructure.quality import QualityStrategyRegistry
 from harness.infrastructure.quality.declarative import DeclarativeQualityStrategy
 from harness.infrastructure.quality.generic import GenericArtifactStrategy
@@ -66,6 +71,8 @@ def build_application(
     tool_handlers: dict[str, Any] | None = None,
     allowed_source_roots: list[Path | str] | None = None,
 ) -> HarnessApplication:
+    local_loader = FilesystemLocalConfigLoader(repo_root)
+    local_config = local_loader.load_required()
     ensure_local_requirements_root(repo_root)
     store = FilesystemStore(repo_root)
     tools = tool_registry or ToolRegistry.builtin()
@@ -88,25 +95,40 @@ def build_application(
         skills=skills,
         tools=tools,
         quality_policies=policies,
-        checkpoint_provider=checkpoint_provider or PostgresCheckpointProvider(),
-        model=model_gateway or model_gateway_from_env(),
+        checkpoint_provider=checkpoint_provider
+        or PostgresCheckpointProvider(
+            CheckpointPostgresConfig(
+                host=local_config.postgres.host,
+                port=local_config.postgres.port,
+                database=local_config.postgres.database,
+                user=local_config.postgres.user,
+                password=local_config.postgres.password,
+                connect_timeout_seconds=local_config.postgres.connect_timeout_seconds,
+            )
+        ),
+        model=model_gateway or model_gateway_from_config(local_config.model),
+        local_config=local_config,
         limits=budget_limits,
         tool_handlers=tool_handlers,
     )
     workflow = LangGraphWorkflowRunner(store=store, engine=engine)
     agent_requests = None
+    configured_source_roots = [
+        Path(repo_root).resolve() / item
+        for item in local_config.workspace_defaults.additional_source_roots
+    ]
     if allowed_source_roots is not None:
         agent_requests = AgentRequestService(
             provisioner=ManagedAgentWorkspaceFilesystemProvisioner(
                 store.workspaces,
-                allowed_source_roots=allowed_source_roots,
+                allowed_source_roots=[*configured_source_roots, *allowed_source_roots],
             ),
             runs=store,
             workflow=workflow,
             quality_policies=policies,
             api_scenario_sources=FilesystemApiScenarioSourceCatalog(store),
         )
-    api_automation = FilesystemApiAutomationService(store)
+    api_automation = FilesystemApiAutomationService(store, local_loader)
     return HarnessApplication(
         workspaces=store,
         runs=store,
@@ -114,6 +136,9 @@ def build_application(
         quality_policies=policies,
         api_automation=api_automation,
         api_scenario_runner=FilesystemApiScenarioRunService(store, api_automation),
+        api_project_checker=FilesystemApiProjectChecker(repo_root),
+        local_config_checker=local_loader,
+        local_config=local_config,
         artifacts=store,
         agent_requests=agent_requests,
     )

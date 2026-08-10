@@ -29,6 +29,8 @@ class QualityContext(FrozenModel):
     run_id: str
     artifact: str
     source_bundle: SourceBundle
+    full_source_texts: dict[str, str] = Field(default_factory=dict, exclude=True, repr=False)
+    cleanup_exempt_operations: tuple[str, ...] = ()
 
 
 class QualityIssue(FrozenModel):

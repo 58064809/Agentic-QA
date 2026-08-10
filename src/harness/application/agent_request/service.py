@@ -48,6 +48,7 @@ class AgentRequestService:
         request: AgentRequest,
         *,
         execution_environments: dict[str, ExecutionEnvironmentPolicy],
+        api_project_binding: dict[str, str],
     ) -> AgentRequestResult:
         if request.expected_artifacts != ["api_test_draft"]:
             raise ValueError("api_fast only supports api_test_draft")
@@ -57,6 +58,7 @@ class AgentRequestService:
             request,
             generation_mode="api_fast",
             execution_environments=execution_environments,
+            api_project_binding=api_project_binding,
         )
 
     def _submit(
@@ -65,6 +67,7 @@ class AgentRequestService:
         *,
         generation_mode: str,
         execution_environments: dict[str, ExecutionEnvironmentPolicy],
+        api_project_binding: dict[str, str] | None = None,
     ) -> AgentRequestResult:
         self._quality_policies.require(request.quality_policies)
         prepared = (
@@ -74,6 +77,7 @@ class AgentRequestService:
                 request,
                 generation_mode=generation_mode,
                 execution_environments=execution_environments,
+                api_project_binding=api_project_binding,
             )
         )
         command = StartRunCommand(

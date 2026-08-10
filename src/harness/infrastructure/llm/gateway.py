@@ -12,6 +12,7 @@ from typing import Any, TypeVar
 from pydantic import BaseModel
 
 from harness.application.model_port import ModelGateway, ModelRoute
+from harness.domain.schemas.local_config import LocalModelConfig
 
 T = TypeVar("T", bound=BaseModel)
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
@@ -29,49 +30,14 @@ class ModelConfig:
     max_output_tokens: int = 32768
 
     @classmethod
-    def from_env(cls) -> ModelConfig | None:
-        single_model = os.getenv("AGENTIC_QA_MODEL", "").strip()
-        explicit_key_env = os.getenv("AGENTIC_QA_MODEL_API_KEY_ENV", "").strip()
-        deepseek_available = bool(os.getenv("DEEPSEEK_API_KEY", "").strip())
-        openai_available = bool(os.getenv("OPENAI_API_KEY", "").strip())
-
-        if explicit_key_env:
-            api_key_env = explicit_key_env
-        elif deepseek_available:
-            api_key_env = "DEEPSEEK_API_KEY"
-        else:
-            api_key_env = "OPENAI_API_KEY"
-
-        configured = bool(
-            single_model
-            or os.getenv("AGENTIC_QA_MODEL_FLASH", "").strip()
-            or os.getenv("AGENTIC_QA_MODEL_PRO", "").strip()
-            or explicit_key_env
-            or deepseek_available
-        )
-        if not configured:
-            return None
-
-        if api_key_env == "OPENAI_API_KEY" and not openai_available and not explicit_key_env:
-            # Preserve the useful "not configured" result when no provider was selected.
-            return None
-
-        default_base_url = DEFAULT_DEEPSEEK_BASE_URL if api_key_env == "DEEPSEEK_API_KEY" else None
+    def from_local(cls, value: LocalModelConfig) -> ModelConfig:
         return cls(
-            flash_model=single_model
-            or os.getenv("AGENTIC_QA_MODEL_FLASH", "").strip()
-            or DEFAULT_FLASH_MODEL,
-            pro_model=single_model
-            or os.getenv("AGENTIC_QA_MODEL_PRO", "").strip()
-            or DEFAULT_PRO_MODEL,
-            api_key_env=api_key_env,
-            base_url=os.getenv("AGENTIC_QA_MODEL_BASE_URL", "").strip() or default_base_url,
-            request_timeout_seconds=float(
-                os.getenv("AGENTIC_QA_MODEL_TIMEOUT_SECONDS", "").strip() or "180"
-            ),
-            max_output_tokens=int(
-                os.getenv("AGENTIC_QA_MODEL_MAX_OUTPUT_TOKENS", "").strip() or "32768"
-            ),
+            flash_model=value.flash_model,
+            pro_model=value.pro_model,
+            api_key_env=value.api_key_env,
+            base_url=value.base_url,
+            request_timeout_seconds=value.timeout_seconds,
+            max_output_tokens=value.max_output_tokens,
         )
 
     def model_for(self, route: ModelRoute) -> str:
@@ -287,9 +253,8 @@ class CallableModelGateway:
         return dict(getattr(self._local, "last_call_diagnostics", {}))
 
 
-def model_gateway_from_env() -> ModelGateway | None:
-    config = ModelConfig.from_env()
-    return OpenAICompatibleModelGateway(config) if config else None
+def model_gateway_from_config(config: LocalModelConfig) -> ModelGateway:
+    return OpenAICompatibleModelGateway(ModelConfig.from_local(config))
 
 
 def _escape_json_string_control_characters(payload: str) -> str:

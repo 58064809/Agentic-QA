@@ -5,9 +5,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from harness import CreateWorkspaceCommand, Harness, StartRunCommand
+from harness import AgenticQaLocalConfig, CreateWorkspaceCommand, Harness, StartRunCommand
 from harness.budget import Budget
 from harness.contracts import ExecutionProfile
+from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.mcp.playwright import MCPBridge, MCPToolSnapshot
 from harness.infrastructure.persistence.filesystem import FilesystemStore
@@ -192,22 +193,55 @@ def test_model_only_sees_run_frozen_mcp_tools(tmp_path: Path) -> None:
 
 def test_live_capture_facade_hides_raw_network_tools_and_enforces_origin(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace, snapshot = _started_run(tmp_path)
+    source = tmp_path / "local-sources" / "api" / "ui"
+    source.mkdir(parents=True)
+    local_config = AgenticQaLocalConfig.model_validate(
+        {
+            "model": {
+                "provider": "recorded",
+                "api_key_env": "UNIT_MODEL_KEY",
+                "flash_model": "recorded-flash",
+                "pro_model": "recorded-pro",
+                "base_url": "https://model.example.test",
+            },
+            "rag": {"provider": "local-lexical"},
+            "postgres": {
+                "host": "localhost",
+                "port": 5432,
+                "database": "postgres",
+                "user": "postgres",
+                "password": "unit-only",
+            },
+            "test_management": {"provider": "none"},
+            "workspace_defaults": {},
+            "api": {
+                "services": {
+                    "ui": {
+                        "source_directory": "local-sources/api/ui",
+                        "environments": {
+                            "qa": {
+                                "base_url": "https://qa.example.test/app",
+                                "trusted_origins": ["https://qa.example.test"],
+                                "allowed_http_methods": ["GET", "HEAD", "OPTIONS"],
+                                "auth": {"fallback_token": "unit-token"},
+                            }
+                        },
+                    }
+                }
+            },
+        }
+    )
+    project = FilesystemLocalConfigLoader(tmp_path).resolve_api_project(local_config, "ui", "qa")
     config = yaml.safe_load((workspace / "workspace.yml").read_text(encoding="utf-8"))
-    config["execution"]["environments"]["qa"] = {
-        "base_url_env": "AGENTIC_QA_BASE_URL",
-        "trusted_origins": ["https://qa.example.test"],
-        "allowed_http_methods": ["GET", "HEAD", "OPTIONS"],
-        "allow_ui_mutations": True,
-    }
+    policy = project.policy.model_copy(update={"allow_ui_mutations": True})
+    config["execution"]["environments"]["qa"] = policy.model_dump(mode="json", exclude_none=True)
     (workspace / "workspace.yml").write_text(
         yaml.safe_dump(config, sort_keys=False),
         encoding="utf-8",
     )
     store, agents, tools = _runtime_dependencies(tmp_path)
-    monkeypatch.setenv("AGENTIC_QA_BASE_URL", "https://qa.example.test/app")
     document_origin = "https://qa.example.test"
     page_origin = "https://qa.example.test"
 
@@ -278,10 +312,11 @@ def test_live_capture_facade_hides_raw_network_tools_and_enforces_origin(
         tools=tools,
         budget=Budget(),
         handlers={"mcp.playwright": bridge.tool_handler},
+        local_config=local_config,
     )
     profile = ExecutionProfile(
         environment="qa",
-        base_url_env="AGENTIC_QA_BASE_URL",
+        base_url_env="LOCAL_UI_QA_BASE_URL",
         allow_ui_mutations=True,
     )
 

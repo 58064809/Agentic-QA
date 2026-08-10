@@ -12,16 +12,17 @@ python -m venv .venv
 python -m pip install -e ".[dev,docs]" -c constraints.txt
 
 $env:DEEPSEEK_API_KEY = "<你的模型密钥>"
-$env:PG_LOCAL_PASSWORD = "<你的 PostgreSQL 密码>"
-
+python -m harness config init
+# 编辑仓库根目录 agentic-qa.local.yml
+python -m harness config doctor
 python -m harness workspace create demo
 ```
 
 `constraints.txt` 固定已验证的依赖组合；依赖安装完成后可运行
 `\.\scripts\cold-start-check.ps1` 检查新机器环境。完整步骤见[从零开始](docs/getting-started.md)。
 
-`.env.example` 只列出变量名，CLI 不会自动加载 `.env`。真实 Token、密钥、Cookie 和数据库密码
-适合由环境变量或密钥服务注入；仓库扫描会报告意外写入的凭证。
+`agentic-qa.local.yml` 是 API、PostgreSQL、TestRail、Qase 及非密钥模型/RAG 参数的唯一人工配置
+入口，并被 Git 忽略。只有模型实际 Key 和 RAG 实际 Key 仍从环境变量读取；CLI 不自动加载 `.env`。
 
 本地需求统一放入 `local-sources/requirements/<需求名>/`。目录被 Git 忽略，并在首次运行 Harness
 时自动创建；跨 AI 的 MCP 注册和一句话用法见[跨 AI 接入](docs/agent-integration.md)。
@@ -55,5 +56,5 @@ pytest -q
 python -m build --wheel
 ```
 
-公开 Harness v2 方法共七个：`create_workspace`、`start_run`、`stream_run`、`get_run`、
-`get_artifact_diff`、`resume_run` 和 `review_run`。
+公开 Harness v2 方法以 `src/harness/interfaces/facade.py` 和
+[Harness 契约](docs/harness-contracts.md)为准。

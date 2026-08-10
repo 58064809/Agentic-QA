@@ -10,17 +10,14 @@ from harness.infrastructure.tools.postgres_query import (
 )
 
 
-def test_postgres_config_reads_password_only_from_named_environment(monkeypatch) -> None:
-    for name in ("PG_LOCAL_HOST", "PG_LOCAL_PORT", "PG_LOCAL_DATABASE", "PG_LOCAL_USER"):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("PG_LOCAL_PASSWORD", "not-a-real-password")
-    config = PostgresSourceConfig()
+def test_postgres_config_uses_direct_local_values() -> None:
+    config = PostgresSourceConfig(password="not-a-real-password")
 
     values = config.connection_kwargs()
 
     assert values == {
         "host": "localhost",
-        "port": "5432",
+        "port": 5432,
         "dbname": "postgres",
         "user": "postgres",
         "password": "not-a-real-password",
@@ -74,9 +71,9 @@ def test_postgres_query_uses_read_only_transaction(monkeypatch) -> None:
 
     fake_psycopg = SimpleNamespace(connect=lambda **_kwargs: Connection())
     monkeypatch.setitem(__import__("sys").modules, "psycopg", fake_psycopg)
-    monkeypatch.setenv("PG_LOCAL_PASSWORD", "not-a-real-password")
-
-    result = execute_read_only_query(PostgresSourceConfig(), "SELECT %s", [1])
+    result = execute_read_only_query(
+        PostgresSourceConfig(password="not-a-real-password"), "SELECT %s", [1]
+    )
 
     assert executed == [
         ("SET TRANSACTION READ ONLY", None),

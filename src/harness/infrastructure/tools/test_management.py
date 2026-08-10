@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from enum import Enum
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -25,33 +24,15 @@ class TestRailSourceConfig(BaseModel):
         default="agentic-qa.harness.testrail-source.v1",
         pattern=r"^agentic-qa\.harness\.testrail-source\.v1$",
     )
-    base_url_env: str = Field(pattern=r"^[A-Z_][A-Z0-9_]*$")
-    username_env: str = Field(pattern=r"^[A-Z_][A-Z0-9_]*$")
-    api_key_env: str = Field(pattern=r"^[A-Z_][A-Z0-9_]*$")
+    base_url: str = Field(min_length=1)
+    username: str = Field(min_length=1)
+    api_key: str = Field(min_length=1)
     timeout_seconds: int = Field(default=10, ge=1, le=30)
     max_items: int = Field(default=250, ge=1, le=250)
     max_response_bytes: int = Field(default=1_048_576, ge=1024, le=2_097_152)
 
-    @model_validator(mode="after")
-    def validate_distinct_environment_names(self) -> TestRailSourceConfig:
-        names = (self.base_url_env, self.username_env, self.api_key_env)
-        if len(set(names)) != len(names):
-            raise ValueError("TestRail environment variable names must be distinct")
-        return self
-
-    def credentials(self, env: dict[str, str] | None = None) -> tuple[str, str, str]:
-        values = env if env is not None else os.environ
-        missing = [
-            name
-            for name in (self.base_url_env, self.username_env, self.api_key_env)
-            if not values.get(name)
-        ]
-        if missing:
-            raise RuntimeError(
-                "TestRail configuration is missing environment values: " + ", ".join(missing)
-            )
-        base_url = _validated_base_url(values[self.base_url_env])
-        return base_url, values[self.username_env], values[self.api_key_env]
+    def credentials(self) -> tuple[str, str, str]:
+        return _validated_base_url(self.base_url), self.username, self.api_key
 
 
 class QaseSourceConfig(BaseModel):
@@ -61,27 +42,14 @@ class QaseSourceConfig(BaseModel):
         default="agentic-qa.harness.qase-source.v1",
         pattern=r"^agentic-qa\.harness\.qase-source\.v1$",
     )
-    base_url_env: str = Field(pattern=r"^[A-Z_][A-Z0-9_]*$")
-    api_token_env: str = Field(pattern=r"^[A-Z_][A-Z0-9_]*$")
+    base_url: str = Field(min_length=1)
+    api_token: str = Field(min_length=1)
     timeout_seconds: int = Field(default=10, ge=1, le=30)
     max_items: int = Field(default=100, ge=1, le=100)
     max_response_bytes: int = Field(default=1_048_576, ge=1024, le=2_097_152)
 
-    @model_validator(mode="after")
-    def validate_distinct_environment_names(self) -> QaseSourceConfig:
-        if self.base_url_env == self.api_token_env:
-            raise ValueError("Qase environment variable names must be distinct")
-        return self
-
-    def credentials(self, env: dict[str, str] | None = None) -> tuple[str, str]:
-        values = env if env is not None else os.environ
-        missing = [name for name in (self.base_url_env, self.api_token_env) if not values.get(name)]
-        if missing:
-            raise RuntimeError(
-                "Qase configuration is missing environment values: " + ", ".join(missing)
-            )
-        base_url = _validated_base_url(values[self.base_url_env], provider="Qase")
-        return base_url, values[self.api_token_env]
+    def credentials(self) -> tuple[str, str]:
+        return _validated_base_url(self.base_url, provider="Qase"), self.api_token
 
 
 class TestManagementQuery(BaseModel):
@@ -214,10 +182,9 @@ def read_testrail(
     config: TestRailSourceConfig,
     query: TestManagementQuery,
     *,
-    env: dict[str, str] | None = None,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
-    base_url, username, api_key = config.credentials(env)
+    base_url, username, api_key = config.credentials()
     endpoint, parameters, collection_key = _request_spec(query)
     limit = min(query.limit, config.max_items)
     if query.operation != TestManagementOperation.GET_CASE:
@@ -272,10 +239,9 @@ def read_qase(
     config: QaseSourceConfig,
     query: QaseTestManagementQuery,
     *,
-    env: dict[str, str] | None = None,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
-    base_url, api_token = config.credentials(env)
+    base_url, api_token = config.credentials()
     endpoint, parameters, collection = _qase_request_spec(query)
     limit = min(query.limit, config.max_items)
     if collection:

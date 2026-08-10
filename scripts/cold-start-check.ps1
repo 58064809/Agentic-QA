@@ -31,29 +31,11 @@ Invoke-CheckedPython -Arguments @(
 Invoke-CheckedPython -Arguments @("-m", "harness", "--help")
 
 if ($Runtime) {
-    $keyEnvironment = $env:AGENTIC_QA_MODEL_API_KEY_ENV
-    if ([string]::IsNullOrWhiteSpace($keyEnvironment)) {
-        if (-not [string]::IsNullOrWhiteSpace($env:DEEPSEEK_API_KEY)) {
-            $keyEnvironment = "DEEPSEEK_API_KEY"
-        } elseif (-not [string]::IsNullOrWhiteSpace($env:OPENAI_API_KEY)) {
-            $keyEnvironment = "OPENAI_API_KEY"
-        }
-    }
-    if ([string]::IsNullOrWhiteSpace($keyEnvironment)) {
-        throw "No model API key environment variable is selected or configured"
-    }
-    $keyValue = [Environment]::GetEnvironmentVariable($keyEnvironment)
-    if ([string]::IsNullOrWhiteSpace($keyValue)) {
-        throw "Model API key environment variable is empty: $keyEnvironment"
-    }
-    if ([string]::IsNullOrWhiteSpace($env:PG_LOCAL_PASSWORD)) {
-        throw "PostgreSQL password environment variable is empty: PG_LOCAL_PASSWORD"
-    }
+    Invoke-CheckedPython -Arguments @("-m", "harness", "config", "doctor")
     Invoke-CheckedPython -Arguments @(
         "-c",
-        "from harness.infrastructure.persistence.postgres_checkpoint import CheckpointPostgresConfig; import psycopg; connection = psycopg.connect(**CheckpointPostgresConfig().connection_kwargs()); connection.close(); print('PostgreSQL: reachable')"
+        "from harness.infrastructure.local_config import FilesystemLocalConfigLoader; from harness.infrastructure.persistence.postgres_checkpoint import CheckpointPostgresConfig; import psycopg; local = FilesystemLocalConfigLoader('.').load_required(); value = local.postgres; config = CheckpointPostgresConfig(host=value.host, port=value.port, database=value.database, user=value.user, password=value.password, connect_timeout_seconds=value.connect_timeout_seconds); connection = psycopg.connect(**config.connection_kwargs()); connection.close(); print('PostgreSQL: reachable'); print('model key: configured via ' + local.model.api_key_env)"
     )
-    Write-Output "model key: configured via $keyEnvironment"
 }
 
 if ($Full) {

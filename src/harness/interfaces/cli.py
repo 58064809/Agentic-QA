@@ -9,17 +9,19 @@ import yaml
 
 from harness import (
     AgentRequest,
+    ApiProjectCheckCommand,
     ApiScenarioPrepareCommand,
     ArtifactDiffEndpoint,
     ArtifactVariant,
     ArtifactVersionRef,
     CreateWorkspaceCommand,
     ExecuteApiCasesCommand,
-    ExecutionEnvironmentPolicy,
     ExecutionProfile,
     ExportApiPytestCommand,
+    GenerateApiAllureReportCommand,
     GetArtifactDiffQuery,
     Harness,
+    ResumeApiCleanupCommand,
     ResumeRunCommand,
     ReviewDecision,
     ReviewIntent,
@@ -28,6 +30,7 @@ from harness import (
     RunRef,
     StartRunCommand,
 )
+from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 from harness.interfaces.agent_gateway import AgentRequestGateway
 
 
@@ -35,6 +38,14 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agentic-qa", description="Agentic-QA v2 harness")
     parser.add_argument("--repo-root", default=".")
     commands = parser.add_subparsers(dest="command", required=True)
+
+    config = commands.add_parser("config")
+    config_commands = config.add_subparsers(dest="config_command", required=True)
+    config_commands.add_parser("init")
+    config_commands.add_parser("doctor")
+    runtime_key = config_commands.add_parser("runtime-key")
+    runtime_key_commands = runtime_key.add_subparsers(dest="runtime_key_command", required=True)
+    runtime_key_commands.add_parser("init")
 
     workspace = commands.add_parser("workspace")
     workspace_commands = workspace.add_subparsers(dest="workspace_command", required=True)
@@ -91,7 +102,9 @@ def _parser() -> argparse.ArgumentParser:
     evaluate = commands.add_parser("eval")
     eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
     eval_commands.add_parser("run")
-    eval_commands.add_parser("live")
+    eval_live = eval_commands.add_parser("live")
+    eval_live.add_argument("--case", dest="case_name")
+    eval_live.add_argument("--output-dir")
 
     request = commands.add_parser("request")
     request_commands = request.add_subparsers(dest="request_command", required=True)
@@ -116,6 +129,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     api = commands.add_parser("api")
     api_commands = api.add_subparsers(dest="api_command", required=True)
+    api_doctor = api_commands.add_parser("doctor")
+    api_doctor.add_argument("source_directory")
+    api_doctor.add_argument("--environment", required=True)
     api_prepare = api_commands.add_parser("prepare")
     api_prepare.add_argument("source_directory")
     api_prepare.add_argument(
@@ -125,31 +141,27 @@ def _parser() -> argparse.ArgumentParser:
     api_prepare.add_argument("--workspace-id")
     api_prepare.add_argument("--request-id")
     api_prepare.add_argument("--environment", required=True)
-    api_prepare.add_argument("--base-url-env", default="AGENTIC_QA_BASE_URL")
-    api_prepare.add_argument(
-        "--trusted-origin", action="append", dest="trusted_origins", required=True
-    )
-    api_prepare.add_argument(
-        "--allow-http-method", action="append", dest="allowed_http_methods", required=True
-    )
-    api_prepare.add_argument("--request-timeout-seconds", type=int, default=10)
-    api_prepare.add_argument("--api-auth-config")
     api_prepare.add_argument("--quality-policy", action="append", dest="quality_policies")
     api_run = api_commands.add_parser("run")
     api_run.add_argument("workspace_id")
     api_run.add_argument("execution_id")
     api_run.add_argument("--environment", required=True)
+    api_report = api_commands.add_parser("report")
+    api_report_commands = api_report.add_subparsers(dest="api_report_command", required=True)
+    api_report_allure = api_report_commands.add_parser("allure")
+    api_report_allure.add_argument("workspace_id")
+    api_report_allure.add_argument("execution_id")
+    api_cleanup = api_commands.add_parser("cleanup")
+    api_cleanup_commands = api_cleanup.add_subparsers(dest="api_cleanup_command", required=True)
+    api_cleanup_resume = api_cleanup_commands.add_parser("resume")
+    api_cleanup_resume.add_argument("workspace_id")
+    api_cleanup_resume.add_argument("execution_id")
+    api_cleanup_resume.add_argument("--environment", required=True)
     api_execute = api_commands.add_parser("execute")
     api_execute.add_argument("workspace_id")
     api_execute.add_argument("run_id")
     api_execute.add_argument("--cases-path", default="published/api_test_draft/current.yml")
     api_execute.add_argument("--environment", required=True)
-    api_execute.add_argument("--base-url-env", default="AGENTIC_QA_BASE_URL")
-    api_execute.add_argument(
-        "--allow-http-method", action="append", dest="allowed_http_methods", required=True
-    )
-    api_execute.add_argument("--request-timeout-seconds", type=int, default=10)
-    api_execute.set_defaults(allow_ui_mutations=False)
 
     api_export = api_commands.add_parser("export-pytest")
     api_export.add_argument("workspace_id")
@@ -240,6 +252,18 @@ def _load_mapping(path: Path) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
+        repo_root = Path(args.repo_root).resolve()
+        if args.command == "config":
+            loader = FilesystemLocalConfigLoader(repo_root)
+            if args.config_command == "init":
+                print(loader.init())
+                return 0
+            if args.config_command == "runtime-key":
+                print(loader.init_runtime_key())
+                return 0
+            result = loader.check()
+            _print(result)
+            return 0 if result.ready else 2
         if args.command == "request":
             if args.request_command == "schema":
                 _print(AgentRequest.model_json_schema())
@@ -260,18 +284,18 @@ def main(argv: list[str] | None = None) -> int:
             create_mcp_server(gateway).run(transport="stdio")
             return 0
 
-        if args.command == "api" and args.api_command == "prepare":
+        if args.command == "api" and args.api_command in {"doctor", "prepare"}:
             source_directory = Path(args.source_directory).resolve()
-            harness = Harness(Path(args.repo_root), allowed_source_roots=[source_directory])
-            policy: dict[str, object] = {
-                "base_url_env": args.base_url_env,
-                "trusted_origins": args.trusted_origins,
-                "allowed_http_methods": args.allowed_http_methods,
-                "max_request_timeout_seconds": args.request_timeout_seconds,
-                "allow_ui_mutations": False,
-            }
-            if args.api_auth_config:
-                policy["api_auth"] = _load_mapping(Path(args.api_auth_config))
+            harness = Harness(repo_root, allowed_source_roots=[source_directory])
+            if args.api_command == "doctor":
+                checked = harness.check_api_project(
+                    ApiProjectCheckCommand(
+                        source_directory=str(source_directory),
+                        environment=args.environment,
+                    )
+                )
+                _print(checked)
+                return 0 if checked.ready else 2
             _print(
                 harness.prepare_api_scenario(
                     ApiScenarioPrepareCommand(
@@ -280,14 +304,14 @@ def main(argv: list[str] | None = None) -> int:
                         workspace_id=args.workspace_id,
                         request_id=args.request_id,
                         environment=args.environment,
-                        execution_policy=ExecutionEnvironmentPolicy.model_validate(policy),
+                        execution_policy=None,
                         quality_policies=args.quality_policies or [],
                     )
                 )
             )
             return 0
 
-        harness = Harness(Path(args.repo_root))
+        harness = Harness(repo_root)
         if args.command == "api" and args.api_command == "run":
             result = harness.run_api_scenario(
                 RunApiScenarioCommand(
@@ -298,14 +322,34 @@ def main(argv: list[str] | None = None) -> int:
             )
             _print(result)
             return 0 if result.status == "passed" else 1
+        if args.command == "api" and args.api_command == "report":
+            result = harness.generate_api_allure_report(
+                GenerateApiAllureReportCommand(
+                    workspace_id=args.workspace_id,
+                    execution_id=args.execution_id,
+                )
+            )
+            _print(result)
+            return 0 if result.status == "generated" else 2
+        if args.command == "api" and args.api_command == "cleanup":
+            result = harness.resume_api_cleanup(
+                ResumeApiCleanupCommand(
+                    workspace_id=args.workspace_id,
+                    execution_id=args.execution_id,
+                    environment=args.environment,
+                )
+            )
+            _print(result)
+            return 0 if result.status == "complete" else 1
         if args.command == "api" and args.api_command == "execute":
+            profile = harness.api_execution_profile(args.workspace_id, args.environment)
             _print(
                 harness.execute_api_cases(
                     ExecuteApiCasesCommand(
                         workspace_id=args.workspace_id,
                         run_id=args.run_id,
                         cases_path=args.cases_path,
-                        execution_profile=_execution_profile(args),
+                        execution_profile=profile,
                     )
                 )
             )
@@ -380,7 +424,14 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "eval":
             from harness.testing.evals import run_eval, run_live_eval
 
-            result = run_live_eval() if args.eval_command == "live" else run_eval()
+            result = (
+                run_live_eval(
+                    args.case_name,
+                    output_root=Path(args.output_dir).resolve() if args.output_dir else None,
+                )
+                if args.eval_command == "live"
+                else run_eval()
+            )
             _print(result)
             return 0 if result["passed"] else 1
         return 0

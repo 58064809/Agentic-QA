@@ -197,8 +197,8 @@ def test_generic_quality_validates_each_dataset_against_frozen_openapi() -> None
                 raw_sha256="sha256:" + "0" * 64,
                 parsed_sha256="sha256:" + "1" * 64,
                 byte_size=len(openapi_text.encode("utf-8")),
-                text=openapi_text,
-                completeness=SourceCompleteness.COMPLETE,
+                text=openapi_text[:100],
+                completeness=SourceCompleteness.PARTIAL,
             ),
         ),
         completeness=SourceCompleteness.COMPLETE,
@@ -211,6 +211,7 @@ def test_generic_quality_validates_each_dataset_against_frozen_openapi() -> None
             run_id="run-1",
             artifact="api_test_draft",
             source_bundle=bundle,
+            full_source_texts={"sources/order-lifecycle.openapi.yml": openapi_text},
         ),
         yaml.safe_dump(payload, sort_keys=False),
     )
@@ -220,6 +221,7 @@ def test_generic_quality_validates_each_dataset_against_frozen_openapi() -> None
     ]
     assert len(contract_issues) == 1
     assert contract_issues[0].details["instance_id"] == "API-ORDER-CREATE::single-item"
+    assert "invalid_manual_test_case_mapping" not in {issue.code for issue in result.issues}
 
 
 def test_source_bundle_preserves_warnings_hashes_and_run_snapshot(tmp_path: Path) -> None:

@@ -16,6 +16,7 @@ from harness.domain.models import (
     ArtifactDiffResult,
     CreateWorkspaceCommand,
     ExecuteApiCasesCommand,
+    ExecutionProfile,
     ExportApiPytestCommand,
     GetArtifactDiffQuery,
     HarnessEvent,
@@ -26,8 +27,16 @@ from harness.domain.models import (
     RunSnapshot,
     StartRunCommand,
 )
+from harness.domain.schemas.api_execution_reporting import (
+    GenerateApiAllureReportCommand,
+    GenerateApiAllureReportResult,
+    ResumeApiCleanupCommand,
+    ResumeApiCleanupResult,
+)
+from harness.domain.schemas.api_project import ApiProjectCheckCommand, ApiProjectCheckResult
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
+from harness.domain.schemas.local_config import LocalConfigCheckResult
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.quality import QualityStrategyRegistry
 
@@ -66,8 +75,14 @@ class Harness:
     def create_workspace(self, command: CreateWorkspaceCommand) -> Path:
         return self._application.create_workspace(command)
 
+    def check_local_config(self) -> LocalConfigCheckResult:
+        return self._application.check_local_config()
+
     def prepare_api_scenario(self, command: ApiScenarioPrepareCommand) -> ApiScenarioPrepareResult:
         return self._application.prepare_api_scenario(command)
+
+    def check_api_project(self, command: ApiProjectCheckCommand) -> ApiProjectCheckResult:
+        return self._application.check_api_project(command)
 
     def start_run(self, command: StartRunCommand) -> RunSnapshot:
         return self._application.start_run(command)
@@ -84,8 +99,19 @@ class Harness:
     def execute_api_cases(self, command: ExecuteApiCasesCommand) -> ExecutionEvidence:
         return self._application.execute_api_cases(command)
 
+    def api_execution_profile(self, workspace: str, environment: str) -> ExecutionProfile:
+        return self._application.api_execution_profile(workspace, environment)
+
     def run_api_scenario(self, command: RunApiScenarioCommand) -> RunApiScenarioResult:
         return self._application.run_api_scenario(command)
+
+    def generate_api_allure_report(
+        self, command: GenerateApiAllureReportCommand
+    ) -> GenerateApiAllureReportResult:
+        return self._application.generate_api_allure_report(command)
+
+    def resume_api_cleanup(self, command: ResumeApiCleanupCommand) -> ResumeApiCleanupResult:
+        return self._application.resume_api_cleanup(command)
 
     def export_api_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:
         return self._application.export_api_pytest(command)

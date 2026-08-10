@@ -10,6 +10,7 @@ from harness.application.agent_request import (
 from harness.application.use_cases import HarnessApplication
 from harness.bootstrap import agent_source_roots, build_application
 from harness.domain.models import ArtifactDiffResult, GetArtifactDiffQuery, RunRef, RunSnapshot
+from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 
 
 class AgentRequestGateway:
@@ -24,6 +25,7 @@ class AgentRequestGateway:
     ) -> None:
         self._application = application
         if self._application is None:
+            FilesystemLocalConfigLoader(repo_root).load_required()
             self._application = build_application(
                 repo_root,
                 allowed_source_roots=agent_source_roots(repo_root, allowed_source_roots),

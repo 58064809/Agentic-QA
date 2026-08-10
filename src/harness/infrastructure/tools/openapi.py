@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from typing import Any
+from urllib.parse import unquote
 
 from harness.domain.schemas.openapi import (
     OpenApiEndpoint,
@@ -93,8 +94,8 @@ def inspect_openapi(payload: Any, *, source: str) -> OpenApiInspection:
             )
     if not endpoints:
         raise ValueError("OpenAPI document has no HTTP operations")
-    if len(endpoints) > 500:
-        raise ValueError("OpenAPI document exceeds the 500 endpoint inspection limit")
+    if len(endpoints) > 2000:
+        raise ValueError("OpenAPI document exceeds the 2000 endpoint inspection limit")
 
     components = payload.get("components")
     components = components if isinstance(components, dict) else {}
@@ -142,7 +143,7 @@ def _local_ref(document: dict[str, Any], reference: str) -> Any:
     if not reference.startswith("#/"):
         raise ValueError(f"external OpenAPI reference is unsupported: {reference}")
     current: Any = document
-    for raw_part in reference[2:].split("/"):
+    for raw_part in unquote(reference[2:]).split("/"):
         part = raw_part.replace("~1", "/").replace("~0", "~")
         if not isinstance(current, dict) or part not in current:
             raise ValueError(f"unresolved OpenAPI reference: {reference}")

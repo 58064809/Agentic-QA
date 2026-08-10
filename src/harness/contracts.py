@@ -12,6 +12,8 @@ from harness.application.agent_request import (
 from harness.domain.models import (
     AgentManifest,
     ApiLoginRequest,
+    ApiLoginRequestEncryption,
+    ApiLoginSuccessCondition,
     ApiPytestExportResult,
     ApiScenarioCandidateSummary,
     ApiScenarioPrepareCommand,
@@ -52,19 +54,47 @@ from harness.domain.models import (
     StaticTokenApiAuthentication,
     ToolManifest,
 )
+from harness.domain.schemas.api_execution_reporting import (
+    ApiExecutionEvent,
+    ApiReportSummary,
+    CleanupJournalSummary,
+    GenerateApiAllureReportCommand,
+    GenerateApiAllureReportResult,
+    ResumeApiCleanupCommand,
+    ResumeApiCleanupResult,
+)
+from harness.domain.schemas.api_project import (
+    ApiProjectCheckCommand,
+    ApiProjectCheckResult,
+    ApiProjectConfig,
+)
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
+from harness.domain.schemas.local_config import AgenticQaLocalConfig, LocalConfigCheckResult
 
 __all__ = [
     "AgentCandidateSummary",
     "AgentManifest",
+    "AgenticQaLocalConfig",
+    "ApiExecutionEvent",
+    "ApiReportSummary",
+    "CleanupJournalSummary",
+    "GenerateApiAllureReportCommand",
+    "GenerateApiAllureReportResult",
+    "ResumeApiCleanupCommand",
+    "ResumeApiCleanupResult",
     "ApiScenarioCandidateSummary",
     "ApiScenarioPrepareCommand",
     "ApiScenarioPrepareResult",
     "ApiScenarioSourceFile",
     "ApiScenarioSourceSummary",
     "ApiLoginRequest",
+    "ApiLoginRequestEncryption",
+    "ApiLoginSuccessCondition",
     "ApiTokenInjection",
     "ApiPytestExportResult",
+    "ApiProjectCheckCommand",
+    "ApiProjectCheckResult",
+    "ApiProjectConfig",
     "AgentNextAction",
     "AgentRequest",
     "AgentRequestCapabilities",
@@ -100,6 +130,7 @@ __all__ = [
     "RunSnapshot",
     "SkillManifest",
     "LoginApiAuthentication",
+    "LocalConfigCheckResult",
     "StaticTokenApiAuthentication",
     "StartRunCommand",
     "SourceImportSummary",

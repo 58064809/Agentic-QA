@@ -4,6 +4,15 @@
 公开接口。PostgreSQL checkpoint 是执行恢复事实来源，文件仓储负责冻结 SourceBundle、
 create-only Candidate、人工 Review 和确定性发布。
 
+API 试跑的审计事实保存在 workspace 的 `evidence.json`，执行过程写入追加式哈希链
+`execution-events.jsonl`，Allure 3 从这些文件生成展示报告。它们不写入 PostgreSQL；PostgreSQL 仍只
+负责 LangGraph checkpoint。只有出现集中检索、多节点执行或本地/CI 保留不足时，才考虑外部日志或
+报告存储。
+
+实现遵循 [Allure 文件型结果与报告模型](https://allurereport.org/docs/how-it-works/)；workspace 的
+`allure-history.jsonl` 使用 [Allure 3 History](https://allurereport.org/docs/history-and-retries/)
+保存跨 execution 趋势，不启用会导致 API 重放的 retry 机制。
+
 ## 生成链路
 
 ```text

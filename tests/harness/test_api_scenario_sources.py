@@ -12,7 +12,6 @@ import yaml
 from harness import (
     ApiScenarioPrepareCommand,
     ArtifactVariant,
-    ExecutionEnvironmentPolicy,
     Harness,
     ReviewDecision,
     ReviewRunCommand,
@@ -27,6 +26,7 @@ from harness.application.source import (
     SourceIngestionLimits,
 )
 from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
+from harness.domain.schemas.openapi import OpenApiInspection
 from harness.infrastructure.api_scenario_sources import (
     inspect_api_scenario_sources,
     validate_manual_case_mapping,
@@ -210,6 +210,65 @@ def test_inspection_requires_both_contract_and_manual_cases() -> None:
         inspect_api_scenario_sources(_bundle({"sources/cases.csv": _csv()}))
 
 
+def test_api_fast_reads_full_frozen_openapi_and_projects_model_context() -> None:
+    payload = yaml.safe_load(_openapi())
+    payload["paths"].update(
+        {
+            f"/catalog/{index}": {
+                "get": {
+                    "summary": f"catalog {index}",
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+            for index in range(600)
+        }
+    )
+    openapi_text = json.dumps(payload, ensure_ascii=False)
+    manual_text = _csv().replace("POST the order request", "POST /orders")
+    texts = {
+        "sources/openapi.json": openapi_text,
+        "sources/cases.csv": manual_text,
+    }
+    bundle = SourceBundle(
+        parser_version="test",
+        limits=SourceIngestionLimits(),
+        documents=(
+            SourceDocument(
+                path="sources/openapi.json",
+                raw_sha256=_sha(openapi_text),
+                parsed_sha256=_sha(openapi_text[:100_000]),
+                byte_size=len(openapi_text.encode()),
+                text=openapi_text[:100_000],
+                completeness=SourceCompleteness.PARTIAL,
+                truncated=True,
+            ),
+            SourceDocument(
+                path="sources/cases.csv",
+                raw_sha256=_sha(manual_text),
+                parsed_sha256=_sha(manual_text),
+                byte_size=len(manual_text.encode()),
+                text=manual_text,
+                completeness=SourceCompleteness.COMPLETE,
+            ),
+        ),
+        completeness=SourceCompleteness.PARTIAL,
+        bundle_hash=_sha(openapi_text + manual_text),
+    )
+
+    inspection = inspect_api_scenario_sources(
+        bundle,
+        full_text_loader=lambda path: texts[path],
+    )
+    projected = inspection.model_tool_results()[0]["result"]
+    projected_by_path = {endpoint["path"]: endpoint for endpoint in projected["endpoints"]}
+
+    assert inspection.openapi[0].endpoint_count == 601
+    assert len(projected["endpoints"]) == 601
+    assert projected_by_path["/orders"]["responses"]
+    assert projected_by_path["/catalog/599"]["responses"] == []
+    OpenApiInspection.model_validate(projected)
+
+
 def test_manual_mapping_requires_every_case_id() -> None:
     inspection = inspect_api_scenario_sources(
         _bundle({"sources/openapi.yml": _openapi(), "sources/cases.csv": _csv()})
@@ -227,7 +286,7 @@ def test_manual_mapping_requires_every_case_id() -> None:
                     "source_type": "openapi",
                     "source_path": "sources/openapi.yml",
                     "chunk_id": "POST /orders",
-                    "locator": "paths./orders.post",
+                    "locator": "POST /orders",
                     "summary": "create order",
                     "confidence": "high",
                 }
@@ -246,7 +305,7 @@ def test_manual_mapping_requires_every_case_id() -> None:
                             "source_type": "openapi",
                             "source_path": "sources/openapi.yml",
                             "chunk_id": "POST /orders",
-                            "locator": "paths./orders.post",
+                            "locator": "POST /orders",
                             "summary": "create order",
                             "confidence": "high",
                         }
@@ -270,11 +329,54 @@ def test_prepare_review_and_run_vertical_loop_uses_one_api_agent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source_dir = tmp_path / "input"
-    source_dir.mkdir()
+    repo = tmp_path / "repo"
+    source_dir = repo / "local-sources" / "api" / "orders"
+    source_dir.mkdir(parents=True)
     (source_dir / "openapi.yml").write_text(_openapi(), encoding="utf-8")
     (source_dir / "cases.csv").write_text(_csv(), encoding="utf-8")
     (source_dir / "notes.txt").write_text("must remain ignored", encoding="utf-8")
+    (repo / "agentic-qa.local.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "agentic-qa.local-config.v1",
+                "model": {
+                    "provider": "recorded",
+                    "api_key_env": "UNIT_MODEL_KEY",
+                    "flash_model": "recorded-flash",
+                    "pro_model": "recorded-pro",
+                    "base_url": "https://model.example.test",
+                },
+                "rag": {"provider": "local-lexical"},
+                "postgres": {
+                    "host": "localhost",
+                    "port": 5432,
+                    "database": "postgres",
+                    "user": "postgres",
+                    "password": "unit-only",
+                },
+                "test_management": {"provider": "none"},
+                "workspace_defaults": {},
+                "api": {
+                    "services": {
+                        "orders": {
+                            "source_directory": "local-sources/api/orders",
+                            "environments": {
+                                "qa": {
+                                    "base_url": "https://qa.example.test",
+                                    "trusted_origins": ["https://qa.example.test"],
+                                    "allowed_http_methods": ["GET", "POST"],
+                                    "cleanup_exempt_operations": ["POST /orders"],
+                                    "auth": {"fallback_token": "fixture-runtime-token"},
+                                }
+                            },
+                        }
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
     planner_calls = 0
     agent_calls = 0
 
@@ -291,6 +393,7 @@ def test_prepare_review_and_run_vertical_loop_uses_one_api_agent(
         }
         assert "notes.txt" not in prompt
         results = context["tool_results"]
+        assert all(item["tool"] != "workspace.read" for item in results)
         openapi_result = next(
             item["result"] for item in results if item["tool"] == "openapi.inspect"
         )
@@ -303,7 +406,7 @@ def test_prepare_review_and_run_vertical_loop_uses_one_api_agent(
             "source_type": "openapi",
             "source_path": openapi_path,
             "chunk_id": "POST /orders",
-            "locator": "paths./orders.post",
+            "locator": "POST /orders",
             "summary": "create order",
             "confidence": "high",
         }
@@ -351,7 +454,7 @@ def test_prepare_review_and_run_vertical_loop_uses_one_api_agent(
         }
 
     harness = Harness(
-        tmp_path / "repo",
+        repo,
         model_gateway=CallableModelGateway(respond),
         allowed_source_roots=[source_dir],
     )
@@ -359,11 +462,6 @@ def test_prepare_review_and_run_vertical_loop_uses_one_api_agent(
         source_directory=str(source_dir),
         goal="assemble order API scenarios",
         environment="qa",
-        execution_policy=ExecutionEnvironmentPolicy(
-            base_url_env="AGENTIC_QA_BASE_URL",
-            trusted_origins=["https://qa.example.test"],
-            allowed_http_methods=["GET", "POST"],
-        ),
     )
     result = harness.prepare_api_scenario(command)
     repeated = harness.prepare_api_scenario(command)
@@ -420,7 +518,6 @@ def test_prepare_review_and_run_vertical_loop_uses_one_api_agent(
         requests_seen.append((method, url))
         return Response(url)
 
-    monkeypatch.setenv("AGENTIC_QA_BASE_URL", "https://qa.example.test")
     monkeypatch.setattr("requests.request", request)
     execution = harness.run_api_scenario(
         RunApiScenarioCommand(
@@ -440,3 +537,29 @@ def test_prepare_review_and_run_vertical_loop_uses_one_api_agent(
         for name in ("manifest.json", "evidence.json", "summary.md")
     )
     assert "must-not-be-persisted" not in persisted
+
+    local_path = repo / "agentic-qa.local.yml"
+    local_payload = yaml.safe_load(local_path.read_text(encoding="utf-8"))
+    local_payload["api"]["services"]["orders"]["environments"]["qa"]["auth"]["fallback_token"] = ""
+    local_path.write_text(yaml.safe_dump(local_payload, sort_keys=False), encoding="utf-8")
+    with pytest.raises(ValueError, match="LOCAL_CONFIG_INVALID"):
+        harness.run_api_scenario(
+            RunApiScenarioCommand(
+                workspace_id=result.workspace_id,
+                execution_id="vertical-loop-002",
+                environment="qa",
+            )
+        )
+    assert requests_seen == [("POST", "https://qa.example.test/orders")]
+    failed_manifest = json.loads(
+        (
+            tmp_path
+            / "repo"
+            / "workspaces"
+            / result.workspace_id
+            / "executions"
+            / "vertical-loop-002"
+            / "manifest.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert failed_manifest["status"] == "preflight_failed"

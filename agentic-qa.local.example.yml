@@ -1,0 +1,75 @@
+schema_version: agentic-qa.local-config.v1
+
+# The actual model key is the only model value kept in an environment variable.
+model:
+  provider: deepseek
+  api_key_env: DEEPSEEK_API_KEY
+  flash_model: deepseek-v4-flash
+  pro_model: deepseek-v4-pro
+  base_url: https://api.deepseek.com
+  timeout_seconds: 180
+  max_output_tokens: 16384
+
+# local-lexical does not require RAG_API_KEY. openai-compatible does.
+rag:
+  provider: local-lexical
+  api_key_env: RAG_API_KEY
+  base_url: null
+  model: text-embedding-3-small
+  chunk_size: 1200
+  chunk_overlap: 400
+
+postgres:
+  host: localhost
+  port: 5432
+  database: postgres
+  user: postgres
+  password: ""
+  connect_timeout_seconds: 5
+  statement_timeout_ms: 10000
+  max_rows: 200
+
+# Change provider to testrail or qase and put its direct connection values here.
+test_management:
+  provider: none
+
+workspace_defaults:
+  quality_policies: []
+  additional_source_roots: []
+
+# `config init` fills this automatically. Existing projects use
+# `config runtime-key init`; do not copy this key into reports or workspaces.
+runtime:
+  cleanup_journal_key: ""
+
+api:
+  services:
+    member-service:
+      source_directory: local-sources/api/member-service
+      environments:
+        dev:
+          base_url: https://gateway-app-dev.nexuscube.cn
+          trusted_origins:
+            - https://gateway-app-dev.nexuscube.cn
+          allowed_http_methods: [GET, POST]
+          cleanup_exempt_operations: []
+          timeout_seconds: 30
+          auth:
+            login:
+              kind: sms
+              request_path: /member/app/login/phoneLogin
+              tel_code: "+86"
+              phone: ""
+              sms_code: "000000"
+              encryption:
+                algorithm: aes-128-cbc-pkcs7-base64-iv-prefix
+                key: ""
+                fields: [phone, smsCode]
+              success_condition:
+                json_path: $.code
+                expected: 1000
+              token_json_path: $.data.userInfo.accessToken
+              injection:
+                name: accesstoken
+                prefix: ""
+            fallback_token: ""

@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 
 from harness.domain.security import (
     contains_likely_secret,
+    validate_api_assertion_expected_safety,
     validate_api_request_safety,
     validate_api_trusted_origin,
 )
@@ -187,12 +188,39 @@ class ApiLoginRequest(StrictModel):
         return self
 
 
+class ApiLoginRequestEncryption(StrictModel):
+    algorithm: Literal["aes-128-cbc-pkcs7-base64-iv-prefix"]
+    key_env: str = Field(pattern=r"^[A-Z_][A-Z0-9_]*$")
+    fields: list[str] = Field(min_length=1)
+
+    @field_validator("fields")
+    @classmethod
+    def validate_fields(cls, value: list[str]) -> list[str]:
+        fields = list(dict.fromkeys(item.strip() for item in value if item.strip()))
+        if not fields or any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", item) for item in fields):
+            raise ValueError("login encryption fields must be unique root JSON field names")
+        return fields
+
+
+class ApiLoginSuccessCondition(StrictModel):
+    json_path: str = Field(pattern=r"^\$(?:\.[A-Za-z_][A-Za-z0-9_-]*)+$")
+    expected: bool | int | float | str
+
+    @field_validator("expected")
+    @classmethod
+    def reject_sensitive_expected(cls, value: bool | int | float | str) -> bool | int | float | str:
+        validate_api_assertion_expected_safety(value, label="API login success expected")
+        return value
+
+
 class LoginApiAuthentication(StrictModel):
     mode: Literal["login"]
     request: ApiLoginRequest
     token_json_path: str = Field(pattern=r"^\$(?:\.[A-Za-z_][A-Za-z0-9_-]*)+$")
     expected_status_codes: list[int] = Field(default_factory=lambda: [200], min_length=1)
     injection: ApiTokenInjection = Field(default_factory=ApiTokenInjection)
+    request_encryption: ApiLoginRequestEncryption | None = None
+    success_condition: ApiLoginSuccessCondition | None = None
 
     @field_validator("expected_status_codes")
     @classmethod
@@ -216,7 +244,24 @@ class ExecutionEnvironmentPolicy(StrictModel):
     allowed_http_methods: list[str] = Field(default_factory=lambda: ["GET", "HEAD", "OPTIONS"])
     allow_ui_mutations: bool = False
     max_request_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    cleanup_exempt_operations: list[str] = Field(default_factory=list)
     api_auth: ApiAuthentication | None = None
+
+    @field_validator("cleanup_exempt_operations")
+    @classmethod
+    def normalize_cleanup_exempt_operations(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            method, separator, path = item.strip().partition(" ")
+            canonical = f"{method.upper()} {path}"
+            if not separator or method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+                raise ValueError("cleanup exemptions must use canonical mutating METHOD /path")
+            if not path.startswith("/") or " " in path:
+                raise ValueError("cleanup exemption path must be a relative path template")
+            normalized.append(canonical)
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("cleanup exemptions must be unique")
+        return normalized
 
     @field_validator("allowed_http_methods")
     @classmethod
@@ -250,7 +295,7 @@ class ApiScenarioPrepareCommand(StrictModel):
         max_length=128,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
     )
-    execution_policy: ExecutionEnvironmentPolicy
+    execution_policy: ExecutionEnvironmentPolicy | None = None
     workspace_id: str | None = None
     request_id: str | None = Field(
         default=None,
@@ -269,7 +314,7 @@ class ApiScenarioPrepareCommand(StrictModel):
     @classmethod
     def reject_goal_secrets(cls, value: str) -> str:
         if contains_likely_secret(value):
-            raise ValueError("goal contains a likely secret; use environment variables instead")
+            raise ValueError("goal contains a likely secret; use local configuration instead")
         return value
 
     @field_validator("environment")
@@ -282,6 +327,8 @@ class ApiScenarioPrepareCommand(StrictModel):
 
     @model_validator(mode="after")
     def validate_execution_policy(self) -> ApiScenarioPrepareCommand:
+        if self.execution_policy is None:
+            return self
         if self.execution_policy.base_url_env is None:
             raise ValueError("API scenario prepare requires execution_policy.base_url_env")
         authentication = self.execution_policy.api_auth
@@ -311,7 +358,7 @@ class StartRunCommand(StrictModel):
     @classmethod
     def reject_secrets_in_goal(cls, value: str) -> str:
         if contains_likely_secret(value):
-            raise ValueError("goal contains a likely secret; use environment variables instead")
+            raise ValueError("goal contains a likely secret; use local configuration instead")
         return value
 
     @field_validator("expected_artifacts")

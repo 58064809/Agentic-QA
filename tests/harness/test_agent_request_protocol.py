@@ -130,6 +130,11 @@ def test_agent_gateway_creates_and_allows_local_requirement_inbox(
         return SimpleNamespace()
 
     monkeypatch.setattr(agent_gateway_module, "build_application", fake_build_application)
+    monkeypatch.setattr(
+        agent_gateway_module.FilesystemLocalConfigLoader,
+        "load_required",
+        lambda _self: object(),
+    )
 
     AgentRequestGateway(repo)
 
@@ -147,12 +152,42 @@ def test_cli_mcp_serve_uses_local_requirement_inbox_by_default() -> None:
 def test_mcp_stdio_server_lists_restricted_tools(tmp_path: Path) -> None:
     allowed = tmp_path / "allowed"
     allowed.mkdir()
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "agentic-qa.local.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "agentic-qa.local-config.v1",
+                "model": {
+                    "provider": "recorded",
+                    "api_key_env": "UNIT_MODEL_KEY",
+                    "flash_model": "recorded-flash",
+                    "pro_model": "recorded-pro",
+                    "base_url": "https://model.example.test",
+                },
+                "rag": {"provider": "local-lexical"},
+                "postgres": {
+                    "host": "localhost",
+                    "port": 5432,
+                    "database": "postgres",
+                    "user": "postgres",
+                    "password": "unit-only",
+                },
+                "test_management": {"provider": "none"},
+                "workspace_defaults": {},
+                "api": {"services": {}},
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
 
     async def scenario() -> set[str]:
         parameters = StdioServerParameters(
             command=sys.executable,
             env={
                 **os.environ,
+                "UNIT_MODEL_KEY": "unit-test-model-key",
                 "PYTHONPATH": os.pathsep.join(
                     [
                         str(Path(__file__).resolve().parents[2] / "src"),
@@ -164,7 +199,7 @@ def test_mcp_stdio_server_lists_restricted_tools(tmp_path: Path) -> None:
                 "-m",
                 "harness",
                 "--repo-root",
-                str(tmp_path / "repo"),
+                str(repo),
                 "mcp",
                 "serve",
                 "--allow-source-root",

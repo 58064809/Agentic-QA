@@ -18,6 +18,7 @@ from harness.application.source import SourceCompleteness
 from harness.domain.schemas.api_test_cases import (
     ApiTestCasesDraft,
     validate_api_case_runtime_definitions,
+    validate_api_cleanup_policy,
 )
 from harness.domain.security import contains_likely_secret
 from harness.infrastructure.api_scenario_sources import (
@@ -57,7 +58,7 @@ def _implementation_term_supported(term: str, marker: str, source_corpus: str) -
 
 class GenericArtifactStrategy:
     name = "generic-artifact-contracts"
-    version = "4.5.0"
+    version = "4.6.0"
     requirements = StrategyRequirements()
     configuration = QualityComponentConfiguration()
 
@@ -184,6 +185,15 @@ class GenericArtifactStrategy:
                     ),
                 )
             )
+        try:
+            validate_api_cleanup_policy(draft.cases, context.cleanup_exempt_operations)
+        except ValueError as exc:
+            issues.append(
+                self._issue(
+                    "api_cleanup_required",
+                    str(exc),
+                )
+            )
         for case in draft.cases:
             if case.contract_status != "confirmed":
                 continue
@@ -211,15 +221,19 @@ class GenericArtifactStrategy:
         }
         inspections = []
         for document in context.source_bundle.documents:
+            source_text = context.full_source_texts.get(document.path, document.text)
             if (
                 document.path not in referenced_openapi
-                or document.completeness != SourceCompleteness.COMPLETE
-                or document.text is None
+                or (
+                    document.completeness != SourceCompleteness.COMPLETE
+                    and document.path not in context.full_source_texts
+                )
+                or source_text is None
             ):
                 continue
             try:
                 inspections.append(
-                    inspect_openapi(yaml.safe_load(document.text), source=document.path)
+                    inspect_openapi(yaml.safe_load(source_text), source=document.path)
                 )
             except (TypeError, ValueError, yaml.YAMLError) as exc:
                 issues.append(
@@ -244,7 +258,11 @@ class GenericArtifactStrategy:
         metrics: dict[str, object] = {}
         try:
             scenario_sources = inspect_api_scenario_sources(
-                context.source_bundle, require_complete=False
+                context.source_bundle,
+                require_complete=False,
+                full_text_loader=(
+                    context.full_source_texts.__getitem__ if context.full_source_texts else None
+                ),
             )
             if scenario_sources.manual_cases:
                 metrics = validate_manual_case_mapping(draft, scenario_sources)

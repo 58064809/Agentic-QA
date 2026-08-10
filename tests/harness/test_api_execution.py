@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from contextlib import contextmanager
@@ -7,6 +8,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 
 import pytest
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 from harness import (
     ExecutionProfile,
@@ -39,6 +42,17 @@ class FakeResponse:
 
     def json(self):
         return self._body
+
+
+def _decrypt_login_fixture(value: str, key: str) -> str:
+    combined = base64.b64decode(value, validate=True)
+    decryptor = Cipher(
+        algorithms.AES(key.encode("utf-8")),
+        modes.CBC(combined[:16]),
+    ).decryptor()
+    padded = decryptor.update(combined[16:]) + decryptor.finalize()
+    unpadder = padding.PKCS7(128).unpadder()
+    return (unpadder.update(padded) + unpadder.finalize()).decode("utf-8")
 
 
 @contextmanager
@@ -92,6 +106,68 @@ def _authenticated_api_server():
     thread.start()
     try:
         yield f"http://127.0.0.1:{server.server_port}", requests_seen
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+@contextmanager
+def _encrypted_member_api_server():
+    fixture_key = "test-key-16-byte"
+    requests_seen: list[tuple[str, str | None]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_POST(self):
+            requests_seen.append((self.path, self.headers.get("accesstoken")))
+            length = int(self.headers.get("Content-Length") or 0)
+            payload = json.loads(self.rfile.read(length))
+            valid = (
+                self.path == "/member/app/login/phoneLogin"
+                and self.headers.get("Accept") == "application/json"
+                and payload.get("telCode") == "+86"
+                and _decrypt_login_fixture(payload.get("phone", ""), fixture_key) == "fixture-phone"
+                and _decrypt_login_fixture(payload.get("smsCode", ""), fixture_key) == "000000"
+                and payload.get("inviteCode") is None
+                and payload.get("imageCode") is None
+                and payload.get("registrationId") is None
+            )
+            response = (
+                {
+                    "code": 1000,
+                    "data": {"userInfo": {"accessToken": "local-member-token"}},
+                }
+                if valid
+                else {"code": 1001}
+            )
+            body = json.dumps(response).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            token = self.headers.get("accesstoken")
+            requests_seen.append((self.path, token))
+            status = 200 if token == "local-member-token" else 401
+            body = json.dumps({"code": 1000 if status == 200 else 1001}).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format, *_args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", requests_seen, fixture_key
     finally:
         server.shutdown()
         server.server_close()
@@ -1198,6 +1274,180 @@ def test_login_authentication_fetches_token_once_then_injects_it_into_cases() ->
     assert calls[1][2]["headers"] == {"X-Access-Token": "login-runtime-token"}
     assert calls[2][2]["headers"] == {"X-Access-Token": "login-runtime-token"}
     assert "login-runtime-token" not in evidence.model_dump_json()
+
+
+def test_phone_login_encrypts_fields_checks_business_code_and_injects_token() -> None:
+    calls: list[tuple[str, str, dict[str, object]]] = []
+    fixture_key = "test-key-16-byte"
+
+    def request(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        if url.endswith("/member/app/login/phoneLogin"):
+            payload = kwargs["json"]
+            assert payload["telCode"] == "+86"
+            assert payload["phone"] != "fixture-phone"
+            assert payload["smsCode"] != "000000"
+            assert _decrypt_login_fixture(payload["phone"], fixture_key) == "fixture-phone"
+            assert _decrypt_login_fixture(payload["smsCode"], fixture_key) == "000000"
+            return FakeResponse(
+                200,
+                {
+                    "code": 1000,
+                    "data": {"userInfo": {"accessToken": "runtime-access-token"}},
+                },
+            )
+        return FakeResponse(200, {"code": 1000})
+
+    authentication = LoginApiAuthentication.model_validate(
+        {
+            "mode": "login",
+            "request": {
+                "path": "/member/app/login/phoneLogin",
+                "body": {
+                    "telCode": "${MEMBER_API_TEL_CODE}",
+                    "phone": "${MEMBER_API_PHONE}",
+                    "smsCode": "${MEMBER_API_SMS_CODE}",
+                },
+            },
+            "request_encryption": {
+                "algorithm": "aes-128-cbc-pkcs7-base64-iv-prefix",
+                "key_env": "MEMBER_API_LOGIN_ENCRYPTION_KEY",
+                "fields": ["phone", "smsCode"],
+            },
+            "success_condition": {"json_path": "$.code", "expected": 1000},
+            "token_json_path": "$.data.userInfo.accessToken",
+            "injection": {"name": "accesstoken", "prefix": ""},
+        }
+    )
+    evidence = execute_api_cases(
+        [_case("API-MEMBER", "GET")],
+        run_id="run-member-login",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="dev",
+            base_url_env="MEMBER_API_BASE_URL",
+            allowed_http_methods=["GET", "POST"],
+        ),
+        env={
+            "MEMBER_API_BASE_URL": "https://member.example.test",
+            "MEMBER_API_TEL_CODE": "+86",
+            "MEMBER_API_PHONE": "fixture-phone",
+            "MEMBER_API_SMS_CODE": "000000",
+            "MEMBER_API_LOGIN_ENCRYPTION_KEY": fixture_key,
+        },
+        authentication=authentication,
+        request_func=request,
+    )
+
+    assert evidence.summary.passed == 1
+    assert len(calls) == 2
+    assert calls[1][2]["headers"] == {"accesstoken": "runtime-access-token"}
+    serialized = evidence.model_dump_json()
+    assert "fixture-phone" not in serialized
+    assert fixture_key not in serialized
+    assert "runtime-access-token" not in serialized
+
+
+def test_phone_login_business_failure_blocks_downstream_request() -> None:
+    calls: list[str] = []
+    authentication = LoginApiAuthentication.model_validate(
+        {
+            "mode": "login",
+            "request": {
+                "path": "/member/app/login/phoneLogin",
+                "body": {
+                    "phone": "${MEMBER_API_PHONE}",
+                    "smsCode": "${MEMBER_API_SMS_CODE}",
+                },
+            },
+            "request_encryption": {
+                "algorithm": "aes-128-cbc-pkcs7-base64-iv-prefix",
+                "key_env": "MEMBER_API_LOGIN_ENCRYPTION_KEY",
+                "fields": ["phone", "smsCode"],
+            },
+            "success_condition": {"json_path": "$.code", "expected": 1000},
+            "token_json_path": "$.data.userInfo.accessToken",
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="business success condition"):
+        execute_api_cases(
+            [_case("API-MEMBER", "GET")],
+            run_id="run-member-login-failure",
+            source_cases_path="published/api_test_draft/current.yml",
+            profile=ExecutionProfile(
+                environment="dev",
+                base_url_env="MEMBER_API_BASE_URL",
+                allowed_http_methods=["GET", "POST"],
+            ),
+            env={
+                "MEMBER_API_BASE_URL": "https://member.example.test",
+                "MEMBER_API_PHONE": "fixture-phone",
+                "MEMBER_API_SMS_CODE": "000000",
+                "MEMBER_API_LOGIN_ENCRYPTION_KEY": "test-key-16-byte",
+            },
+            authentication=authentication,
+            request_func=lambda *_args, **_kwargs: (
+                calls.append("login")
+                or FakeResponse(200, {"code": 1001, "message": "fixture failure"})
+            ),
+        )
+
+    assert calls == ["login"]
+
+
+def test_phone_login_encryption_real_local_http_smoke() -> None:
+    authentication = LoginApiAuthentication.model_validate(
+        {
+            "mode": "login",
+            "request": {
+                "path": "/member/app/login/phoneLogin",
+                "headers": {"Accept": "application/json"},
+                "body": {
+                    "inviteCode": None,
+                    "telCode": "${MEMBER_API_TEL_CODE}",
+                    "phone": "${MEMBER_API_PHONE}",
+                    "smsCode": "${MEMBER_API_SMS_CODE}",
+                    "imageCode": None,
+                    "registrationId": None,
+                },
+            },
+            "request_encryption": {
+                "algorithm": "aes-128-cbc-pkcs7-base64-iv-prefix",
+                "key_env": "MEMBER_API_LOGIN_ENCRYPTION_KEY",
+                "fields": ["phone", "smsCode"],
+            },
+            "success_condition": {"json_path": "$.code", "expected": 1000},
+            "token_json_path": "$.data.userInfo.accessToken",
+            "injection": {"name": "accesstoken", "prefix": ""},
+        }
+    )
+
+    with _encrypted_member_api_server() as (base_url, requests_seen, fixture_key):
+        evidence = execute_api_cases(
+            [_case("API-MEMBER-LOCAL", "GET")],
+            run_id="run-member-local",
+            source_cases_path="published/api_test_draft/current.yml",
+            profile=ExecutionProfile(
+                environment="local-test",
+                base_url_env="MEMBER_API_BASE_URL",
+                allowed_http_methods=["GET", "POST"],
+            ),
+            env={
+                "MEMBER_API_BASE_URL": base_url,
+                "MEMBER_API_TEL_CODE": "+86",
+                "MEMBER_API_PHONE": "fixture-phone",
+                "MEMBER_API_SMS_CODE": "000000",
+                "MEMBER_API_LOGIN_ENCRYPTION_KEY": fixture_key,
+            },
+            authentication=authentication,
+        )
+
+    assert evidence.summary.passed == 1
+    assert requests_seen == [
+        ("/member/app/login/phoneLogin", None),
+        ("/api/api-member-local", "local-member-token"),
+    ]
 
 
 def test_login_authentication_real_http_smoke() -> None:

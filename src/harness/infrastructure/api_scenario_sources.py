@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -39,10 +41,35 @@ class ApiScenarioSourceInspection(BaseModel):
         )
 
     def model_tool_results(self) -> list[dict[str, Any]]:
-        results = [
-            {"tool": "openapi.inspect", "result": item.model_dump(mode="json")}
-            for item in self.openapi
-        ]
+        manual_corpus = json.dumps(
+            [item.case.model_dump(mode="json") for item in self.manual_cases],
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        results: list[dict[str, Any]] = []
+        for item in self.openapi:
+            selected_paths = {
+                endpoint.path for endpoint in item.endpoints if endpoint.path in manual_corpus
+            }
+            payload = item.model_dump(mode="json")
+            payload["endpoints"] = [
+                (
+                    endpoint
+                    if endpoint.path in selected_paths
+                    else endpoint.model_copy(
+                        update={
+                            "description": "",
+                            "tags": [],
+                            "parameters": [],
+                            "request_body": None,
+                            "responses": [],
+                            "security": [],
+                        }
+                    )
+                ).model_dump(mode="json")
+                for endpoint in item.endpoints
+            ]
+            results.append({"tool": "openapi.inspect", "result": payload})
         results.append(
             {
                 "tool": "manual-test-cases.inspect",
@@ -67,13 +94,19 @@ class FilesystemApiScenarioSourceCatalog:
 
     def inspect(self, workspace: str, run_id: str) -> ApiScenarioSourceSummary:
         bundle = self._source_bundles.load_source_bundle(workspace, run_id)
-        return inspect_api_scenario_sources(bundle).summary
+        return inspect_api_scenario_sources(
+            bundle,
+            full_text_loader=lambda path: self._source_bundles.load_full_source_text(
+                workspace, path
+            ),
+        ).summary
 
 
 def inspect_api_scenario_sources(
     bundle: SourceBundle,
     *,
     require_complete: bool = True,
+    full_text_loader: Callable[[str], str] | None = None,
 ) -> ApiScenarioSourceInspection:
     openapi_files: list[ApiScenarioSourceFile] = []
     manual_files: list[ApiScenarioSourceFile] = []
@@ -82,7 +115,19 @@ def inspect_api_scenario_sources(
     manual_cases: list[ManualTestCaseSource] = []
 
     for document in bundle.documents:
-        if document.text is None:
+        path = document.path
+        suffix = PurePosixPath(path).suffix.casefold()
+        text = document.text
+        if full_text_loader is not None and suffix in {
+            ".json",
+            ".yaml",
+            ".yml",
+            ".csv",
+            ".md",
+            ".markdown",
+        }:
+            text = full_text_loader(path)
+        if text is None:
             ignored_files.append(
                 ApiScenarioSourceFile(
                     path=document.path,
@@ -91,10 +136,12 @@ def inspect_api_scenario_sources(
                 )
             )
             continue
-        path = document.path
-        suffix = PurePosixPath(path).suffix.casefold()
-        text = document.text.removeprefix("\ufeff")
+        text = text.removeprefix("\ufeff")
         parsed = _parse_yaml_or_json(text, path=path, suffix=suffix)
+        if isinstance(parsed, dict) and parsed.get("schema_version") == (
+            "agentic-qa.api-project.v1"
+        ):
+            continue
         if isinstance(parsed, dict) and ("openapi" in parsed or "swagger" in parsed):
             inspection = inspect_openapi(parsed, source=path)
             inspections.append(inspection)

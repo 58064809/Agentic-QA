@@ -26,11 +26,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      PG_LOCAL_HOST: localhost
-      PG_LOCAL_PORT: 5432
-      PG_LOCAL_DATABASE: postgres
-      PG_LOCAL_USER: postgres
-      PG_LOCAL_PASSWORD: postgres
+      DEEPSEEK_API_KEY: ci-offline-placeholder
     strategy:
       fail-fast: false
       matrix:
@@ -42,16 +38,31 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: constraints.txt
+      - uses: actions/setup-node@v4
+        if: matrix.python-version == '3.12'
+        with:
+          node-version: "22"
+          cache: npm
       - name: Install
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev,docs]" -c constraints.txt
+      - name: Create local test configuration
+        run: |
+          cp agentic-qa.local.example.yml agentic-qa.local.yml
+          python -c "import yaml; p='agentic-qa.local.yml'; d=yaml.safe_load(open(p)); d['postgres']['password']='postgres'; d['api']['services']={}; open(p,'w').write(yaml.safe_dump(d, sort_keys=False))"
+      - name: Install pinned Allure 3
+        if: matrix.python-version == '3.12'
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          npm run allure:version
       - name: Ruff
         run: |
           ruff format --check .
           ruff check .
       - name: Tests
-        run: pytest -q
+        run: pytest -q --basetemp="${{ runner.temp }}/pytest-${{ matrix.python-version }}"
       - name: Offline and golden eval
         run: python -m harness eval run
       - name: Documentation
@@ -60,10 +71,19 @@ jobs:
         run: |
           python -m build --wheel
           python -c "import glob,zipfile; names=zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist(); assert all(any(n.startswith(p) for n in names) for p in ('harness/domain/','harness/application/','harness/infrastructure/','harness/interfaces/','harness/manifests/','harness/manifests/prompts/','harness/knowledge/')); assert any(n.endswith('harness/knowledge/test-design.yml') for n in names); assert not any(n.startswith(('runtime/','rag/','scripts/')) for n in names); assert not any(n.startswith('harness/knowledge/') and n.endswith('.md') for n in names); assert not any('city_opening_rewards' in n for n in names)"
+      - name: Upload Allure compatibility report
+        if: always() && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-compatibility-${{ github.run_id }}
+          if-no-files-found: error
+          path: ${{ runner.temp }}/pytest-3.12/**/allure-report
 
   playwright-mcp-live-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      DEEPSEEK_API_KEY: ci-offline-placeholder
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -78,6 +98,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]" -c constraints.txt
+      - name: Create local test configuration
+        run: |
+          cp agentic-qa.local.example.yml agentic-qa.local.yml
+          python -c "import yaml; p='agentic-qa.local.yml'; d=yaml.safe_load(open(p)); d['postgres']['password']='postgres'; d['api']['services']={}; open(p,'w').write(yaml.safe_dump(d, sort_keys=False))"
       - name: Install Playwright MCP browser
         run: npx --yes @playwright/mcp@latest install-browser chrome
       - name: Run official Playwright MCP live smoke

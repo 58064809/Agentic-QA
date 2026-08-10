@@ -123,9 +123,8 @@ python -m harness api export-pytest demo
 导出的 `workspaces/demo/exports/api_test_draft/test_api_cases.py` 不复制或重新生成测试逻辑，而是调用
 公开 Harness API 执行 published YAML。文件绑定源 SHA-256；published 发生变化后，旧 adapter 返回
 hash 不匹配，重新导出会生成与新版本绑定的文件。
-运行 pytest 前显式设置 `AGENTIC_QA_EXECUTION_ENVIRONMENT`、
-`AGENTIC_QA_ALLOWED_HTTP_METHODS`、base URL 和 workspace 策略。导出不批准 Candidate，也不改变
-published。
+adapter 在导出时绑定已审核环境，运行时由 Harness 重新读取根目录 `agentic-qa.local.yml`。无需设置
+API Base URL、环境、方法或认证环境变量。导出不批准 Candidate，也不改变 published。
 
 adapter 对每个业务用例、dataset 实例和 cleanup Evidence ID 生成独立 pytest item；底层场景在 session
 内只执行一次。这样流水线可以精确显示失败项，同时仍保持跨用例变量链和逆序 cleanup 语义。
@@ -155,6 +154,14 @@ JSON 路径支持根 `$`、对象字段 `.field` 和数组索引 `[index]`，例
 响应头原值。
 
 ## URL 与 cleanup 执行边界
+
+confirmed 的 `POST`、`PUT`、`PATCH`、`DELETE` 默认视为状态变更；缺少带断言 cleanup 的 Candidate 会被质量门拒绝。确实无副作用的
+operation 需要在根配置环境下以规范化 `METHOD /path-template` 写入 `cleanup_exempt_operations`；项目级登录
+不进入 API Cases，因此自动豁免。cleanup 会先写入 AES-256-GCM 加密 journal，再按 LIFO 执行。崩溃后，
+`api cleanup resume` 仅恢复从未发送的 pending cleanup，不重放 running、failed 或业务请求。
+正常 cleanup 按 LIFO 执行，设计原则与
+[pytest safe teardowns](https://docs.pytest.org/en/stable/how-to/fixtures.html#safe-teardowns)
+一致；恢复仍由 Harness 的加密 journal 和防重放状态决定，而不是 pytest retry。
 
 `api.execute` 只接受不含用户信息、查询和片段的 HTTP(S) base URL。执行器将业务请求与登录请求的最终 URL
 约束在配置的 Origin 和基础路径内，拒绝点段、编码分隔符、反斜杠与空路径段，并关闭自动重定向；响应若

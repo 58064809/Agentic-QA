@@ -9,8 +9,8 @@ from harness.domain.schemas.execution_evidence import ExecutionEvidence
 
 
 class RunApiScenarioResult(StrictModel):
-    schema_version: Literal["agentic-qa.harness.run-api-scenario-result.v1"] = (
-        "agentic-qa.harness.run-api-scenario-result.v1"
+    schema_version: Literal["agentic-qa.harness.run-api-scenario-result.v2"] = (
+        "agentic-qa.harness.run-api-scenario-result.v2"
     )
     workspace_id: str
     execution_id: str
@@ -20,4 +20,10 @@ class RunApiScenarioResult(StrictModel):
     manifest_path: str
     evidence_path: str
     summary_path: str
+    event_log_path: str
+    report_summary_path: str
+    cleanup_summary_path: str
+    allure_results_path: str
+    allure_report_path: str | None = None
+    report_status: Literal["generated", "results_only"]
     evidence: ExecutionEvidence

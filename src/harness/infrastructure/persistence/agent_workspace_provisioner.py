@@ -110,6 +110,7 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
         *,
         generation_mode: str = "standard",
         execution_environments: dict[str, ExecutionEnvironmentPolicy] | None = None,
+        api_project_binding: dict[str, str] | None = None,
     ) -> PreparedAgentWorkspace:
         environments = execution_environments or {}
         self.workspaces.root.mkdir(parents=True, exist_ok=True)
@@ -123,6 +124,7 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
                 imported,
                 generation_mode=generation_mode,
                 execution_environments=environments,
+                api_project_binding=api_project_binding,
             )
             workspace_id = request.workspace_id or self._automatic_workspace_id(
                 request.source_paths[0],
@@ -138,6 +140,7 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
                 files=imported,
                 generation_mode=generation_mode,
                 execution_environments=environments,
+                api_project_binding=api_project_binding,
             )
             manifest_sha256 = _canonical_hash(manifest)
             prepared = PreparedAgentWorkspace(
@@ -154,6 +157,7 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
                 manifest,
                 scan_root,
                 execution_environments=environments,
+                api_project_binding=api_project_binding,
             )
             return prepared
         finally:
@@ -368,6 +372,7 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
         *,
         generation_mode: str,
         execution_environments: dict[str, ExecutionEnvironmentPolicy],
+        api_project_binding: dict[str, str] | None = None,
     ) -> str:
         payload = {
             "schema": request.schema_version,
@@ -380,6 +385,7 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
                 name: policy.model_dump(mode="json", exclude_none=True)
                 for name, policy in execution_environments.items()
             },
+            "api_project": api_project_binding,
             "sources": [item.model_dump(mode="json") for item in files],
         }
         return _canonical_hash(payload)
@@ -400,6 +406,7 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
         files: list[ImportedSourceFile],
         generation_mode: str,
         execution_environments: dict[str, ExecutionEnvironmentPolicy],
+        api_project_binding: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         return {
             "schema_version": IMPORT_SCHEMA,
@@ -417,6 +424,7 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
                     name: policy.model_dump(mode="json", exclude_none=True)
                     for name, policy in execution_environments.items()
                 },
+                "api_project": api_project_binding,
             },
             "source_import": {
                 "file_count": len(files),
@@ -433,6 +441,7 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
         scan_root: Path,
         *,
         execution_environments: dict[str, ExecutionEnvironmentPolicy],
+        api_project_binding: dict[str, str] | None = None,
     ) -> None:
         final = self.workspaces.workspace_path(prepared.workspace_id)
         with exclusive_file_lock(self.workspaces.root / ".agent-request-workspaces.lock"):
@@ -465,13 +474,13 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
                             "id": prepared.workspace_id,
                             "created_at": datetime.now(tz=UTC).isoformat(),
                             "quality_policies": request.quality_policies,
-                            "rag": {"provider": "local-lexical"},
                             "execution": {
                                 "environments": {
                                     name: policy.model_dump(mode="json", exclude_none=True)
                                     for name, policy in execution_environments.items()
                                 }
                             },
+                            "api_project": api_project_binding,
                         },
                         allow_unicode=True,
                         sort_keys=False,

@@ -4,4 +4,5 @@ from harness.testing.evals import run_offline_eval
 def test_offline_eval_covers_complete_review_loop() -> None:
     result = run_offline_eval()
     assert result["passed"]
-    assert result["artifact_count"] == 9
+    assert result["artifact_count"] == 8
+    assert result["checks"]["api_direct_entry_blocked"]

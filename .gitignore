@@ -13,6 +13,7 @@ build/
 .env
 .env.*
 !.env.example
+/agentic-qa.local.yml
 venv/
 env/
 .DS_Store
@@ -39,3 +40,4 @@ Thumbs.db
 
 # MkDocs build output
 site/
+node_modules/
