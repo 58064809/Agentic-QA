@@ -4,7 +4,7 @@
 
 - [从零开始](docs/getting-started.md)：安装、配置、Source、Run、Candidate、Review 与发布。
 - [CLI 参考](docs/cli-reference.md)：命令、参数、状态、Artifact 和退出码。
-- [配置参考](docs/configuration.md)：环境变量、`workspace.yml`、RAG 与 PostgreSQL。
+- [配置参考](docs/configuration.md)：根级本地配置、仅模型/RAG Key 环境变量及安全边界。
 - [跨 AI 接入](docs/agent-integration.md)：Codex、Claude、Cursor 的 MCP 与请求文件入口。
 
 使用 AI 生成测试用例时，把每项需求放在
@@ -21,8 +21,9 @@ Set-Location D:\TestHome\Agentic-QA
 python -m pip install -e ".[dev]"
 
 $env:DEEPSEEK_API_KEY = "<你的模型密钥>"
-$env:PG_LOCAL_PASSWORD = "<你的 PostgreSQL 密码>"
-
+python -m harness config init
+# 编辑 agentic-qa.local.yml 后检查
+python -m harness config doctor
 python -m harness workspace create demo
 Copy-Item D:\Docs\prd.md .\workspaces\demo\sources\
 python -m harness run start demo "分析需求并生成测试用例"

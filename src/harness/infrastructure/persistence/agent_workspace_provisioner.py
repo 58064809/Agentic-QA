@@ -22,7 +22,7 @@ from harness.application.agent_request import (
     ImportedSourceFile,
     PreparedAgentWorkspace,
 )
-from harness.domain.models import normalize_workspace_id
+from harness.domain.models import ExecutionEnvironmentPolicy, normalize_workspace_id
 from harness.infrastructure.persistence.common import (
     atomic_json,
     atomic_text,
@@ -104,14 +104,28 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
             self._validated_allowed_root(Path(item)) for item in allowed_source_roots
         )
 
-    def prepare(self, request: AgentRequest) -> PreparedAgentWorkspace:
+    def prepare(
+        self,
+        request: AgentRequest,
+        *,
+        generation_mode: str = "standard",
+        execution_environments: dict[str, ExecutionEnvironmentPolicy] | None = None,
+        api_project_binding: dict[str, str] | None = None,
+    ) -> PreparedAgentWorkspace:
+        environments = execution_environments or {}
         self.workspaces.root.mkdir(parents=True, exist_ok=True)
         candidates = self._collect_candidates(request.source_paths)
         scan_root = Path(tempfile.mkdtemp(prefix=".agent-source-scan-", dir=self.workspaces.root))
         try:
             imported = self._copy_and_hash_candidates(candidates, scan_root)
             self._verify_tree_stable(request.source_paths, candidates)
-            request_key = self._request_key(request, imported)
+            request_key = self._request_key(
+                request,
+                imported,
+                generation_mode=generation_mode,
+                execution_environments=environments,
+                api_project_binding=api_project_binding,
+            )
             workspace_id = request.workspace_id or self._automatic_workspace_id(
                 request.source_paths[0],
                 request_key,
@@ -124,6 +138,9 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
                 workspace_id=workspace_id,
                 run_id=run_id,
                 files=imported,
+                generation_mode=generation_mode,
+                execution_environments=environments,
+                api_project_binding=api_project_binding,
             )
             manifest_sha256 = _canonical_hash(manifest)
             prepared = PreparedAgentWorkspace(
@@ -134,7 +151,14 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
                 files=imported,
                 total_bytes=sum(item.size_bytes for item in imported),
             )
-            self._install_workspace(prepared, request, manifest, scan_root)
+            self._install_workspace(
+                prepared,
+                request,
+                manifest,
+                scan_root,
+                execution_environments=environments,
+                api_project_binding=api_project_binding,
+            )
             return prepared
         finally:
             self._remove_temporary_tree(scan_root)
@@ -345,6 +369,10 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
     def _request_key(
         request: AgentRequest,
         files: list[ImportedSourceFile],
+        *,
+        generation_mode: str,
+        execution_environments: dict[str, ExecutionEnvironmentPolicy],
+        api_project_binding: dict[str, str] | None = None,
     ) -> str:
         payload = {
             "schema": request.schema_version,
@@ -352,6 +380,12 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
             "goal": request.goal,
             "expected_artifacts": request.expected_artifacts,
             "quality_policies": request.quality_policies,
+            "generation_mode": generation_mode,
+            "execution_environments": {
+                name: policy.model_dump(mode="json", exclude_none=True)
+                for name, policy in execution_environments.items()
+            },
+            "api_project": api_project_binding,
             "sources": [item.model_dump(mode="json") for item in files],
         }
         return _canonical_hash(payload)
@@ -370,6 +404,9 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
         workspace_id: str,
         run_id: str,
         files: list[ImportedSourceFile],
+        generation_mode: str,
+        execution_environments: dict[str, ExecutionEnvironmentPolicy],
+        api_project_binding: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         return {
             "schema_version": IMPORT_SCHEMA,
@@ -382,6 +419,12 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
                 "goal": request.goal,
                 "expected_artifacts": request.expected_artifacts,
                 "quality_policies": request.quality_policies,
+                "generation_mode": generation_mode,
+                "execution_environments": {
+                    name: policy.model_dump(mode="json", exclude_none=True)
+                    for name, policy in execution_environments.items()
+                },
+                "api_project": api_project_binding,
             },
             "source_import": {
                 "file_count": len(files),
@@ -396,6 +439,9 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
         request: AgentRequest,
         manifest: dict[str, Any],
         scan_root: Path,
+        *,
+        execution_environments: dict[str, ExecutionEnvironmentPolicy],
+        api_project_binding: dict[str, str] | None = None,
     ) -> None:
         final = self.workspaces.workspace_path(prepared.workspace_id)
         with exclusive_file_lock(self.workspaces.root / ".agent-request-workspaces.lock"):
@@ -428,8 +474,13 @@ class ManagedAgentWorkspaceFilesystemProvisioner:
                             "id": prepared.workspace_id,
                             "created_at": datetime.now(tz=UTC).isoformat(),
                             "quality_policies": request.quality_policies,
-                            "rag": {"provider": "local-lexical"},
-                            "execution": {"environments": {}},
+                            "execution": {
+                                "environments": {
+                                    name: policy.model_dump(mode="json", exclude_none=True)
+                                    for name, policy in execution_environments.items()
+                                }
+                            },
+                            "api_project": api_project_binding,
                         },
                         allow_unicode=True,
                         sort_keys=False,

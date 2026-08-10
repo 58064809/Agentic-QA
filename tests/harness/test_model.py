@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from harness.application.model_port import ModelPolicy, ModelRoute
 from harness.contracts import PlanTask, StartRunCommand
+from harness.domain.schemas.local_config import LocalModelConfig
 from harness.infrastructure.llm.gateway import (
     DEFAULT_DEEPSEEK_BASE_URL,
     ModelConfig,
@@ -17,34 +18,24 @@ class ExampleOutput(BaseModel):
     value: str
 
 
-def test_deepseek_key_enables_default_v4_routing(monkeypatch) -> None:
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "not-a-real-key")
-    monkeypatch.delenv("AGENTIC_QA_MODEL", raising=False)
-    monkeypatch.delenv("AGENTIC_QA_MODEL_FLASH", raising=False)
-    monkeypatch.delenv("AGENTIC_QA_MODEL_PRO", raising=False)
-    monkeypatch.delenv("AGENTIC_QA_MODEL_API_KEY_ENV", raising=False)
-    monkeypatch.delenv("AGENTIC_QA_MODEL_BASE_URL", raising=False)
-
-    config = ModelConfig.from_env()
-
-    assert config is not None
+def test_model_non_secret_settings_come_from_local_config() -> None:
+    config = ModelConfig.from_local(
+        LocalModelConfig(
+            provider="deepseek",
+            api_key_env="DEEPSEEK_API_KEY",
+            flash_model="deepseek-v4-flash",
+            pro_model="deepseek-v4-pro",
+            base_url=DEFAULT_DEEPSEEK_BASE_URL,
+            timeout_seconds=180,
+            max_output_tokens=16384,
+        )
+    )
     assert config.api_key_env == "DEEPSEEK_API_KEY"
     assert config.base_url == DEFAULT_DEEPSEEK_BASE_URL
     assert config.flash_model == "deepseek-v4-flash"
     assert config.pro_model == "deepseek-v4-pro"
     assert config.request_timeout_seconds == 180
-    assert config.max_output_tokens == 32768
-
-
-def test_single_model_override_pins_both_tiers(monkeypatch) -> None:
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "not-a-real-key")
-    monkeypatch.setenv("AGENTIC_QA_MODEL", "deepseek-v4-flash")
-
-    config = ModelConfig.from_env()
-
-    assert config is not None
-    assert config.flash_model == "deepseek-v4-flash"
-    assert config.pro_model == "deepseek-v4-flash"
+    assert config.max_output_tokens == 16384
 
 
 def test_policy_uses_pro_only_for_complex_plans_and_specialists() -> None:

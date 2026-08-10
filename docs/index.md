@@ -9,7 +9,7 @@ Agentic-QA 生成 create-only 候选产物，并以人工 Review Gate 隔离 Age
 | CLI 使用者 | [从零开始](getting-started.md) | 如何完成配置、执行、审核和发布 |
 | CLI 使用者 | [CLI 参考](cli-reference.md) | 每条命令、参数和退出码是什么 |
 | AI 集成者 | [跨 AI 接入](agent-integration.md) | MCP 与 AgentRequest 如何稳定触发生成 |
-| 环境维护者 | [配置参考](configuration.md) | 环境变量、workspace、RAG 和 PostgreSQL 如何配置 |
+| 环境维护者 | [配置参考](configuration.md) | 根配置、模型/RAG Key、API 和 PostgreSQL 如何配置 |
 | Python 集成者 | [Harness 契约](harness-contracts.md) | 七个公开方法与强类型输入输出 |
 | 审核人 | [Review Gate](review-gate.md) | 哪些版本能批准，发布如何防绕过 |
 | 维护者 | [架构](architecture.md) | 分层依赖、组合根和运行链路 |

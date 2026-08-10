@@ -5,12 +5,26 @@ human_review_required: true
 base_url_env: AGENTIC_QA_BASE_URL
 business_rules: [ORDER-001]
 source_refs:
-  - &openapi_ref
+  - &openapi_create_ref
     source_type: openapi
     source_path: sources/order-lifecycle.openapi.yml
     chunk_id: orders
-    locator: /orders
-    summary: Order create, read, and delete operations
+    locator: POST /orders
+    summary: Order create operation
+    confidence: high
+  - &openapi_read_ref
+    source_type: openapi
+    source_path: sources/order-lifecycle.openapi.yml
+    chunk_id: orders
+    locator: GET /orders
+    summary: Order read operation
+    confidence: high
+  - &openapi_delete_ref
+    source_type: openapi
+    source_path: sources/order-lifecycle.openapi.yml
+    chunk_id: orders
+    locator: DELETE /orders
+    summary: Order delete operation
     confidence: high
 cases:
   - id: API-ORDER-CREATE
@@ -20,7 +34,7 @@ cases:
     business_rule_refs: [ORDER-001]
     review_status: needs_human_review
     review_questions: [Confirm the QA fixture SKUs]
-    source_refs: [*openapi_ref]
+    source_refs: [*openapi_create_ref, *openapi_delete_ref]
     pending: []
     request:
       method: POST
@@ -63,7 +77,7 @@ cases:
     business_rule_refs: [ORDER-001]
     review_status: needs_human_review
     review_questions: [Confirm last-dataset chaining is intended]
-    source_refs: [*openapi_ref]
+    source_refs: [*openapi_read_ref]
     pending: []
     request:
       method: GET

@@ -121,10 +121,12 @@ def test_repository_contracts_are_consistent() -> None:
         errors.append("wheel 构建工具未同时声明在 dev 依赖与 constraints")
     if "--index-url" in constraints or "--trusted-host" in constraints:
         errors.append("constraints 不得固定本机 Python 包索引")
-    if "GetEnvironmentVariable($keyEnvironment)" not in cold_start_script:
-        errors.append("冷启动检查未间接读取所选模型密钥环境变量")
-    if 'Write-Output "model key: configured via $keyEnvironment"' not in cold_start_script:
-        errors.append("冷启动检查应只报告模型密钥环境变量名")
+    if '"config", "doctor"' not in cold_start_script:
+        errors.append("冷启动运行时检查未调用统一配置 doctor")
+    if "FilesystemLocalConfigLoader('.')" not in cold_start_script:
+        errors.append("冷启动数据库检查未从统一配置加载连接参数")
+    if "PG_LOCAL_" in cold_start_script or "AGENTIC_QA_MODEL_" in cold_start_script:
+        errors.append("冷启动检查仍引用已移除的环境变量配置")
     if '".[dev,docs]" -c constraints.txt' not in _read(root / "README.md"):
         errors.append("fresh clone 安装未包含冷启动完整依赖与 constraints")
     for marker in (

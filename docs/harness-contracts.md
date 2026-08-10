@@ -6,12 +6,19 @@
 
 | 方法 | 输入 | 输出 | 前置条件 | 写入/副作用 |
 |---|---|---|---|---|
+| `check_local_config` | 无 | `LocalConfigCheckResult` | 仓库根目录可读 | 只读检查根配置，不创建 workspace/run |
+| `api_execution_profile` | `workspace, environment` | `ExecutionProfile` | workspace 已绑定 API 服务 | 只读派生执行配置，不返回凭据值 |
 | `create_workspace` | `CreateWorkspaceCommand` | `Path` | workspace ID 安全且不存在 | 创建 v2 workspace |
+| `check_api_project` | `ApiProjectCheckCommand` | `ApiProjectCheckResult` | 根配置与来源目录可读 | 只读检查根配置、运行环境和 API 来源，不创建 workspace/run |
+| `prepare_api_scenario` | `ApiScenarioPrepareCommand` | `ApiScenarioPrepareResult` | 来源目录含完整 OpenAPI 与合法人工用例，且配置受控 QA 环境策略 | 幂等导入来源并生成单个 API Candidate；停在 Review Gate |
 | `start_run` | `StartRunCommand` | `RunSnapshot` | workspace、模型、PostgreSQL 可用 | 创建 run 并执行到终态/Review Gate |
 | `stream_run` | `StartRunCommand` | `Iterator[HarnessEvent]` | 同 `start_run` | 同一执行的事件流 |
 | `get_run` | `RunRef` | `RunSnapshot` | `workspace_id + run_id` 存在 | 只读；可触发未完成发布恢复 |
 | `get_artifact_diff` | `GetArtifactDiffQuery` | `ArtifactDiffResult` | 两端版本存在 | 只读 |
 | `execute_api_cases` | `ExecuteApiCasesCommand` | `ExecutionEvidence` | published API YAML、测试环境策略和环境变量有效 | 发送允许的 API 请求；不写 Review 或 published |
+| `run_api_scenario` | `RunApiScenarioCommand` | `RunApiScenarioResult` | published API YAML、workspace 环境策略和新的 execution ID 有效 | create-only 写 manifest v2、Evidence、哈希链日志、cleanup 状态和 Allure results/HTML；不自动重放 |
+| `generate_api_allure_report` | `GenerateApiAllureReportCommand` | `GenerateApiAllureReportResult` | execution 已存在且包含 Allure results 或 Evidence | 生成静态 Allure HTML；不发送 API 请求 |
+| `resume_api_cleanup` | `ResumeApiCleanupCommand` | `ResumeApiCleanupResult` | 加密 journal、环境、published hash 和策略 hash 一致 | 只发送 pending cleanup；不重放业务请求或不确定 cleanup |
 | `export_api_pytest` | `ExportApiPytestCommand` | `ApiPytestExportResult` | 来源是 published API YAML，目标位于 workspace `exports/` | 确定性写入 pytest adapter；默认 create-only |
 | `resume_run` | `ResumeRunCommand` | `RunSnapshot` | planning/running/recoverable | 从同一 PostgreSQL thread 恢复 |
 | `review_run` | `ReviewRunCommand` | `RunSnapshot` | run 可审核且人工决定有效 | 写 Review；approve 可发布 |
@@ -20,7 +27,7 @@
 `agentic-qa.harness.*.v2`；API cases 独立保持 `agentic-qa.api-cases.v1.1`。
 
 外部 AI 的 `AgentRequest` 和 MCP 是独立受限门面，不增加 Harness 的 Review 权限，也不改变上述
-九个方法；其契约见[跨 AI 接入](agent-integration.md)。
+十二个方法；其契约见[跨 AI 接入](agent-integration.md)。
 
 pytest adapter 固定来源 YAML 的 SHA-256，执行时重新校验 hash。它调用同一公开
 `execute_api_cases` 用例，不复制断言、变量或 cleanup 解释逻辑；workspace 执行策略与 Review Gate

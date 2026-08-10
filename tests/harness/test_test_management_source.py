@@ -4,9 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml
 
-from harness import CreateWorkspaceCommand, Harness, StartRunCommand
+from harness import AgenticQaLocalConfig, CreateWorkspaceCommand, Harness, StartRunCommand
 from harness.budget import Budget
 from harness.contracts import ExecutionProfile
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
@@ -49,34 +48,58 @@ class FakeSession:
 
 def _config() -> RailSourceConfig:
     return RailSourceConfig(
-        base_url_env="TESTRAIL_URL",
-        username_env="TESTRAIL_USER",
-        api_key_env="TESTRAIL_API_KEY",
+        base_url="https://qa.testrail.example/team",
+        username="qa@example.test",
+        api_key="not-a-real-api-key",
         max_items=20,
     )
-
-
-def _env() -> dict[str, str]:
-    return {
-        "TESTRAIL_URL": "https://qa.testrail.example/team",
-        "TESTRAIL_USER": "qa@example.test",
-        "TESTRAIL_API_KEY": "not-a-real-api-key",
-    }
 
 
 def _qase_config() -> QaseSourceConfig:
     return QaseSourceConfig(
-        base_url_env="QASE_URL",
-        api_token_env="QASE_API_TOKEN",
+        base_url="https://api.qase.io",
+        api_token="not-a-real-qase-token",
         max_items=20,
     )
 
 
-def _qase_env() -> dict[str, str]:
-    return {
-        "QASE_URL": "https://api.qase.io",
-        "QASE_API_TOKEN": "not-a-real-qase-token",
-    }
+def _runtime_config(provider: str) -> AgenticQaLocalConfig:
+    test_management: dict[str, object]
+    if provider == "testrail":
+        test_management = {
+            "provider": "testrail",
+            "base_url": "https://qa.testrail.example/team",
+            "username": "qa@example.test",
+            "api_key": "not-a-real-api-key",
+        }
+    else:
+        test_management = {
+            "provider": "qase",
+            "base_url": "https://api.qase.io",
+            "api_token": "not-a-real-qase-token",
+        }
+    return AgenticQaLocalConfig.model_validate(
+        {
+            "model": {
+                "provider": "recorded",
+                "api_key_env": "UNIT_MODEL_KEY",
+                "flash_model": "recorded-flash",
+                "pro_model": "recorded-pro",
+                "base_url": "https://model.example.test",
+            },
+            "rag": {"provider": "local-lexical"},
+            "postgres": {
+                "host": "localhost",
+                "port": 5432,
+                "database": "postgres",
+                "user": "postgres",
+                "password": "unit-only",
+            },
+            "test_management": test_management,
+            "workspace_defaults": {},
+            "api": {"services": {}},
+        }
+    )
 
 
 def test_testrail_list_cases_uses_fixed_read_only_endpoint_and_bounds_page() -> None:
@@ -104,7 +127,6 @@ def test_testrail_list_cases_uses_fixed_read_only_endpoint_and_bounds_page() -> 
             limit=2,
             offset=10,
         ),
-        env=_env(),
         session=session,  # type: ignore[arg-type]
     )
 
@@ -159,7 +181,6 @@ def test_qase_list_cases_uses_fixed_read_only_endpoint_and_bounds_page() -> None
             limit=2,
             offset=10,
         ),
-        env=_qase_env(),
         session=session,  # type: ignore[arg-type]
     )
 
@@ -204,7 +225,6 @@ def test_qase_get_case_normalizes_single_result() -> None:
     result = read_qase(
         _qase_config(),
         QaseQuery(operation="get_case", project_code="AUTH", case_id=17),
-        env=_qase_env(),
         session=session,  # type: ignore[arg-type]
     )
 
@@ -253,9 +273,8 @@ def test_qase_query_rejects_missing_unsupported_or_unsafe_identifiers(
     ],
 )
 def test_testrail_config_rejects_unsafe_base_urls(base_url: str) -> None:
-    env = {**_env(), "TESTRAIL_URL": base_url}
     with pytest.raises(ValueError, match="HTTPS URL"):
-        _config().credentials(env)
+        _config().model_copy(update={"base_url": base_url}).credentials()
 
 
 def test_testrail_rejects_redirects_and_oversized_responses() -> None:
@@ -264,7 +283,6 @@ def test_testrail_rejects_redirects_and_oversized_responses() -> None:
         read_testrail(
             _config(),
             ManagementQuery(operation="list_projects"),
-            env=_env(),
             session=redirect,  # type: ignore[arg-type]
         )
 
@@ -275,7 +293,6 @@ def test_testrail_rejects_redirects_and_oversized_responses() -> None:
         read_testrail(
             _config(),
             ManagementQuery(operation="list_projects"),
-            env=_env(),
             session=oversized,  # type: ignore[arg-type]
         )
 
@@ -286,7 +303,6 @@ def test_qase_rejects_redirects_and_unsuccessful_payloads() -> None:
         read_qase(
             _qase_config(),
             QaseQuery(operation="list_projects"),
-            env=_qase_env(),
             session=redirect,  # type: ignore[arg-type]
         )
 
@@ -295,7 +311,6 @@ def test_qase_rejects_redirects_and_unsuccessful_payloads() -> None:
         read_qase(
             _qase_config(),
             QaseQuery(operation="list_projects"),
-            env=_qase_env(),
             session=unsuccessful,  # type: ignore[arg-type]
         )
 
@@ -306,18 +321,6 @@ def test_tool_runtime_reads_config_in_analysis_only_and_redacts_external_secrets
 ) -> None:
     harness = Harness(tmp_path, model_gateway=recorded_model_gateway())
     workspace = harness.create_workspace(CreateWorkspaceCommand(workspace_id="demo"))
-    config_path = workspace / "workspace.yml"
-    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    payload["data_sources"] = {
-        "test_management": {
-            "provider": "testrail",
-            "schema_version": "agentic-qa.harness.testrail-source.v1",
-            "base_url_env": "TESTRAIL_URL",
-            "username_env": "TESTRAIL_USER",
-            "api_key_env": "TESTRAIL_API_KEY",
-        }
-    }
-    config_path.write_text(yaml.safe_dump(payload, allow_unicode=True), encoding="utf-8")
     snapshot = harness.start_run(StartRunCommand(workspace_id="demo", goal="test"))
     captured: list[tuple[RailSourceConfig, ManagementQuery]] = []
 
@@ -346,7 +349,13 @@ def test_tool_runtime_reads_config_in_analysis_only_and_redacts_external_secrets
     tools = ToolRegistry.builtin()
     skills = SkillRegistry.builtin()
     agents = AgentRegistry.builtin(skills=skills, tools=tools)
-    runtime = ToolRuntime(store=store, agents=agents, tools=tools, budget=Budget())
+    runtime = ToolRuntime(
+        store=store,
+        agents=agents,
+        tools=tools,
+        budget=Budget(),
+        local_config=_runtime_config("testrail"),
+    )
 
     result = runtime.call(
         workspace="demo",
@@ -373,18 +382,7 @@ def test_tool_runtime_dispatches_qase_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     harness = Harness(tmp_path, model_gateway=recorded_model_gateway())
-    workspace = harness.create_workspace(CreateWorkspaceCommand(workspace_id="demo"))
-    config_path = workspace / "workspace.yml"
-    payload = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    payload["data_sources"] = {
-        "test_management": {
-            "provider": "qase",
-            "schema_version": "agentic-qa.harness.qase-source.v1",
-            "base_url_env": "QASE_URL",
-            "api_token_env": "QASE_API_TOKEN",
-        }
-    }
-    config_path.write_text(yaml.safe_dump(payload, allow_unicode=True), encoding="utf-8")
+    harness.create_workspace(CreateWorkspaceCommand(workspace_id="demo"))
     snapshot = harness.start_run(StartRunCommand(workspace_id="demo", goal="test"))
     captured: list[tuple[QaseSourceConfig, QaseQuery]] = []
 
@@ -413,7 +411,13 @@ def test_tool_runtime_dispatches_qase_provider(
     tools = ToolRegistry.builtin()
     skills = SkillRegistry.builtin()
     agents = AgentRegistry.builtin(skills=skills, tools=tools)
-    runtime = ToolRuntime(store=store, agents=agents, tools=tools, budget=Budget())
+    runtime = ToolRuntime(
+        store=store,
+        agents=agents,
+        tools=tools,
+        budget=Budget(),
+        local_config=_runtime_config("qase"),
+    )
 
     result = runtime.call(
         workspace="demo",

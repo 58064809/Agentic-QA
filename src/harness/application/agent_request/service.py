@@ -9,12 +9,19 @@ from harness.application.agent_request.models import (
     SourceImportSummary,
 )
 from harness.application.ports import (
+    ApiScenarioSourceCatalog,
     ManagedAgentWorkspaceProvisioner,
     QualityStrategyCatalog,
     RunEventRepository,
     WorkflowRunner,
 )
-from harness.domain.models import ExecutionProfile, RunSnapshot, StartRunCommand
+from harness.domain.models import (
+    ApiScenarioSourceSummary,
+    ExecutionEnvironmentPolicy,
+    ExecutionProfile,
+    RunSnapshot,
+    StartRunCommand,
+)
 
 
 class AgentRequestService:
@@ -25,20 +32,60 @@ class AgentRequestService:
         runs: RunEventRepository,
         workflow: WorkflowRunner,
         quality_policies: QualityStrategyCatalog,
+        api_scenario_sources: ApiScenarioSourceCatalog | None = None,
     ) -> None:
         self._provisioner = provisioner
         self._runs = runs
         self._workflow = workflow
         self._quality_policies = quality_policies
+        self._api_scenario_sources = api_scenario_sources
 
     def submit(self, request: AgentRequest) -> AgentRequestResult:
+        return self._submit(request, generation_mode="standard", execution_environments={})
+
+    def submit_api_fast(
+        self,
+        request: AgentRequest,
+        *,
+        execution_environments: dict[str, ExecutionEnvironmentPolicy],
+        api_project_binding: dict[str, str],
+    ) -> AgentRequestResult:
+        if request.expected_artifacts != ["api_test_draft"]:
+            raise ValueError("api_fast only supports api_test_draft")
+        if len(execution_environments) != 1:
+            raise ValueError("api_fast requires exactly one execution environment policy")
+        return self._submit(
+            request,
+            generation_mode="api_fast",
+            execution_environments=execution_environments,
+            api_project_binding=api_project_binding,
+        )
+
+    def _submit(
+        self,
+        request: AgentRequest,
+        *,
+        generation_mode: str,
+        execution_environments: dict[str, ExecutionEnvironmentPolicy],
+        api_project_binding: dict[str, str] | None = None,
+    ) -> AgentRequestResult:
         self._quality_policies.require(request.quality_policies)
-        prepared = self._provisioner.prepare(request)
+        prepared = (
+            self._provisioner.prepare(request)
+            if generation_mode == "standard"
+            else self._provisioner.prepare(
+                request,
+                generation_mode=generation_mode,
+                execution_environments=execution_environments,
+                api_project_binding=api_project_binding,
+            )
+        )
         command = StartRunCommand(
             workspace_id=prepared.workspace_id,
             goal=request.goal,
             expected_artifacts=request.expected_artifacts,
             execution_profile=ExecutionProfile(),
+            generation_mode=generation_mode,
         )
         with self._provisioner.request_lock(prepared):
             snapshot = self._load_existing(prepared)
@@ -55,6 +102,11 @@ class AgentRequestService:
             return self._runs.load_snapshot(prepared.workspace_id, prepared.run_id)
         except FileNotFoundError:
             return None
+
+    def inspect_api_sources(self, workspace: str, run_id: str) -> ApiScenarioSourceSummary:
+        if self._api_scenario_sources is None:
+            raise RuntimeError("API scenario source catalog is not configured")
+        return self._api_scenario_sources.inspect(workspace, run_id)
 
     @staticmethod
     def _validate_existing(snapshot: RunSnapshot, command: StartRunCommand) -> None:

@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import shutil
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -68,6 +69,27 @@ class FilesystemStore:
 
     def load_source_bundle(self, workspace: str, run_id: str) -> SourceBundle:
         return self.sources.load_source_bundle(workspace, run_id)
+
+    def load_full_source_text(
+        self,
+        workspace: str,
+        relative_path: str,
+        *,
+        max_bytes: int = 16 * 1024 * 1024,
+    ) -> str:
+        root = self.require_workspace(workspace).resolve()
+        target = (root / relative_path).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError as exc:
+            raise PermissionError("source path escapes the workspace") from exc
+        info = target.lstat()
+        is_reparse = bool(getattr(info, "st_file_attributes", 0) & 0x400)
+        if stat.S_ISLNK(info.st_mode) or is_reparse or not stat.S_ISREG(info.st_mode):
+            raise ValueError("source must be a regular non-linked file")
+        if info.st_size > max_bytes:
+            raise ValueError(f"API source exceeds {max_bytes} bytes: {relative_path}")
+        return target.read_text(encoding="utf-8-sig")
 
     def create_run(self, snapshot: RunSnapshot) -> None:
         self.runs.create_run(snapshot)

@@ -2,6 +2,10 @@ schema_version: agentic-qa.harness.skill-manifest.v3
 name: api-testing
 description: 基于完整 OpenAPI 设计和执行 API 测试。
 instructions:
+  - id: skill.api-testing.preflight
+    kind: safety
+    text: API 测试生成必须先通过项目环境、Base URL、认证与登录加密预检；缺项时终止且不得调用模型或发送请求。
+    enforced_by: [validator:api-project-preflight]
   - id: skill.api-testing.contract
     kind: contract
     text: endpoint 事实来自完整且解析成功的 OpenAPI，机器用例符合 api-cases v1.1。

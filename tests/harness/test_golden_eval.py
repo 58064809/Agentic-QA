@@ -134,17 +134,11 @@ def test_rule_aliases_match_atomic_candidate_rules_to_composite_expectation() ->
 
 
 def test_live_eval_scores_generated_candidate_not_only_run_status(
-    monkeypatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(
-        "harness.infrastructure.llm.gateway.model_gateway_from_env",
-        lambda: recorded_model_gateway(),
-    )
     output_root = tmp_path / "live-eval-artifacts"
-    monkeypatch.setenv("AGENTIC_QA_LIVE_EVAL_OUTPUT", str(output_root))
 
-    result = run_live_eval()
+    result = run_live_eval(model_gateway=recorded_model_gateway(), output_root=output_root)
 
     assert result["case"] == "login-lock"
     assert result["status"] == "needs_human_review"
@@ -157,30 +151,22 @@ def test_live_eval_scores_generated_candidate_not_only_run_status(
     assert (output_root / "testcases/generation-report.json").is_file()
 
 
-def test_live_eval_selects_configured_case(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "harness.infrastructure.llm.gateway.model_gateway_from_env",
-        lambda: recorded_model_gateway(),
-    )
-    monkeypatch.setenv("AGENTIC_QA_LIVE_EVAL_CASE", "lottery-assistance")
-
-    result = run_live_eval()
+def test_live_eval_selects_configured_case() -> None:
+    result = run_live_eval("lottery-assistance", model_gateway=recorded_model_gateway())
 
     assert result["case"] == "lottery-assistance"
     assert result["status"] == "needs_human_review"
     assert result["golden"]["case"] == "lottery-assistance"
 
 
-def test_live_eval_scores_api_candidate_with_api_golden(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(
-        "harness.infrastructure.llm.gateway.model_gateway_from_env",
-        lambda: recorded_model_gateway(),
-    )
-
+def test_live_eval_scores_api_candidate_with_api_golden(tmp_path: Path) -> None:
     output_root = tmp_path / "api-live-eval-artifacts"
-    monkeypatch.setenv("AGENTIC_QA_LIVE_EVAL_OUTPUT", str(output_root))
 
-    result = run_live_eval("order-lifecycle")
+    result = run_live_eval(
+        "order-lifecycle",
+        model_gateway=recorded_model_gateway(),
+        output_root=output_root,
+    )
 
     assert result["case"] == "order-lifecycle"
     assert result["status"] == "needs_human_review"

@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import yaml
+
+from harness.interfaces import cli
 from harness.interfaces.cli import _execution_profile, _parser
 
 
@@ -41,6 +46,16 @@ def test_run_cli_maps_explicit_execution_profile_arguments() -> None:
 
 
 def test_api_cli_exposes_execute_and_deterministic_pytest_export() -> None:
+    doctor = _parser().parse_args(["api", "doctor", "D:/sources/order-api", "--environment", "dev"])
+    prepare = _parser().parse_args(
+        [
+            "api",
+            "prepare",
+            "D:/sources/order-api",
+            "--environment",
+            "qa",
+        ]
+    )
     execute = _parser().parse_args(
         [
             "api",
@@ -49,15 +64,61 @@ def test_api_cli_exposes_execute_and_deterministic_pytest_export() -> None:
             "run-api",
             "--environment",
             "qa",
-            "--allow-http-method",
-            "GET",
-            "--allow-http-method",
-            "POST",
         ]
     )
     export = _parser().parse_args(["api", "export-pytest", "demo"])
+    run = _parser().parse_args(["api", "run", "demo", "trial-001", "--environment", "qa"])
 
+    assert doctor.api_command == "doctor"
+    assert doctor.environment == "dev"
+    assert prepare.api_command == "prepare"
     assert execute.api_command == "execute"
-    assert execute.allowed_http_methods == ["GET", "POST"]
+    assert execute.environment == "qa"
     assert export.api_command == "export-pytest"
     assert export.output_path == "exports/api_test_draft/test_api_cases.py"
+    assert run.api_command == "run"
+    assert run.execution_id == "trial-001"
+    assert run.environment == "qa"
+
+
+def test_config_init_is_create_only_and_doctor_fails_closed(tmp_path: Path) -> None:
+    example = tmp_path / "agentic-qa.local.example.yml"
+    example.write_text("schema_version: example-only\n", encoding="utf-8")
+    arguments = ["--repo-root", str(tmp_path), "config", "init"]
+
+    assert cli.main(arguments) == 0
+    target = tmp_path / "agentic-qa.local.yml"
+    created = yaml.safe_load(target.read_text(encoding="utf-8"))
+    assert created["schema_version"] == "example-only"
+    assert created["runtime"]["cleanup_journal_key"]
+    first = target.read_bytes()
+
+    assert cli.main(arguments) == 2
+    assert target.read_bytes() == first
+    assert cli.main(["--repo-root", str(tmp_path), "config", "doctor"]) == 2
+
+
+def test_api_run_cli_exit_codes_follow_persisted_result(monkeypatch) -> None:
+    class Result:
+        def __init__(self, status: str) -> None:
+            self.status = status
+
+        def model_dump(self, *, mode: str) -> dict[str, str]:
+            assert mode == "json"
+            return {"status": self.status}
+
+    class FakeHarness:
+        status = "passed"
+
+        def __init__(self, _repo_root) -> None:
+            pass
+
+        def run_api_scenario(self, _command):
+            return Result(self.status)
+
+    monkeypatch.setattr(cli, "Harness", FakeHarness)
+    arguments = ["api", "run", "demo", "trial-001", "--environment", "qa"]
+
+    assert cli.main(arguments) == 0
+    FakeHarness.status = "failed"
+    assert cli.main(arguments) == 1

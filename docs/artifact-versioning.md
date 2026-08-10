@@ -23,9 +23,19 @@ workspaces/<workspace_id>/
 │   ├── discovery-catalog.json     # API Discovery 的脱敏机器目录
 │   └── manifest.json
 ├── reviews/<run_id>/
-└── published/<artifact>/
+├── published/<artifact>/
     ├── current.*
     └── history/
+├── allure-history.jsonl
+└── executions/<execution-id>/
+    ├── manifest.json
+    ├── evidence.json
+    ├── execution-events.jsonl
+    ├── report-summary.json
+    ├── cleanup-summary.json
+    ├── .cleanup-journal.enc       # 仅在需要 cleanup 时存在
+    ├── allure-results/
+    └── allure-report/             # 本地 Allure CLI 可用时存在
 ```
 
 ## 事实与可变性
@@ -41,6 +51,10 @@ workspaces/<workspace_id>/
 | Review Record | 人工决定与批准版本 | 按 artifact 原子写 | 审计 |
 | published history | 已发布只增不改版本 | create-only | 历史追踪 |
 | published current | 当前版本指针内容 | 原子替换 | 使用者读取 |
+| API execution manifest/Evidence | 防重放状态与审计事实 | execution ID create-only | 试跑结论与产物索引 |
+| API execution events | 脱敏、追加式 SHA-256 哈希链 | append-only | 请求边界与崩溃定位 |
+| cleanup journal | AES-256-GCM 加密的恢复状态 | 原子替换 | 仅恢复从未发送的 cleanup |
+| Allure results/history/report | Evidence 的展示投影 | 可重新生成 | 状态浏览、趋势与回归 |
 
 ## 原子边界
 

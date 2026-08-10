@@ -24,19 +24,10 @@ class RagProviderConfig(BaseModel):
     )
     provider: Literal["local-lexical", "openai-compatible"] = "local-lexical"
     api_key_env: str = "RAG_API_KEY"
-    base_url_env: str = "AGENTIC_QA_RAG_BASE_URL"
+    base_url: str | None = None
     model: str = "text-embedding-3-small"
     chunk_size: int = Field(default=1200, ge=200, le=4000)
     chunk_overlap: int = Field(default=400, ge=0, le=1000)
-
-    @classmethod
-    def from_workspace(cls, raw: object) -> RagProviderConfig:
-        payload = dict(raw) if isinstance(raw, dict) else {}
-        payload.setdefault(
-            "api_key_env",
-            os.getenv("AGENTIC_QA_RAG_API_KEY_ENV", "RAG_API_KEY").strip() or "RAG_API_KEY",
-        )
-        return cls.model_validate(payload)
 
 
 class RagRetriever:
@@ -112,10 +103,9 @@ class RagRetriever:
             raise RuntimeError(
                 f"RAG API key environment variable is not set: {self.config.api_key_env}"
             )
-        base_url = os.getenv(self.config.base_url_env, "").strip() or None
         from openai import OpenAI
 
-        response = OpenAI(api_key=api_key, base_url=base_url).embeddings.create(
+        response = OpenAI(api_key=api_key, base_url=self.config.base_url).embeddings.create(
             model=self.config.model,
             input=[query, *(content for _, _, content in chunks)],
         )

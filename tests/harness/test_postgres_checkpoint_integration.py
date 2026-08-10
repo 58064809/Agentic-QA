@@ -1,23 +1,36 @@
 from __future__ import annotations
 
-import os
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import TypedDict
 
 import pytest
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
-from harness.infrastructure.persistence.postgres_checkpoint import postgres_checkpointer
+from harness.infrastructure.local_config import FilesystemLocalConfigLoader
+from harness.infrastructure.persistence.postgres_checkpoint import (
+    CheckpointPostgresConfig,
+    postgres_checkpointer,
+)
 
 
 class CounterState(TypedDict):
     value: int
 
 
-def _require_postgres() -> None:
-    if not os.getenv("PG_LOCAL_PASSWORD"):
-        pytest.skip("PG_LOCAL_PASSWORD is not configured")
+def _postgres_config() -> CheckpointPostgresConfig:
+    value = FilesystemLocalConfigLoader(Path.cwd()).load_required().postgres
+    if value.password == "local-validation-only":
+        pytest.skip("postgres.password is still the local placeholder")
+    return CheckpointPostgresConfig(
+        host=value.host,
+        port=value.port,
+        database=value.database,
+        user=value.user,
+        password=value.password,
+        connect_timeout_seconds=value.connect_timeout_seconds,
+    )
 
 
 def _interrupt_graph(checkpointer):
@@ -35,14 +48,14 @@ def _interrupt_graph(checkpointer):
 
 @pytest.mark.postgres
 def test_checkpoint_setup_interrupt_and_cross_connection_resume() -> None:
-    _require_postgres()
+    postgres = _postgres_config()
     config = {"configurable": {"thread_id": "workspace-a:run-cross-connection"}}
 
-    with postgres_checkpointer() as checkpointer:
+    with postgres_checkpointer(postgres) as checkpointer:
         first = _interrupt_graph(checkpointer).invoke({"value": 2}, config)
         assert first["__interrupt__"]
 
-    with postgres_checkpointer() as checkpointer:
+    with postgres_checkpointer(postgres) as checkpointer:
         resumed = _interrupt_graph(checkpointer).invoke(Command(resume=3), config)
 
     assert resumed["value"] == 5
@@ -50,12 +63,12 @@ def test_checkpoint_setup_interrupt_and_cross_connection_resume() -> None:
 
 @pytest.mark.postgres
 def test_concurrent_workspace_qualified_checkpoint_threads() -> None:
-    _require_postgres()
+    postgres = _postgres_config()
 
     def execute(index: int) -> int:
         thread_id = f"workspace-{index % 2}:run-{index}"
         config = {"configurable": {"thread_id": thread_id}}
-        with postgres_checkpointer() as checkpointer:
+        with postgres_checkpointer(postgres) as checkpointer:
             builder = StateGraph(CounterState)
             builder.add_node("increment", lambda state: {"value": state["value"] + 1})
             builder.add_edge(START, "increment")

@@ -156,6 +156,24 @@ def _validate_request_contract(
         ]
     match = matches[0]
     endpoint = match.endpoint
+    checks += 1
+    expected_locator = f"{endpoint.method} {endpoint.path}"
+    if not any(
+        reference.source_type == "openapi"
+        and reference.confidence == "high"
+        and reference.source_path == match.inspection.source
+        and reference.locator == expected_locator
+        for reference in case.source_refs
+    ):
+        issues.append(
+            _issue(
+                "source_locator_mismatch",
+                case,
+                instance_id,
+                f"{location}.source_refs",
+                f"OpenAPI source locator must be exactly {expected_locator!r}",
+            )
+        )
     parameters = {(item.location, item.name.casefold()): item for item in endpoint.parameters}
 
     supplied_by_location: dict[str, Mapping[str, Any]] = {

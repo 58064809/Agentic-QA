@@ -58,4 +58,4 @@ class OpenApiInspection(StrictModel):
     server_urls: list[str] = Field(default_factory=list)
     security_schemes: dict[str, dict[str, Any]] = Field(default_factory=dict)
     endpoint_count: int = Field(ge=1)
-    endpoints: list[OpenApiEndpoint] = Field(min_length=1, max_length=500)
+    endpoints: list[OpenApiEndpoint] = Field(min_length=1, max_length=2000)

@@ -51,6 +51,7 @@ from harness.domain.schemas.api_test_cases import (
 from harness.domain.schemas.api_test_cases import (
     SourceRef as ApiSourceRef,
 )
+from harness.domain.schemas.local_config import AgenticQaLocalConfig
 from harness.domain.schemas.openapi import OpenApiInspection
 from harness.domain.schemas.qa_design import (
     CoverageMapping,
@@ -67,6 +68,10 @@ from harness.domain.schemas.qa_design import (
     validate_testcase_set,
 )
 from harness.domain.security import sanitize_untrusted
+from harness.infrastructure.api_scenario_sources import (
+    inspect_api_scenario_sources,
+    validate_manual_case_mapping,
+)
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.persistence.filesystem import FilesystemStore
 from harness.infrastructure.prompts import PromptCompiler
@@ -76,6 +81,23 @@ from harness.infrastructure.tools.runtime import ToolRuntime, resolve_execution_
 from harness.infrastructure.workflow.graph import HarnessState, compile_harness_graph
 
 UTC = timezone.utc
+
+
+def _workspace_cleanup_exemptions(store: FilesystemStore, workspace: str) -> tuple[str, ...]:
+    payload = store.workspace_config(workspace)
+    binding = payload.get("api_project")
+    execution = payload.get("execution")
+    if not isinstance(binding, dict) or not isinstance(execution, dict):
+        return ()
+    environment = binding.get("environment")
+    environments = execution.get("environments")
+    if not isinstance(environment, str) or not isinstance(environments, dict):
+        return ()
+    policy = environments.get(environment)
+    if not isinstance(policy, dict):
+        return ()
+    exemptions = policy.get("cleanup_exempt_operations")
+    return tuple(str(item) for item in exemptions) if isinstance(exemptions, list) else ()
 
 
 class ToolRequest(BaseModel):
@@ -219,6 +241,36 @@ def build_default_plan(request: StartRunCommand) -> QAPlan:
     )
 
 
+def build_api_fast_plan() -> QAPlan:
+    return QAPlan(
+        tasks=[
+            PlanTask(
+                id="assemble_api_scenarios",
+                objective=(
+                    "Map every frozen manual test case to confirmed OpenAPI operations or an "
+                    "explicit unconfirmed pending scenario"
+                ),
+                agent="api_test_engineer",
+                inputs=["normalized_openapi", "manual_test_cases"],
+                expected_outputs=["api_test_draft"],
+                evidence_requirements=[
+                    EvidenceRequirement(
+                        kind="trace",
+                        description=(
+                            "Every manual test case ID has a high-confidence "
+                            "manual-test-case source reference"
+                        ),
+                    )
+                ],
+            )
+        ],
+        rationale=(
+            "API fast mode uses one deterministic assembly task; endpoint facts remain bounded "
+            "by the frozen OpenAPI inspection."
+        ),
+    )
+
+
 def _testcase_template(goal: str) -> str:
     return render_testcase_set(default_recorded_testcase_set(goal))
 
@@ -348,6 +400,7 @@ class HarnessEngine:
         quality_policies: QualityStrategyRegistry,
         checkpoint_provider: CheckpointProvider,
         model: ModelGateway | None,
+        local_config: AgenticQaLocalConfig,
         limits: BudgetLimits | None = None,
         tool_handlers: dict[str, Any] | None = None,
     ) -> None:
@@ -359,6 +412,7 @@ class HarnessEngine:
         self.assessment = CandidateAssessmentService(quality_policies)
         self.checkpoint_provider = checkpoint_provider
         self.model = model
+        self.local_config = local_config
         self.model_policy = ModelPolicy()
         self.prompt_compiler = PromptCompiler(agents=agents, skills=skills)
         self.limits = limits or BudgetLimits()
@@ -375,9 +429,8 @@ class HarnessEngine:
     ) -> RunSnapshot:
         if self.model is None:
             raise RuntimeError(
-                "未配置模型；设置 DEEPSEEK_API_KEY，"
-                "或显式配置 AGENTIC_QA_MODEL 和模型密钥环境变量，"
-                "或显式注入 ModelGateway"
+                "未配置模型；请在 agentic-qa.local.yml 设置 model，并设置其 "
+                "api_key_env 指向的模型密钥环境变量，或显式注入 ModelGateway"
             )
         run_id = run_id or f"run-{datetime.now(tz=UTC):%Y%m%d-%H%M%S}-{uuid4().hex[:8]}"
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", run_id):
@@ -504,6 +557,7 @@ class HarnessEngine:
                 tool=payload.get("tool"),
                 status=payload.get("status"),
             ),
+            local_config=self.local_config,
         )
         source_bundle = self.store.load_source_bundle(snapshot.workspace_id, snapshot.run_id)
         nodes = self._nodes(snapshot, budget, runtime, model_usage, event, source_bundle)
@@ -568,6 +622,24 @@ class HarnessEngine:
         request = snapshot.request
 
         def planner(_state: HarnessState) -> dict[str, Any]:
+            if request.generation_mode == "api_fast":
+                inspect_api_scenario_sources(
+                    source_bundle,
+                    full_text_loader=lambda path: self.store.load_full_source_text(
+                        snapshot.workspace_id, path
+                    ),
+                )
+                plan = build_api_fast_plan()
+                self._validate_plan(plan, request)
+                ready = [plan.tasks[0].id]
+                event("plan_created", task_count=1, revision=plan.revision)
+                event("tasks_delegated", task_ids=ready)
+                return {
+                    "plan": plan.model_dump(mode="json"),
+                    "pending_tasks": ready,
+                    "status": "running",
+                    "delegations": [{"task_ids": ready, "revision": plan.revision}],
+                }
             if self.model is None:  # guarded by execute, retained for type narrowing
                 raise RuntimeError("model is not configured")
             route = self.model_policy.for_planner(request)
@@ -942,6 +1014,10 @@ class HarnessEngine:
                 raise ValueError(
                     "api_discovery_report producer must not depend on requirement or risk tasks"
                 )
+            if request.generation_mode == "api_fast":
+                if len(plan.tasks) != 1 or producers[0].dependencies:
+                    raise ValueError("api_fast requires one dependency-free API assembly task")
+                continue
             if artifact in DESIGN_ARTIFACTS:
                 requirement_tasks = [
                     task
@@ -1010,7 +1086,12 @@ class HarnessEngine:
                         "live api_discovery_report requires an explicit UI-enabled "
                         "test environment when no frozen capture exists"
                     )
-                live_test_base_url = resolve_execution_base_url(request.execution_profile)
+                live_test_base_url = resolve_execution_base_url(
+                    request.execution_profile,
+                    store=self.store,
+                    local_config=self.local_config,
+                    workspace=request.workspace_id,
+                )
                 model_tool_allowlist = ["mcp.playwright", "network.capture.live"]
         elif manifest.name == "api_test_engineer":
             model_tool_allowlist = [
@@ -1043,6 +1124,16 @@ class HarnessEngine:
         requirement_catalog = _requirement_catalog_from_dependencies(dependencies)
         risk_catalog = _risk_catalog_from_dependencies(dependencies)
         source_files = [document.path for document in source_bundle.readable_documents]
+        api_source_inspection = None
+        if request.generation_mode == "api_fast":
+            api_source_inspection = inspect_api_scenario_sources(
+                source_bundle,
+                full_text_loader=lambda path: self.store.load_full_source_text(
+                    request.workspace_id, path
+                ),
+            )
+            source_files = list(api_source_inspection.recognized_paths)
+            tool_results.extend(api_source_inspection.model_tool_results())
         source_fragments: list[RequirementCatalog] = []
         batched_seed: AgentOutput | None = None
         api_discovery_export: ApiDiscoveryExport | None = None
@@ -1053,7 +1144,8 @@ class HarnessEngine:
             tools=model_tools,
         )
         if (
-            source_files
+            request.generation_mode != "api_fast"
+            and source_files
             and manifest.name in SOURCE_PREFETCH_AGENTS
             and "workspace.read" in manifest.tool_allowlist
         ):
@@ -1811,6 +1903,7 @@ class HarnessEngine:
                         tool_results=tool_results,
                         requirement_catalog=requirement_catalog,
                         source_bundle=source_bundle,
+                        api_source_inspection=api_source_inspection,
                     )
                     rendered = dict(result.artifacts)
                     if "api_test_draft" in rendered:
@@ -1915,6 +2008,23 @@ class HarnessEngine:
                     run_id=run_id,
                     artifact=artifact,
                     source_bundle=source_bundle,
+                    full_source_texts=(
+                        {
+                            document.path: self.store.load_full_source_text(
+                                request.workspace_id, document.path
+                            )
+                            for document in source_bundle.documents
+                            if document.path.casefold().endswith(
+                                (".json", ".yaml", ".yml", ".csv", ".md", ".markdown")
+                            )
+                        }
+                        if artifact == "api_test_draft"
+                        else {}
+                    ),
+                    cleanup_exempt_operations=_workspace_cleanup_exemptions(
+                        self.store,
+                        request.workspace_id,
+                    ),
                 )
                 assessment = self.assessment.assess(
                     context=context,
@@ -2302,6 +2412,23 @@ class HarnessEngine:
                 run_id=snapshot.run_id,
                 artifact=artifact,
                 source_bundle=source_bundle,
+                full_source_texts=(
+                    {
+                        document.path: self.store.load_full_source_text(
+                            snapshot.workspace_id, document.path
+                        )
+                        for document in source_bundle.documents
+                        if document.path.casefold().endswith(
+                            (".json", ".yaml", ".yml", ".csv", ".md", ".markdown")
+                        )
+                    }
+                    if artifact == "api_test_draft"
+                    else {}
+                ),
+                cleanup_exempt_operations=_workspace_cleanup_exemptions(
+                    self.store,
+                    snapshot.workspace_id,
+                ),
             )
             assessment = self.assessment.assess(
                 context=context,
@@ -2577,6 +2704,7 @@ def _validate_api_test_cases(
     tool_results: list[dict[str, Any]],
     requirement_catalog: RequirementCatalog | None,
     source_bundle: SourceBundle,
+    api_source_inspection: Any | None = None,
 ) -> None:
     try:
         validate_api_case_runtime_definitions(cases.cases)
@@ -2587,15 +2715,20 @@ def _validate_api_test_cases(
             else "invalid API runtime definitions"
         )
         raise ValueError(f"{category}: {exc}") from exc
-    raw_inspections = [
-        item.get("result")
-        for item in tool_results
-        if item.get("tool") == "openapi.inspect" and isinstance(item.get("result"), dict)
-    ]
-    try:
-        inspections = [OpenApiInspection.model_validate(item) for item in raw_inspections]
-    except ValueError as exc:
-        raise ValueError(f"invalid OpenAPI inspection result: {exc}") from exc
+    if api_source_inspection is not None:
+        # The API fast lane sends a bounded projection to the model, while all
+        # deterministic validation must use the complete frozen contract.
+        inspections = list(api_source_inspection.openapi)
+    else:
+        raw_inspections = [
+            item.get("result")
+            for item in tool_results
+            if item.get("tool") == "openapi.inspect" and isinstance(item.get("result"), dict)
+        ]
+        try:
+            inspections = [OpenApiInspection.model_validate(item) for item in raw_inspections]
+        except ValueError as exc:
+            raise ValueError(f"invalid OpenAPI inspection result: {exc}") from exc
     known_rules = (
         {rule.rule_id for rule in requirement_catalog.rules}
         if requirement_catalog is not None
@@ -2652,6 +2785,8 @@ def _validate_api_test_cases(
             sort_keys=True,
         )
         raise ValueError(f"invalid API contract semantics: {serialized}")
+    if api_source_inspection is not None:
+        validate_manual_case_mapping(cases, api_source_inspection)
 
 
 def _requirement_catalog_from_dependencies(
@@ -3050,6 +3185,19 @@ def _generation_source_selection(
                     "raw_sha256": hashes.get(source),
                     "selection_reason": "openapi.inspect",
                 }
+        elif tool == "manual-test-cases.inspect":
+            for case in result.get("cases") or []:
+                if not isinstance(case, dict):
+                    continue
+                source = str(case.get("source_path") or "")
+                case_id = str(case.get("case_id") or "") or None
+                if source:
+                    selected[(source, case_id)] = {
+                        "source": source,
+                        "raw_sha256": hashes.get(source),
+                        "chunk_id": case_id,
+                        "selection_reason": "manual-test-cases.inspect",
+                    }
         elif tool == "network.capture.inspect":
             source = str(result.get("source_path") or "")
             if source:

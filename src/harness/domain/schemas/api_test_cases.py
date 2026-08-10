@@ -416,6 +416,27 @@ def validate_api_case_runtime_definitions(cases: list[ApiTestCase]) -> None:
         raise ValueError("expanded API execution evidence ids must be unique")
 
 
+def validate_api_cleanup_policy(
+    cases: list[ApiTestCase],
+    cleanup_exempt_operations: list[str] | tuple[str, ...],
+) -> None:
+    exemptions = set(cleanup_exempt_operations)
+    for case in cases:
+        if case.contract_status != "confirmed" or case.request.method not in {
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+        }:
+            continue
+        operation = f"{case.request.method} {case.request.path}"
+        if operation not in exemptions and not parse_api_cleanup_steps(case.cleanup):
+            raise ValueError(
+                f"{case.id} mutating operation requires cleanup or an exact policy exemption: "
+                f"{operation}"
+            )
+
+
 class ApiTestCase(StrictModel):
     id: str = Field(min_length=1)
     title: str = Field(min_length=1)

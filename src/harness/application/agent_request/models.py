@@ -67,7 +67,7 @@ class AgentRequest(StrictModel):
     @classmethod
     def reject_secrets_in_goal(cls, value: str) -> str:
         if contains_likely_secret(value):
-            raise ValueError("goal contains a likely secret; use environment variables instead")
+            raise ValueError("goal contains a likely secret; use local configuration instead")
         return value
 
     @field_validator("source_paths")

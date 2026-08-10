@@ -1,25 +1,28 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from contextlib import contextmanager
 from pathlib import Path
-from shutil import copyfile
+from shutil import copyfile, copytree, ignore_patterns
 from tempfile import TemporaryDirectory
 from typing import Any
 
+import yaml
 from langgraph.checkpoint.memory import InMemorySaver
 
 from harness.contracts import (
+    ApiScenarioPrepareCommand,
     ArtifactVariant,
     CreateWorkspaceCommand,
     ExecutionProfile,
     ReviewDecision,
     ReviewRunCommand,
+    RunRef,
     StartRunCommand,
 )
 from harness.domain.models import ARTIFACT_TYPES
+from harness.domain.schemas.api_test_cases import SourceRef as ApiSourceRef
 from harness.domain.schemas.qa_design import RiskCatalog, RiskItem, SourceReference
 from harness.harness import Harness
 from harness.infrastructure.llm.gateway import CallableModelGateway
@@ -183,6 +186,36 @@ def recorded_model_gateway(*, use_fake_mcp: bool = False) -> CallableModelGatewa
                         ],
                     }
                 )
+                manual_inspection = next(
+                    (
+                        item.get("result")
+                        for item in context.get("tool_results", [])
+                        if item.get("tool") == "manual-test-cases.inspect"
+                    ),
+                    None,
+                )
+                if isinstance(manual_inspection, dict):
+                    manual_refs = [
+                        ApiSourceRef(
+                            source_type="manual-test-case",
+                            source_path=str(item["source_path"]),
+                            chunk_id=str(item["case_id"]),
+                            locator=f"case_id={item['case_id']}",
+                            summary=str(item["title"]),
+                            confidence="high",
+                        )
+                        for item in manual_inspection.get("cases", [])
+                        if isinstance(item, dict)
+                    ]
+                    draft = draft.model_copy(
+                        update={
+                            "source_refs": [*draft.source_refs, *manual_refs],
+                            "cases": [
+                                case.model_copy(update={"source_refs": manual_refs})
+                                for case in draft.cases
+                            ],
+                        }
+                    )
                 payload["api_test_cases"] = draft.model_dump(mode="json")
             if agent == "requirement_analyst":
                 payload["artifacts"] = {}
@@ -318,9 +351,51 @@ def recorded_model_gateway(*, use_fake_mcp: bool = False) -> CallableModelGatewa
 
 
 def run_offline_eval() -> dict[str, Any]:
-    """Deterministic no-network scenario covering all first-release artifact routes."""
+    """Deterministic no-network scenario covering guarded workflow routes."""
+    from harness.infrastructure.local_config import FilesystemLocalConfigLoader
+
+    project_config = FilesystemLocalConfigLoader(Path.cwd()).load_required()
     with TemporaryDirectory(prefix="agentic-qa-eval-") as temporary:
-        workspace_id = Path(temporary).name
+        temporary_root = Path(temporary)
+        workspace_id = temporary_root.name
+        eval_source = temporary_root / "local-sources" / "api" / "offline-eval"
+        eval_source.mkdir(parents=True)
+        (temporary_root / "agentic-qa.local.yml").write_text(
+            yaml.safe_dump(
+                {
+                    "schema_version": "agentic-qa.local-config.v1",
+                    "model": project_config.model.model_dump(mode="json"),
+                    "rag": {"provider": "local-lexical"},
+                    "postgres": {
+                        "host": "localhost",
+                        "port": 5432,
+                        "database": "postgres",
+                        "user": "postgres",
+                        "password": "offline-eval-only",
+                    },
+                    "test_management": {"provider": "none"},
+                    "workspace_defaults": {},
+                    "api": {
+                        "services": {
+                            "offline-eval": {
+                                "source_directory": "local-sources/api/offline-eval",
+                                "environments": {
+                                    "recorded-test": {
+                                        "base_url": "https://qa.example.test",
+                                        "trusted_origins": ["https://qa.example.test"],
+                                        "allowed_http_methods": ["GET", "HEAD", "OPTIONS", "POST"],
+                                        "auth": {"fallback_token": "offline-eval-token"},
+                                    }
+                                },
+                            }
+                        }
+                    },
+                },
+                allow_unicode=True,
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
         mcp_calls: list[str] = []
 
         def fake_playwright(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -407,7 +482,7 @@ def run_offline_eval() -> dict[str, Any]:
             fake_playwright,
         )
         harness = Harness(
-            Path(temporary),
+            temporary_root,
             model_gateway=recorded_model_gateway(use_fake_mcp=True),
             checkpoint_provider=_EvalCheckpointProvider(),
             tool_handlers={"mcp.playwright": bridge.tool_handler},
@@ -448,7 +523,7 @@ quality_policies: []
 execution:
   environments:
     recorded-test:
-      base_url_env: AGENTIC_QA_BASE_URL
+      base_url_env: LOCAL_OFFLINE_EVAL_RECORDED_TEST_BASE_URL
       trusted_origins: [https://qa.example.test]
       allowed_http_methods: [GET, HEAD, OPTIONS, POST]
       allow_ui_mutations: true
@@ -456,27 +531,36 @@ execution:
 """,
             encoding="utf-8",
         )
-        previous_base_url = os.environ.get("AGENTIC_QA_BASE_URL")
-        os.environ["AGENTIC_QA_BASE_URL"] = "https://qa.example.test"
+        workflow_artifacts = [
+            artifact for artifact in ARTIFACT_TYPES if artifact != "api_test_draft"
+        ]
         snapshot = harness.start_run(
             StartRunCommand(
                 workspace_id=workspace_id,
                 goal="离线评测：覆盖需求、设计、API、UI、执行、分诊和报告闭环",
-                expected_artifacts=list(ARTIFACT_TYPES),
+                expected_artifacts=workflow_artifacts,
                 execution_profile=ExecutionProfile(
                     environment="recorded-test",
-                    base_url_env="AGENTIC_QA_BASE_URL",
+                    base_url_env="LOCAL_OFFLINE_EVAL_RECORDED_TEST_BASE_URL",
                     allowed_http_methods=["GET", "HEAD", "OPTIONS", "POST"],
                     allow_ui_mutations=True,
                 ),
             )
         )
-        if previous_base_url is None:
-            os.environ.pop("AGENTIC_QA_BASE_URL", None)
-        else:
-            os.environ["AGENTIC_QA_BASE_URL"] = previous_base_url
         candidate_types = {candidate.artifact for candidate in snapshot.candidates}
-        generated = candidate_types == set(ARTIFACT_TYPES)
+        generated = candidate_types == set(workflow_artifacts)
+        try:
+            harness.start_run(
+                StartRunCommand(
+                    workspace_id=workspace_id,
+                    goal="离线评测：验证 API 生成入口不能绕过项目预检",
+                    expected_artifacts=["api_test_draft"],
+                )
+            )
+        except ValueError as exc:
+            api_direct_entry_blocked = "use api prepare" in str(exc)
+        else:
+            api_direct_entry_blocked = False
         gate_held = snapshot.status == "needs_human_review"
         published = harness.review_run(
             ReviewRunCommand(
@@ -505,7 +589,7 @@ quality_policies: []
 execution:
   environments:
     recorded-test:
-      base_url_env: AGENTIC_QA_BASE_URL
+      base_url_env: LOCAL_OFFLINE_EVAL_RECORDED_TEST_BASE_URL
       trusted_origins: [https://qa.example.test]
       allowed_http_methods: [GET, HEAD, OPTIONS, POST]
       allow_ui_mutations: true
@@ -513,32 +597,25 @@ execution:
 """,
             encoding="utf-8",
         )
-        previous_base_url = os.environ.get("AGENTIC_QA_BASE_URL")
-        os.environ["AGENTIC_QA_BASE_URL"] = "https://qa.example.test"
-        try:
-            live_snapshot = harness.start_run(
-                StartRunCommand(
-                    workspace_id=live_workspace_id,
-                    goal="离线评测：模拟实时 Playwright 接口发现",
-                    expected_artifacts=["api_discovery_report"],
-                    execution_profile=ExecutionProfile(
-                        environment="recorded-test",
-                        base_url_env="AGENTIC_QA_BASE_URL",
-                        allowed_http_methods=["GET", "HEAD", "OPTIONS", "POST"],
-                        allow_ui_mutations=True,
-                    ),
-                )
+        live_snapshot = harness.start_run(
+            StartRunCommand(
+                workspace_id=live_workspace_id,
+                goal="离线评测：模拟实时 Playwright 接口发现",
+                expected_artifacts=["api_discovery_report"],
+                execution_profile=ExecutionProfile(
+                    environment="recorded-test",
+                    base_url_env="LOCAL_OFFLINE_EVAL_RECORDED_TEST_BASE_URL",
+                    allowed_http_methods=["GET", "HEAD", "OPTIONS", "POST"],
+                    allow_ui_mutations=True,
+                ),
             )
-        finally:
-            if previous_base_url is None:
-                os.environ.pop("AGENTIC_QA_BASE_URL", None)
-            else:
-                os.environ["AGENTIC_QA_BASE_URL"] = previous_base_url
+        )
         live_report = (Path(temporary) / live_snapshot.candidates[0].path).read_text(
             encoding="utf-8"
         )
         checks = {
             "all_artifact_routes": generated,
+            "api_direct_entry_blocked": api_direct_entry_blocked,
             "review_gate_interrupt": gate_held,
             "fake_playwright_mcp": mcp_calls.count("browser_snapshot") == 2,
             "mcp_snapshot_frozen": any(
@@ -575,28 +652,25 @@ def run_eval() -> dict[str, Any]:
     }
 
 
-def run_live_eval(case_name: str | None = None) -> dict[str, Any]:
-    from harness.infrastructure.llm.gateway import model_gateway_from_env
+def run_live_eval(
+    case_name: str | None = None,
+    *,
+    output_root: Path | None = None,
+    model_gateway: Any | None = None,
+) -> dict[str, Any]:
+    from harness.infrastructure.llm.gateway import model_gateway_from_config
+    from harness.infrastructure.local_config import FilesystemLocalConfigLoader
     from harness.testing.golden import (
         evaluate_api_candidate_artifact,
         evaluate_candidate_artifacts,
     )
 
-    gateway = model_gateway_from_env()
-    if gateway is None:
-        raise RuntimeError("live eval requires an explicitly configured model API key")
-    selected_case = case_name or os.getenv("AGENTIC_QA_LIVE_EVAL_CASE", "").strip() or "login-lock"
+    project_config = FilesystemLocalConfigLoader(Path.cwd()).load_required()
+    gateway = model_gateway or model_gateway_from_config(project_config.model)
+    selected_case = case_name or "login-lock"
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", selected_case):
         raise ValueError("live eval case must be a lowercase kebab-case name")
     with TemporaryDirectory(prefix="agentic-qa-live-eval-") as temporary:
-        harness = Harness(
-            Path(temporary),
-            model_gateway=gateway,
-            checkpoint_provider=_EvalCheckpointProvider(),
-        )
-        workspace = harness.create_workspace(
-            CreateWorkspaceCommand(workspace_id=f"live-eval-{selected_case}")
-        )
         roots = [
             Path.cwd() / "evals" / "cases" / selected_case,
             Path.cwd() / "evals" / "api-cases" / selected_case,
@@ -607,25 +681,89 @@ def run_live_eval(case_name: str | None = None) -> dict[str, Any]:
         if not case_root.is_dir():
             raise FileNotFoundError(f"{selected_case} live eval case is unavailable")
         is_api_case = (case_root / "api-expectations.json").is_file()
-        for source in sorted(case_root.glob("source.*")):
-            suffix = source.name.removeprefix("source")
-            copyfile(source, workspace / "sources" / f"{selected_case}{suffix}")
+        temporary_root = Path(temporary)
+        eval_source = temporary_root / "local-sources" / "api" / selected_case
+        if is_api_case:
+            copytree(case_root, eval_source, ignore=ignore_patterns("api-test.yml"))
+        local_payload: dict[str, Any] = {
+            "schema_version": "agentic-qa.local-config.v1",
+            "model": project_config.model.model_dump(mode="json"),
+            "rag": {"provider": "local-lexical"},
+            "postgres": {
+                "host": "localhost",
+                "port": 5432,
+                "database": "postgres",
+                "user": "postgres",
+                "password": "live-eval-only",
+            },
+            "test_management": {"provider": "none"},
+            "workspace_defaults": {},
+            "api": {"services": {}},
+        }
+        if is_api_case:
+            local_payload["api"] = {
+                "services": {
+                    selected_case: {
+                        "source_directory": f"local-sources/api/{selected_case}",
+                        "environments": {
+                            "recorded-test": {
+                                "base_url": "https://qa.example.test",
+                                "trusted_origins": ["https://qa.example.test"],
+                                "allowed_http_methods": ["GET", "POST", "DELETE"],
+                                "auth": {"fallback_token": "recorded-eval-token"},
+                            }
+                        },
+                    }
+                }
+            }
+        (temporary_root / "agentic-qa.local.yml").write_text(
+            yaml.safe_dump(local_payload, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
         goal_path = case_root / "live-goal.txt"
         goal = (
             goal_path.read_text(encoding="utf-8").strip()
             if goal_path.is_file()
             else f"生成可追踪的 {selected_case} 需求目录和边界/状态测试用例"
         )
-        expected_artifacts = (
-            ["api_test_draft"] if is_api_case else ["requirement_analysis", "testcases"]
-        )
-        snapshot = harness.start_run(
-            StartRunCommand(
-                workspace_id=f"live-eval-{selected_case}",
-                goal=goal,
-                expected_artifacts=expected_artifacts,
+        if is_api_case:
+            harness = Harness(
+                temporary_root,
+                model_gateway=gateway,
+                checkpoint_provider=_EvalCheckpointProvider(),
+                allowed_source_roots=[eval_source],
             )
-        )
+            prepared = harness.prepare_api_scenario(
+                ApiScenarioPrepareCommand(
+                    source_directory=str(eval_source.resolve()),
+                    workspace_id=f"live-eval-{selected_case}",
+                    goal=goal,
+                    environment="recorded-test",
+                )
+            )
+            snapshot = harness.get_run(
+                RunRef(workspace_id=prepared.workspace_id, run_id=prepared.run_id)
+            )
+            workspace = Path(temporary) / "workspaces" / prepared.workspace_id
+        else:
+            harness = Harness(
+                Path(temporary),
+                model_gateway=gateway,
+                checkpoint_provider=_EvalCheckpointProvider(),
+            )
+            workspace = harness.create_workspace(
+                CreateWorkspaceCommand(workspace_id=f"live-eval-{selected_case}")
+            )
+            for source in sorted(case_root.glob("source.*")):
+                suffix = source.name.removeprefix("source")
+                copyfile(source, workspace / "sources" / f"{selected_case}{suffix}")
+            snapshot = harness.start_run(
+                StartRunCommand(
+                    workspace_id=f"live-eval-{selected_case}",
+                    goal=goal,
+                    expected_artifacts=["requirement_analysis", "testcases"],
+                )
+            )
         raw_artifacts: dict[str, str] = {}
         for candidate in snapshot.candidates:
             raw_version = next(
@@ -664,14 +802,14 @@ def run_live_eval(case_name: str | None = None) -> dict[str, Any]:
             "errors": snapshot.errors,
             "model_usage": snapshot.model_usage,
             "golden": golden,
+            "generation_mode": "api_fast" if is_api_case else "standard",
         }
-        output_root = os.getenv("AGENTIC_QA_LIVE_EVAL_OUTPUT", "").strip()
         if output_root:
             _export_live_eval_artifacts(
                 repo_root=Path(temporary),
                 workspace=workspace,
                 snapshot=snapshot,
-                output_root=Path(output_root),
+                output_root=output_root,
             )
         return result
 

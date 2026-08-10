@@ -33,27 +33,9 @@ SCHEMAS = {
 CONSUMED_ENV = {
     "DEEPSEEK_API_KEY",
     "OPENAI_API_KEY",
-    "AGENTIC_QA_MODEL_API_KEY_ENV",
-    "AGENTIC_QA_MODEL",
-    "AGENTIC_QA_MODEL_FLASH",
-    "AGENTIC_QA_MODEL_PRO",
-    "AGENTIC_QA_MODEL_BASE_URL",
-    "AGENTIC_QA_MODEL_TIMEOUT_SECONDS",
-    "AGENTIC_QA_MODEL_MAX_OUTPUT_TOKENS",
-    "AGENTIC_QA_BASE_URL",
-    "QA_API_TOKEN",
-    "QA_API_USER",
-    "QA_API_PASSWORD",
     "RAG_API_KEY",
-    "AGENTIC_QA_RAG_API_KEY_ENV",
-    "AGENTIC_QA_RAG_BASE_URL",
-    "PG_LOCAL_HOST",
-    "PG_LOCAL_PORT",
-    "PG_LOCAL_DATABASE",
-    "PG_LOCAL_USER",
-    "PG_LOCAL_PASSWORD",
 }
-RESERVED_ENV = {"GITHUB_TOKEN", "AGENTIC_QA_GITHUB_TOKEN_ENV"}
+RESERVED_ENV: set[str] = set()
 
 
 class _MkDocsLoader(yaml.SafeLoader):
@@ -121,7 +103,7 @@ def test_environment_reference_is_complete_and_marks_reserved_values() -> None:
     reference = (DOCS / "configuration.md").read_text(encoding="utf-8")
     for name in CONSUMED_ENV | RESERVED_ENV:
         assert f"`{name}`" in reference
-    assert "当前运行时没有 GitHub MCP adapter，不读取" in reference
+    assert "`agentic-qa.local.yml`" in reference
 
 
 def test_checked_in_json_schemas_match_pydantic_models() -> None:

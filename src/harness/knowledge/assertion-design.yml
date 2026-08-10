@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.knowledge-spec.v1
 name: assertion-design
-version: 1.0.0
+version: 1.1.0
 purpose: 将业务预期转换为可观察、可追踪的断言和证据。
 applies_to: [api-testing, test-design]
 inputs:
@@ -16,7 +16,7 @@ output_expectations:
   - 证据记录来源、观察时间、执行环境和关联步骤。
 evidence_policy:
   - 实际结果来自工具或执行记录。
-  - 敏感凭证仅以环境变量引用出现。
+  - 敏感凭证来自统一根配置，并从用例、Prompt、事件和证据中排除。
 uncertainty_policy:
   - 无法取得证据的场景标记为未执行或待确认。
 prohibited_actions:

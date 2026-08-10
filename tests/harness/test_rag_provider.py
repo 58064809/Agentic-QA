@@ -41,11 +41,12 @@ def test_local_rag_does_not_require_api_key(monkeypatch) -> None:
     assert result["chunks"][0]["source"] == "sources/rules.md"
 
 
-def test_rag_config_uses_mapped_api_key_variable_name(monkeypatch) -> None:
-    monkeypatch.setenv("AGENTIC_QA_RAG_API_KEY_ENV", "PROJECT_RAG_TOKEN")
-
-    config = RagProviderConfig.from_workspace({"provider": "openai-compatible"})
-
+def test_rag_config_uses_key_name_from_local_config() -> None:
+    config = RagProviderConfig(
+        provider="openai-compatible",
+        api_key_env="PROJECT_RAG_TOKEN",
+        base_url="https://embedding.example.test",
+    )
     assert config.api_key_env == "PROJECT_RAG_TOKEN"
 
 
@@ -54,6 +55,7 @@ def test_remote_rag_fails_without_named_api_key(monkeypatch) -> None:
     config = RagProviderConfig(
         provider="openai-compatible",
         api_key_env="PROJECT_RAG_TOKEN",
+        base_url="https://embedding.example.test",
     )
 
     with pytest.raises(RuntimeError, match="PROJECT_RAG_TOKEN"):

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import perf_counter
@@ -45,14 +46,28 @@ from harness.domain.security import (
     validate_api_request_transport,
     validate_api_response_url,
 )
+from harness.infrastructure.api_login_crypto import encrypt_login_request_body
 
 ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)}")
 FULL_VARIABLE_PLACEHOLDER_RE = re.compile(r"^\$\{\{([A-Za-z_][A-Za-z0-9_]*)}}$")
 URL_RE = re.compile(r"https?://[^\s]+", re.IGNORECASE)
 UTC = timezone.utc
+ApiExecutionEventCallback = Callable[[str, dict[str, Any]], None]
+_CURRENT_EVENT_CALLBACK: ContextVar[ApiExecutionEventCallback | None] = ContextVar(
+    "api_execution_event_callback",
+    default=None,
+)
+_CURRENT_CLEANUP_JOURNAL: ContextVar[Any | None] = ContextVar(
+    "api_cleanup_journal",
+    default=None,
+)
 
 
 class _MissingRuntimeVariable(RuntimeError):
+    pass
+
+
+class ApiAuthenticationError(RuntimeError):
     pass
 
 
@@ -61,6 +76,34 @@ class _RequestOutcome:
     evidence: CaseExecutionEvidence
     extracted: dict[str, Any]
     request_sent: bool
+
+
+def _emit_event(
+    callback: ApiExecutionEventCallback | None,
+    event_type: str,
+    **payload: Any,
+) -> None:
+    callback = callback or _CURRENT_EVENT_CALLBACK.get()
+    if callback is not None:
+        callback(event_type, payload)
+
+
+@contextmanager
+def api_execution_events(callback: ApiExecutionEventCallback):
+    token = _CURRENT_EVENT_CALLBACK.set(callback)
+    try:
+        yield
+    finally:
+        _CURRENT_EVENT_CALLBACK.reset(token)
+
+
+@contextmanager
+def api_cleanup_journal(journal: Any):
+    token = _CURRENT_CLEANUP_JOURNAL.set(journal)
+    try:
+        yield
+    finally:
+        _CURRENT_CLEANUP_JOURNAL.reset(token)
 
 
 def _resolve(value: Any, env: Mapping[str, str]) -> Any:
@@ -274,9 +317,7 @@ def _authenticate(
             else env.get(str(auth.token_env), "").strip()
         )
         if not token:
-            raise RuntimeError(
-                f"API authentication token environment variable is not set: {auth.token_env}"
-            )
+            raise RuntimeError("API authentication token is empty in the selected local project")
         return _injected_header(auth.injection, token), [token]
     if not isinstance(auth, LoginApiAuthentication):
         raise TypeError(f"unsupported API authentication configuration: {type(auth).__name__}")
@@ -286,6 +327,11 @@ def _authenticate(
         )
     request = _resolve_required(auth.request.model_dump(mode="python"), env)
     try:
+        request["body"] = encrypt_login_request_body(
+            request.get("body"),
+            auth.request_encryption,
+            env,
+        )
         request_url = build_api_request_url(base_url, auth.request.path)
         response = request_func(
             auth.request.method,
@@ -300,6 +346,11 @@ def _authenticate(
         if int(response.status_code) not in set(auth.expected_status_codes):
             raise RuntimeError(f"API login returned HTTP {int(response.status_code)}")
         body = response.json()
+        if auth.success_condition is not None:
+            actual = _json_path_value(body, auth.success_condition.json_path)
+            expected = auth.success_condition.expected
+            if type(actual) is not type(expected) or actual != expected:
+                raise RuntimeError("API login business success condition was not met")
         token = _json_path_value(body, auth.token_json_path)
         if not isinstance(token, str) or not token.strip():
             raise RuntimeError("API login response token must be a non-empty string")
@@ -307,7 +358,7 @@ def _authenticate(
         return _injected_header(auth.injection, token), [token]
     except Exception as exc:
         message = _sanitize_error(exc, [base_url, *env.values()])
-        raise RuntimeError(f"API authentication failed: {message}") from exc
+        raise ApiAuthenticationError(f"API authentication failed: {message}") from exc
 
 
 def _apply_authentication_header(
@@ -465,6 +516,7 @@ def _execute_request(
     authentication_header: tuple[str, str] | None,
     authentication_secrets: list[str],
     definition_error: str | None = None,
+    event_callback: ApiExecutionEventCallback | None = None,
 ) -> _RequestOutcome:
     method = str(request_definition.method or "").upper()
     path = str(request_definition.path or "")
@@ -533,6 +585,13 @@ def _execute_request(
         *_runtime_redactions(runtime_redaction_values or {}),
     ]
     try:
+        _emit_event(
+            event_callback,
+            "request.preparing",
+            case_id=case_id,
+            method=method,
+            path=path,
+        )
         request = _resolve_runtime_variables(
             request_definition.model_dump(mode="python"), runtime_variables
         )
@@ -558,6 +617,13 @@ def _execute_request(
             authentication_header,
         )
         request_url = build_api_request_url(base_url, resolved_path)
+        _emit_event(
+            event_callback,
+            "request.sent",
+            case_id=case_id,
+            method=method,
+            path=path,
+        )
         request_sent = True
         response = request_func(
             method,
@@ -570,6 +636,15 @@ def _execute_request(
         )
         validate_api_response_url(getattr(response, "url", None), requested_url=request_url)
         response_duration_ms = max(0, int((perf_counter() - started_clock) * 1000))
+        _emit_event(
+            event_callback,
+            "response.received",
+            case_id=case_id,
+            method=method,
+            path=path,
+            status_code=int(response.status_code),
+            duration_ms=response_duration_ms,
+        )
         evidence, body, body_loaded, assertion_errors = _evaluate_assertions(
             assertions,
             response,
@@ -581,6 +656,23 @@ def _execute_request(
             body=body,
             body_loaded=body_loaded,
         )
+        for assertion in evidence:
+            _emit_event(
+                event_callback,
+                "assertion.finished",
+                case_id=case_id,
+                assertion_type=assertion.type,
+                passed=assertion.passed,
+                path=assertion.path,
+            )
+        if extractions:
+            _emit_event(
+                event_callback,
+                "extraction.finished",
+                case_id=case_id,
+                extracted_names=sorted(extracted),
+                missing_required=sorted(missing_required),
+            )
         if missing_required:
             return _RequestOutcome(
                 evidence=CaseExecutionEvidence(
@@ -682,24 +774,266 @@ def execute_api_cases(
     request_func: Callable[..., Any] | None = None,
     authentication: ApiAuthentication | None = None,
     trusted_origins: list[str] | None = None,
+    event_callback: ApiExecutionEventCallback | None = None,
 ) -> ExecutionEvidence:
-    if not cases:
-        raise ValueError("no API cases to execute")
-    if profile.environment == "analysis-only" or not profile.base_url_env:
-        raise PermissionError("API execution requires an explicit test environment")
-    runtime_env = os.environ if env is None else env
-    base_url = runtime_env.get(profile.base_url_env, "").strip()
-    if not base_url:
-        raise ValueError(f"base URL environment variable is not set: {profile.base_url_env}")
-    base_url = (
-        validate_api_base_url_policy(base_url, trusted_origins=trusted_origins)
-        if trusted_origins is not None
-        else validate_api_base_url(base_url)
+    started_at = datetime.now(tz=UTC)
+    runtime_env, base_url, definition_errors = _prepare_api_execution(
+        cases,
+        profile=profile,
+        env=env,
+        authentication=authentication,
+        trusted_origins=trusted_origins,
     )
     if request_func is None:
         import requests
 
         request_func = requests.request
+    has_executable_case = any(
+        definition_errors[index] is None
+        and case.contract_status == "confirmed"
+        and bool(case.request.method)
+        and bool(case.request.path)
+        and str(case.request.method).upper() in profile.allowed_http_methods
+        for index, case in enumerate(cases)
+    )
+    if has_executable_case:
+        _emit_event(event_callback, "authentication.started")
+        try:
+            authentication_header, authentication_secrets = _authenticate(
+                authentication,
+                base_url=base_url,
+                profile=profile,
+                env=runtime_env,
+                request_func=request_func,
+            )
+        except Exception as exc:
+            _emit_event(
+                event_callback,
+                "authentication.failed",
+                error_kind=type(exc).__name__,
+            )
+            raise
+        _emit_event(
+            event_callback,
+            "authentication.finished",
+            configured=authentication is not None,
+        )
+    else:
+        authentication_header, authentication_secrets = None, []
+    results: list[CaseExecutionEvidence] = []
+    shared_variables: dict[str, Any] = {}
+    cleanup_queue: list[
+        tuple[ApiTestCase, ApiCleanupStep, str, str, dict[str, Any], dict[str, Any]]
+    ] = []
+    for index, case in enumerate(cases):
+        definition_error = definition_errors[index]
+        if definition_error is not None:
+            outcome = _execute_request(
+                case_id=case.id,
+                title=case.title,
+                request_definition=case.request,
+                assertions=case.assertions,
+                extractions={},
+                contract_confirmed=case.contract_status == "confirmed",
+                base_url=base_url,
+                profile=profile,
+                env=runtime_env,
+                runtime_variables=shared_variables,
+                runtime_redaction_values=shared_variables,
+                request_func=request_func,
+                authentication_header=authentication_header,
+                authentication_secrets=authentication_secrets,
+                definition_error=definition_error,
+                event_callback=event_callback,
+            )
+            results.append(outcome.evidence)
+            _emit_event(
+                event_callback,
+                "case.finished",
+                case_id=outcome.evidence.case_id,
+                status=outcome.evidence.status,
+                duration_ms=outcome.evidence.duration_ms,
+                status_code=outcome.evidence.status_code,
+            )
+            continue
+
+        variable_definition = parse_api_case_variables(case.variables)
+        cleanup_steps = parse_api_cleanup_steps(case.cleanup)
+        datasets = variable_definition.datasets or [None]
+        for dataset in datasets:
+            dataset_values = {} if dataset is None else dataset.values
+            runtime_variables = {**shared_variables, **dataset_values}
+            case_id = case.id if dataset is None else f"{case.id}::{dataset.id}"
+            title = case.title if dataset is None else f"{case.title} [dataset:{dataset.id}]"
+            outcome = _execute_request(
+                case_id=case_id,
+                title=title,
+                request_definition=case.request,
+                assertions=case.assertions,
+                extractions=variable_definition.extract,
+                contract_confirmed=case.contract_status == "confirmed",
+                base_url=base_url,
+                profile=profile,
+                env=runtime_env,
+                runtime_variables=runtime_variables,
+                runtime_redaction_values=runtime_variables,
+                request_func=request_func,
+                authentication_header=authentication_header,
+                authentication_secrets=authentication_secrets,
+                event_callback=event_callback,
+            )
+            results.append(outcome.evidence)
+            _emit_event(
+                event_callback,
+                "case.finished",
+                case_id=outcome.evidence.case_id,
+                status=outcome.evidence.status,
+                duration_ms=outcome.evidence.duration_ms,
+                status_code=outcome.evidence.status_code,
+            )
+            if outcome.evidence.status == "passed" and outcome.extracted:
+                shared_variables.update(outcome.extracted)
+            if outcome.request_sent:
+                cleanup_scope = {**runtime_variables, **outcome.extracted}
+                cleanup_redactions = cleanup_scope
+                for step in cleanup_steps:
+                    _emit_event(
+                        event_callback,
+                        "cleanup.registered",
+                        case_id=case_id,
+                        cleanup_id=step.id,
+                    )
+                    journal = _CURRENT_CLEANUP_JOURNAL.get()
+                    if journal is not None:
+                        journal.register(
+                            case_id=case_id,
+                            title=title,
+                            cleanup=step,
+                            runtime_variables=cleanup_scope,
+                        )
+                    cleanup_queue.append(
+                        (
+                            case,
+                            step,
+                            case_id,
+                            title,
+                            cleanup_scope,
+                            cleanup_redactions,
+                        )
+                    )
+
+    for case, step, case_id, title, runtime_variables, redaction_values in reversed(cleanup_queue):
+        obligation_id = f"{case_id}::cleanup::{step.id}"
+        journal = _CURRENT_CLEANUP_JOURNAL.get()
+        if journal is not None:
+            journal.before(obligation_id)
+        _emit_event(
+            event_callback,
+            "cleanup.started",
+            case_id=case_id,
+            cleanup_id=step.id,
+        )
+        outcome = _execute_request(
+            case_id=f"{case_id}::cleanup::{step.id}",
+            title=f"{title} / cleanup: {step.title}",
+            request_definition=step.request,
+            assertions=step.assertions,
+            extractions={},
+            contract_confirmed=case.contract_status == "confirmed",
+            base_url=base_url,
+            profile=profile,
+            env=runtime_env,
+            runtime_variables=runtime_variables,
+            runtime_redaction_values=redaction_values,
+            request_func=request_func,
+            authentication_header=authentication_header,
+            authentication_secrets=authentication_secrets,
+            event_callback=event_callback,
+        )
+        results.append(outcome.evidence)
+        if journal is not None:
+            journal.after(
+                obligation_id,
+                status=outcome.evidence.status,
+                request_sent=outcome.request_sent,
+            )
+        _emit_event(
+            event_callback,
+            "cleanup.finished",
+            case_id=case_id,
+            cleanup_id=step.id,
+            status=outcome.evidence.status,
+            duration_ms=outcome.evidence.duration_ms,
+            status_code=outcome.evidence.status_code,
+        )
+    counts = {
+        status: sum(item.status == status for item in results)
+        for status in ("passed", "failed", "error", "blocked")
+    }
+    return ExecutionEvidence(
+        schema_version=EXECUTION_EVIDENCE_SCHEMA_VERSION,
+        run_id=run_id,
+        source_cases_path=source_cases_path,
+        source_cases_schema_version=API_CASES_SCHEMA_VERSION,
+        started_at=started_at,
+        completed_at=datetime.now(tz=UTC),
+        environment=ExecutionEnvironment(
+            name=profile.environment,
+            base_url_env=profile.base_url_env,
+            base_url_configured=True,
+            allowed_methods=profile.allowed_http_methods,
+            request_timeout_seconds=profile.request_timeout_seconds,
+        ),
+        summary=ExecutionSummary(
+            total=len(results),
+            executed=counts["passed"] + counts["failed"] + counts["error"],
+            passed=counts["passed"],
+            failed=counts["failed"],
+            errors=counts["error"],
+            blocked=counts["blocked"],
+        ),
+        cases=results,
+    )
+
+
+def validate_api_execution_preflight(
+    cases: list[ApiTestCase],
+    *,
+    profile: ExecutionProfile,
+    env: Mapping[str, str] | None = None,
+    authentication: ApiAuthentication | None = None,
+    trusted_origins: list[str] | None = None,
+) -> None:
+    _prepare_api_execution(
+        cases,
+        profile=profile,
+        env=env,
+        authentication=authentication,
+        trusted_origins=trusted_origins,
+    )
+
+
+def _prepare_api_execution(
+    cases: list[ApiTestCase],
+    *,
+    profile: ExecutionProfile,
+    env: Mapping[str, str] | None,
+    authentication: ApiAuthentication | None,
+    trusted_origins: list[str] | None,
+) -> tuple[Mapping[str, str], str, list[str | None]]:
+    if not cases:
+        raise ValueError("no API cases to execute")
+    if profile.environment == "analysis-only" or not profile.base_url_env:
+        raise PermissionError("API execution requires an explicit test environment")
+    runtime_env = {} if env is None else env
+    base_url = runtime_env.get(profile.base_url_env, "").strip()
+    if not base_url:
+        raise ValueError("API base URL is empty in the selected local project")
+    base_url = (
+        validate_api_base_url_policy(base_url, trusted_origins=trusted_origins)
+        if trusted_origins is not None
+        else validate_api_base_url(base_url)
+    )
     definition_errors = api_case_runtime_definition_errors(cases)
     for index, case in enumerate(cases):
         if definition_errors[index] is not None:
@@ -731,130 +1065,27 @@ def execute_api_cases(
         and str(case.request.method).upper() in profile.allowed_http_methods
         for index, case in enumerate(cases)
     )
-    if has_executable_case:
-        authentication_header, authentication_secrets = _authenticate(
-            authentication,
-            base_url=base_url,
-            profile=profile,
-            env=runtime_env,
-            request_func=request_func,
+    if has_executable_case and isinstance(authentication, StaticTokenApiAuthentication):
+        token = (
+            authentication.token.get_secret_value().strip()
+            if authentication.token is not None
+            else runtime_env.get(str(authentication.token_env), "").strip()
         )
-    else:
-        authentication_header, authentication_secrets = None, []
-    started_at = datetime.now(tz=UTC)
-    results: list[CaseExecutionEvidence] = []
-    shared_variables: dict[str, Any] = {}
-    cleanup_queue: list[
-        tuple[ApiTestCase, ApiCleanupStep, str, str, dict[str, Any], dict[str, Any]]
-    ] = []
-    for index, case in enumerate(cases):
-        definition_error = definition_errors[index]
-        if definition_error is not None:
-            outcome = _execute_request(
-                case_id=case.id,
-                title=case.title,
-                request_definition=case.request,
-                assertions=case.assertions,
-                extractions={},
-                contract_confirmed=case.contract_status == "confirmed",
-                base_url=base_url,
-                profile=profile,
-                env=runtime_env,
-                runtime_variables=shared_variables,
-                runtime_redaction_values=shared_variables,
-                request_func=request_func,
-                authentication_header=authentication_header,
-                authentication_secrets=authentication_secrets,
-                definition_error=definition_error,
+        if not token:
+            raise RuntimeError("API authentication token is empty in the selected local project")
+    elif has_executable_case and isinstance(authentication, LoginApiAuthentication):
+        if authentication.request.method not in profile.allowed_http_methods:
+            raise PermissionError(
+                f"API login method {authentication.request.method} is not allowed by "
+                "execution profile"
             )
-            results.append(outcome.evidence)
-            continue
-
-        variable_definition = parse_api_case_variables(case.variables)
-        cleanup_steps = parse_api_cleanup_steps(case.cleanup)
-        datasets = variable_definition.datasets or [None]
-        for dataset in datasets:
-            dataset_values = {} if dataset is None else dataset.values
-            runtime_variables = {**shared_variables, **dataset_values}
-            case_id = case.id if dataset is None else f"{case.id}::{dataset.id}"
-            title = case.title if dataset is None else f"{case.title} [dataset:{dataset.id}]"
-            outcome = _execute_request(
-                case_id=case_id,
-                title=title,
-                request_definition=case.request,
-                assertions=case.assertions,
-                extractions=variable_definition.extract,
-                contract_confirmed=case.contract_status == "confirmed",
-                base_url=base_url,
-                profile=profile,
-                env=runtime_env,
-                runtime_variables=runtime_variables,
-                runtime_redaction_values=runtime_variables,
-                request_func=request_func,
-                authentication_header=authentication_header,
-                authentication_secrets=authentication_secrets,
-            )
-            results.append(outcome.evidence)
-            if outcome.evidence.status == "passed" and outcome.extracted:
-                shared_variables.update(outcome.extracted)
-            if outcome.request_sent:
-                cleanup_scope = {**runtime_variables, **outcome.extracted}
-                cleanup_redactions = cleanup_scope
-                for step in cleanup_steps:
-                    cleanup_queue.append(
-                        (
-                            case,
-                            step,
-                            case_id,
-                            title,
-                            cleanup_scope,
-                            cleanup_redactions,
-                        )
-                    )
-
-    for case, step, case_id, title, runtime_variables, redaction_values in reversed(cleanup_queue):
-        outcome = _execute_request(
-            case_id=f"{case_id}::cleanup::{step.id}",
-            title=f"{title} / cleanup: {step.title}",
-            request_definition=step.request,
-            assertions=step.assertions,
-            extractions={},
-            contract_confirmed=case.contract_status == "confirmed",
-            base_url=base_url,
-            profile=profile,
-            env=runtime_env,
-            runtime_variables=runtime_variables,
-            runtime_redaction_values=redaction_values,
-            request_func=request_func,
-            authentication_header=authentication_header,
-            authentication_secrets=authentication_secrets,
+        login_request = _resolve_required(
+            authentication.request.model_dump(mode="python"), runtime_env
         )
-        results.append(outcome.evidence)
-    counts = {
-        status: sum(item.status == status for item in results)
-        for status in ("passed", "failed", "error", "blocked")
-    }
-    return ExecutionEvidence(
-        schema_version=EXECUTION_EVIDENCE_SCHEMA_VERSION,
-        run_id=run_id,
-        source_cases_path=source_cases_path,
-        source_cases_schema_version=API_CASES_SCHEMA_VERSION,
-        started_at=started_at,
-        completed_at=datetime.now(tz=UTC),
-        environment=ExecutionEnvironment(
-            name=profile.environment,
-            base_url_env=profile.base_url_env,
-            base_url_configured=True,
-            allowed_methods=profile.allowed_http_methods,
-            request_timeout_seconds=profile.request_timeout_seconds,
-        ),
-        summary=ExecutionSummary(
-            total=len(results),
-            executed=counts["passed"] + counts["failed"] + counts["error"],
-            passed=counts["passed"],
-            failed=counts["failed"],
-            errors=counts["error"],
-            blocked=counts["blocked"],
-        ),
-        cases=results,
-    )
+        encrypt_login_request_body(
+            login_request.get("body"),
+            authentication.request_encryption,
+            runtime_env,
+        )
+        build_api_request_url(base_url, authentication.request.path)
+    return runtime_env, base_url, definition_errors

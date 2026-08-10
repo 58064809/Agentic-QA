@@ -1,292 +1,115 @@
-# 配置参考
+# 项目配置
 
-`.env.example` 是变量名清单，CLI 不自动加载 `.env`。真实值通过当前 shell、Windows 用户环境变量
-或密钥管理服务注入。敏感值进入 workspace、Prompt、事件或产物时，安全扫描会报告问题。
-
-## 环境变量
-
-### 模型
-
-| 变量 | 默认/状态 | 消费方式 |
-|---|---|---|
-| `DEEPSEEK_API_KEY` | 空 | 默认 DeepSeek 密钥 |
-| `OPENAI_API_KEY` | 空 | 未选择 DeepSeek 且存在该值时使用 |
-| `AGENTIC_QA_MODEL_API_KEY_ENV` | 自动选择 | 指定实际密钥变量名，不是密钥值 |
-| `AGENTIC_QA_MODEL` | 空 | 同时覆盖 Flash/Pro 模型 |
-| `AGENTIC_QA_MODEL_FLASH` | `deepseek-v4-flash` | Flash 路由模型 |
-| `AGENTIC_QA_MODEL_PRO` | `deepseek-v4-pro` | Pro 路由模型 |
-| `AGENTIC_QA_MODEL_BASE_URL` | DeepSeek 时 `https://api.deepseek.com` | OpenAI-compatible 地址 |
-| `AGENTIC_QA_MODEL_TIMEOUT_SECONDS` | `180` | 模型请求超时秒数 |
-| `AGENTIC_QA_MODEL_MAX_OUTPUT_TOKENS` | `16384` | 单次结构化产物最大输出 token；避免长用例 JSON 被默认上限截断 |
-
-### Execution、RAG 与预留变量
-
-| 变量 | 默认/状态 | 消费方式 |
-|---|---|---|
-| `AGENTIC_QA_BASE_URL` | 空 | ExecutionProfile 指定该变量名后，API 执行器读取地址 |
-| `AGENTIC_QA_EXECUTION_ENVIRONMENT` | 空 | 导出的 pytest adapter 要求显式测试环境名 |
-| `AGENTIC_QA_ALLOWED_HTTP_METHODS` | `GET,POST` 示例 | pytest adapter 的逗号分隔方法 allowlist；仍受 workspace policy 限制 |
-| `AGENTIC_QA_REQUEST_TIMEOUT_SECONDS` | `10` | pytest adapter 请求超时 |
-| `AGENTIC_QA_REPO_ROOT` | `.` | pytest adapter 定位 Agentic-QA 仓库 |
-| `AGENTIC_QA_WORKSPACE` | 空 | 可覆盖导出时绑定的 workspace ID |
-| `AGENTIC_QA_RUN_ID` | `pytest-api-export` | pytest 执行证据的 run ID |
-| `QA_API_TOKEN` | 空，示例名 | 静态 token 认证示例；workspace 可以引用其他环境变量名 |
-| `QA_API_USER` | 空，示例名 | 登录认证用户名示例 |
-| `QA_API_PASSWORD` | 空，示例名 | 登录认证密码示例 |
-| `RAG_API_KEY` | 空 | 远程 embedding Provider 密钥 |
-| `AGENTIC_QA_RAG_API_KEY_ENV` | `RAG_API_KEY` | 指定 RAG 实际密钥变量名 |
-| `AGENTIC_QA_RAG_BASE_URL` | 空 | OpenAI-compatible embedding 地址 |
-| `GITHUB_TOKEN` | 预留 | 当前运行时没有 GitHub MCP adapter，不读取 |
-| `AGENTIC_QA_GITHUB_TOKEN_ENV` | 预留 | 当前运行时不读取 |
-
-### PostgreSQL
-
-| 变量 | 默认 | 用途 |
-|---|---|---|
-| `PG_LOCAL_HOST` | `localhost` | Checkpoint 与可选只读数据源主机 |
-| `PG_LOCAL_PORT` | `5432` | 端口 |
-| `PG_LOCAL_DATABASE` | `postgres` | 数据库 |
-| `PG_LOCAL_USER` | `postgres` | 用户 |
-| `PG_LOCAL_PASSWORD` | 无，必填 | 密码，只从环境读取 |
-
-Checkpoint 与 `postgres.query` 使用独立配置类型，但默认引用同一组环境变量。生产运行不提供 SQLite
-或内存 fallback。
-
-## workspace.yml
-
-`workspace create` 生成：
-
-```yaml
-schema_version: agentic-qa.harness.workspace.v2
-id: demo
-created_at: 2026-07-23T00:00:00+00:00
-quality_policies: []
-rag:
-  provider: local-lexical
-execution:
-  environments: {}
-```
-
-`created_at` 由系统写入。业务策略使用注册名，例如 `city-opening-rewards`；未知、重复名称或
-Python import path 会被配置校验拒绝。
-
-### 注册测试环境
-
-```yaml
-execution:
-  environments:
-    qa:
-      base_url_env: AGENTIC_QA_BASE_URL
-      trusted_origins: [https://qa.example.test]
-      allowed_http_methods: [GET, HEAD, OPTIONS, POST]
-      allow_ui_mutations: false
-      max_request_timeout_seconds: 10
-```
-
-非 `analysis-only` 的 ExecutionProfile 会匹配环境名和 `base_url_env`，并与 workspace 的方法、
-UI mutation 和超时上限比较。production-like 环境名被拒绝。
-
-配置了 `base_url_env` 的环境同时要求至少一个 `trusted_origins`。可信项只接受不带路径、凭据、查询或
-片段的 HTTPS Origin；执行器在认证和业务请求发出前，将环境变量中的实际 base URL Origin 与该列表
-匹配。这样即使同名环境变量被错误覆盖为 HTTP 或其他主机，请求也会在本地终止。
-
-#### 使用已有 token
-
-`static_token` 从命名环境变量读取一次 token，并覆盖每条 API 用例中同名的请求头：
-
-```yaml
-execution:
-  environments:
-    qa:
-      base_url_env: AGENTIC_QA_BASE_URL
-      trusted_origins: [https://qa.example.test]
-      allowed_http_methods: [GET, HEAD, OPTIONS, POST]
-      allow_ui_mutations: false
-      max_request_timeout_seconds: 10
-      api_auth:
-        mode: static_token
-        token_env: QA_API_TOKEN
-        injection:
-          location: header
-          name: Authorization
-          prefix: Bearer
-```
-
-当前 PowerShell 会话提供实际值：
+仓库根目录的 `agentic-qa.local.yml` 是唯一人工配置入口。首次使用先执行：
 
 ```powershell
-$env:QA_API_TOKEN = "<测试环境 token>"
+python -m harness config init
 ```
 
-也可以在本地 workspace 配置中直接填写：
+命令从 `agentic-qa.local.example.yml` 创建文件，已有文件时拒绝覆盖。真实配置已被 Git 忽略，且不属于
+`local-sources/`、workspace、Prompt 或报告的内容。
 
-```yaml
-api_auth:
-  mode: static_token
-  token: "<测试环境 token>"
-  injection:
-    location: header
-    name: Authorization
-    prefix: Bearer
-```
+## 配置分区
 
-`token` 与 `token_env` 同时出现或同时缺少时，配置解析返回错误。直接 token 由 `SecretStr` 承载，
-模型序列化和校验对象展示为掩码；workspace 文件本身仍包含填写的原值。
+| 分区 | 在文件中直接填写 | 仍从环境变量读取 |
+|---|---|---|
+| `model` | Provider、模型名、Base URL、超时、输出上限 | `api_key_env` 指向的实际模型 Key |
+| `rag` | Provider、Base URL、模型、切块参数 | `api_key_env` 指向的实际 RAG Key；本地词法检索不需要 |
+| `postgres` | Host、端口、库、用户、密码、超时、最大行数 | 无 |
+| `test_management` | TestRail/Qase 地址、用户及凭据 | 无 |
+| `workspace_defaults` | 默认质量策略、额外来源根 | 无 |
+| `runtime` | cleanup journal 的本地加密 Key，由命令生成 | 无 |
+| `api.services` | 来源目录、环境、Base URL、认证、AES Key、Token 与安全策略 | 无 |
 
-`prefix` 为空字符串时，请求头值就是 token 本身。`name` 可以承载 `Authorization`、
-`X-Access-Token` 等普通认证请求头；Host、Content-Length 等传输控制头会在配置解析时返回错误。
-
-#### 登录后获取 token
-
-`login` 在执行用例前发送一次 POST，按 JSON 点路径提取 token，再注入全部用例：
-
-```yaml
-execution:
-  environments:
-    qa:
-      base_url_env: AGENTIC_QA_BASE_URL
-      trusted_origins: [https://qa.example.test]
-      allowed_http_methods: [GET, HEAD, OPTIONS, POST]
-      allow_ui_mutations: false
-      max_request_timeout_seconds: 10
-      api_auth:
-        mode: login
-        request:
-          method: POST
-          path: /api/login
-          headers:
-            Content-Type: application/json
-          query: {}
-          body:
-            username: ${QA_API_USER}
-            password: ${QA_API_PASSWORD}
-        token_json_path: $.data.access_token
-        expected_status_codes: [200]
-        injection:
-          location: header
-          name: Authorization
-          prefix: Bearer
-```
+以下三类实际 Key 留在环境变量，名称由配置中的 `api_key_env` 决定：`DEEPSEEK_API_KEY`、
+`OPENAI_API_KEY`、`RAG_API_KEY`。
 
 ```powershell
-$env:QA_API_USER = "<测试账号>"
-$env:QA_API_PASSWORD = "<测试密码>"
+$env:DEEPSEEK_API_KEY = "<模型 Key>"
+$env:OPENAI_API_KEY = "<仅在 model.api_key_env 指向它时填写>"
+$env:RAG_API_KEY = "<仅在使用远程 RAG 时填写>"
 ```
 
-登录地址始终拼接到该环境的 base URL，当前请求方法固定为 POST。POST 不在环境的
-`allowed_http_methods` 中时，执行在登录前返回权限错误。缺少环境变量、状态码不匹配、JSON 路径
-不存在或 token 不是非空字符串时，本次 `api.execute` 返回认证错误，不发送后续用例请求。
+旧的 `AGENTIC_QA_*`、`PG_LOCAL_*`、TestRail/Qase 以及 API 凭据环境变量不再读取。
 
-两种模式都只在单次 `api.execute` 进程内持有 token。workspace 保存环境变量名和注入规则，不保存
-实际 token；API Cases 继续使用 `agentic-qa.api-cases.v1.1`，无需为每条用例复制认证头。
+## 完整契约
 
-### RAG Provider
+配置 Schema 是 `agentic-qa.local-config.v1`，未知字段会被拒绝。实际字段以根目录
+`agentic-qa.local.example.yml` 为准。模型和 RAG 分区保存 Key 的环境变量名称；填写 `api_key`、
+`token` 等直接 Key 字段会导致校验失败。
+
+TestRail 配置示例：
 
 ```yaml
-rag:
-  provider: openai-compatible
-  api_key_env: RAG_API_KEY
-  base_url_env: AGENTIC_QA_RAG_BASE_URL
-  model: text-embedding-3-small
-  chunk_size: 1200
-  chunk_overlap: 400
+test_management:
+  provider: testrail
+  base_url: https://testrail.example.test
+  username: qa@example.test
+  api_key: local-value
 ```
 
-`local-lexical` 不需要 API Key，也不外发 source。远程 Provider 缺少密钥时明确失败，不自动回退。
-
-### 只读 PostgreSQL 数据源
+Qase 配置示例：
 
 ```yaml
-data_sources:
-  postgres:
-    schema_version: agentic-qa.harness.postgres-source.v2
-    host_env: PG_LOCAL_HOST
-    port_env: PG_LOCAL_PORT
-    database_env: PG_LOCAL_DATABASE
-    user_env: PG_LOCAL_USER
-    password_env: PG_LOCAL_PASSWORD
-    connect_timeout_seconds: 5
-    statement_timeout_ms: 10000
-    max_rows: 200
+test_management:
+  provider: qase
+  base_url: https://api.qase.io
+  api_token: local-value
 ```
 
-`postgres.query` 只接受单条 `SELECT/WITH`，使用只读事务，并限制超时与结果行数。
+不使用测试管理系统时保持 `provider: none`。
 
-### 只读 TestRail 测试资产
+## API 服务与环境
+
+每个服务声明唯一的仓库内相对目录。目录内容是完整 OpenAPI/Apifox 导出和标准人工用例；旧
+`api-test.yml` 会成为明确的迁移错误。
 
 ```yaml
-data_sources:
-  test_management:
-    provider: testrail
-    schema_version: agentic-qa.harness.testrail-source.v1
-    base_url_env: TESTRAIL_URL
-    username_env: TESTRAIL_USER
-    api_key_env: TESTRAIL_API_KEY
-    timeout_seconds: 10
-    max_items: 100
-    max_response_bytes: 1048576
+api:
+  services:
+    member-service:
+      source_directory: local-sources/api/member-service
+      environments:
+        dev:
+          base_url: https://gateway-app-dev.nexuscube.cn
+          trusted_origins: [https://gateway-app-dev.nexuscube.cn]
+          allowed_http_methods: [GET, POST]
+          cleanup_exempt_operations: []
+          timeout_seconds: 30
+          auth:
+            login:
+              kind: sms
+              request_path: /member/app/login/phoneLogin
+              tel_code: "+86"
+              phone: ""
+              sms_code: "000000"
+              encryption:
+                algorithm: aes-128-cbc-pkcs7-base64-iv-prefix
+                key: ""
+                fields: [phone, smsCode]
+              success_condition: {json_path: $.code, expected: 1000}
+              token_json_path: $.data.userInfo.accessToken
+              injection: {name: accesstoken, prefix: ""}
+            fallback_token: ""
 ```
 
-Qase 使用同一个只读工具，但采用独立的强类型配置和项目代码参数：
+认证选择是 fail-closed：登录字段全部填写时使用登录；全部清空时以非空 `fallback_token` 作为认证；只填一部分
+直接失败，Token 不会掩盖错误。`dev`/`test` 短信码只接受 `000000`。AES-128 Key 校验为正好 16 字节。
+`pro`、`prod`、`production`、`live` 环境本期全部拒绝。
 
-```yaml
-data_sources:
-  test_management:
-    provider: qase
-    schema_version: agentic-qa.harness.qase-source.v1
-    base_url_env: QASE_URL
-    api_token_env: QASE_API_TOKEN
-    timeout_seconds: 10
-    max_items: 100
-    max_response_bytes: 1048576
-```
+`config doctor` 校验整个文件；`api doctor` 进一步校验选定服务的 OpenAPI、人工用例和认证选择。配置
+错误的命令退出码为 2，且不会创建 workspace、run 或发送请求。
 
-配置保存环境变量名称，实际地址和凭据由当前进程环境提供。连接器查询固定的 TestRail 项目、套件、
-章节和用例资源，或固定的 Qase 项目、套件和用例资源；完整场景和返回行为见
-[读取测试管理资产](test-management.md)。
+`config init` 会自动生成 `runtime.cleanup_journal_key`。已有配置缺少该值时执行
+`python -m harness config runtime-key init`；命令只补缺失的 AES-256-GCM Key，绝不覆盖现有值。
+每个确认的 `POST`、`PUT`、`PATCH` 或 `DELETE` 业务用例默认需要声明 cleanup；缺少时 Candidate 会被质量门拒绝。确认无副作用时，按
+`METHOD /path-template` 精确加入对应环境的 `cleanup_exempt_operations`；项目登录隐式豁免。
 
-## Source 摄取限制
+## 持久化边界
 
-| 边界 | 默认值 | 超限行为 |
-|---|---:|---|
-| 文件数 | 256 | 记录结构化 issue，停止继续纳入 |
-| 相对路径 | 1024 UTF-8 bytes | 拒绝该路径 |
-| 单文件解析预算 | 16 MiB | 完整流式 Hash，但不解析正文 |
-| 单文件 Hash 预算 | 64 MiB | 不计算伪造的部分 Hash，标记 unavailable |
-| 总 Hash 预算 | 64 MiB | 后续超预算文件标记 unavailable |
-| 解析文本总量 | 100,000 characters | 保存截断快照并标记 partial |
+workspace 只保存服务名、环境、非敏感执行策略与结构 SHA-256。手机号、密码、验证码、AES Key、
+Token、数据库密码和连接器凭据每次运行都从根配置重新读取。凭据值变化沿用已有 Review；Base URL、
+trusted Origin、方法 allowlist、登录路径、算法或 Token 注入规则变化会阻止请求，并进入新的 prepare 和
+Review 流程。
 
-Source 摄取器只解析 `workspace/sources` 内的相对普通文件。链接、junction、Windows reparse point、
-绝对路径、`..`、控制字符和大小写折叠冲突均被拒绝；archive 不解压，Markdown/HTML/YAML 内容
-不会执行。
-
-通用策略允许 empty SourceBundle。是否要求来源或完整来源由启用的 QualityStrategy 声明；
-`city-opening-rewards` 两者都要求。
-
-## AgentRequest 与 MCP
-
-AgentRequest 不从环境变量读取来源根。组合根会自动创建并允许项目内的
-`local-sources/requirements/`；该目录整体由 Git 忽略。项目外来源通过可重复参数显式追加：
-
-```powershell
-python -m harness mcp serve `
-  --allow-source-root D:\OpenAPI
-```
-
-默认根由 `--repo-root` 决定，追加允许根只存在于当前进程参数中，不写入 workspace；工具参数超出
-白名单时返回权限错误。AgentRequest 固定使用 `analysis-only`，协议中没有 ExecutionProfile 字段。完整协议见
-[跨 AI 接入](agent-integration.md)。
-## 声明式质量策略
-
-可扩展业务质量约束使用 `agentic-qa.declarative-quality-policy.v1` manifest，支持
-`required_rules`、`boundary_requirements` 和 `forbidden_inventions`。内置示例位于
-`src/harness/manifests/quality/city-opening-rewards.yml`，注册名为
-`city-opening-rewards`。该默认名称由声明式 manifest 注册，不再加载同名的 Python
-业务规则实现。
-
-```yaml
-quality_policies: [city-opening-rewards]
-```
-
-新增业务 Pack 应优先新增声明式 manifest，不应把具体业务文案、页面、接口或数据库细节写入
-Python Validator。约束配置会进入 assessment identity 和质量报告。
+`GITHUB_TOKEN` 与 `AGENTIC_QA_GITHUB_TOKEN_ENV` 当前均不是运行时配置，Harness 不读取它们。

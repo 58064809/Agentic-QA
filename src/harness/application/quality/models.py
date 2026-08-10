@@ -29,6 +29,8 @@ class QualityContext(FrozenModel):
     run_id: str
     artifact: str
     source_bundle: SourceBundle
+    full_source_texts: dict[str, str] = Field(default_factory=dict, exclude=True, repr=False)
+    cleanup_exempt_operations: tuple[str, ...] = ()
 
 
 class QualityIssue(FrozenModel):
@@ -45,6 +47,7 @@ class StrategyResult(FrozenModel):
     issues: tuple[QualityIssue, ...] = ()
     actions: tuple[str, ...] = ()
     remediation_patch: str | None = None
+    metrics: dict[str, Any] = Field(default_factory=dict)
 
 
 class NormalizationOperationKind(str, Enum):
@@ -79,6 +82,7 @@ class StrategyAudit(FrozenModel):
     requirements: StrategyRequirements
     actions: tuple[str, ...] = ()
     issues: tuple[QualityIssue, ...] = ()
+    metrics: dict[str, Any] = Field(default_factory=dict)
 
 
 class VariantAssessment(FrozenModel):

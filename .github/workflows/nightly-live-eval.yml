@@ -34,12 +34,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]" -c constraints.txt
+      - name: Create local live-eval configuration
+        run: |
+          cp agentic-qa.local.example.yml agentic-qa.local.yml
+          python -c "import yaml; p='agentic-qa.local.yml'; d=yaml.safe_load(open(p)); d['postgres']['password']='nightly-unused'; d['api']['services']={}; open(p,'w').write(yaml.safe_dump(d, sort_keys=False))"
       - name: Run live candidate eval
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          AGENTIC_QA_LIVE_EVAL_OUTPUT: ${{ runner.temp }}/agentic-qa-live-eval
-          AGENTIC_QA_LIVE_EVAL_CASE: ${{ inputs.case || (github.event.schedule == '30 16 * * 0' && 'order-lifecycle') || (github.event.schedule == '30 17 * * 0' && 'lottery-assistance') || 'login-lock' }}
-        run: python -m harness eval live | tee "${{ runner.temp }}/live-eval-result.json"
+        run: >-
+          python -m harness eval live
+          --case "${{ inputs.case || (github.event.schedule == '30 16 * * 0' && 'order-lifecycle') || (github.event.schedule == '30 17 * * 0' && 'lottery-assistance') || 'login-lock' }}"
+          --output-dir "${{ runner.temp }}/agentic-qa-live-eval"
+          | tee "${{ runner.temp }}/live-eval-result.json"
       - name: Upload review evidence
         if: always()
         uses: actions/upload-artifact@v4

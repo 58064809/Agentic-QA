@@ -9,12 +9,12 @@ from harness.infrastructure.tools.openapi import inspect_openapi
 SOURCE = "sources/orders.openapi.yml"
 
 
-def _reference(source: str = SOURCE) -> dict[str, Any]:
+def _reference(source: str = SOURCE, locator: str = "GET /orders/{order_id}") -> dict[str, Any]:
     return {
         "source_type": "openapi",
         "source_path": source,
         "chunk_id": "orders",
-        "locator": "/orders",
+        "locator": locator,
         "summary": "orders contract",
         "confidence": "high",
     }
@@ -31,6 +31,13 @@ def _case(
     cleanup: list[dict[str, Any]] | None = None,
     source_refs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    canonical_path = path.replace("${{order_id}}", "{order_id}")
+    references = list(source_refs or [_reference(locator=f"{method} {canonical_path}")])
+    for cleanup_step in cleanup or []:
+        cleanup_request = cleanup_step.get("request") or {}
+        cleanup_method = str(cleanup_request.get("method") or "").upper()
+        cleanup_path = str(cleanup_request.get("path") or "").replace("${{order_id}}", "{order_id}")
+        references.append(_reference(locator=f"{cleanup_method} {cleanup_path}"))
     return {
         "id": case_id,
         "title": case_id,
@@ -39,7 +46,7 @@ def _case(
         "business_rule_refs": ["ORDER-001"],
         "review_status": "needs_human_review",
         "review_questions": ["confirm fixtures"],
-        "source_refs": source_refs or [_reference()],
+        "source_refs": references,
         "pending": [],
         "request": {
             "method": method,
@@ -167,6 +174,17 @@ def test_dataset_schema_failure_identifies_only_the_invalid_instance() -> None:
     assert {issue.code for issue in result.issues} == {"schema_mismatch"}
     assert {issue.instance_id for issue in result.issues} == {"API-001::invalid"}
     assert {issue.location for issue in result.issues} == {"request.path.order_id"}
+
+
+def test_openapi_source_locator_must_use_method_and_contract_path() -> None:
+    case = _case(source_refs=[_reference(locator="http://orders/ORD-001")])
+
+    result = validate_api_contracts(_draft(case), [_path_contract()])
+
+    assert {issue.code for issue in result.issues} == {"source_locator_mismatch"}
+    assert result.issues[0].message == (
+        "OpenAPI source locator must be exactly 'GET /orders/{order_id}'"
+    )
 
 
 def test_dataset_expansion_preserves_native_json_types_and_schema_constraints() -> None:
@@ -399,7 +417,7 @@ def test_embedded_and_ambiguous_path_templates_are_rejected() -> None:
 
     assert [issue.code for issue in embedded_result.issues] == ["operation_not_found"]
 
-    literal_case = _case(path="/orders/ORD-001")
+    literal_case = _case(path="/orders/ORD-001", source_refs=[_reference()])
     literal_result = validate_api_contracts(_draft(literal_case), [_path_contract()])
 
     assert [issue.code for issue in literal_result.issues] == ["path_parameter_requires_variable"]

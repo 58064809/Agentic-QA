@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 
 from harness.domain.security import (
     contains_likely_secret,
+    validate_api_assertion_expected_safety,
     validate_api_request_safety,
     validate_api_trusted_origin,
 )
@@ -187,12 +188,39 @@ class ApiLoginRequest(StrictModel):
         return self
 
 
+class ApiLoginRequestEncryption(StrictModel):
+    algorithm: Literal["aes-128-cbc-pkcs7-base64-iv-prefix"]
+    key_env: str = Field(pattern=r"^[A-Z_][A-Z0-9_]*$")
+    fields: list[str] = Field(min_length=1)
+
+    @field_validator("fields")
+    @classmethod
+    def validate_fields(cls, value: list[str]) -> list[str]:
+        fields = list(dict.fromkeys(item.strip() for item in value if item.strip()))
+        if not fields or any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", item) for item in fields):
+            raise ValueError("login encryption fields must be unique root JSON field names")
+        return fields
+
+
+class ApiLoginSuccessCondition(StrictModel):
+    json_path: str = Field(pattern=r"^\$(?:\.[A-Za-z_][A-Za-z0-9_-]*)+$")
+    expected: bool | int | float | str
+
+    @field_validator("expected")
+    @classmethod
+    def reject_sensitive_expected(cls, value: bool | int | float | str) -> bool | int | float | str:
+        validate_api_assertion_expected_safety(value, label="API login success expected")
+        return value
+
+
 class LoginApiAuthentication(StrictModel):
     mode: Literal["login"]
     request: ApiLoginRequest
     token_json_path: str = Field(pattern=r"^\$(?:\.[A-Za-z_][A-Za-z0-9_-]*)+$")
     expected_status_codes: list[int] = Field(default_factory=lambda: [200], min_length=1)
     injection: ApiTokenInjection = Field(default_factory=ApiTokenInjection)
+    request_encryption: ApiLoginRequestEncryption | None = None
+    success_condition: ApiLoginSuccessCondition | None = None
 
     @field_validator("expected_status_codes")
     @classmethod
@@ -216,7 +244,24 @@ class ExecutionEnvironmentPolicy(StrictModel):
     allowed_http_methods: list[str] = Field(default_factory=lambda: ["GET", "HEAD", "OPTIONS"])
     allow_ui_mutations: bool = False
     max_request_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    cleanup_exempt_operations: list[str] = Field(default_factory=list)
     api_auth: ApiAuthentication | None = None
+
+    @field_validator("cleanup_exempt_operations")
+    @classmethod
+    def normalize_cleanup_exempt_operations(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for item in value:
+            method, separator, path = item.strip().partition(" ")
+            canonical = f"{method.upper()} {path}"
+            if not separator or method.upper() not in {"POST", "PUT", "PATCH", "DELETE"}:
+                raise ValueError("cleanup exemptions must use canonical mutating METHOD /path")
+            if not path.startswith("/") or " " in path:
+                raise ValueError("cleanup exemption path must be a relative path template")
+            normalized.append(canonical)
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("cleanup exemptions must be unique")
+        return normalized
 
     @field_validator("allowed_http_methods")
     @classmethod
@@ -239,6 +284,61 @@ class ExecutionEnvironmentPolicy(StrictModel):
         return self
 
 
+class ApiScenarioPrepareCommand(StrictModel):
+    schema_version: Literal["agentic-qa.harness.api-scenario-prepare-command.v1"] = (
+        "agentic-qa.harness.api-scenario-prepare-command.v1"
+    )
+    source_directory: str = Field(min_length=1)
+    goal: str = Field(min_length=1)
+    environment: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
+    execution_policy: ExecutionEnvironmentPolicy | None = None
+    workspace_id: str | None = None
+    request_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
+    quality_policies: list[str] = Field(default_factory=list)
+
+    @field_validator("workspace_id")
+    @classmethod
+    def normalize_optional_workspace(cls, value: str | None) -> str | None:
+        return normalize_workspace_id(value) if value is not None else None
+
+    @field_validator("goal")
+    @classmethod
+    def reject_goal_secrets(cls, value: str) -> str:
+        if contains_likely_secret(value):
+            raise ValueError("goal contains a likely secret; use local configuration instead")
+        return value
+
+    @field_validator("environment")
+    @classmethod
+    def reject_production_environment(cls, value: str) -> str:
+        ExecutionProfile(environment=value)
+        if value == "analysis-only":
+            raise ValueError("API scenario prepare requires an explicit QA environment")
+        return value
+
+    @model_validator(mode="after")
+    def validate_execution_policy(self) -> ApiScenarioPrepareCommand:
+        if self.execution_policy is None:
+            return self
+        if self.execution_policy.base_url_env is None:
+            raise ValueError("API scenario prepare requires execution_policy.base_url_env")
+        authentication = self.execution_policy.api_auth
+        if isinstance(authentication, StaticTokenApiAuthentication) and authentication.token:
+            raise ValueError("API scenario prepare only accepts token_env, never an inline token")
+        if len(self.quality_policies) != len(set(self.quality_policies)):
+            raise ValueError("quality_policies cannot contain duplicates")
+        return self
+
+
 class StartRunCommand(StrictModel):
     schema_version: Literal["agentic-qa.harness.start-run-command.v2"] = (
         "agentic-qa.harness.start-run-command.v2"
@@ -247,6 +347,7 @@ class StartRunCommand(StrictModel):
     goal: str = Field(min_length=1)
     expected_artifacts: list[str] = Field(default_factory=lambda: ["testcases"])
     execution_profile: ExecutionProfile = Field(default_factory=ExecutionProfile)
+    generation_mode: Literal["standard", "api_fast"] = "standard"
 
     @field_validator("workspace_id")
     @classmethod
@@ -257,7 +358,7 @@ class StartRunCommand(StrictModel):
     @classmethod
     def reject_secrets_in_goal(cls, value: str) -> str:
         if contains_likely_secret(value):
-            raise ValueError("goal contains a likely secret; use environment variables instead")
+            raise ValueError("goal contains a likely secret; use local configuration instead")
         return value
 
     @field_validator("expected_artifacts")
@@ -270,6 +371,12 @@ class StartRunCommand(StrictModel):
         if not artifacts:
             raise ValueError("expected_artifacts cannot be empty")
         return artifacts
+
+    @model_validator(mode="after")
+    def validate_generation_mode(self) -> StartRunCommand:
+        if self.generation_mode == "api_fast" and self.expected_artifacts != ["api_test_draft"]:
+            raise ValueError("api_fast generation only supports api_test_draft")
+        return self
 
 
 class EvidenceRequirement(StrictModel):
@@ -595,6 +702,47 @@ class ArtifactCandidate(StrictModel):
         )
 
 
+class ApiScenarioSourceFile(StrictModel):
+    path: str = Field(min_length=1)
+    kind: Literal["openapi", "manual_test_cases", "ignored"]
+    case_ids: list[str] = Field(default_factory=list)
+    reason: str | None = None
+
+
+class ApiScenarioSourceSummary(StrictModel):
+    schema_version: Literal["agentic-qa.harness.api-scenario-source-summary.v1"] = (
+        "agentic-qa.harness.api-scenario-source-summary.v1"
+    )
+    openapi_files: list[ApiScenarioSourceFile]
+    manual_case_files: list[ApiScenarioSourceFile]
+    ignored_files: list[ApiScenarioSourceFile] = Field(default_factory=list)
+    manual_case_ids: list[str]
+
+
+class ApiScenarioCandidateSummary(StrictModel):
+    artifact: Literal["api_test_draft"] = "api_test_draft"
+    status: str
+    partial: bool
+    versions: list[ArtifactVersion]
+    candidate_path: str
+    quality_report_path: str
+    generation_report_path: str | None = None
+
+
+class ApiScenarioPrepareResult(StrictModel):
+    schema_version: Literal["agentic-qa.harness.api-scenario-prepare-result.v1"] = (
+        "agentic-qa.harness.api-scenario-prepare-result.v1"
+    )
+    request_key: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    workspace_id: str
+    run_id: str
+    status: str
+    environment: str
+    sources: ApiScenarioSourceSummary
+    candidate: ApiScenarioCandidateSummary
+    next_action: Literal["human_review_required"]
+
+
 class BudgetUsage(StrictModel):
     model_calls: int = 0
     tool_calls: int = 0
@@ -734,6 +882,36 @@ class ExecuteApiCasesCommand(RunRef):
     cases_path: str = "published/api_test_draft/current.yml"
     source_cases_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     execution_profile: ExecutionProfile
+
+
+class RunApiScenarioCommand(StrictModel):
+    schema_version: Literal["agentic-qa.harness.run-api-scenario-command.v1"] = (
+        "agentic-qa.harness.run-api-scenario-command.v1"
+    )
+    workspace_id: str = Field(min_length=1)
+    execution_id: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
+    environment: str = Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+    )
+
+    @field_validator("workspace_id")
+    @classmethod
+    def normalize_id(cls, value: str) -> str:
+        return normalize_workspace_id(value)
+
+    @field_validator("environment")
+    @classmethod
+    def reject_production_environment(cls, value: str) -> str:
+        ExecutionProfile(environment=value)
+        if value == "analysis-only":
+            raise ValueError("API scenario run requires an explicit QA environment")
+        return value
 
 
 class ExportApiPytestCommand(StrictModel):

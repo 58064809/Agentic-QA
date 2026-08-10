@@ -51,6 +51,48 @@ def _create(harness: Harness, workspace_id: str = "demo") -> Path:
     return harness.create_workspace(CreateWorkspaceCommand(workspace_id=workspace_id))
 
 
+def _write_live_discovery_local_config(repo_root: Path) -> None:
+    payload = {
+        "schema_version": "agentic-qa.local-config.v1",
+        "model": {
+            "provider": "recorded",
+            "api_key_env": "UNIT_MODEL_KEY",
+            "flash_model": "recorded-flash",
+            "pro_model": "recorded-pro",
+            "base_url": "https://model.example.test",
+        },
+        "rag": {"provider": "local-lexical"},
+        "postgres": {
+            "host": "localhost",
+            "port": 5432,
+            "database": "postgres",
+            "user": "postgres",
+            "password": "unit-test-only",
+        },
+        "test_management": {"provider": "none"},
+        "workspace_defaults": {},
+        "api": {
+            "services": {
+                "discovery": {
+                    "source_directory": ".",
+                    "environments": {
+                        "qa": {
+                            "base_url": "https://qa.example.test",
+                            "trusted_origins": ["https://qa.example.test"],
+                            "allowed_http_methods": ["GET", "HEAD", "OPTIONS", "POST"],
+                            "auth": {"fallback_token": "unit-test-token"},
+                        }
+                    },
+                }
+            }
+        },
+    }
+    (repo_root / "agentic-qa.local.yml").write_text(
+        yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
 def test_v2_start_get_review_and_promote(tmp_path: Path) -> None:
     harness = _harness(tmp_path)
     workspace = _create(harness)
@@ -82,47 +124,29 @@ def test_v2_start_get_review_and_promote(tmp_path: Path) -> None:
     assert (workspace / "published/testcases/current.md").is_file()
 
 
-def test_api_test_draft_is_typed_yaml_and_keeps_human_review_gate(tmp_path: Path) -> None:
+def test_api_test_draft_requires_api_prepare_preflight(tmp_path: Path) -> None:
     harness = _harness(tmp_path)
     workspace = _create(harness)
 
-    snapshot = harness.start_run(
-        StartRunCommand(
-            workspace_id="demo",
-            goal="为福利活动设计 API 测试",
-            expected_artifacts=["api_test_draft"],
+    with pytest.raises(ValueError, match="use api prepare"):
+        harness.start_run(
+            StartRunCommand(
+                workspace_id="demo",
+                goal="为福利活动设计 API 测试",
+                expected_artifacts=["api_test_draft"],
+            )
         )
-    )
-
-    assert snapshot.status == "needs_human_review"
-    candidate = snapshot.candidates[0]
-    assert candidate.path.endswith("/api_test_draft/raw.yml")
-    candidate_root = (tmp_path / candidate.path).parent
-    manifest = json.loads((candidate_root / "manifest.json").read_text(encoding="utf-8"))
-    payload = yaml.safe_load((candidate_root / "raw.yml").read_text(encoding="utf-8"))
-    assert manifest["media_type"] == "application/yaml"
-    assert payload["schema_version"] == "agentic-qa.api-cases.v1.1"
-    assert payload["cases"][0]["contract_status"] == "missing"
-    assert payload["cases"][0]["request"]["method"] is None
-    assert payload["cases"][0]["request"]["path"] is None
-    assert not (workspace / "published/api_test_draft/current.yml").exists()
-
-    published = harness.review_run(
-        ReviewRunCommand(
-            workspace_id="demo",
-            run_id=snapshot.run_id,
-            decision=ReviewDecision(
-                intent="approve",
-                target_artifact="api_test_draft",
-                reason="人工确认待契约项表达准确",
-                reviewed_by="qa_owner",
-                versions=[candidate.version_ref(ArtifactVariant.RAW)],
-            ),
+    with pytest.raises(ValueError, match="use api prepare"):
+        list(
+            harness.stream_run(
+                StartRunCommand(
+                    workspace_id="demo",
+                    goal="为福利活动设计 API 测试",
+                    expected_artifacts=["api_test_draft"],
+                )
+            )
         )
-    )
-
-    assert published.status == "published"
-    assert (workspace / "published/api_test_draft/current.yml").is_file()
+    assert not any((workspace / "runs").iterdir())
 
 
 def test_api_discovery_report_is_sanitized_and_stops_at_review_gate(tmp_path: Path) -> None:
@@ -229,9 +253,8 @@ def test_api_discovery_report_is_sanitized_and_stops_at_review_gate(tmp_path: Pa
 
 def test_live_api_discovery_uses_playwright_facade_and_stops_at_review_gate(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("AGENTIC_QA_BASE_URL", "https://qa.example.test")
+    _write_live_discovery_local_config(tmp_path)
     subtool_calls: list[str] = []
 
     def caller(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -324,7 +347,7 @@ def test_live_api_discovery_uses_playwright_facade_and_stops_at_review_gate(
     workspace = _create(harness)
     config = yaml.safe_load((workspace / "workspace.yml").read_text(encoding="utf-8"))
     config["execution"]["environments"]["qa"] = {
-        "base_url_env": "AGENTIC_QA_BASE_URL",
+        "base_url_env": "LOCAL_DISCOVERY_QA_BASE_URL",
         "trusted_origins": ["https://qa.example.test"],
         "allowed_http_methods": ["GET", "HEAD", "OPTIONS", "POST"],
         "allow_ui_mutations": True,
@@ -342,7 +365,7 @@ def test_live_api_discovery_uses_playwright_facade_and_stops_at_review_gate(
             expected_artifacts=["api_discovery_report"],
             execution_profile=ExecutionProfile(
                 environment="qa",
-                base_url_env="AGENTIC_QA_BASE_URL",
+                base_url_env="LOCAL_DISCOVERY_QA_BASE_URL",
                 allowed_http_methods=["GET", "HEAD", "OPTIONS", "POST"],
                 allow_ui_mutations=True,
                 request_timeout_seconds=10,

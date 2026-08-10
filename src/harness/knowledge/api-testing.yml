@@ -1,14 +1,29 @@
 schema_version: agentic-qa.harness.knowledge-spec.v1
 name: api-testing
-version: 1.7.0
+version: 1.14.0
 purpose: 根据完整 API 契约设计可验证的机器用例并记录执行边界。
 applies_to: [api-testing]
 inputs:
   - 完整且解析成功的 OpenAPI
+  - 可选的标准 11 列人工 API 用例目录
   - ExecutionProfile
   - 脱敏测试数据或受控 fixture
 procedure:
+  - Every confirmed POST, PUT, PATCH, or DELETE business case must declare verified cleanup; an exact canonical operation in the reviewed cleanup_exempt_operations policy may omit cleanup. Project authentication is outside API Cases.
+  - An unconfirmed manual login case handled by project authentication is reported as skipped, never as a product failure.
+  - API 测试生成前必须通过根目录 agentic-qa.local.yml 与 api-project doctor；缺少环境、Base URL、认证或登录加密协议时不创建 run、不调用模型。
+  - 登录凭据完整时使用登录；全部为空时必须使用 fallback Token；部分缺失时 fail closed。
+  - dev/test 短信验证码必须由运行环境提供且等于 000000；production-like 环境和 pending 登录加密不执行。
+  - 会员手机号登录的 phone 与 smsCode 使用 aes-128-cbc-pkcs7-base64-iv-prefix 分别加密；Key 由统一根配置提供，并且不进入用例、Prompt 或证据。
+  - 登录 HTTP 成功后先验证配置的业务成功条件，再从 token_json_path 提取并注入 Token。
+  - 项目级登录由执行器在 published 用例之前完成；API Case 不生成认证 Token extraction，也不使用 ${{accessToken}} 传递项目认证值。人工登录用例缺少可公开数据时映射为 pending/unconfirmed，不伪造凭据。
   - 通过 openapi.inspect 解析 SourceBundle 中的完整契约。
+  - api_fast 快线只消费确定性识别后的 OpenAPI 与人工用例；其他文件不得发送给模型。
+  - 每个人工用例 ID 至少映射一个 API Case，并使用 source_type=manual-test-case、chunk_id=人工用例 ID、confidence=high 的 source_refs。
+  - OpenAPI source_ref.locator 固定为大写 METHOD 加一个空格再加 OpenAPI path template，例如 GET /member/select/getMemberRoleList 或 GET /orders/{id}；不拼 Base URL，不使用 http:// 伪 URL、JSON Pointer 或仅 path。
+  - 将重复数据转换为 variables.datasets，将跨步骤数据转换为 extract/${{variable}}，将清理步骤转换为 cleanup。
+  - "variables 的唯一合法形态为 {datasets: [{id: string, values: object}], extract: {name: {source: response_json|response_header, path|name: string}}}；没有数据驱动或跨用例提取时使用空对象，不生成列表形式 extract、from 字段或裸字符串路径。"
+  - 人工步骤无法由完整 OpenAPI 确认时，生成 pending_confirmation 场景并保持 request.method/path 为 null，不补造 endpoint。
   - 提取 endpoint、method、参数、响应 Schema 和安全方案。
   - 覆盖认证授权、必填字段、类型、边界、错误码和状态副作用。
   - 对幂等、分页、并发、限流和超时建立独立场景。
@@ -18,11 +33,12 @@ procedure:
   - 按 dataset 实例展开 path、query、headers 与 body，并以 OpenAPI 参数和 JSON Schema 逐实例校验。
   - 后续请求使用 ${{name}} 引用更早用例通过 response_json 或非敏感 response_header 提取的运行时变量。
   - 状态变更场景使用 cleanup 声明逆序回收请求，并为每个 cleanup 请求提供受支持断言。
-  - 环境变量使用 ${ENV_NAME}；每个请求引用的环境变量都需要在发送前解析成功。
+  - 用例数据来自 variables.datasets 或上游 extraction；项目级 Base URL、认证和登录值来自统一根配置，不新增 API 环境变量依赖。
   - 数据集变量、跨用例提取变量和用例 ID 保持全场景唯一命名，不遮蔽更早定义。
 output_expectations:
   - 机器用例写入 AgentOutput.api_test_cases，由 Harness 渲染为 YAML Candidate。
   - 请求使用结构化 method 和 path。
+  - 人工用例映射质量报告记录总数、confirmed 数、unconfirmed 数和未映射 ID。
   - cleanup 继承主用例的 OpenAPI 来源，并使用与主请求相同的 operation 与 Schema 校验。
   - 上游提取变量的来源和响应字段必须存在；生成期未知的叶子值类型延迟到执行期，不伪造示例值。
   - 断言使用 agentic-qa.api-cases.v1.1 中的类型化 assertions。
@@ -46,6 +62,7 @@ prohibited_actions:
   - 不根据残缺来源补全 endpoint、响应字段或业务规则。
   - 不在输出中包含真实 Token、Cookie 或生产地址。
 deterministic_checks:
+  - validator:api-mutating-operation-cleanup-policy
   - validator:workspace-trusted-api-origin
   - validator:api-url-origin-and-path
   - validator:api-assertion-expected-safety

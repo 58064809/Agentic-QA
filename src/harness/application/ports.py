@@ -16,19 +16,31 @@ from harness.application.quality import (
 from harness.application.source import SourceBundle
 from harness.domain.models import (
     ApiPytestExportResult,
+    ApiScenarioSourceSummary,
     ApprovedArtifactVersion,
     ArtifactCandidate,
     ArtifactDiffResult,
     ExecuteApiCasesCommand,
+    ExecutionEnvironmentPolicy,
     ExecutionProfile,
     ExportApiPytestCommand,
     GetArtifactDiffQuery,
     HarnessEvent,
     ReviewDecision,
+    RunApiScenarioCommand,
     RunSnapshot,
     StartRunCommand,
 )
+from harness.domain.schemas.api_execution_reporting import (
+    GenerateApiAllureReportCommand,
+    GenerateApiAllureReportResult,
+    ResumeApiCleanupCommand,
+    ResumeApiCleanupResult,
+)
+from harness.domain.schemas.api_project import ApiProjectCheckCommand, ApiProjectCheckResult
+from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
+from harness.domain.schemas.local_config import LocalConfigCheckResult
 
 
 class WorkspaceRepository(Protocol):
@@ -44,9 +56,36 @@ class ApiAutomationService(Protocol):
 
     def export_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult: ...
 
+    def execution_profile(self, workspace: str, environment: str) -> ExecutionProfile: ...
+
+
+class ApiScenarioRunner(Protocol):
+    def run(self, command: RunApiScenarioCommand) -> RunApiScenarioResult: ...
+
+    def generate_allure_report(
+        self, command: GenerateApiAllureReportCommand
+    ) -> GenerateApiAllureReportResult: ...
+
+    def resume_cleanup(self, command: ResumeApiCleanupCommand) -> ResumeApiCleanupResult: ...
+
+
+class ApiProjectChecker(Protocol):
+    def check(self, command: ApiProjectCheckCommand) -> ApiProjectCheckResult: ...
+
+
+class LocalConfigChecker(Protocol):
+    def check(self) -> LocalConfigCheckResult: ...
+
 
 class ManagedAgentWorkspaceProvisioner(Protocol):
-    def prepare(self, request: AgentRequest) -> PreparedAgentWorkspace: ...
+    def prepare(
+        self,
+        request: AgentRequest,
+        *,
+        generation_mode: str = "standard",
+        execution_environments: dict[str, ExecutionEnvironmentPolicy] | None = None,
+        api_project_binding: dict[str, str] | None = None,
+    ) -> PreparedAgentWorkspace: ...
 
     def request_lock(self, prepared: PreparedAgentWorkspace) -> AbstractContextManager[None]: ...
 
@@ -90,6 +129,10 @@ class SourceBundleRepository(Protocol):
     def create_source_bundle(self, workspace: str, run_id: str) -> SourceBundle: ...
 
     def load_source_bundle(self, workspace: str, run_id: str) -> SourceBundle: ...
+
+
+class ApiScenarioSourceCatalog(Protocol):
+    def inspect(self, workspace: str, run_id: str) -> ApiScenarioSourceSummary: ...
 
 
 class QualityStrategy(Protocol):
