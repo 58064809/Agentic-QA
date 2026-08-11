@@ -17,7 +17,8 @@ from harness.domain.schemas.api_test_cases import ApiCleanupStep
 from harness.infrastructure.persistence.common import atomic_json
 
 UTC = timezone.utc
-JOURNAL_SCHEMA = "agentic-qa.api-cleanup-journal.v1"
+JOURNAL_SCHEMA = "agentic-qa.api-cleanup-journal.v2"
+LEGACY_JOURNAL_SCHEMA = "agentic-qa.api-cleanup-journal.v1"
 ENVELOPE_SCHEMA = "agentic-qa.api-cleanup-journal-envelope.v1"
 
 
@@ -35,7 +36,10 @@ class EncryptedCleanupJournal:
         execution_id: str,
         environment: str,
         source_cases_sha256: str,
+        source_publication_id: str,
+        source_history_path: str,
         structural_sha256: str,
+        policy_sha256: str,
         execution_plan_sha256: str,
     ) -> None:
         if not key:
@@ -51,7 +55,10 @@ class EncryptedCleanupJournal:
             "execution_id": execution_id,
             "environment": environment,
             "source_cases_sha256": source_cases_sha256,
+            "source_publication_id": source_publication_id,
+            "source_history_path": source_history_path,
             "structural_sha256": structural_sha256,
+            "policy_sha256": policy_sha256,
             "execution_plan_sha256": execution_plan_sha256,
             "created_at": _now(),
             "obligations": [],
@@ -76,7 +83,7 @@ class EncryptedCleanupJournal:
         except Exception as exc:
             raise ValueError("cleanup journal cannot be decrypted with the configured key") from exc
         payload = json.loads(plaintext.decode("utf-8"))
-        if payload.get("schema_version") != JOURNAL_SCHEMA:
+        if payload.get("schema_version") not in {JOURNAL_SCHEMA, LEGACY_JOURNAL_SCHEMA}:
             raise ValueError("cleanup journal schema is unsupported")
         instance = cls.__new__(cls)
         instance.path = path

@@ -57,6 +57,7 @@ class ResolvedApiProject:
     runtime_values: dict[str, str]
     selected_authentication: str
     structural_sha256: str
+    policy_sha256: str
 
 
 def _issue(code: str, location: str, message: str, remediation: str) -> LocalConfigIssue:
@@ -689,6 +690,18 @@ class FilesystemLocalConfigLoader:
         digest = hashlib.sha256(
             json.dumps(structural, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
+        policy_digest = hashlib.sha256(
+            json.dumps(
+                {
+                    "service": service_name,
+                    "environment": environment,
+                    "policy": policy.model_dump(mode="json", exclude_none=True),
+                    "base_url_sha256": hashlib.sha256(value.base_url.encode()).hexdigest(),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
         return ResolvedApiProject(
             service=service_name,
             environment=environment,
@@ -697,6 +710,7 @@ class FilesystemLocalConfigLoader:
             runtime_values=runtime,
             selected_authentication=selected,
             structural_sha256=f"sha256:{digest}",
+            policy_sha256=f"sha256:{policy_digest}",
         )
 
     @staticmethod

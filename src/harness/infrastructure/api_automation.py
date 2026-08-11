@@ -25,6 +25,7 @@ from harness.domain.schemas.api_test_cases import (
     validate_api_cleanup_policy,
 )
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
+from harness.infrastructure.api_published_source import PublishedApiSourceResolver
 from harness.infrastructure.local_config import FilesystemLocalConfigLoader, ResolvedApiProject
 from harness.infrastructure.persistence.common import atomic_text
 from harness.infrastructure.persistence.filesystem import FilesystemStore
@@ -38,9 +39,12 @@ from harness.infrastructure.tools.api_execution import (
 class ApiExecutionPreflight:
     source_cases_path: str
     source_cases_sha256: str
+    source_publication_id: str
+    source_history_path: str
     cases: list[ApiTestCase]
     service: str
     structural_sha256: str
+    policy_sha256: str
     runtime_values: dict[str, str]
     authentication: ApiAuthentication | None
     trusted_origins: list[str]
@@ -52,6 +56,7 @@ class FilesystemApiAutomationService:
     def __init__(self, store: FilesystemStore, local_config: FilesystemLocalConfigLoader) -> None:
         self._store = store
         self._local_config = local_config
+        self._published_sources = PublishedApiSourceResolver(store)
 
     def runtime_project(self, workspace: str, environment: str) -> ResolvedApiProject:
         payload = self._store.workspace_config(workspace)
@@ -151,23 +156,48 @@ class FilesystemApiAutomationService:
         )
         return digest
 
-    def published_report_source(self, workspace: str) -> tuple[list[ApiTestCase], str, str]:
+    def published_report_source(
+        self,
+        workspace: str,
+        *,
+        source_publication_id: str | None,
+        source_history_path: str | None,
+        source_cases_sha256: str,
+    ) -> tuple[list[ApiTestCase], str, str]:
         """Read immutable published cases without applying today's runtime policy.
 
         Historical report generation is a read-only projection of stored Evidence. It
         must remain available when local credentials or reviewed safety policy have
         changed, and therefore deliberately does not construct an execution profile.
         """
-        _root, _target, draft, digest = self._published_cases(
+        source = self.validate_historical_source(
             workspace,
-            "published/api_test_draft/current.yml",
+            source_publication_id=source_publication_id,
+            source_history_path=source_history_path,
+            source_cases_sha256=source_cases_sha256,
         )
+        draft = ApiTestCasesDraft.model_validate(yaml.safe_load(source.content.decode("utf-8")))
         payload = self._store.workspace_config(workspace)
         binding = payload.get("api_project")
         service = binding.get("service") if isinstance(binding, dict) else None
         if not isinstance(service, str) or not service:
             raise PermissionError("workspace is not bound to an API service")
-        return list(draft.cases), service, digest
+        return list(draft.cases), service, source.content_sha256
+
+    def validate_historical_source(
+        self,
+        workspace: str,
+        *,
+        source_publication_id: str | None,
+        source_history_path: str | None,
+        source_cases_sha256: str,
+    ):
+        return self._published_sources.resolve_historical(
+            workspace,
+            publication_id=source_publication_id,
+            history_path=source_history_path,
+            expected_sha256=source_cases_sha256,
+        )
 
     def execution_profile(self, workspace: str, environment: str) -> ExecutionProfile:
         project = self.runtime_project(workspace, environment)
@@ -250,9 +280,9 @@ class FilesystemApiAutomationService:
         )
 
     def preflight(self, command: ExecuteApiCasesCommand) -> ApiExecutionPreflight:
-        root, target, draft, source_sha256 = self._published_cases(
-            command.workspace_id, command.cases_path
-        )
+        source = self._published_sources.resolve_current(command.workspace_id)
+        draft = ApiTestCasesDraft.model_validate(yaml.safe_load(source.content.decode("utf-8")))
+        source_sha256 = source.content_sha256
         if command.source_cases_sha256 is not None and source_sha256 != command.source_cases_sha256:
             raise ValueError("published API cases hash changed before execution")
         policy = self._store.validate_execution_profile(
@@ -274,11 +304,14 @@ class FilesystemApiAutomationService:
             operation_policies=project.policy.operation_policies,
         )
         return ApiExecutionPreflight(
-            source_cases_path=target.relative_to(root).as_posix(),
+            source_cases_path=source.workspace_relative_path,
             source_cases_sha256=source_sha256,
+            source_publication_id=source.publication_id,
+            source_history_path=source.workspace_relative_path,
             cases=list(draft.cases),
             service=project.service,
             structural_sha256=project.structural_sha256,
+            policy_sha256=project.policy_sha256,
             runtime_values=dict(project.runtime_values),
             authentication=policy.api_auth if policy is not None else None,
             trusted_origins=list(policy.trusted_origins) if policy is not None else [],

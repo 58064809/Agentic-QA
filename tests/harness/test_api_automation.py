@@ -81,6 +81,30 @@ def _publish_cases(repo_root: Path, workspace: str) -> Path:
         yaml.safe_dump(draft.model_dump(mode="json"), allow_unicode=True, sort_keys=False),
         encoding="utf-8",
     )
+    history = target.parent / "history"
+    history.mkdir()
+    history_target = history / "published-v1.yml"
+    history_target.write_bytes(target.read_bytes())
+    (history / "index.yml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "agentic-qa.harness.history.v2",
+                "versions": [
+                    {
+                        "run_id": "published-v1",
+                        "variant": "raw",
+                        "content_sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
+                        "assessment_key": "unit",
+                        "path": "published/api_test_draft/history/published-v1.yml",
+                        "attachments": {},
+                        "published_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
     return target
 
 

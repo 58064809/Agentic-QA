@@ -59,8 +59,7 @@ class ApiExecutionPlanCase(StrictModel):
     idempotency_key_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
 
 
-class ApiExecutionPlan(StrictModel):
-    schema_version: Literal["agentic-qa.api-execution-plan.v1"] = "agentic-qa.api-execution-plan.v1"
+class _ApiExecutionPlanBase(StrictModel):
     workspace_id: str
     execution_id: str
     service: str
@@ -79,7 +78,7 @@ class ApiExecutionPlan(StrictModel):
     plan_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
     @model_validator(mode="after")
-    def validate_semantic_hash(self) -> ApiExecutionPlan:
+    def validate_semantic_hash(self) -> _ApiExecutionPlanBase:
         payload = self.model_dump(mode="json", exclude={"plan_sha256"})
         encoded = json.dumps(
             payload,
@@ -91,6 +90,24 @@ class ApiExecutionPlan(StrictModel):
         if self.plan_sha256 != expected:
             raise ValueError("execution plan semantic hash does not match its content")
         return self
+
+
+class ApiExecutionPlanV1(_ApiExecutionPlanBase):
+    schema_version: Literal["agentic-qa.api-execution-plan.v1"] = "agentic-qa.api-execution-plan.v1"
+
+
+class ApiExecutionPlan(_ApiExecutionPlanBase):
+    schema_version: Literal["agentic-qa.api-execution-plan.v2"] = "agentic-qa.api-execution-plan.v2"
+    source_publication_id: str = Field(min_length=1)
+    source_history_path: str = Field(min_length=1)
+    policy_sha256: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
+
+
+def parse_api_execution_plan_json(value: str) -> ApiExecutionPlan | ApiExecutionPlanV1:
+    payload = json.loads(value)
+    if payload.get("schema_version") == "agentic-qa.api-execution-plan.v1":
+        return ApiExecutionPlanV1.model_validate(payload)
+    return ApiExecutionPlan.model_validate(payload)
 
 
 class ApiReportCounts(StrictModel):

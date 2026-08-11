@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ import yaml
 from harness import (
     ApiExecutionPlan,
     CreateWorkspaceCommand,
+    GenerateApiAllureReportCommand,
     Harness,
     ResumeApiCleanupCommand,
     RunApiScenarioCommand,
@@ -33,6 +35,39 @@ class _Response:
             "message": "private-business-value",
             "token": "response-secret-value",
         }
+
+
+def _publish_version(root: Path, draft: ApiTestCasesDraft, run_id: str) -> Path:
+    published = root / "published" / "api_test_draft"
+    published.mkdir(parents=True, exist_ok=True)
+    content = yaml.safe_dump(
+        draft.model_dump(mode="json"), allow_unicode=True, sort_keys=False
+    ).encode()
+    current = published / "current.yml"
+    current.write_bytes(content)
+    history = published / "history"
+    history.mkdir(exist_ok=True)
+    history_target = history / f"{run_id}.yml"
+    history_target.write_bytes(content)
+    index_path = history / "index.yml"
+    index = (
+        yaml.safe_load(index_path.read_text(encoding="utf-8"))
+        if index_path.is_file()
+        else {"schema_version": "agentic-qa.harness.history.v2", "versions": []}
+    )
+    index["versions"].append(
+        {
+            "run_id": run_id,
+            "variant": "raw",
+            "content_sha256": hashlib.sha256(content).hexdigest(),
+            "assessment_key": "unit",
+            "path": f"published/api_test_draft/history/{run_id}.yml",
+            "attachments": {},
+            "published_at": "2026-01-01T00:00:00+00:00",
+        }
+    )
+    index_path.write_text(yaml.safe_dump(index, sort_keys=False), encoding="utf-8")
+    return current
 
 
 def _workspace(
@@ -184,12 +219,7 @@ def _workspace(
             "review_questions": ["Review before publication"],
         }
     )
-    target = root / "published" / "api_test_draft" / "current.yml"
-    target.parent.mkdir(parents=True)
-    target.write_text(
-        yaml.safe_dump(draft.model_dump(mode="json"), allow_unicode=True, sort_keys=False),
-        encoding="utf-8",
-    )
+    _publish_version(root, draft, "published-v1")
     return root
 
 
@@ -230,6 +260,9 @@ def test_run_persists_redacted_reports_and_never_replays_id(
     assert manifest["execution_plan_path"].endswith("execution-plan.json")
     assert manifest["execution_plan_sha256"] == hashlib.sha256(plan_text.encode()).hexdigest()
     assert plan.source_cases_sha256 == result.source_cases_sha256
+    assert plan.source_publication_id == "published-v1"
+    assert plan.source_history_path.endswith("history/published-v1.yml")
+    assert manifest["source_publication_id"] == "published-v1"
     assert plan.execution_id == "trial-001"
     assert [item.case_id for item in plan.cases] == ["api-order-create"]
     assert plan.cases[0].operation_classification == "read_only"
@@ -381,7 +414,7 @@ def test_run_rejects_missing_published_yaml_without_sending_request(
         lambda method, url, **kwargs: requests_seen.append(url),
     )
 
-    with pytest.raises(ValueError, match="only accepts published"):
+    with pytest.raises(ValueError, match="HISTORICAL_SOURCE_UNAVAILABLE"):
         Harness(tmp_path).run_api_scenario(_command("trial-unpublished"))
 
     manifest = json.loads(
@@ -506,7 +539,10 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
         environment="qa",
         source_cases_path="published/api_test_draft/current.yml",
         source_cases_sha256=source_sha256,
+        source_publication_id="published-v1",
+        source_history_path="published/api_test_draft/history/published-v1.yml",
         structural_sha256=project.structural_sha256,
+        policy_sha256=project.policy_sha256,
         profile=profile,
         authentication=project.policy.api_auth,
         isolation=project.policy.isolation,
@@ -536,7 +572,10 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
         execution_id="cleanup-recovery",
         environment="qa",
         source_cases_sha256=source_sha256,
+        source_publication_id="published-v1",
+        source_history_path="published/api_test_draft/history/published-v1.yml",
         structural_sha256=project.structural_sha256,
+        policy_sha256=project.policy_sha256,
         execution_plan_sha256=plan.plan_sha256,
     )
     journal.register(
@@ -551,6 +590,9 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
         ),
         runtime_variables={},
     )
+    v2_payload = published_draft.model_dump(mode="json")
+    v2_payload["cases"][0]["title"] = "renamed in v2"
+    _publish_version(root, ApiTestCasesDraft.model_validate(v2_payload), "published-v2")
     calls: list[tuple[str, str]] = []
 
     def request(method: str, url: str, **_kwargs: object) -> _Response:
@@ -579,3 +621,55 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
     )
     assert repeated.status == "complete"
     assert len(calls) == 1
+
+    (root / "published" / "api_test_draft" / "history" / "published-v1.yml").write_text(
+        "tampered: true\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="HISTORICAL_SOURCE_UNAVAILABLE"):
+        Harness(tmp_path).resume_api_cleanup(
+            ResumeApiCleanupCommand(
+                workspace_id="demo",
+                execution_id="cleanup-recovery",
+                environment="qa",
+            )
+        )
+    assert len(calls) == 1
+
+
+def test_allure_rebuild_uses_execution_historical_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setattr("requests.request", lambda method, url, **kwargs: _Response(201, url))
+    harness = Harness(tmp_path)
+    harness.run_api_scenario(_command("historical-report"))
+    execution_root = root / "executions" / "historical-report"
+
+    v1 = ApiTestCasesDraft.model_validate(
+        yaml.safe_load(
+            (root / "published" / "api_test_draft" / "history" / "published-v1.yml").read_text(
+                encoding="utf-8"
+            )
+        )
+    )
+    v2_payload = v1.model_dump(mode="json")
+    v2_payload["cases"][0]["title"] = "v2 title must not appear"
+    v2_payload["cases"][0]["priority"] = "P0"
+    _publish_version(root, ApiTestCasesDraft.model_validate(v2_payload), "published-v2")
+    shutil.rmtree(execution_root / "allure-results")
+    (execution_root / "report-summary.json").unlink()
+
+    harness.generate_api_allure_report(
+        GenerateApiAllureReportCommand(
+            workspace_id="demo",
+            execution_id="historical-report",
+        )
+    )
+
+    report = json.loads((execution_root / "report-summary.json").read_text(encoding="utf-8"))
+    assert report["cases"][0]["title"] == "create order"
+    result_file = next((execution_root / "allure-results").glob("*-result.json"))
+    allure = json.loads(result_file.read_text(encoding="utf-8"))
+    assert allure["name"].endswith("create order")
+    assert "v2 title must not appear" not in json.dumps(allure)

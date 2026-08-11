@@ -10,7 +10,6 @@ from typing import Any
 
 from harness.domain.models import ExecuteApiCasesCommand, ExecutionProfile, RunApiScenarioCommand
 from harness.domain.schemas.api_execution_reporting import (
-    ApiExecutionPlan,
     ApiReportSummary,
     CleanupJournalCounts,
     CleanupJournalSummary,
@@ -18,6 +17,7 @@ from harness.domain.schemas.api_execution_reporting import (
     GenerateApiAllureReportResult,
     ResumeApiCleanupCommand,
     ResumeApiCleanupResult,
+    parse_api_execution_plan_json,
 )
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.api_test_cases import (
@@ -57,7 +57,7 @@ from harness.infrastructure.tools.api_execution import (
 )
 
 UTC = timezone.utc
-MANIFEST_SCHEMA = "agentic-qa.harness.api-execution-manifest.v2"
+MANIFEST_SCHEMA = "agentic-qa.harness.api-execution-manifest.v3"
 
 
 class FilesystemApiScenarioRunService:
@@ -98,6 +98,9 @@ class FilesystemApiScenarioRunService:
                 "started_at": datetime.now(tz=UTC).isoformat(),
                 "source_cases_path": "published/api_test_draft/current.yml",
                 "source_cases_sha256": None,
+                "source_publication_id": None,
+                "source_history_path": None,
+                "policy_sha256": None,
                 "execution_plan_path": None,
                 "execution_plan_sha256": None,
                 "evidence_path": None,
@@ -143,7 +146,10 @@ class FilesystemApiScenarioRunService:
                     environment=command.environment,
                     source_cases_path=preflight.source_cases_path,
                     source_cases_sha256=preflight.source_cases_sha256,
+                    source_publication_id=preflight.source_publication_id,
+                    source_history_path=preflight.source_history_path,
                     structural_sha256=preflight.structural_sha256,
+                    policy_sha256=preflight.policy_sha256,
                     profile=profile,
                     authentication=preflight.authentication,
                     isolation=preflight.isolation,
@@ -153,6 +159,9 @@ class FilesystemApiScenarioRunService:
                 create_only_json(execution_plan_path, execution_plan.model_dump(mode="json"))
                 manifest["source_cases_path"] = preflight.source_cases_path
                 manifest["source_cases_sha256"] = preflight.source_cases_sha256
+                manifest["source_publication_id"] = preflight.source_publication_id
+                manifest["source_history_path"] = preflight.source_history_path
+                manifest["policy_sha256"] = preflight.policy_sha256
                 manifest["execution_plan_path"] = execution_plan_path.relative_to(
                     workspace_root
                 ).as_posix()
@@ -176,7 +185,10 @@ class FilesystemApiScenarioRunService:
                         execution_id=command.execution_id,
                         environment=command.environment,
                         source_cases_sha256=preflight.source_cases_sha256,
+                        source_publication_id=preflight.source_publication_id,
+                        source_history_path=preflight.source_history_path,
                         structural_sha256=preflight.structural_sha256,
+                        policy_sha256=preflight.policy_sha256,
                         execution_plan_sha256=execution_plan.plan_sha256,
                     )
                     if has_cleanup
@@ -399,7 +411,10 @@ class FilesystemApiScenarioRunService:
             raise ValueError("execution has no Evidence from which to build Allure results")
         if not results_path.is_dir() or not (execution_root / "report-summary.json").is_file():
             cases, service, source_sha256 = self._automation.published_report_source(
-                command.workspace_id
+                command.workspace_id,
+                source_publication_id=manifest.get("source_publication_id"),
+                source_history_path=manifest.get("source_history_path"),
+                source_cases_sha256=str(manifest.get("source_cases_sha256") or ""),
             )
             evidence = ExecutionEvidence.model_validate_json(
                 evidence_path.read_text(encoding="utf-8")
@@ -480,17 +495,28 @@ class FilesystemApiScenarioRunService:
             raise PermissionError(
                 "immutable execution plan is missing; cleanup recovery is blocked"
             )
-        execution_plan = ApiExecutionPlan.model_validate_json(
+        execution_plan = parse_api_execution_plan_json(
             execution_plan_path.read_text(encoding="utf-8")
         )
         if payload.get("execution_plan_sha256") != execution_plan.plan_sha256:
             raise PermissionError("execution plan changed; cleanup recovery is blocked")
         if manifest.get("execution_plan_sha256") != _sha256(execution_plan_path):
             raise PermissionError("execution plan hash changed; cleanup recovery is blocked")
-        if payload.get("source_cases_sha256") != self._automation.published_sha256(
-            command.workspace_id
-        ):
-            raise PermissionError("published API cases changed; cleanup recovery is blocked")
+        source_cases_sha256 = str(payload.get("source_cases_sha256") or "")
+        if source_cases_sha256 != execution_plan.source_cases_sha256:
+            raise PermissionError("cleanup journal source differs from execution plan")
+        source_publication_id = payload.get("source_publication_id") or getattr(
+            execution_plan, "source_publication_id", None
+        )
+        source_history_path = payload.get("source_history_path") or getattr(
+            execution_plan, "source_history_path", None
+        )
+        self._automation.validate_historical_source(
+            command.workspace_id,
+            source_publication_id=source_publication_id,
+            source_history_path=source_history_path,
+            source_cases_sha256=source_cases_sha256,
+        )
         if payload.get("structural_sha256") != project.structural_sha256:
             raise PermissionError("API safety policy changed; cleanup recovery is blocked")
         recovery_id = str(uuid.uuid4())

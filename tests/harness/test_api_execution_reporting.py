@@ -234,7 +234,10 @@ def test_cleanup_journal_encrypts_runtime_values_and_tracks_exactly_once(tmp_pat
         execution_id="trial-1",
         environment="qa",
         source_cases_sha256="a" * 64,
+        source_publication_id="published-v1",
+        source_history_path="published/api_test_draft/history/published-v1.yml",
         structural_sha256="sha256:" + "b" * 64,
+        policy_sha256="sha256:" + "d" * 64,
         execution_plan_sha256="c" * 64,
     )
     step = ApiCleanupStep.model_validate(
@@ -281,7 +284,10 @@ def test_cleanup_journal_arms_before_response_then_enriches_to_pending(
         execution_id="trial-arm",
         environment="qa",
         source_cases_sha256="a" * 64,
+        source_publication_id="published-v1",
+        source_history_path="published/api_test_draft/history/published-v1.yml",
         structural_sha256="sha256:" + "b" * 64,
+        policy_sha256="sha256:" + "d" * 64,
         execution_plan_sha256="c" * 64,
     )
     step = ApiCleanupStep.model_validate(

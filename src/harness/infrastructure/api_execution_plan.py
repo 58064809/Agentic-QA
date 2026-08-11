@@ -48,7 +48,10 @@ def build_api_execution_plan(
     environment: str,
     source_cases_path: str,
     source_cases_sha256: str,
+    source_publication_id: str,
+    source_history_path: str,
     structural_sha256: str,
+    policy_sha256: str,
     profile: ExecutionProfile,
     authentication: ApiAuthentication | None,
     isolation: ApiIsolationPolicy,
@@ -143,7 +146,7 @@ def build_api_execution_plan(
         else None
     )
     payload: dict[str, Any] = {
-        "schema_version": "agentic-qa.api-execution-plan.v1",
+        "schema_version": "agentic-qa.api-execution-plan.v2",
         "workspace_id": workspace_id,
         "execution_id": execution_id,
         "service": service,
@@ -151,7 +154,10 @@ def build_api_execution_plan(
         "created_at": datetime.now(tz=UTC).isoformat().replace("+00:00", "Z"),
         "source_cases_path": source_cases_path,
         "source_cases_sha256": source_cases_sha256,
+        "source_publication_id": source_publication_id,
+        "source_history_path": source_history_path,
         "structural_sha256": structural_sha256,
+        "policy_sha256": policy_sha256,
         "execution_profile_sha256": _canonical_sha256(profile.model_dump(mode="json")),
         "authentication_mode": "none" if authentication is None else authentication.mode,
         "isolation_mode": isolation.mode,
