@@ -54,9 +54,13 @@ workspaces/<workspace_id>/
 | published current | 当前版本指针内容 | 原子替换 | 使用者读取 |
 | API execution manifest/Evidence | 防重放状态与审计事实 | execution ID create-only | 试跑结论与产物索引 |
 | API execution events | 脱敏、追加式 SHA-256 哈希链 | append-only | 请求边界与崩溃定位 |
-| execution plan | published 与执行策略的脱敏冻结快照 | create-only | 请求前冻结并由 manifest/cleanup resume 复验 Hash |
+| execution plan | published 与执行策略的脱敏冻结快照 | create-only | 请求前冻结；cleanup resume 和历史报告从这里解析原发布版本 |
 | cleanup journal | AES-256-GCM 加密的 armed/pending/running 状态 | 原子替换 | armed 供人工核对；仅恢复从未发送的 pending cleanup |
 | Allure results/history/report | Evidence 的展示投影 | 可重新生成 | 状态浏览、趋势与回归 |
+
+历史 Allure 重建以 execution 目录中的 immutable Execution Plan 为入口，再精确解析 published
+history；workspace 当前服务绑定、current YAML、认证和安全策略不参与历史结果解释。Plan、manifest、
+Evidence 或 history 的身份与哈希不一致时，报告预检直接失败，不回退到当前发布。
 
 ## 原子边界
 

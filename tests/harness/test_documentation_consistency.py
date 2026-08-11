@@ -11,7 +11,7 @@ import yaml
 
 from harness.application.agent_request import AgentRequest, AgentRequestResult
 from harness.domain.schemas.api_discovery import ApiDiscoveryCatalog, ApiDiscoveryExport
-from harness.domain.schemas.api_test_cases import ApiTestCasesDraft, ApiTestCasesDraftV11
+from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.failure_triage import FailureTriage
 from harness.infrastructure.manifests.registry import KnowledgeRegistry, SkillRegistry
@@ -26,7 +26,6 @@ SCHEMAS = {
     "api-discovery-export.v1.schema.json": ApiDiscoveryExport,
     "agent-request.v1.schema.json": AgentRequest,
     "agent-request-result.v1.schema.json": AgentRequestResult,
-    "api-cases.v1.1.schema.json": ApiTestCasesDraftV11,
     "api-cases.v1.2.schema.json": ApiTestCasesDraft,
     "execution-evidence.v1.schema.json": ExecutionEvidence,
     "failure-triage.v1.schema.json": FailureTriage,

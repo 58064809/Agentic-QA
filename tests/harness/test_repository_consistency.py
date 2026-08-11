@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -58,6 +60,16 @@ EXCLUDED_PARTS = {
     "__pycache__",
 }
 INLINE_PATH = re.compile(r"`((?:src/harness|docs|tests)/[^`<>{}*?]+)`")
+RELEASED_API_CASE_SCHEMAS = {
+    "api-cases.v1.1.schema.json": (
+        "agentic-qa.api-cases.v1.1",
+        "e8a6cd47c49bce25b4161a15751607ba4d8af2c644e6e7165f8b2228a0a39c25",
+    ),
+    "api-cases.v1.2.schema.json": (
+        "agentic-qa.api-cases.v1.2",
+        "9033ab5e02d6d7789411d4c41929899714e22967fa8dd318db98773fbf2589d2",
+    ),
+}
 
 
 def _read(path: Path) -> str:
@@ -78,6 +90,14 @@ def _manifest_errors() -> list[str]:
     if "artifact.promote" in {tool for agent in agents.list() for tool in agent.tool_allowlist}:
         errors.append("artifact.promote 不得出现在任何 Agent allowlist")
     return errors
+
+
+def test_released_api_case_schemas_are_byte_for_byte_immutable() -> None:
+    for name, (version, expected_sha256) in RELEASED_API_CASE_SCHEMAS.items():
+        content = (REPO_ROOT / "docs" / "schemas" / name).read_bytes()
+        assert hashlib.sha256(content).hexdigest() == expected_sha256, name
+        schema = json.loads(content)
+        assert schema["properties"]["schema_version"]["const"] == version
 
 
 def _markdown_path_errors(root: Path) -> list[str]:

@@ -31,11 +31,11 @@ workspaces/<workspace>/published/api_test_draft/current.yml
 `api.execute` 读取这份 published YAML，并继续受 ExecutionProfile、workspace policy、环境变量和
 HTTP method allowlist 控制。请求位于 `request.method/path`，断言位于类型化 `assertions`。
 workspace 环境可以选择静态 token 或执行前登录取 token；认证头由执行器统一注入，不改变
-API Cases v1.1 文件。
+API Cases v1.2 文件。
 
 ## 场景变量、数据集与 cleanup
 
-`variables` 和 `cleanup` 保持 API Cases v1.1 的既有字段位置。Candidate 生成校验、通用质量门和
+`variables` 和 `cleanup` 保持 API Cases 的既有字段位置。Candidate 生成校验、通用质量门和
 执行前预检共同拒绝未知字段、非法路径、前向变量引用或错误 cleanup；历史 published 文件定义无效
 时记录 `blocked`，不发送该用例请求。
 
@@ -243,6 +243,8 @@ review_questions:
 完整字段约束见机器可读 [API Cases v1.2 JSON Schema](schemas/api-cases.v1.2.schema.json)。
 历史 v1.1 published YAML 仍可读取，但新 Candidate 只生成 v1.2；v1.2 不再包含
 `base_url_env`，Base URL 由本地项目配置和审核后的 workspace policy 决定。
+v1.1 与 v1.2 都是已发布、按字节冻结的契约；普通模型代码生成不会覆盖它们。后续字段变化以
+新的 Schema 版本发布，历史 v1.1 只通过只读兼容层解释。
 
 ## 常见问题
 

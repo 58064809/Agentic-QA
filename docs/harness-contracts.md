@@ -31,6 +31,10 @@
 Allure results 和 HTML 路径只在对应文件或目录实际存在时返回，否则为 `null`。
 `GenerateApiAllureReportResult` v2 对 Allure results/HTML 使用同一规则，不返回尚未生成的虚假路径。
 
+API trial run 的状态维度彼此独立：`execution_status` 表示执行生命周期，`test_result` 表示用例
+结论，`cleanup_status` 表示环境恢复完整性，`report_status` 表示展示产物生成情况。报告阶段的普通
+基础设施异常只会把 `report_status` 置为 `failed`；已经提交的前三项事实及 `api run` 退出码不变。
+
 外部 AI 的 `AgentRequest` 和 MCP 是独立受限门面，不增加 Harness 的 Review 权限，也不改变上述
 十二个方法；其契约见[跨 AI 接入](agent-integration.md)。
 
