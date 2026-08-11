@@ -42,6 +42,10 @@ from harness.infrastructure.api_execution_reporting import (
     read_execution_events,
     write_allure_results,
 )
+from harness.infrastructure.api_execution_snapshot import (
+    ExecutionSourceLinkageError,
+    ExecutionSourceSnapshot,
+)
 from harness.infrastructure.persistence.common import (
     atomic_json,
     atomic_text,
@@ -492,11 +496,8 @@ class FilesystemApiScenarioRunService:
         evidence_path = execution_root / "evidence.json"
         if not evidence_path.is_file():
             raise ValueError("execution has no Evidence from which to build Allure results")
-        cases, service, source_sha256 = self._automation.published_report_source(
-            command.workspace_id,
-            source_publication_id=manifest.get("source_publication_id"),
-            source_history_path=manifest.get("source_history_path"),
-            source_cases_sha256=str(manifest.get("source_cases_sha256") or ""),
+        cases, snapshot = self._automation.published_report_source(
+            command.workspace_id, command.execution_id
         )
         writer = ApiExecutionEventWriter(
             execution_root / "execution-events.jsonl",
@@ -507,6 +508,7 @@ class FilesystemApiScenarioRunService:
             evidence = ExecutionEvidence.model_validate_json(
                 evidence_path.read_text(encoding="utf-8")
             )
+            _validate_report_evidence(evidence, snapshot)
             if not results_path.is_dir() or not (execution_root / "report-summary.json").is_file():
                 report = build_report_summary(
                     evidence,
@@ -524,8 +526,8 @@ class FilesystemApiScenarioRunService:
                         evidence=evidence,
                         summary=report,
                         cases=cases,
-                        service=service,
-                        source_sha256=str(manifest.get("source_cases_sha256") or source_sha256),
+                        service=snapshot.service,
+                        source_sha256=snapshot.source_cases_sha256,
                         events=read_execution_events(execution_root / "execution-events.jsonl"),
                     )
             result = generate_allure_html(
@@ -845,6 +847,18 @@ def _tree_sha256(path: Path) -> str:
         digest.update(item.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()
+
+
+def _validate_report_evidence(
+    evidence: ExecutionEvidence,
+    snapshot: ExecutionSourceSnapshot,
+) -> None:
+    if (
+        evidence.run_id != snapshot.execution_id
+        or evidence.environment.name != snapshot.environment
+        or evidence.source_cases_path != snapshot.source_history_path
+    ):
+        raise ExecutionSourceLinkageError("Evidence differs from execution plan")
 
 
 def _event_callback(writer: ApiExecutionEventWriter):

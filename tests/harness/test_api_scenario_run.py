@@ -22,6 +22,10 @@ from harness import (
 from harness.domain.schemas.api_test_cases import ApiCleanupStep, ApiTestCasesDraft
 from harness.infrastructure.api_cleanup_journal import EncryptedCleanupJournal
 from harness.infrastructure.api_execution_plan import build_api_execution_plan
+from harness.infrastructure.api_execution_snapshot import (
+    ExecutionPlanTamperedError,
+    ExecutionSourceLinkageError,
+)
 from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 
 
@@ -924,3 +928,107 @@ def test_allure_rebuild_uses_execution_historical_source(
     allure = json.loads(result_file.read_text(encoding="utf-8"))
     assert allure["name"].endswith("create order")
     assert "v2 title must not appear" not in json.dumps(allure)
+
+
+def test_allure_rebuild_uses_execution_plan_service_after_workspace_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setattr("requests.request", lambda method, url, **kwargs: _Response(201, url))
+    harness = Harness(tmp_path)
+    harness.run_api_scenario(_command("service-drift"))
+    execution_root = root / "executions" / "service-drift"
+    workspace_path = root / "workspace.yml"
+    workspace = yaml.safe_load(workspace_path.read_text(encoding="utf-8"))
+    workspace["api_project"]["service"] = "service-B"
+    workspace_path.write_text(yaml.safe_dump(workspace, sort_keys=False), encoding="utf-8")
+    shutil.rmtree(execution_root / "allure-results")
+    (execution_root / "report-summary.json").unlink()
+
+    harness.generate_api_allure_report(
+        GenerateApiAllureReportCommand(workspace_id="demo", execution_id="service-drift")
+    )
+
+    result_file = next((execution_root / "allure-results").glob("*-result.json"))
+    allure = json.loads(result_file.read_text(encoding="utf-8"))
+    assert {item["value"] for item in allure["labels"] if item["name"] == "parentSuite"} == {"demo"}
+    assert "service-B" not in json.dumps(allure)
+
+
+def test_allure_rebuild_rejects_manifest_source_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setattr("requests.request", lambda method, url, **kwargs: _Response(201, url))
+    harness = Harness(tmp_path)
+    harness.run_api_scenario(_command("manifest-source-drift"))
+    manifest_path = root / "executions" / "manifest-source-drift" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["source_history_path"] = "published/api_test_draft/history/published-v2.yml"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ExecutionSourceLinkageError, match="EXECUTION_SOURCE_LINKAGE_MISMATCH"):
+        harness.generate_api_allure_report(
+            GenerateApiAllureReportCommand(
+                workspace_id="demo", execution_id="manifest-source-drift"
+            )
+        )
+
+
+def test_allure_rebuild_rejects_execution_plan_tamper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setattr("requests.request", lambda method, url, **kwargs: _Response(201, url))
+    harness = Harness(tmp_path)
+    harness.run_api_scenario(_command("plan-tamper"))
+    plan_path = root / "executions" / "plan-tamper" / "execution-plan.json"
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan["service"] = "tampered-service"
+    plan_path.write_text(json.dumps(plan), encoding="utf-8")
+
+    with pytest.raises(ExecutionPlanTamperedError, match="EXECUTION_PLAN_TAMPERED"):
+        harness.generate_api_allure_report(
+            GenerateApiAllureReportCommand(workspace_id="demo", execution_id="plan-tamper")
+        )
+
+
+def test_allure_rebuild_resolves_legacy_plan_v1_by_unique_source_sha(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setattr("requests.request", lambda method, url, **kwargs: _Response(201, url))
+    harness = Harness(tmp_path)
+    harness.run_api_scenario(_command("legacy-plan"))
+    execution_root = root / "executions" / "legacy-plan"
+    plan_path = execution_root / "execution-plan.json"
+    manifest_path = execution_root / "manifest.json"
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan["schema_version"] = "agentic-qa.api-execution-plan.v1"
+    plan.pop("source_publication_id")
+    plan.pop("source_history_path")
+    plan.pop("policy_sha256")
+    semantic = json.dumps(
+        {key: value for key, value in plan.items() if key != "plan_sha256"},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    plan["plan_sha256"] = hashlib.sha256(semantic).hexdigest()
+    plan_path.write_text(json.dumps(plan, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["execution_plan_sha256"] = hashlib.sha256(plan_path.read_bytes()).hexdigest()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    shutil.rmtree(execution_root / "allure-results")
+    (execution_root / "report-summary.json").unlink()
+
+    result = harness.generate_api_allure_report(
+        GenerateApiAllureReportCommand(workspace_id="demo", execution_id="legacy-plan")
+    )
+
+    assert result.status in {"generated", "results_only"}
+    assert list((execution_root / "allure-results").glob("*-result.json"))

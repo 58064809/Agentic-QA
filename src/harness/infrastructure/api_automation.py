@@ -27,6 +27,10 @@ from harness.domain.schemas.api_test_cases import (
     validate_api_cleanup_policy,
 )
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
+from harness.infrastructure.api_execution_snapshot import (
+    ExecutionSourceSnapshot,
+    ExecutionSourceSnapshotResolver,
+)
 from harness.infrastructure.api_published_source import PublishedApiSourceResolver
 from harness.infrastructure.local_config import FilesystemLocalConfigLoader, ResolvedApiProject
 from harness.infrastructure.persistence.common import atomic_text
@@ -60,6 +64,7 @@ class FilesystemApiAutomationService:
         self._store = store
         self._local_config = local_config
         self._published_sources = PublishedApiSourceResolver(store)
+        self._execution_sources = ExecutionSourceSnapshotResolver(store, self._published_sources)
 
     def runtime_project(self, workspace: str, environment: str) -> ResolvedApiProject:
         project, binding = self._configured_project(workspace, environment)
@@ -179,32 +184,30 @@ class FilesystemApiAutomationService:
     def published_report_source(
         self,
         workspace: str,
-        *,
-        source_publication_id: str | None,
-        source_history_path: str | None,
-        source_cases_sha256: str,
-    ) -> tuple[list[ApiTestCase], str, str]:
+        execution_id: str,
+    ) -> tuple[list[ApiTestCase], ExecutionSourceSnapshot]:
         """Read immutable published cases without applying today's runtime policy.
 
         Historical report generation is a read-only projection of stored Evidence. It
         must remain available when local credentials or reviewed safety policy have
         changed, and therefore deliberately does not construct an execution profile.
         """
-        source = self.validate_historical_source(
+        snapshot = self._execution_sources.resolve(workspace, execution_id)
+        source = self._published_sources.resolve_historical(
             workspace,
-            source_publication_id=source_publication_id,
-            source_history_path=source_history_path,
-            source_cases_sha256=source_cases_sha256,
+            publication_id=snapshot.source_publication_id,
+            history_path=snapshot.source_history_path,
+            expected_sha256=snapshot.source_cases_sha256,
         )
         draft = load_api_test_cases_report_projection(
             yaml.safe_load(source.content.decode("utf-8"))
         )
-        payload = self._store.workspace_config(workspace)
-        binding = payload.get("api_project")
-        service = binding.get("service") if isinstance(binding, dict) else None
-        if not isinstance(service, str) or not service:
-            raise PermissionError("workspace is not bound to an API service")
-        return list(draft.cases), service, source.content_sha256
+        return list(draft.cases), snapshot
+
+    def resolve_execution_source_snapshot(
+        self, workspace: str, execution_id: str
+    ) -> ExecutionSourceSnapshot:
+        return self._execution_sources.resolve(workspace, execution_id)
 
     def validate_historical_source(
         self,
