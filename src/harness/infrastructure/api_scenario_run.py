@@ -94,13 +94,10 @@ class FilesystemApiScenarioRunService:
             execution_root.mkdir()
             manifest_path = execution_root / "manifest.json"
             evidence_path = execution_root / "evidence.json"
-            summary_path = execution_root / "summary.md"
             event_log_path = execution_root / "execution-events.jsonl"
-            report_summary_path = execution_root / "report-summary.json"
             cleanup_summary_path = execution_root / "cleanup-summary.json"
             cleanup_journal_path = execution_root / ".cleanup-journal.enc"
             execution_plan_path = execution_root / "execution-plan.json"
-            allure_results_path = execution_root / "allure-results"
             event_writer = ApiExecutionEventWriter(event_log_path, command.execution_id)
             manifest: dict[str, Any] = {
                 "schema_version": MANIFEST_SCHEMA,
@@ -380,12 +377,12 @@ class FilesystemApiScenarioRunService:
                 source_cases_sha256=preflight.source_cases_sha256,
                 manifest_path=manifest_path.relative_to(workspace_root).as_posix(),
                 evidence_path=evidence_path.relative_to(workspace_root).as_posix(),
-                summary_path=summary_path.relative_to(workspace_root).as_posix(),
-                event_log_path=event_log_path.relative_to(workspace_root).as_posix(),
-                report_summary_path=report_summary_path.relative_to(workspace_root).as_posix(),
+                summary_path=reporting.summary_path,
+                event_log_path=reporting.event_log_path,
+                report_summary_path=reporting.report_summary_path,
                 cleanup_summary_path=cleanup_summary_path.relative_to(workspace_root).as_posix(),
-                allure_results_path=allure_results_path.relative_to(workspace_root).as_posix(),
-                allure_report_path=report_result.allure_report_path,
+                allure_results_path=reporting.allure_results_path,
+                allure_report_path=reporting.allure_report_path,
                 report_status=report_result.status,
                 evidence=evidence,
             )
@@ -522,7 +519,9 @@ class FilesystemApiScenarioRunService:
                 workspace_id=workspace_id,
                 execution_id=execution_id,
                 status="failed",
-                allure_results_path=results_path.relative_to(workspace_root).as_posix(),
+                allure_results_path=_existing_relative(
+                    results_path, workspace_root, directory=True
+                ),
                 message="report event persistence failed without changing execution truth",
                 error_kind=report_event_error,
             )
@@ -816,7 +815,7 @@ def _failed_report_result(
         workspace_id=workspace_id,
         execution_id=execution_id,
         status="failed",
-        allure_results_path=results_path.relative_to(workspace_root).as_posix(),
+        allure_results_path=_existing_relative(results_path, workspace_root, directory=True),
         message="reporting failed without changing execution truth",
         error_kind=type(error).__name__,
     )
@@ -903,21 +902,28 @@ def _reporting_outcome(
     workspace_root: Path,
     execution_root: Path,
 ) -> _ReportingPhaseOutcome:
+    event_log_path = _existing_relative(execution_root / "execution-events.jsonl", workspace_root)
+    summary_path = _existing_relative(execution_root / "summary.md", workspace_root)
+    report_summary_path = _existing_relative(execution_root / "report-summary.json", workspace_root)
+    allure_results_path = _existing_relative(
+        execution_root / "allure-results", workspace_root, directory=True
+    )
+    allure_report_path = _existing_relative(
+        execution_root / "allure-report", workspace_root, directory=True
+    )
+    truthful_result = result.model_copy(
+        update={
+            "allure_results_path": allure_results_path,
+            "allure_report_path": allure_report_path,
+        }
+    )
     return _ReportingPhaseOutcome(
-        result=result,
-        event_log_path=_existing_relative(
-            execution_root / "execution-events.jsonl", workspace_root
-        ),
-        summary_path=_existing_relative(execution_root / "summary.md", workspace_root),
-        report_summary_path=_existing_relative(
-            execution_root / "report-summary.json", workspace_root
-        ),
-        allure_results_path=_existing_relative(
-            execution_root / "allure-results", workspace_root, directory=True
-        ),
-        allure_report_path=_existing_relative(
-            execution_root / "allure-report", workspace_root, directory=True
-        ),
+        result=truthful_result,
+        event_log_path=event_log_path,
+        summary_path=summary_path,
+        report_summary_path=report_summary_path,
+        allure_results_path=allure_results_path,
+        allure_report_path=allure_report_path,
     )
 
 

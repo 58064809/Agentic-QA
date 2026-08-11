@@ -250,11 +250,26 @@ def test_run_persists_redacted_reports_and_never_replays_id(
     harness = Harness(tmp_path)
     result = harness.run_api_scenario(_command("trial-001"))
 
+    assert result.schema_version == "agentic-qa.harness.run-api-scenario-result.v4"
     assert result.status == "passed"
     assert len(requests_seen) == 1
     assert requests_seen[0][2]["allow_redirects"] is False
     assert requests_seen[0][2]["timeout"] == 7
     execution_root = root / "executions" / "trial-001"
+    for relative_path in (
+        result.manifest_path,
+        result.evidence_path,
+        result.cleanup_summary_path,
+        result.event_log_path,
+        result.summary_path,
+        result.report_summary_path,
+    ):
+        assert relative_path is not None
+        assert (root / relative_path).is_file()
+    assert result.allure_results_path is not None
+    assert (root / result.allure_results_path).is_dir()
+    if result.allure_report_path is not None:
+        assert (root / result.allure_report_path).is_dir()
     manifest = json.loads((execution_root / "manifest.json").read_text(encoding="utf-8"))
     plan_text = (execution_root / "execution-plan.json").read_text(encoding="utf-8")
     plan = ApiExecutionPlan.model_validate_json(plan_text)
@@ -434,6 +449,14 @@ def test_reporting_event_failure_does_not_change_execution_truth(
     assert result.test_result == "passed"
     assert result.cleanup_status == "not_required"
     assert result.report_status == "failed"
+    if event_type == "report.started":
+        assert result.summary_path is None
+        assert result.report_summary_path is None
+        assert result.allure_results_path is None
+    else:
+        assert result.summary_path is not None
+        assert result.report_summary_path is not None
+        assert result.allure_results_path is not None
     execution_root = root / "executions" / result.execution_id
     manifest = json.loads((execution_root / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["execution_status"] == "completed"
@@ -470,6 +493,12 @@ def test_reporting_artifact_failure_does_not_change_execution_truth(
     assert result.test_result == "passed"
     assert result.cleanup_status == "not_required"
     assert result.report_status == "failed"
+    if artifact_name == "summary.md":
+        assert result.summary_path is None
+    else:
+        assert result.report_summary_path is None
+    assert result.allure_results_path is None
+    assert result.allure_report_path is None
     manifest = json.loads(
         (root / "executions" / result.execution_id / "manifest.json").read_text(encoding="utf-8")
     )
@@ -490,6 +519,43 @@ def test_allure_results_failure_does_not_change_execution_truth(
     )
 
     result = Harness(tmp_path).run_api_scenario(_command("report-results-failure"))
+
+    assert result.execution_status == "completed"
+    assert result.test_result == "passed"
+    assert result.cleanup_status == "not_required"
+    assert result.report_status == "failed"
+    assert result.allure_results_path is None
+    assert result.allure_report_path is None
+    manifest = json.loads(
+        (root / "executions" / result.execution_id / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["execution_status"] == "completed"
+    assert manifest["test_result"] == "passed"
+    assert manifest["cleanup_status"] == "not_required"
+
+
+def test_report_manifest_failure_returns_failed_with_committed_execution_truth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setattr("requests.request", lambda method, url, **kwargs: _Response(201, url))
+    from harness.infrastructure import api_scenario_run as scenario_run
+
+    original_atomic_json = scenario_run.atomic_json
+
+    def atomic_json(path: Path, payload: object) -> None:
+        if (
+            path.name == "manifest.json"
+            and isinstance(payload, dict)
+            and payload.get("report_status") != "not_started"
+        ):
+            raise OSError("report manifest unavailable")
+        original_atomic_json(path, payload)
+
+    monkeypatch.setattr(scenario_run, "atomic_json", atomic_json)
+
+    result = Harness(tmp_path).run_api_scenario(_command("report-manifest-failure"))
 
     assert result.execution_status == "completed"
     assert result.test_result == "passed"
@@ -990,6 +1056,7 @@ def test_explicit_allure_failure_does_not_change_execution_truth(
         )
     )
 
+    assert result.schema_version == "agentic-qa.harness.generate-api-allure-report-result.v2"
     assert result.status == "failed"
     assert result.error_kind == "RuntimeError"
     execution_root = root / "executions" / "explicit-report-failure"

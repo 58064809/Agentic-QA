@@ -16,8 +16,8 @@
 | `get_run` | `RunRef` | `RunSnapshot` | `workspace_id + run_id` 存在 | 只读；可触发未完成发布恢复 |
 | `get_artifact_diff` | `GetArtifactDiffQuery` | `ArtifactDiffResult` | 两端版本存在 | 只读 |
 | `execute_api_cases` | `ExecuteApiCasesCommand` | `ExecutionEvidence` | published API YAML、测试环境策略和环境变量有效 | 发送允许的 API 请求；不写 Review 或 published |
-| `run_api_scenario` | `RunApiScenarioCommand` | `RunApiScenarioResult` | published API YAML、workspace 环境策略和新的 execution ID 有效 | create-only 写 manifest v2、Evidence、哈希链日志、cleanup 状态和 Allure results/HTML；不自动重放 |
-| `generate_api_allure_report` | `GenerateApiAllureReportCommand` | `GenerateApiAllureReportResult` | execution 已存在且包含 Allure results 或 Evidence | 生成静态 Allure HTML；不发送 API 请求 |
+| `run_api_scenario` | `RunApiScenarioCommand` | `RunApiScenarioResult` v4 | published API YAML、workspace 环境策略和新的 execution ID 有效 | create-only 写 manifest v3、Evidence、哈希链日志、cleanup 状态和 Allure results/HTML；不自动重放 |
+| `generate_api_allure_report` | `GenerateApiAllureReportCommand` | `GenerateApiAllureReportResult` v2 | execution 已存在且 Execution Plan、历史发布与 Evidence 一致 | 从历史事实生成 Allure 产物；不发送 API 请求 |
 | `resume_api_cleanup` | `ResumeApiCleanupCommand` | `ResumeApiCleanupResult` | 加密 journal、环境、published hash 和策略 hash 一致 | 只发送 pending cleanup；不重放业务请求或不确定 cleanup |
 | `export_api_pytest` | `ExportApiPytestCommand` | `ApiPytestExportResult` | 来源是 published API YAML，目标位于 workspace `exports/` | 确定性写入 pytest adapter；默认 create-only |
 | `resume_run` | `ResumeRunCommand` | `RunSnapshot` | planning/running/recoverable | 从同一 PostgreSQL thread 恢复 |
@@ -25,6 +25,11 @@
 
 所有 run 操作显式携带 `workspace_id + run_id`，不全局扫描 run ID。控制面 Schema 使用
 `agentic-qa.harness.*.v2`；API cases 独立保持 `agentic-qa.api-cases.v1.2`。
+
+`RunApiScenarioResult` v4 中 `manifest_path`、`evidence_path` 和
+`cleanup_summary_path` 是已经提交的执行事实路径，始终必填。事件日志、Markdown、报告汇总、
+Allure results 和 HTML 路径只在对应文件或目录实际存在时返回，否则为 `null`。
+`GenerateApiAllureReportResult` v2 对 Allure results/HTML 使用同一规则，不返回尚未生成的虚假路径。
 
 外部 AI 的 `AgentRequest` 和 MCP 是独立受限门面，不增加 Harness 的 Review 权限，也不改变上述
 十二个方法；其契约见[跨 AI 接入](agent-integration.md)。
