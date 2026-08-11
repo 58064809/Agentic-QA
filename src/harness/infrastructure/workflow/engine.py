@@ -100,6 +100,31 @@ def _workspace_cleanup_exemptions(store: FilesystemStore, workspace: str) -> tup
     return tuple(str(item) for item in exemptions) if isinstance(exemptions, list) else ()
 
 
+def _workspace_operation_policies(
+    store: FilesystemStore, workspace: str
+) -> dict[str, dict[str, Any]]:
+    payload = store.workspace_config(workspace)
+    binding = payload.get("api_project")
+    execution = payload.get("execution")
+    if not isinstance(binding, dict) or not isinstance(execution, dict):
+        return {}
+    environment = binding.get("environment")
+    environments = execution.get("environments")
+    if not isinstance(environment, str) or not isinstance(environments, dict):
+        return {}
+    policy = environments.get(environment)
+    if not isinstance(policy, dict):
+        return {}
+    operation_policies = policy.get("operation_policies")
+    if not isinstance(operation_policies, dict):
+        return {}
+    return {
+        str(operation): dict(value)
+        for operation, value in operation_policies.items()
+        if isinstance(value, dict)
+    }
+
+
 class ToolRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -2025,6 +2050,10 @@ class HarnessEngine:
                         self.store,
                         request.workspace_id,
                     ),
+                    operation_policies=_workspace_operation_policies(
+                        self.store,
+                        request.workspace_id,
+                    ),
                 )
                 assessment = self.assessment.assess(
                     context=context,
@@ -2426,6 +2455,10 @@ class HarnessEngine:
                     else {}
                 ),
                 cleanup_exempt_operations=_workspace_cleanup_exemptions(
+                    self.store,
+                    snapshot.workspace_id,
+                ),
+                operation_policies=_workspace_operation_policies(
                     self.store,
                     snapshot.workspace_id,
                 ),

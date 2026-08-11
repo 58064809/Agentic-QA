@@ -10,14 +10,15 @@ import pytest
 import yaml
 
 from harness import (
+    ApiExecutionPlan,
     CreateWorkspaceCommand,
     Harness,
     ResumeApiCleanupCommand,
     RunApiScenarioCommand,
 )
 from harness.domain.schemas.api_test_cases import ApiCleanupStep, ApiTestCasesDraft
-from harness.infrastructure.api_automation import FilesystemApiAutomationService
 from harness.infrastructure.api_cleanup_journal import EncryptedCleanupJournal
+from harness.infrastructure.api_execution_plan import build_api_execution_plan
 from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 
 
@@ -34,7 +35,12 @@ class _Response:
         }
 
 
-def _workspace(tmp_path: Path, *, expected_status: int = 201) -> Path:
+def _workspace(
+    tmp_path: Path,
+    *,
+    expected_status: int = 201,
+    with_cleanup: bool = False,
+) -> Path:
     source = tmp_path / "local-sources" / "api" / "demo"
     source.mkdir(parents=True)
     local_config = {
@@ -56,6 +62,11 @@ def _workspace(tmp_path: Path, *, expected_status: int = 201) -> Path:
         },
         "test_management": {"provider": "none"},
         "workspace_defaults": {},
+        "runtime": {
+            "cleanup_journal_key": (
+                base64.urlsafe_b64encode(os.urandom(32)).decode("ascii") if with_cleanup else ""
+            )
+        },
         "api": {
             "services": {
                 "demo": {
@@ -64,8 +75,10 @@ def _workspace(tmp_path: Path, *, expected_status: int = 201) -> Path:
                         "qa": {
                             "base_url": "https://qa.example.test",
                             "trusted_origins": ["https://qa.example.test"],
-                            "allowed_http_methods": ["POST"],
-                            "cleanup_exempt_operations": ["POST /orders"],
+                            "allowed_http_methods": (
+                                ["POST", "DELETE"] if with_cleanup else ["POST"]
+                            ),
+                            "cleanup_exempt_operations": ([] if with_cleanup else ["POST /orders"]),
                             "timeout_seconds": 7,
                             "auth": {
                                 "login": None,
@@ -85,6 +98,7 @@ def _workspace(tmp_path: Path, *, expected_status: int = 201) -> Path:
     (tmp_path / "agentic-qa.local.yml").write_text(
         yaml.safe_dump(local_config, sort_keys=False), encoding="utf-8"
     )
+    FilesystemLocalConfigLoader(tmp_path).migrate_inline_secrets()
     harness = Harness(tmp_path)
     root = harness.create_workspace(CreateWorkspaceCommand(workspace_id="demo"))
     loader = FilesystemLocalConfigLoader(tmp_path)
@@ -137,8 +151,34 @@ def _workspace(tmp_path: Path, *, expected_status: int = 201) -> Path:
                         "body": {"name": "fixture-order"},
                     },
                     "assertions": [{"type": "status_code", "expected": expected_status}],
-                    "variables": {"datasets": [], "extract": {}},
-                    "cleanup": [],
+                    "variables": {
+                        "datasets": [],
+                        "extract": (
+                            {
+                                "order_id": {
+                                    "source": "response_json",
+                                    "path": "$.token",
+                                    "required": True,
+                                }
+                            }
+                            if with_cleanup
+                            else {}
+                        ),
+                    },
+                    "cleanup": (
+                        [
+                            {
+                                "id": "delete-order",
+                                "request": {
+                                    "method": "DELETE",
+                                    "path": "/orders/${{order_id}}",
+                                },
+                                "assertions": [{"type": "status_code", "expected": 204}],
+                            }
+                        ]
+                        if with_cleanup
+                        else []
+                    ),
                 }
             ],
             "review_questions": ["Review before publication"],
@@ -182,16 +222,32 @@ def test_run_persists_redacted_reports_and_never_replays_id(
     assert requests_seen[0][2]["timeout"] == 7
     execution_root = root / "executions" / "trial-001"
     manifest = json.loads((execution_root / "manifest.json").read_text(encoding="utf-8"))
+    plan_text = (execution_root / "execution-plan.json").read_text(encoding="utf-8")
+    plan = ApiExecutionPlan.model_validate_json(plan_text)
     assert manifest["status"] == "completed"
     assert manifest["result"] == "passed"
     assert manifest["source_cases_sha256"] == result.source_cases_sha256
+    assert manifest["execution_plan_path"].endswith("execution-plan.json")
+    assert manifest["execution_plan_sha256"] == hashlib.sha256(plan_text.encode()).hexdigest()
+    assert plan.source_cases_sha256 == result.source_cases_sha256
+    assert plan.execution_id == "trial-001"
+    assert [item.case_id for item in plan.cases] == ["api-order-create"]
+    assert plan.cases[0].operation_classification == "read_only"
+    tampered_plan = plan.model_dump(mode="json")
+    tampered_plan["environment"] = "tampered"
+    with pytest.raises(ValueError, match="semantic hash"):
+        ApiExecutionPlan.model_validate(tampered_plan)
     evidence = (execution_root / "evidence.json").read_text(encoding="utf-8")
     summary = (execution_root / "summary.md").read_text(encoding="utf-8")
     report_summary = json.loads(
         (execution_root / "report-summary.json").read_text(encoding="utf-8")
     )
     events = (execution_root / "execution-events.jsonl").read_text(encoding="utf-8")
-    persisted = manifest | {"evidence": evidence, "summary_report": summary}
+    persisted = manifest | {
+        "execution_plan": plan_text,
+        "evidence": evidence,
+        "summary_report": summary,
+    }
     serialized = json.dumps(persisted, ensure_ascii=False)
     for secret in (
         "local-runtime-token",
@@ -220,6 +276,7 @@ def test_run_persists_redacted_reports_and_never_replays_id(
         "report_summary_sha256",
         "cleanup_summary_sha256",
         "allure_results_sha256",
+        "execution_plan_sha256",
     ):
         assert len(manifest[hash_field]) == 64
 
@@ -244,6 +301,43 @@ def test_failed_assertion_is_persisted_as_failed_result(
     )
     assert manifest["status"] == "completed"
     assert manifest["result"] == "failed"
+
+
+def test_mutation_is_armed_before_send_and_completed_cleanup_runs_lifo(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _workspace(tmp_path, with_cleanup=True)
+    requests_seen: list[tuple[str, str]] = []
+
+    def request(method: str, url: str, **_kwargs: object) -> _Response:
+        requests_seen.append((method, url))
+        return _Response(201 if method == "POST" else 204, url)
+
+    monkeypatch.setattr("requests.request", request)
+    result = Harness(tmp_path).run_api_scenario(_command("trial-cleanup"))
+
+    assert result.status == "passed"
+    assert requests_seen == [
+        ("POST", "https://qa.example.test/orders"),
+        ("DELETE", "https://qa.example.test/orders/response-secret-value"),
+    ]
+    execution_root = root / "executions" / "trial-cleanup"
+    local = FilesystemLocalConfigLoader(tmp_path).load_required()
+    journal = EncryptedCleanupJournal.load(
+        execution_root / ".cleanup-journal.enc",
+        key=local.runtime.cleanup_journal_key,
+    )
+    assert journal.summary().status == "complete"
+    assert journal.summary().counts.completed == 1
+    event_types = [
+        json.loads(line)["event_type"]
+        for line in (execution_root / "execution-events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert event_types.index("cleanup.armed") < event_types.index("request.sent")
+    assert event_types.index("cleanup.registered") > event_types.index("response.received")
 
 
 def test_preflight_failure_is_persisted_without_sending_request(
@@ -301,26 +395,48 @@ def test_request_phase_crash_is_indeterminate_and_not_replayed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = _workspace(tmp_path)
-    execute_calls = 0
+    root = _workspace(tmp_path, with_cleanup=True)
+    key = FilesystemLocalConfigLoader(tmp_path).load_required().runtime.cleanup_journal_key
+    request_calls = 0
 
-    def crash(_service: FilesystemApiAutomationService, _command: object) -> object:
-        nonlocal execute_calls
-        execute_calls += 1
-        raise RuntimeError("simulated uncertain transport interruption")
+    def crash(_method: str, _url: str, **_kwargs: object) -> object:
+        nonlocal request_calls
+        request_calls += 1
+        journal_path = root / "executions" / "trial-crash" / ".cleanup-journal.enc"
+        journal = EncryptedCleanupJournal.load(journal_path, key=key)
+        assert journal.summary().counts.armed == 1
+        assert journal.summary().counts.pending == 0
+        raise KeyboardInterrupt("simulated process kill after mutation send began")
 
-    monkeypatch.setattr(FilesystemApiAutomationService, "execute", crash)
+    monkeypatch.setattr("requests.request", crash)
     harness = Harness(tmp_path)
-    with pytest.raises(RuntimeError, match="simulated uncertain"):
+    with pytest.raises(KeyboardInterrupt, match="simulated process kill"):
         harness.run_api_scenario(_command("trial-crash"))
 
-    manifest_path = root / "executions" / "trial-crash" / "manifest.json"
+    execution_root = root / "executions" / "trial-crash"
+    manifest_path = execution_root / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest["status"] == "indeterminate"
-    assert manifest["error_kind"] == "RuntimeError"
+    assert manifest["status"] == "cleanup_indeterminate"
+    assert manifest["error_kind"] == "KeyboardInterrupt"
+    journal = EncryptedCleanupJournal.load(execution_root / ".cleanup-journal.enc", key=key)
+    assert journal.summary().status == "indeterminate"
+    assert journal.summary().counts.armed == 1
+    obligation = journal.payload["obligations"][0]
+    assert obligation["state"] == "armed"
+    assert obligation["mutation_may_happen"] is True
+    assert obligation["request_operation"] == "POST /orders"
+
+    recovery = harness.resume_api_cleanup(
+        ResumeApiCleanupCommand(
+            workspace_id="demo",
+            execution_id="trial-crash",
+            environment="qa",
+        )
+    )
+    assert recovery.status == "indeterminate"
     with pytest.raises(FileExistsError, match="will not be replayed"):
         harness.run_api_scenario(_command("trial-crash"))
-    assert execute_calls == 1
+    assert request_calls == 1
 
 
 def test_leftover_started_manifest_becomes_indeterminate(
@@ -357,7 +473,7 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
     key = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
     local_path = tmp_path / "agentic-qa.local.yml"
     local = yaml.safe_load(local_path.read_text(encoding="utf-8"))
-    local["runtime"] = {"cleanup_journal_key": key}
+    local["secrets"]["values"]["runtime.cleanup_journal_key"] = key
     environment = local["api"]["services"]["demo"]["environments"]["qa"]
     environment["allowed_http_methods"] = ["POST", "DELETE"]
     local_path.write_text(yaml.safe_dump(local, sort_keys=False), encoding="utf-8")
@@ -379,6 +495,27 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
     execution_root.mkdir(parents=True)
     published = root / "published" / "api_test_draft" / "current.yml"
     source_sha256 = hashlib.sha256(published.read_bytes()).hexdigest()
+    published_draft = ApiTestCasesDraft.model_validate(
+        yaml.safe_load(published.read_text(encoding="utf-8"))
+    )
+    profile = Harness(tmp_path).api_execution_profile("demo", "qa")
+    plan = build_api_execution_plan(
+        workspace_id="demo",
+        execution_id="cleanup-recovery",
+        service="demo",
+        environment="qa",
+        source_cases_path="published/api_test_draft/current.yml",
+        source_cases_sha256=source_sha256,
+        structural_sha256=project.structural_sha256,
+        profile=profile,
+        authentication=project.policy.api_auth,
+        isolation=project.policy.isolation,
+        operation_policies=project.policy.operation_policies,
+        cases=list(published_draft.cases),
+    )
+    plan_path = execution_root / "execution-plan.json"
+    plan_text = json.dumps(plan.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n"
+    plan_path.write_text(plan_text, encoding="utf-8")
     (execution_root / "manifest.json").write_text(
         json.dumps(
             {
@@ -387,6 +524,7 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
                 "execution_id": "cleanup-recovery",
                 "environment": "qa",
                 "status": "indeterminate",
+                "execution_plan_sha256": hashlib.sha256(plan_path.read_bytes()).hexdigest(),
             }
         ),
         encoding="utf-8",
@@ -399,6 +537,7 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
         environment="qa",
         source_cases_sha256=source_sha256,
         structural_sha256=project.structural_sha256,
+        execution_plan_sha256=plan.plan_sha256,
     )
     journal.register(
         case_id="api-order-create",

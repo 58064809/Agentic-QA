@@ -238,6 +238,85 @@ ApiAuthentication = Annotated[
 ]
 
 
+class ApiNamespaceInjection(StrictModel):
+    location: Literal["header", "query", "body"]
+    name: str = Field(min_length=1, max_length=128)
+    prefix: str = Field(default="aqa", min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
+
+    @model_validator(mode="after")
+    def validate_name(self) -> ApiNamespaceInjection:
+        if self.location == "header":
+            if not re.fullmatch(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+", self.name):
+                raise ValueError("namespace header name is invalid")
+            if re.search(
+                r"authorization|cookie|token|secret|password|api[_-]?key",
+                self.name,
+                re.I,
+            ):
+                raise ValueError("namespace header name must not be sensitive")
+        elif not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", self.name):
+            raise ValueError("namespace query/body name must be a root field name")
+        return self
+
+
+class ApiIsolationPolicy(StrictModel):
+    mode: Literal["shared", "namespace"] = "shared"
+    namespace: ApiNamespaceInjection | None = None
+
+    @model_validator(mode="after")
+    def validate_namespace(self) -> ApiIsolationPolicy:
+        if self.mode == "namespace" and self.namespace is None:
+            raise ValueError("namespace isolation requires an injection declaration")
+        if self.mode == "shared" and self.namespace is not None:
+            raise ValueError("shared isolation cannot declare namespace injection")
+        return self
+
+
+class ApiOperationPolicy(StrictModel):
+    classification: Literal[
+        "read_only",
+        "mutation_cleanup",
+        "mutation_idempotent",
+        "mutation_manual",
+    ]
+    idempotency_header: str | None = None
+    idempotency_key_prefix: str = Field(
+        default="aqa", min_length=1, max_length=32, pattern=r"^[A-Za-z0-9_-]+$"
+    )
+
+    @model_validator(mode="after")
+    def validate_idempotency(self) -> ApiOperationPolicy:
+        if self.classification == "mutation_idempotent":
+            if self.idempotency_header is None:
+                raise ValueError("mutation_idempotent requires idempotency_header")
+            if not re.fullmatch(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+", self.idempotency_header):
+                raise ValueError("idempotency_header is invalid")
+            if re.search(
+                r"authorization|cookie|token|secret|password|api[_-]?key",
+                self.idempotency_header,
+                re.I,
+            ):
+                raise ValueError("idempotency_header must not be sensitive")
+        elif self.idempotency_header is not None:
+            raise ValueError("idempotency_header is only valid for mutation_idempotent")
+        return self
+
+
+def resolve_api_operation_policy(
+    operation_policies: dict[str, ApiOperationPolicy],
+    method: str | None,
+    path: str | None,
+) -> ApiOperationPolicy:
+    operation = f"{method} {path}"
+    configured = operation_policies.get(operation)
+    if configured is not None:
+        return configured
+    classification = (
+        "mutation_cleanup" if method in {"POST", "PUT", "PATCH", "DELETE"} else "read_only"
+    )
+    return ApiOperationPolicy(classification=classification)
+
+
 class ExecutionEnvironmentPolicy(StrictModel):
     base_url_env: str | None = Field(default=None, pattern=r"^[A-Z_][A-Z0-9_]*$")
     trusted_origins: list[str] = Field(default_factory=list)
@@ -245,6 +324,8 @@ class ExecutionEnvironmentPolicy(StrictModel):
     allow_ui_mutations: bool = False
     max_request_timeout_seconds: int = Field(default=10, ge=1, le=60)
     cleanup_exempt_operations: list[str] = Field(default_factory=list)
+    isolation: ApiIsolationPolicy = Field(default_factory=ApiIsolationPolicy)
+    operation_policies: dict[str, ApiOperationPolicy] = Field(default_factory=dict)
     api_auth: ApiAuthentication | None = None
 
     @field_validator("cleanup_exempt_operations")
@@ -270,6 +351,34 @@ class ExecutionEnvironmentPolicy(StrictModel):
         if not methods:
             raise ValueError("allowed_http_methods cannot be empty")
         return methods
+
+    @field_validator("operation_policies")
+    @classmethod
+    def normalize_operation_policies(
+        cls, value: dict[str, ApiOperationPolicy]
+    ) -> dict[str, ApiOperationPolicy]:
+        normalized: dict[str, ApiOperationPolicy] = {}
+        for raw_operation, policy in value.items():
+            method, separator, path = raw_operation.strip().partition(" ")
+            method = method.upper()
+            if not separator or method not in {
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
+                "HEAD",
+                "OPTIONS",
+                "TRACE",
+            }:
+                raise ValueError("operation policies must use canonical METHOD /path keys")
+            if not path.startswith("/") or " " in path:
+                raise ValueError("operation policy path must be a relative path template")
+            canonical = f"{method} {path}"
+            if canonical in normalized:
+                raise ValueError("operation policy keys must be unique after normalization")
+            normalized[canonical] = policy
+        return normalized
 
     @field_validator("trusted_origins")
     @classmethod

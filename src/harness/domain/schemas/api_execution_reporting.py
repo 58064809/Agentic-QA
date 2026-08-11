@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 from typing import Any, Literal
 
@@ -26,6 +28,69 @@ class ApiExecutionEvent(StrictModel):
     details: dict[str, Any] = Field(default_factory=dict)
     previous_event_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     event_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class ApiExecutionPlanCleanup(StrictModel):
+    cleanup_id: str
+    method: str
+    path_template: str
+    request_structure_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    operation_classification: Literal[
+        "read_only", "mutation_cleanup", "mutation_idempotent", "mutation_manual"
+    ]
+    idempotency_header: str | None = None
+    idempotency_key_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+
+class ApiExecutionPlanCase(StrictModel):
+    case_id: str = Field(min_length=1)
+    source_case_id: str = Field(min_length=1)
+    dataset_id: str | None = None
+    method: str | None = None
+    path_template: str | None = None
+    contract_status: Literal["missing", "pending_confirmation", "partial", "confirmed"]
+    request_structure_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    cleanup_ids: list[str] = Field(default_factory=list)
+    cleanups: list[ApiExecutionPlanCleanup] = Field(default_factory=list)
+    operation_classification: Literal[
+        "read_only", "mutation_cleanup", "mutation_idempotent", "mutation_manual"
+    ]
+    idempotency_header: str | None = None
+    idempotency_key_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+
+class ApiExecutionPlan(StrictModel):
+    schema_version: Literal["agentic-qa.api-execution-plan.v1"] = "agentic-qa.api-execution-plan.v1"
+    workspace_id: str
+    execution_id: str
+    service: str
+    environment: str
+    created_at: datetime
+    source_cases_path: str
+    source_cases_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    structural_sha256: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
+    execution_profile_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    authentication_mode: Literal["none", "login", "static_token"]
+    isolation_mode: Literal["shared", "namespace"]
+    namespace_location: Literal["header", "query", "body"] | None = None
+    namespace_name: str | None = None
+    namespace_value_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    cases: list[ApiExecutionPlanCase] = Field(min_length=1)
+    plan_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def validate_semantic_hash(self) -> ApiExecutionPlan:
+        payload = self.model_dump(mode="json", exclude={"plan_sha256"})
+        encoded = json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        expected = hashlib.sha256(encoded).hexdigest()
+        if self.plan_sha256 != expected:
+            raise ValueError("execution plan semantic hash does not match its content")
+        return self
 
 
 class ApiReportCounts(StrictModel):
@@ -61,6 +126,7 @@ class ApiReportSummary(StrictModel):
 
 class CleanupJournalCounts(StrictModel):
     total: int = Field(ge=0)
+    armed: int = Field(default=0, ge=0)
     pending: int = Field(ge=0)
     running: int = Field(ge=0)
     completed: int = Field(ge=0)
@@ -68,7 +134,7 @@ class CleanupJournalCounts(StrictModel):
 
     @model_validator(mode="after")
     def validate_total(self) -> CleanupJournalCounts:
-        if self.total != self.pending + self.running + self.completed + self.failed:
+        if self.total != self.armed + self.pending + self.running + self.completed + self.failed:
             raise ValueError("cleanup count total does not match states")
         return self
 

@@ -13,6 +13,35 @@ API 试跑的审计事实保存在 workspace 的 `evidence.json`，执行过程�
 `allure-history.jsonl` 使用 [Allure 3 History](https://allurereport.org/docs/history-and-retries/)
 保存跨 execution 趋势，不启用会导致 API 重放的 retry 机制。
 
+## API 执行链路
+
+```text
+published YAML + reviewed policy + resolved Secret Provider
+  → fail-closed preflight
+  → create-only execution-plan.json
+  → project authentication fixture
+  → namespace / operation policy injection
+  → mutating request 前 armed cleanup journal
+  → HTTP transport（写请求不自动重试）
+  → assertions / extraction
+  → LIFO teardown
+  → Evidence + hash-chain events + Allure
+```
+
+`execution-plan.json` 是单次 execution 的只增不改、脱敏快照：记录 published 源 Hash、结构策略 Hash、
+执行 Profile Hash、展开后的 case/dataset、请求结构 Hash、operation 分类、隔离与幂等键摘要。它在任何
+认证或业务 HTTP 之前 create-only 写入；执行器使用预检时已冻结的领域对象和运行值，不在请求途中重读
+published 或配置。manifest 记录计划文件 Hash，cleanup resume 同时复验文件 Hash 与语义 Hash。
+
+状态隔离按成本从低到高分层：外部 CI/平台优先提供可销毁环境；否则由 Harness 注入 execution namespace；
+仍有副作用的 operation 使用正常 cleanup；进程崩溃时仅恢复加密 journal 中“确认尚未发送”的 pending
+动作；armed/running/failed 保持不确定并要求人工核对。声明 `mutation_idempotent` 只表示服务端已确认
+支持指定幂等 Header，绝不授权 Harness 自动重放 mutation。
+
+根配置中的敏感字段由 `SecretProvider` 端口解析。默认 local provider 让单机用户仍只维护一个文件；
+environment provider 供 CI/团队使用。解析后的 Secret 只驻留进程内，不进入 execution plan、workspace、
+事件、Evidence 或 Allure；模型与远程 RAG 的实际 Key 仍遵循独立的 `api_key_env` 边界。
+
 ## 生成链路
 
 ```text

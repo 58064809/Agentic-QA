@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.knowledge-spec.v1
 name: api-testing
-version: 1.14.0
+version: 1.16.0
 purpose: 根据完整 API 契约设计可验证的机器用例并记录执行边界。
 applies_to: [api-testing]
 inputs:
@@ -9,7 +9,10 @@ inputs:
   - ExecutionProfile
   - 脱敏测试数据或受控 fixture
 procedure:
-  - Every confirmed POST, PUT, PATCH, or DELETE business case must declare verified cleanup; an exact canonical operation in the reviewed cleanup_exempt_operations policy may omit cleanup. Project authentication is outside API Cases.
+  - Classify exact canonical operations with reviewed policy. GET defaults to read_only; POST, PUT, PATCH, and DELETE default to mutation_cleanup. mutation_manual never enters transport. Legacy cleanup_exempt_operations means read_only only.
+  - Every mutation_cleanup or mutation_idempotent business case must declare verified cleanup. Project authentication is outside API Cases.
+  - Use mutation_idempotent only when the server contract or owning team confirms the declared header. Generate a deterministic execution/case/operation-bound key, but never auto-retry or replay a mutation.
+  - Prefer a disposable environment supplied by CI/platform; otherwise use a reviewed per-execution namespace injection before teardown, recovery journal, or manual cleanup.
   - An unconfirmed manual login case handled by project authentication is reported as skipped, never as a product failure.
   - API 测试生成前必须通过根目录 agentic-qa.local.yml 与 api-project doctor；缺少环境、Base URL、认证或登录加密协议时不创建 run、不调用模型。
   - 登录凭据完整时使用登录；全部为空时必须使用 fallback Token；部分缺失时 fail closed。
@@ -33,6 +36,7 @@ procedure:
   - 按 dataset 实例展开 path、query、headers 与 body，并以 OpenAPI 参数和 JSON Schema 逐实例校验。
   - 后续请求使用 ${{name}} 引用更早用例通过 response_json 或非敏感 response_header 提取的运行时变量。
   - 状态变更场景使用 cleanup 声明逆序回收请求，并为每个 cleanup 请求提供受支持断言。
+  - Prefer client-generated stable identifiers for mutations when the contract permits them, so cleanup can be fully resolved without waiting for a response extraction.
   - 用例数据来自 variables.datasets 或上游 extraction；项目级 Base URL、认证和登录值来自统一根配置，不新增 API 环境变量依赖。
   - 数据集变量、跨用例提取变量和用例 ID 保持全场景唯一命名，不遮蔽更早定义。
 output_expectations:
@@ -45,6 +49,8 @@ output_expectations:
   - JSON 断言路径只使用根 $、对象 .field 和数组 [index]，不使用通配符或过滤器。
   - variables 只使用 datasets 与 extract；cleanup 只使用 id、title、request 与 assertions。
 evidence_policy:
+  - Before authentication or business HTTP, persist a create-only redacted execution plan containing published source hash, structural/profile hashes, expanded case/dataset identities, request structure hashes, operation classifications, and isolation/idempotency hashes.
+  - Resolve API, database, connector, and cleanup secrets through the configured Secret Provider. Keep resolved values in process memory only; never persist them to workspace, plan, events, Evidence, or Allure.
   - Workspace Policy 的 trusted_origins 只接受 HTTPS Origin，实际 base URL 在认证前匹配该 allowlist。
   - base URL 只接受 HTTP(S) Origin 与安全基础路径；最终 URL 必须保持同一 Origin 和基础路径，且请求不跟随重定向。
   - 断言不得指向 Token、Cookie、密码等敏感字段，也不得把疑似密钥写入 expected。
@@ -56,6 +62,7 @@ evidence_policy:
   - JSON 值和响应头的实际值只记录类型与 SHA-256，不复述原始响应值。
   - 提取的运行时变量只保留在单次执行内，不写入 YAML、事件或证据。
   - 只有全部断言通过的用例向后续用例发布提取变量；cleanup 仍使用本次请求的局部快照。
+  - A mutating request with cleanup is persisted as an encrypted armed obligation immediately before transport. After a response is observed, a fully resolved cleanup becomes pending; an armed obligation remains indeterminate and is never auto-replayed.
 uncertainty_policy:
   - Markdown、抓包或残缺契约形成 partial 或待确认项，request.method/path 保持 null。
 prohibited_actions:

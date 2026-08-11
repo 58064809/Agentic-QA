@@ -36,6 +36,7 @@ class EncryptedCleanupJournal:
         environment: str,
         source_cases_sha256: str,
         structural_sha256: str,
+        execution_plan_sha256: str,
     ) -> None:
         if not key:
             raise ValueError(
@@ -51,6 +52,7 @@ class EncryptedCleanupJournal:
             "environment": environment,
             "source_cases_sha256": source_cases_sha256,
             "structural_sha256": structural_sha256,
+            "execution_plan_sha256": execution_plan_sha256,
             "created_at": _now(),
             "obligations": [],
         }
@@ -95,6 +97,30 @@ class EncryptedCleanupJournal:
         cleanup: ApiCleanupStep,
         runtime_variables: dict[str, Any],
     ) -> str:
+        obligation_id = self.arm(
+            case_id=case_id,
+            title=title,
+            cleanup=cleanup,
+            runtime_variables=runtime_variables,
+            request_operation="legacy-registration",
+        )
+        self.enrich(
+            obligation_id,
+            runtime_variables=runtime_variables,
+            ready=True,
+        )
+        return obligation_id
+
+    def arm(
+        self,
+        *,
+        case_id: str,
+        title: str,
+        cleanup: ApiCleanupStep,
+        runtime_variables: dict[str, Any],
+        request_operation: str,
+        request_idempotency_key: str | None = None,
+    ) -> str:
         obligation_id = f"{case_id}::cleanup::{cleanup.id}"
         if any(item["obligation_id"] == obligation_id for item in self._payload["obligations"]):
             raise ValueError(f"cleanup obligation is already registered: {obligation_id}")
@@ -104,14 +130,34 @@ class EncryptedCleanupJournal:
                 "case_id": case_id,
                 "title": title,
                 "cleanup_id": cleanup.id,
-                "state": "pending",
-                "registered_at": _now(),
+                "state": "armed",
+                "armed_at": _now(),
+                "mutation_may_happen": True,
+                "request_operation": request_operation,
+                "request_idempotency_key": request_idempotency_key,
                 "step": cleanup.model_dump(mode="json"),
                 "runtime_variables": runtime_variables,
             }
         )
         self._save()
         return obligation_id
+
+    def enrich(
+        self,
+        obligation_id: str,
+        *,
+        runtime_variables: dict[str, Any],
+        ready: bool,
+    ) -> None:
+        item = self._require(obligation_id)
+        if item["state"] != "armed":
+            raise ValueError(f"cleanup obligation is not armed: {obligation_id}")
+        item["runtime_variables"] = runtime_variables
+        item["response_observed_at"] = _now()
+        if ready:
+            item["state"] = "pending"
+            item["registered_at"] = _now()
+        self._save()
 
     def before(self, obligation_id: str) -> None:
         item = self._require(obligation_id)
@@ -138,11 +184,11 @@ class EncryptedCleanupJournal:
         obligations = self._payload["obligations"]
         counts = {
             state: sum(item["state"] == state for item in obligations)
-            for state in ("pending", "running", "completed", "failed")
+            for state in ("armed", "pending", "running", "completed", "failed")
         }
         if not obligations:
             status = "not_required"
-        elif counts["running"]:
+        elif counts["armed"] or counts["running"]:
             status = "indeterminate"
         elif counts["failed"]:
             status = "failed"

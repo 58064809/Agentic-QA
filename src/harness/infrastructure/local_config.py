@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import json
 import os
@@ -11,11 +12,12 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import yaml
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from harness.domain.models import (
     ApiLoginRequest,
     ApiLoginRequestEncryption,
+    ApiOperationPolicy,
     ApiTokenInjection,
     ExecutionEnvironmentPolicy,
     LoginApiAuthentication,
@@ -27,16 +29,23 @@ from harness.domain.schemas.local_config import (
     LocalConfigCheckResult,
     LocalConfigIssue,
     LocalPasswordLogin,
+    LocalSecretProviderConfig,
     LocalSmsLogin,
     LocalStaticTokenLogin,
 )
 from harness.domain.security import validate_api_base_url_policy
+from harness.infrastructure.secret_provider import (
+    SECRET_REFERENCE,
+    build_secret_provider,
+    parse_secret_reference,
+)
 
 LOCAL_CONFIG_NAME = "agentic-qa.local.yml"
 LOCAL_CONFIG_EXAMPLE_NAME = "agentic-qa.local.example.yml"
 MAX_LOCAL_CONFIG_BYTES = 1024 * 1024
 REPARSE_POINT = 0x400
 PRODUCTION_ENVIRONMENT_SEGMENTS = {"pro", "prod", "production", "live"}
+_SECRET_PROVIDER_ADAPTER = TypeAdapter(LocalSecretProviderConfig)
 
 
 @dataclass(frozen=True)
@@ -76,6 +85,115 @@ def _variable(service: str, environment: str, name: str) -> str:
     return re.sub(r"[^A-Z0-9_]", "_", raw)
 
 
+def _secret_locations(payload: dict[str, object]) -> list[tuple[tuple[str, ...], str]]:
+    locations: list[tuple[tuple[str, ...], str]] = [
+        (("postgres", "password"), "postgres.password"),
+        (("runtime", "cleanup_journal_key"), "runtime.cleanup_journal_key"),
+    ]
+    test_management = payload.get("test_management")
+    if isinstance(test_management, dict):
+        provider = test_management.get("provider")
+        if provider == "testrail":
+            locations.extend(
+                [
+                    (("test_management", "username"), "test_management.username"),
+                    (("test_management", "api_key"), "test_management.api_key"),
+                ]
+            )
+        elif provider == "qase":
+            locations.append((("test_management", "api_token"), "test_management.api_token"))
+    api = payload.get("api")
+    services = api.get("services") if isinstance(api, dict) else None
+    if not isinstance(services, dict):
+        return locations
+    for service_name, service in services.items():
+        environments = service.get("environments") if isinstance(service, dict) else None
+        if not isinstance(environments, dict):
+            continue
+        for environment_name, environment in environments.items():
+            auth = environment.get("auth") if isinstance(environment, dict) else None
+            if not isinstance(auth, dict):
+                continue
+            base_path = (
+                "api",
+                "services",
+                str(service_name),
+                "environments",
+                str(environment_name),
+                "auth",
+            )
+            reference_base = f"api.{service_name}.{environment_name}.auth"
+            locations.append((base_path + ("fallback_token",), f"{reference_base}.fallback_token"))
+            login = auth.get("login")
+            if not isinstance(login, dict):
+                continue
+            kind = login.get("kind")
+            if kind == "sms":
+                secret_fields = ("phone", "sms_code")
+            elif kind == "password":
+                secret_fields = ("username", "password")
+            elif kind == "static_token":
+                secret_fields = ("token",)
+            else:
+                secret_fields = ()
+            for field in secret_fields:
+                locations.append(
+                    (
+                        base_path + ("login", field),
+                        f"{reference_base}.login.{field}",
+                    )
+                )
+            encryption = login.get("encryption")
+            if isinstance(encryption, dict):
+                locations.append(
+                    (
+                        base_path + ("login", "encryption", "key"),
+                        f"{reference_base}.login.encryption.key",
+                    )
+                )
+    return locations
+
+
+def _get_nested(payload: dict[str, object], path: tuple[str, ...]) -> object:
+    current: object = payload
+    for item in path:
+        if not isinstance(current, dict) or item not in current:
+            raise KeyError(".".join(path))
+        current = current[item]
+    return current
+
+
+def _set_nested(payload: dict[str, object], path: tuple[str, ...], value: object) -> None:
+    current: object = payload
+    for item in path[:-1]:
+        if not isinstance(current, dict) or item not in current:
+            raise KeyError(".".join(path))
+        current = current[item]
+    if not isinstance(current, dict):
+        raise KeyError(".".join(path))
+    current[path[-1]] = value
+
+
+def _referenced_locations(value: object, path: tuple[str, ...] = ()) -> set[tuple[str, ...]]:
+    if isinstance(value, str):
+        return {path} if SECRET_REFERENCE.fullmatch(value) else set()
+    if isinstance(value, dict):
+        return set().union(
+            *(
+                _referenced_locations(item, (*path, str(name)))
+                for name, item in value.items()
+                if name != "secrets" or path
+            ),
+            set(),
+        )
+    if isinstance(value, list):
+        return set().union(
+            *(_referenced_locations(item, (*path, str(index))) for index, item in enumerate(value)),
+            set(),
+        )
+    return set()
+
+
 class FilesystemLocalConfigLoader:
     def __init__(self, repo_root: Path | str) -> None:
         self.repo_root = Path(repo_root).resolve()
@@ -95,10 +213,13 @@ class FilesystemLocalConfigLoader:
         payload = yaml.safe_load(raw.decode("utf-8-sig"))
         if not isinstance(payload, dict):
             raise ValueError("local configuration example must contain an object")
-        runtime = payload.setdefault("runtime", {})
-        if not isinstance(runtime, dict):
-            raise ValueError("local configuration runtime section must be an object")
-        runtime["cleanup_journal_key"] = self._new_cleanup_journal_key()
+        secrets = payload.get("secrets")
+        if not isinstance(secrets, dict) or secrets.get("provider") != "local":
+            raise ValueError("local configuration example must use the local Secret Provider")
+        values = secrets.get("values")
+        if not isinstance(values, dict):
+            raise ValueError("local Secret Provider values must be an object")
+        values["runtime.cleanup_journal_key"] = self._new_cleanup_journal_key()
         rendered = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True).encode("utf-8")
         with self.path.open("xb") as handle:
             handle.write(rendered)
@@ -117,12 +238,48 @@ class FilesystemLocalConfigLoader:
         payload = yaml.safe_load(raw.decode("utf-8-sig"))
         if not isinstance(payload, dict):
             raise ValueError("local configuration must contain an object")
-        runtime = payload.setdefault("runtime", {})
-        if not isinstance(runtime, dict):
-            raise ValueError("local configuration runtime section must be an object")
-        if str(runtime.get("cleanup_journal_key") or "").strip():
+        secrets = payload.get("secrets")
+        if not isinstance(secrets, dict) or secrets.get("provider") != "local":
+            raise ValueError("runtime key initialization requires the local Secret Provider")
+        values = secrets.get("values")
+        if not isinstance(values, dict):
+            raise ValueError("local Secret Provider values must be an object")
+        if str(values.get("runtime.cleanup_journal_key") or "").strip():
             raise FileExistsError("runtime.cleanup_journal_key is already configured")
-        runtime["cleanup_journal_key"] = self._new_cleanup_journal_key()
+        values["runtime.cleanup_journal_key"] = self._new_cleanup_journal_key()
+        from harness.infrastructure.persistence.common import atomic_text
+
+        atomic_text(
+            self.path,
+            yaml.safe_dump(payload, sort_keys=False, allow_unicode=True),
+        )
+        return self.path
+
+    def migrate_inline_secrets(self) -> Path:
+        """Move legacy inline secret-bearing fields behind local secret references."""
+        if not self.path.is_file():
+            raise FileNotFoundError(f"local configuration is missing: {self.path}")
+        if _is_link_or_reparse(self.path):
+            raise ValueError("configuration must not be a link or reparse point")
+        payload = yaml.safe_load(self.path.read_bytes().decode("utf-8-sig"))
+        if not isinstance(payload, dict):
+            raise ValueError("local configuration must contain an object")
+        if "secrets" in payload:
+            raise FileExistsError("local configuration already declares a Secret Provider")
+        values: dict[str, object] = {}
+        for path, reference in _secret_locations(payload):
+            try:
+                value = _get_nested(payload, path)
+            except KeyError:
+                continue
+            values[reference] = value
+            _set_nested(payload, path, f"secret://{reference}")
+        schema_version = payload.pop("schema_version", "agentic-qa.local-config.v1")
+        payload = {
+            "schema_version": schema_version,
+            "secrets": {"provider": "local", "values": values},
+            **payload,
+        }
         from harness.infrastructure.persistence.common import atomic_text
 
         atomic_text(
@@ -180,8 +337,60 @@ class FilesystemLocalConfigLoader:
                     "Fix the reported field so the file conforms to agentic-qa.local-config.v1",
                 )
             ]
+        if not isinstance(payload, dict):
+            return None, [
+                _issue(
+                    "LOCAL_CONFIG_INVALID",
+                    str(self.path),
+                    "local configuration must contain an object",
+                    "Fix agentic-qa.local.yml",
+                )
+            ]
         try:
-            config = AgenticQaLocalConfig.model_validate(payload)
+            provider_config = _SECRET_PROVIDER_ADAPTER.validate_python(payload.get("secrets"))
+        except ValidationError as exc:
+            issues = []
+            for error in exc.errors(include_url=False):
+                field = ".".join(str(item) for item in error["loc"])
+                issues.append(
+                    _issue(
+                        "LOCAL_SECRET_PROVIDER_INVALID",
+                        f"secrets.{field}" if field else "secrets",
+                        str(error["msg"]),
+                        "Run `python -m harness config secrets migrate` or fix secrets",
+                    )
+                )
+            return None, issues
+        try:
+            provider = build_secret_provider(provider_config)
+            resolved_payload = copy.deepcopy(payload)
+            declared_locations = {path for path, _reference in _secret_locations(resolved_payload)}
+            unexpected = sorted(_referenced_locations(resolved_payload) - declared_locations)
+            if unexpected:
+                raise ValueError("secret reference is not allowed at " + ".".join(unexpected[0]))
+            for path, _default_reference in _secret_locations(resolved_payload):
+                try:
+                    configured_value = _get_nested(resolved_payload, path)
+                except KeyError:
+                    continue
+                reference = parse_secret_reference(configured_value)
+                try:
+                    secret_value = provider.resolve(reference)
+                except KeyError as exc:
+                    raise ValueError(f"Secret Provider has no value for {'.'.join(path)}") from exc
+                _set_nested(resolved_payload, path, secret_value)
+            resolved_payload["secrets"] = {"provider": provider_config.provider}
+        except (KeyError, ValueError) as exc:
+            return None, [
+                _issue(
+                    "LOCAL_SECRET_PROVIDER_INVALID",
+                    "secrets",
+                    str(exc),
+                    "Run `python -m harness config secrets migrate` or fix secret references",
+                )
+            ]
+        try:
+            config = AgenticQaLocalConfig.model_validate(resolved_payload)
         except ValidationError as exc:
             issues = []
             for error in exc.errors(include_url=False):
@@ -588,6 +797,13 @@ class FilesystemLocalConfigLoader:
                 or ApiTokenInjection(),
             )
             selected = "static_token"
+        operation_policies = dict(value.operation_policies)
+        operation_policies.update(
+            {
+                operation: ApiOperationPolicy(classification="read_only")
+                for operation in value.cleanup_exempt_operations
+            }
+        )
         return (
             ExecutionEnvironmentPolicy(
                 base_url_env=base_name,
@@ -596,6 +812,8 @@ class FilesystemLocalConfigLoader:
                 allow_ui_mutations=False,
                 max_request_timeout_seconds=value.timeout_seconds,
                 cleanup_exempt_operations=value.cleanup_exempt_operations,
+                isolation=value.isolation,
+                operation_policies=operation_policies,
                 api_auth=authentication,
             ),
             runtime,

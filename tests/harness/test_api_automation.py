@@ -58,6 +58,7 @@ def _publish_cases(repo_root: Path, workspace: str) -> Path:
     (repo_root / "agentic-qa.local.yml").write_text(
         yaml.safe_dump(local, sort_keys=False), encoding="utf-8"
     )
+    FilesystemLocalConfigLoader(repo_root).migrate_inline_secrets()
     harness = Harness(repo_root)
     workspace_root = harness.create_workspace(CreateWorkspaceCommand(workspace_id=workspace))
     loader = FilesystemLocalConfigLoader(repo_root)

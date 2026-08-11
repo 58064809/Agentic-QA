@@ -25,6 +25,7 @@ from harness.application.qa_design import parse_testcase_markdown
 from harness.domain.schemas.qa_design import CoverageMapping
 from harness.domain.schemas.qa_design import TestCaseSet as QATestCaseSet
 from harness.infrastructure.llm.gateway import CallableModelGateway
+from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 from harness.infrastructure.mcp.playwright import MCPBridge, MCPToolSnapshot
 from harness.infrastructure.workflow.engine import (
     _targeted_testcase_patch_context,
@@ -91,6 +92,7 @@ def _write_live_discovery_local_config(repo_root: Path) -> None:
         yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
     )
+    FilesystemLocalConfigLoader(repo_root).migrate_inline_secrets()
 
 
 def test_v2_start_get_review_and_promote(tmp_path: Path) -> None:

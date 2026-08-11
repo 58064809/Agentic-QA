@@ -144,6 +144,7 @@ def _write_config(repo: Path, payload: dict[str, object]) -> None:
     (repo / "agentic-qa.local.yml").write_text(
         yaml.safe_dump(payload, allow_unicode=True, sort_keys=False), encoding="utf-8"
     )
+    FilesystemLocalConfigLoader(repo).migrate_inline_secrets()
 
 
 def _check(repo: Path, source: Path, environment: str = "dev"):

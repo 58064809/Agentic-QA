@@ -46,6 +46,7 @@ def test_run_cli_maps_explicit_execution_profile_arguments() -> None:
 
 
 def test_api_cli_exposes_execute_and_deterministic_pytest_export() -> None:
+    secret_migration = _parser().parse_args(["config", "secrets", "migrate"])
     doctor = _parser().parse_args(["api", "doctor", "D:/sources/order-api", "--environment", "dev"])
     prepare = _parser().parse_args(
         [
@@ -70,6 +71,7 @@ def test_api_cli_exposes_execute_and_deterministic_pytest_export() -> None:
     run = _parser().parse_args(["api", "run", "demo", "trial-001", "--environment", "qa"])
 
     assert doctor.api_command == "doctor"
+    assert secret_migration.secret_command == "migrate"
     assert doctor.environment == "dev"
     assert prepare.api_command == "prepare"
     assert execute.api_command == "execute"
@@ -83,14 +85,21 @@ def test_api_cli_exposes_execute_and_deterministic_pytest_export() -> None:
 
 def test_config_init_is_create_only_and_doctor_fails_closed(tmp_path: Path) -> None:
     example = tmp_path / "agentic-qa.local.example.yml"
-    example.write_text("schema_version: example-only\n", encoding="utf-8")
+    example.write_text(
+        "schema_version: example-only\n"
+        "secrets:\n"
+        "  provider: local\n"
+        "  values:\n"
+        "    runtime.cleanup_journal_key: ''\n",
+        encoding="utf-8",
+    )
     arguments = ["--repo-root", str(tmp_path), "config", "init"]
 
     assert cli.main(arguments) == 0
     target = tmp_path / "agentic-qa.local.yml"
     created = yaml.safe_load(target.read_text(encoding="utf-8"))
     assert created["schema_version"] == "example-only"
-    assert created["runtime"]["cleanup_journal_key"]
+    assert created["secrets"]["values"]["runtime.cleanup_journal_key"]
     first = target.read_bytes()
 
     assert cli.main(arguments) == 2

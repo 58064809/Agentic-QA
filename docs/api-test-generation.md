@@ -155,10 +155,22 @@ JSON 路径支持根 `$`、对象字段 `.field` 和数组索引 `[index]`，例
 
 ## URL 与 cleanup 执行边界
 
+根配置以 operation 而不是 HTTP 方法猜测副作用：未声明时 GET 默认为 `read_only`，
+POST/PUT/PATCH/DELETE 默认为 `mutation_cleanup`；精确 policy 可改为 `mutation_idempotent` 或
+`mutation_manual`。后者由人工执行，预检不会进入 transport。`mutation_idempotent` 要求声明服务端
+实际支持的 Header，Harness 生成 execution/case/operation 绑定的确定性值，但不会自动重试 mutation。
+命名空间隔离同样由已审核策略精确声明 Header/query/body 注入位置，原值不写入报告。
+
 confirmed 的 `POST`、`PUT`、`PATCH`、`DELETE` 默认视为状态变更；缺少带断言 cleanup 的 Candidate 会被质量门拒绝。确实无副作用的
 operation 需要在根配置环境下以规范化 `METHOD /path-template` 写入 `cleanup_exempt_operations`；项目级登录
-不进入 API Cases，因此自动豁免。cleanup 会先写入 AES-256-GCM 加密 journal，再按 LIFO 执行。崩溃后，
-`api cleanup resume` 仅恢复从未发送的 pending cleanup，不重放 running、failed 或业务请求。
+不进入 API Cases，因此自动豁免。状态变更请求进入 transport 前，cleanup 会先以 `armed` 写入
+AES-256-GCM 加密 journal，其中保留 case、cleanup、路径模板、已知局部变量与
+`mutation_may_happen=true`。响应和提取结果返回后，可完整解析的 cleanup 从 `armed` 转为 `pending`，
+再按 LIFO 执行。
+
+进程在请求发送阶段退出时，`armed` 会保留为 `cleanup_indeterminate`，报告要求人工扫描环境；它不会进入
+自动恢复队列。`api cleanup resume` 仅恢复从未发送的 `pending` cleanup，不重放 `armed`、`running`、
+`failed` 或业务请求。契约允许客户端预生成稳定 ID 时，场景优先使用该 ID，减少响应提取前的不确定窗口。
 正常 cleanup 按 LIFO 执行，设计原则与
 [pytest safe teardowns](https://docs.pytest.org/en/stable/how-to/fixtures.html#safe-teardowns)
 一致；恢复仍由 Harness 的加密 journal 和防重放状态决定，而不是 pytest retry。

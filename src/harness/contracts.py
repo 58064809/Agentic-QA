@@ -11,9 +11,12 @@ from harness.application.agent_request import (
 )
 from harness.domain.models import (
     AgentManifest,
+    ApiIsolationPolicy,
     ApiLoginRequest,
     ApiLoginRequestEncryption,
     ApiLoginSuccessCondition,
+    ApiNamespaceInjection,
+    ApiOperationPolicy,
     ApiPytestExportResult,
     ApiScenarioCandidateSummary,
     ApiScenarioPrepareCommand,
@@ -56,6 +59,7 @@ from harness.domain.models import (
 )
 from harness.domain.schemas.api_execution_reporting import (
     ApiExecutionEvent,
+    ApiExecutionPlan,
     ApiReportSummary,
     CleanupJournalSummary,
     GenerateApiAllureReportCommand,
@@ -76,6 +80,7 @@ __all__ = [
     "AgentManifest",
     "AgenticQaLocalConfig",
     "ApiExecutionEvent",
+    "ApiExecutionPlan",
     "ApiReportSummary",
     "CleanupJournalSummary",
     "GenerateApiAllureReportCommand",
@@ -90,6 +95,9 @@ __all__ = [
     "ApiLoginRequest",
     "ApiLoginRequestEncryption",
     "ApiLoginSuccessCondition",
+    "ApiIsolationPolicy",
+    "ApiNamespaceInjection",
+    "ApiOperationPolicy",
     "ApiTokenInjection",
     "ApiPytestExportResult",
     "ApiProjectCheckCommand",

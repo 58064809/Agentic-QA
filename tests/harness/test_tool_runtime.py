@@ -199,6 +199,7 @@ def test_live_capture_facade_hides_raw_network_tools_and_enforces_origin(
     source.mkdir(parents=True)
     local_config = AgenticQaLocalConfig.model_validate(
         {
+            "secrets": {"provider": "local"},
             "model": {
                 "provider": "recorded",
                 "api_key_env": "UNIT_MODEL_KEY",

@@ -396,6 +396,7 @@ def run_offline_eval() -> dict[str, Any]:
             ),
             encoding="utf-8",
         )
+        FilesystemLocalConfigLoader(temporary_root).migrate_inline_secrets()
         mcp_calls: list[str] = []
 
         def fake_playwright(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -720,6 +721,7 @@ def run_live_eval(
             yaml.safe_dump(local_payload, allow_unicode=True, sort_keys=False),
             encoding="utf-8",
         )
+        FilesystemLocalConfigLoader(temporary_root).migrate_inline_secrets()
         goal_path = case_root / "live-goal.txt"
         goal = (
             goal_path.read_text(encoding="utf-8").strip()

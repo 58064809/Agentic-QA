@@ -1,14 +1,48 @@
 from __future__ import annotations
 
 import base64
+import re
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 
-from harness.domain.models import ApiLoginSuccessCondition, ApiTokenInjection, StrictModel
+from harness.domain.models import (
+    ApiIsolationPolicy,
+    ApiLoginSuccessCondition,
+    ApiOperationPolicy,
+    ApiTokenInjection,
+    StrictModel,
+)
 from harness.domain.security import validate_api_trusted_origin
 
 ENV_NAME_PATTERN = r"^[A-Z_][A-Z0-9_]*$"
+
+
+class LocalMappingSecretProviderConfig(StrictModel):
+    provider: Literal["local"] = "local"
+    values: dict[str, SecretStr] = Field(default_factory=dict)
+
+
+class EnvironmentSecretProviderConfig(StrictModel):
+    provider: Literal["environment"]
+    variables: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("variables")
+    @classmethod
+    def validate_environment_names(cls, value: dict[str, str]) -> dict[str, str]:
+        if any(not re.fullmatch(ENV_NAME_PATTERN, name) for name in value.values()):
+            raise ValueError("secret provider environment names must be uppercase identifiers")
+        return value
+
+
+LocalSecretProviderConfig = Annotated[
+    LocalMappingSecretProviderConfig | EnvironmentSecretProviderConfig,
+    Field(discriminator="provider"),
+]
+
+
+class SecretProviderDescriptor(StrictModel):
+    provider: Literal["local", "environment"]
 
 
 class LocalModelConfig(StrictModel):
@@ -180,7 +214,18 @@ class LocalApiEnvironment(StrictModel):
     allowed_http_methods: list[str] = Field(min_length=1)
     timeout_seconds: int = Field(default=10, ge=1, le=60)
     cleanup_exempt_operations: list[str] = Field(default_factory=list)
+    isolation: ApiIsolationPolicy = Field(default_factory=ApiIsolationPolicy)
+    operation_policies: dict[str, ApiOperationPolicy] = Field(default_factory=dict)
     auth: LocalApiAuthentication
+
+    @model_validator(mode="after")
+    def reject_duplicate_operation_policy_sources(self) -> LocalApiEnvironment:
+        overlap = sorted(set(self.cleanup_exempt_operations) & set(self.operation_policies))
+        if overlap:
+            raise ValueError(
+                "cleanup_exempt_operations and operation_policies overlap: " + ", ".join(overlap)
+            )
+        return self
 
     @field_validator("cleanup_exempt_operations")
     @classmethod
@@ -223,6 +268,7 @@ class LocalApiConfig(StrictModel):
 
 class AgenticQaLocalConfig(StrictModel):
     schema_version: Literal["agentic-qa.local-config.v1"] = "agentic-qa.local-config.v1"
+    secrets: SecretProviderDescriptor
     model: LocalModelConfig
     rag: LocalRagConfig
     postgres: LocalPostgresConfig

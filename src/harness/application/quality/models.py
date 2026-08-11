@@ -31,6 +31,7 @@ class QualityContext(FrozenModel):
     source_bundle: SourceBundle
     full_source_texts: dict[str, str] = Field(default_factory=dict, exclude=True, repr=False)
     cleanup_exempt_operations: tuple[str, ...] = ()
+    operation_policies: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class QualityIssue(FrozenModel):

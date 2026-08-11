@@ -8,6 +8,9 @@ from pathlib import Path
 import yaml
 
 from harness.domain.models import (
+    ApiAuthentication,
+    ApiIsolationPolicy,
+    ApiOperationPolicy,
     ApiPytestExportResult,
     ExecuteApiCasesCommand,
     ExecutionProfile,
@@ -38,6 +41,11 @@ class ApiExecutionPreflight:
     cases: list[ApiTestCase]
     service: str
     structural_sha256: str
+    runtime_values: dict[str, str]
+    authentication: ApiAuthentication | None
+    trusted_origins: list[str]
+    isolation: ApiIsolationPolicy
+    operation_policies: dict[str, ApiOperationPolicy]
 
 
 class FilesystemApiAutomationService:
@@ -80,6 +88,7 @@ class FilesystemApiAutomationService:
         *,
         workspace: str,
         environment: str,
+        execution_id: str,
         obligation: dict[str, object],
     ):
         project = self.runtime_project(workspace, environment)
@@ -129,6 +138,9 @@ class FilesystemApiAutomationService:
             env=project.runtime_values,
             authentication=policy.api_auth if policy is not None else None,
             trusted_origins=policy.trusted_origins if policy is not None else None,
+            isolation=project.policy.isolation,
+            operation_policies=project.policy.operation_policies,
+            execution_identity=execution_id,
         )
         return evidence.cases[0]
 
@@ -197,7 +209,11 @@ class FilesystemApiAutomationService:
             command.workspace_id, command.execution_profile
         )
         project = self.runtime_project(command.workspace_id, command.execution_profile.environment)
-        validate_api_cleanup_policy(draft.cases, project.policy.cleanup_exempt_operations)
+        validate_api_cleanup_policy(
+            draft.cases,
+            project.policy.cleanup_exempt_operations,
+            project.policy.operation_policies,
+        )
         return execute_api_cases(
             draft.cases,
             run_id=command.run_id,
@@ -206,6 +222,30 @@ class FilesystemApiAutomationService:
             env=project.runtime_values,
             authentication=policy.api_auth if policy is not None else None,
             trusted_origins=policy.trusted_origins if policy is not None else None,
+            isolation=project.policy.isolation,
+            operation_policies=project.policy.operation_policies,
+            event_callback=event_callback,
+        )
+
+    def execute_preflight(
+        self,
+        command: ExecuteApiCasesCommand,
+        preflight: ApiExecutionPreflight,
+        event_callback=None,
+    ) -> ExecutionEvidence:
+        """Execute the exact parsed cases and runtime view frozen by preflight."""
+        if command.source_cases_sha256 != preflight.source_cases_sha256:
+            raise ValueError("execution command does not match the frozen API preflight")
+        return execute_api_cases(
+            preflight.cases,
+            run_id=command.run_id,
+            source_cases_path=preflight.source_cases_path,
+            profile=command.execution_profile,
+            env=preflight.runtime_values,
+            authentication=preflight.authentication,
+            trusted_origins=preflight.trusted_origins,
+            isolation=preflight.isolation,
+            operation_policies=preflight.operation_policies,
             event_callback=event_callback,
         )
 
@@ -219,13 +259,19 @@ class FilesystemApiAutomationService:
             command.workspace_id, command.execution_profile
         )
         project = self.runtime_project(command.workspace_id, command.execution_profile.environment)
-        validate_api_cleanup_policy(draft.cases, project.policy.cleanup_exempt_operations)
+        validate_api_cleanup_policy(
+            draft.cases,
+            project.policy.cleanup_exempt_operations,
+            project.policy.operation_policies,
+        )
         validate_api_execution_preflight(
             draft.cases,
             profile=command.execution_profile,
             env=project.runtime_values,
             authentication=policy.api_auth if policy is not None else None,
             trusted_origins=policy.trusted_origins if policy is not None else None,
+            isolation=project.policy.isolation,
+            operation_policies=project.policy.operation_policies,
         )
         return ApiExecutionPreflight(
             source_cases_path=target.relative_to(root).as_posix(),
@@ -233,6 +279,11 @@ class FilesystemApiAutomationService:
             cases=list(draft.cases),
             service=project.service,
             structural_sha256=project.structural_sha256,
+            runtime_values=dict(project.runtime_values),
+            authentication=policy.api_auth if policy is not None else None,
+            trusted_origins=list(policy.trusted_origins) if policy is not None else [],
+            isolation=project.policy.isolation,
+            operation_policies=dict(project.policy.operation_policies),
         )
 
     def export_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:

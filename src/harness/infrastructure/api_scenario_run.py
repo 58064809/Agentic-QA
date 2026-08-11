@@ -10,6 +10,7 @@ from typing import Any
 
 from harness.domain.models import ExecuteApiCasesCommand, ExecutionProfile, RunApiScenarioCommand
 from harness.domain.schemas.api_execution_reporting import (
+    ApiExecutionPlan,
     ApiReportSummary,
     CleanupJournalCounts,
     CleanupJournalSummary,
@@ -34,6 +35,7 @@ from harness.domain.schemas.execution_evidence import (
 )
 from harness.infrastructure.api_automation import FilesystemApiAutomationService
 from harness.infrastructure.api_cleanup_journal import EncryptedCleanupJournal
+from harness.infrastructure.api_execution_plan import build_api_execution_plan
 from harness.infrastructure.api_execution_reporting import (
     ApiExecutionEventWriter,
     build_report_summary,
@@ -41,7 +43,12 @@ from harness.infrastructure.api_execution_reporting import (
     read_execution_events,
     write_allure_results,
 )
-from harness.infrastructure.persistence.common import atomic_json, atomic_text, exclusive_file_lock
+from harness.infrastructure.persistence.common import (
+    atomic_json,
+    atomic_text,
+    create_only_json,
+    exclusive_file_lock,
+)
 from harness.infrastructure.persistence.filesystem import FilesystemStore
 from harness.infrastructure.tools.api_execution import (
     ApiAuthenticationError,
@@ -78,6 +85,7 @@ class FilesystemApiScenarioRunService:
             report_summary_path = execution_root / "report-summary.json"
             cleanup_summary_path = execution_root / "cleanup-summary.json"
             cleanup_journal_path = execution_root / ".cleanup-journal.enc"
+            execution_plan_path = execution_root / "execution-plan.json"
             allure_results_path = execution_root / "allure-results"
             allure_report_path = execution_root / "allure-report"
             event_writer = ApiExecutionEventWriter(event_log_path, command.execution_id)
@@ -90,6 +98,8 @@ class FilesystemApiScenarioRunService:
                 "started_at": datetime.now(tz=UTC).isoformat(),
                 "source_cases_path": "published/api_test_draft/current.yml",
                 "source_cases_sha256": None,
+                "execution_plan_path": None,
+                "execution_plan_sha256": None,
                 "evidence_path": None,
                 "evidence_sha256": None,
                 "summary_path": None,
@@ -126,14 +136,36 @@ class FilesystemApiScenarioRunService:
                 execute_command = execute_command.model_copy(
                     update={"source_cases_sha256": preflight.source_cases_sha256}
                 )
+                execution_plan = build_api_execution_plan(
+                    workspace_id=command.workspace_id,
+                    execution_id=command.execution_id,
+                    service=preflight.service,
+                    environment=command.environment,
+                    source_cases_path=preflight.source_cases_path,
+                    source_cases_sha256=preflight.source_cases_sha256,
+                    structural_sha256=preflight.structural_sha256,
+                    profile=profile,
+                    authentication=preflight.authentication,
+                    isolation=preflight.isolation,
+                    operation_policies=preflight.operation_policies,
+                    cases=preflight.cases,
+                )
+                create_only_json(execution_plan_path, execution_plan.model_dump(mode="json"))
                 manifest["source_cases_path"] = preflight.source_cases_path
                 manifest["source_cases_sha256"] = preflight.source_cases_sha256
+                manifest["execution_plan_path"] = execution_plan_path.relative_to(
+                    workspace_root
+                ).as_posix()
+                manifest["execution_plan_sha256"] = _sha256(execution_plan_path)
                 atomic_json(manifest_path, manifest)
                 event_writer.emit(
                     "preflight.finished",
                     phase="preflight",
                     outcome="passed",
-                    details={"source_cases_sha256": preflight.source_cases_sha256},
+                    details={
+                        "source_cases_sha256": preflight.source_cases_sha256,
+                        "execution_plan_sha256": execution_plan.plan_sha256,
+                    },
                 )
                 has_cleanup = any(parse_api_cleanup_steps(case.cleanup) for case in preflight.cases)
                 cleanup_journal = (
@@ -145,6 +177,7 @@ class FilesystemApiScenarioRunService:
                         environment=command.environment,
                         source_cases_sha256=preflight.source_cases_sha256,
                         structural_sha256=preflight.structural_sha256,
+                        execution_plan_sha256=execution_plan.plan_sha256,
                     )
                     if has_cleanup
                     else None
@@ -174,7 +207,10 @@ class FilesystemApiScenarioRunService:
                 )
                 with api_execution_events(_event_callback(event_writer)), journal_context:
                     try:
-                        evidence = self._automation.execute(execute_command)
+                        evidence = self._automation.execute_preflight(
+                            execute_command,
+                            preflight,
+                        )
                     except ApiAuthenticationError:
                         evidence = _authentication_failure_evidence(
                             command,
@@ -183,17 +219,18 @@ class FilesystemApiScenarioRunService:
                             profile,
                         )
                 current_events = read_execution_events(event_log_path)
-                report_summary = build_report_summary(
-                    evidence,
-                    preflight.cases,
-                    current_events,
-                )
-                result_status = report_summary.result
                 cleanup_summary = (
                     cleanup_journal.summary()
                     if cleanup_journal is not None
                     else _cleanup_summary(evidence)
                 )
+                report_summary = build_report_summary(
+                    evidence,
+                    preflight.cases,
+                    current_events,
+                    cleanup_summary,
+                )
+                result_status = report_summary.result
                 atomic_json(evidence_path, evidence.model_dump(mode="json"))
                 atomic_json(report_summary_path, report_summary.model_dump(mode="json"))
                 atomic_json(cleanup_summary_path, cleanup_summary.model_dump(mode="json"))
@@ -224,10 +261,12 @@ class FilesystemApiScenarioRunService:
                     details={"status": report_result.status},
                 )
             except BaseException as exc:
+                cleanup_state: CleanupJournalSummary | None = None
                 if cleanup_journal is not None:
+                    cleanup_state = cleanup_journal.summary()
                     atomic_json(
                         cleanup_summary_path,
-                        cleanup_journal.summary().model_dump(mode="json"),
+                        cleanup_state.model_dump(mode="json"),
                     )
                 event_writer.emit(
                     "execution.indeterminate",
@@ -237,11 +276,29 @@ class FilesystemApiScenarioRunService:
                 )
                 manifest.update(
                     {
-                        "status": "indeterminate",
+                        "status": (
+                            "cleanup_indeterminate"
+                            if cleanup_state is not None and cleanup_state.status == "indeterminate"
+                            else "indeterminate"
+                        ),
                         "observed_at": datetime.now(tz=UTC).isoformat(),
                         "error_kind": type(exc).__name__,
+                        "event_log_sha256": _sha256(event_log_path),
                     }
                 )
+                if cleanup_state is not None:
+                    manifest.update(
+                        {
+                            "cleanup_summary_path": cleanup_summary_path.relative_to(
+                                workspace_root
+                            ).as_posix(),
+                            "cleanup_summary_sha256": _sha256(cleanup_summary_path),
+                            "cleanup_journal_path": cleanup_journal_path.relative_to(
+                                workspace_root
+                            ).as_posix(),
+                            "cleanup_journal_sha256": _sha256(cleanup_journal_path),
+                        }
+                    )
                 atomic_json(manifest_path, manifest)
                 raise
 
@@ -351,6 +408,7 @@ class FilesystemApiScenarioRunService:
                 evidence,
                 cases,
                 read_execution_events(execution_root / "execution-events.jsonl"),
+                _stored_cleanup_summary(execution_root, evidence),
             )
             atomic_json(
                 execution_root / "report-summary.json",
@@ -417,6 +475,18 @@ class FilesystemApiScenarioRunService:
             key=self._automation.cleanup_journal_key(),
         )
         payload = journal.payload
+        execution_plan_path = execution_root / "execution-plan.json"
+        if not execution_plan_path.is_file():
+            raise PermissionError(
+                "immutable execution plan is missing; cleanup recovery is blocked"
+            )
+        execution_plan = ApiExecutionPlan.model_validate_json(
+            execution_plan_path.read_text(encoding="utf-8")
+        )
+        if payload.get("execution_plan_sha256") != execution_plan.plan_sha256:
+            raise PermissionError("execution plan changed; cleanup recovery is blocked")
+        if manifest.get("execution_plan_sha256") != _sha256(execution_plan_path):
+            raise PermissionError("execution plan hash changed; cleanup recovery is blocked")
         if payload.get("source_cases_sha256") != self._automation.published_sha256(
             command.workspace_id
         ):
@@ -435,7 +505,7 @@ class FilesystemApiScenarioRunService:
             details={"recovery_id": recovery_id},
         )
         initial = journal.summary()
-        if initial.counts.running:
+        if initial.counts.armed or initial.counts.running:
             status = "indeterminate"
         elif initial.counts.failed:
             status = "failed"
@@ -450,6 +520,7 @@ class FilesystemApiScenarioRunService:
                         outcome = self._automation.execute_cleanup_obligation(
                             workspace=command.workspace_id,
                             environment=command.environment,
+                            execution_id=command.execution_id,
                             obligation=obligation,
                         )
                         journal.after(
@@ -597,6 +668,16 @@ def _cleanup_summary(evidence: ExecutionEvidence) -> CleanupJournalSummary:
         ),
         obligation_ids=[item.case_id for item in cleanup],
     )
+
+
+def _stored_cleanup_summary(
+    execution_root: Path,
+    evidence: ExecutionEvidence,
+) -> CleanupJournalSummary:
+    path = execution_root / "cleanup-summary.json"
+    if path.is_file():
+        return CleanupJournalSummary.model_validate_json(path.read_text(encoding="utf-8"))
+    return _cleanup_summary(evidence)
 
 
 def _authentication_failure_evidence(

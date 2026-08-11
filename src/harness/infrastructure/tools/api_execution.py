@@ -13,10 +13,13 @@ from typing import Any
 
 from harness.domain.models import (
     ApiAuthentication,
+    ApiIsolationPolicy,
+    ApiOperationPolicy,
     ApiTokenInjection,
     ExecutionProfile,
     LoginApiAuthentication,
     StaticTokenApiAuthentication,
+    resolve_api_operation_policy,
 )
 from harness.domain.schemas.api_test_cases import (
     API_CASES_SCHEMA_VERSION,
@@ -47,6 +50,12 @@ from harness.domain.security import (
     validate_api_response_url,
 )
 from harness.infrastructure.api_login_crypto import encrypt_login_request_body
+from harness.infrastructure.api_runtime_policy import (
+    apply_runtime_request_policies,
+    derive_execution_namespace,
+    derive_idempotency_key,
+    validate_request_policy_compatibility,
+)
 
 ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)}")
 FULL_VARIABLE_PLACEHOLDER_RE = re.compile(r"^\$\{\{([A-Za-z_][A-Za-z0-9_]*)}}$")
@@ -515,6 +524,11 @@ def _execute_request(
     request_func: Callable[..., Any],
     authentication_header: tuple[str, str] | None,
     authentication_secrets: list[str],
+    execution_id: str = "",
+    isolation: ApiIsolationPolicy | None = None,
+    operation_policy: ApiOperationPolicy | None = None,
+    namespace_value: str | None = None,
+    cleanup_steps: list[ApiCleanupStep] | None = None,
     definition_error: str | None = None,
     event_callback: ApiExecutionEventCallback | None = None,
 ) -> _RequestOutcome:
@@ -578,11 +592,41 @@ def _execute_request(
             request_sent=False,
         )
     request_sent = False
+    isolation = isolation or ApiIsolationPolicy()
+    operation_policy = operation_policy or resolve_api_operation_policy({}, method, path)
+    if operation_policy.classification == "mutation_manual":
+        return _RequestOutcome(
+            evidence=CaseExecutionEvidence(
+                case_id=case_id,
+                title=title,
+                method=method,
+                path=path,
+                status="blocked",
+                started_at=started_at,
+                completed_at=datetime.now(tz=UTC),
+                duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
+                error="API operation is manual-only in the reviewed execution policy",
+            ),
+            extracted={},
+            request_sent=False,
+        )
+    idempotency_key = (
+        derive_idempotency_key(
+            execution_id,
+            case_id,
+            method,
+            path,
+            prefix=operation_policy.idempotency_key_prefix,
+        )
+        if operation_policy.classification == "mutation_idempotent"
+        else None
+    )
     redactions = [
         base_url,
         *env.values(),
         *authentication_secrets,
         *_runtime_redactions(runtime_redaction_values or {}),
+        *(value for value in (namespace_value, idempotency_key) if value),
     ]
     try:
         _emit_event(
@@ -603,6 +647,13 @@ def _execute_request(
                 "API request is missing environment values: " + ", ".join(missing_environment)
             )
         request = _resolve(request, env)
+        request = apply_runtime_request_policies(
+            request,
+            isolation=isolation,
+            namespace_value=namespace_value,
+            operation_policy=operation_policy,
+            idempotency_key=idempotency_key,
+        )
         resolved_path = str(request.get("path") or "")
         try:
             validate_api_request_transport(
@@ -617,6 +668,42 @@ def _execute_request(
             authentication_header,
         )
         request_url = build_api_request_url(base_url, resolved_path)
+        if namespace_value is not None:
+            _emit_event(
+                event_callback,
+                "isolation.applied",
+                case_id=case_id,
+                mode=isolation.mode,
+                location=isolation.namespace.location if isolation.namespace else None,
+                name=isolation.namespace.name if isolation.namespace else None,
+                value_sha256=hashlib.sha256(namespace_value.encode()).hexdigest(),
+            )
+        if idempotency_key is not None:
+            _emit_event(
+                event_callback,
+                "idempotency.configured",
+                case_id=case_id,
+                header=operation_policy.idempotency_header,
+                key_sha256=hashlib.sha256(idempotency_key.encode()).hexdigest(),
+            )
+        journal = _CURRENT_CLEANUP_JOURNAL.get()
+        if journal is not None:
+            for cleanup in cleanup_steps or []:
+                journal.arm(
+                    case_id=case_id,
+                    title=title,
+                    cleanup=cleanup,
+                    runtime_variables=dict(runtime_variables),
+                    request_operation=f"{method} {path}",
+                    request_idempotency_key=idempotency_key,
+                )
+                _emit_event(
+                    event_callback,
+                    "cleanup.armed",
+                    case_id=case_id,
+                    cleanup_id=cleanup.id,
+                    request_operation=f"{method} {path}",
+                )
         _emit_event(
             event_callback,
             "request.sent",
@@ -774,8 +861,19 @@ def execute_api_cases(
     request_func: Callable[..., Any] | None = None,
     authentication: ApiAuthentication | None = None,
     trusted_origins: list[str] | None = None,
+    isolation: ApiIsolationPolicy | None = None,
+    operation_policies: dict[str, ApiOperationPolicy] | None = None,
+    execution_identity: str | None = None,
     event_callback: ApiExecutionEventCallback | None = None,
 ) -> ExecutionEvidence:
+    isolation = isolation or ApiIsolationPolicy()
+    operation_policies = operation_policies or {}
+    execution_identity = execution_identity or run_id
+    namespace_value = (
+        derive_execution_namespace(execution_identity, prefix=isolation.namespace.prefix)
+        if isolation.mode == "namespace" and isolation.namespace is not None
+        else None
+    )
     started_at = datetime.now(tz=UTC)
     runtime_env, base_url, definition_errors = _prepare_api_execution(
         cases,
@@ -843,6 +941,12 @@ def execute_api_cases(
                 request_func=request_func,
                 authentication_header=authentication_header,
                 authentication_secrets=authentication_secrets,
+                execution_id=execution_identity,
+                isolation=isolation,
+                operation_policy=resolve_api_operation_policy(
+                    operation_policies, case.request.method, case.request.path
+                ),
+                namespace_value=namespace_value,
                 definition_error=definition_error,
                 event_callback=event_callback,
             )
@@ -880,6 +984,13 @@ def execute_api_cases(
                 request_func=request_func,
                 authentication_header=authentication_header,
                 authentication_secrets=authentication_secrets,
+                execution_id=execution_identity,
+                isolation=isolation,
+                operation_policy=resolve_api_operation_policy(
+                    operation_policies, case.request.method, case.request.path
+                ),
+                namespace_value=namespace_value,
+                cleanup_steps=cleanup_steps,
                 event_callback=event_callback,
             )
             results.append(outcome.evidence)
@@ -897,20 +1008,31 @@ def execute_api_cases(
                 cleanup_scope = {**runtime_variables, **outcome.extracted}
                 cleanup_redactions = cleanup_scope
                 for step in cleanup_steps:
+                    journal = _CURRENT_CLEANUP_JOURNAL.get()
+                    ready = _cleanup_request_is_resolvable(step, cleanup_scope)
+                    if journal is not None:
+                        obligation_id = f"{case_id}::cleanup::{step.id}"
+                        journal.enrich(
+                            obligation_id,
+                            runtime_variables=cleanup_scope,
+                            ready=ready,
+                        )
+                    if not ready and journal is not None:
+                        _emit_event(
+                            event_callback,
+                            "cleanup.indeterminate",
+                            case_id=case_id,
+                            cleanup_id=step.id,
+                            status="blocked",
+                            missing_runtime_variables=True,
+                        )
+                        continue
                     _emit_event(
                         event_callback,
                         "cleanup.registered",
                         case_id=case_id,
                         cleanup_id=step.id,
                     )
-                    journal = _CURRENT_CLEANUP_JOURNAL.get()
-                    if journal is not None:
-                        journal.register(
-                            case_id=case_id,
-                            title=title,
-                            cleanup=step,
-                            runtime_variables=cleanup_scope,
-                        )
                     cleanup_queue.append(
                         (
                             case,
@@ -948,6 +1070,12 @@ def execute_api_cases(
             request_func=request_func,
             authentication_header=authentication_header,
             authentication_secrets=authentication_secrets,
+            execution_id=execution_identity,
+            isolation=isolation,
+            operation_policy=resolve_api_operation_policy(
+                operation_policies, step.request.method, step.request.path
+            ),
+            namespace_value=namespace_value,
             event_callback=event_callback,
         )
         results.append(outcome.evidence)
@@ -996,6 +1124,20 @@ def execute_api_cases(
     )
 
 
+def _cleanup_request_is_resolvable(
+    cleanup: ApiCleanupStep,
+    runtime_variables: Mapping[str, Any],
+) -> bool:
+    try:
+        _resolve_runtime_variables(
+            cleanup.request.model_dump(mode="python"),
+            runtime_variables,
+        )
+    except _MissingRuntimeVariable:
+        return False
+    return True
+
+
 def validate_api_execution_preflight(
     cases: list[ApiTestCase],
     *,
@@ -1003,14 +1145,40 @@ def validate_api_execution_preflight(
     env: Mapping[str, str] | None = None,
     authentication: ApiAuthentication | None = None,
     trusted_origins: list[str] | None = None,
+    isolation: ApiIsolationPolicy | None = None,
+    operation_policies: dict[str, ApiOperationPolicy] | None = None,
 ) -> None:
-    _prepare_api_execution(
+    _runtime_env, _base_url, definition_errors = _prepare_api_execution(
         cases,
         profile=profile,
         env=env,
         authentication=authentication,
         trusted_origins=trusted_origins,
     )
+    isolation = isolation or ApiIsolationPolicy()
+    operation_policies = operation_policies or {}
+    for index, case in enumerate(cases):
+        if definition_errors[index] is not None or case.contract_status != "confirmed":
+            continue
+        policy = resolve_api_operation_policy(
+            operation_policies, case.request.method, case.request.path
+        )
+        operation = f"{case.request.method} {case.request.path}"
+        if policy.classification == "mutation_manual":
+            raise PermissionError(f"manual-only API operation cannot execute: {operation}")
+        validate_request_policy_compatibility(
+            case.request.model_dump(mode="python"),
+            isolation=isolation,
+            operation_policy=policy,
+        )
+        for step in parse_api_cleanup_steps(case.cleanup):
+            validate_request_policy_compatibility(
+                step.request.model_dump(mode="python"),
+                isolation=isolation,
+                operation_policy=resolve_api_operation_policy(
+                    operation_policies, step.request.method, step.request.path
+                ),
+            )
 
 
 def _prepare_api_execution(

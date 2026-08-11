@@ -186,7 +186,11 @@ class GenericArtifactStrategy:
                 )
             )
         try:
-            validate_api_cleanup_policy(draft.cases, context.cleanup_exempt_operations)
+            validate_api_cleanup_policy(
+                draft.cases,
+                context.cleanup_exempt_operations,
+                context.operation_policies,
+            )
         except ValueError as exc:
             issues.append(
                 self._issue(

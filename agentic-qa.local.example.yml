@@ -1,5 +1,17 @@
 schema_version: agentic-qa.local-config.v1
 
+# Secret-bearing values have one provider boundary. `config init` keeps the
+# local provider for a single-machine project; CI can switch to `environment`.
+secrets:
+  provider: local
+  values:
+    postgres.password: ""
+    runtime.cleanup_journal_key: ""
+    api.member-service.dev.auth.login.phone: ""
+    api.member-service.dev.auth.login.sms_code: "000000"
+    api.member-service.dev.auth.login.encryption.key: ""
+    api.member-service.dev.auth.fallback_token: ""
+
 # The actual model key is the only model value kept in an environment variable.
 model:
   provider: deepseek
@@ -24,7 +36,7 @@ postgres:
   port: 5432
   database: postgres
   user: postgres
-  password: ""
+  password: secret://postgres.password
   connect_timeout_seconds: 5
   statement_timeout_ms: 10000
   max_rows: 200
@@ -40,7 +52,7 @@ workspace_defaults:
 # `config init` fills this automatically. Existing projects use
 # `config runtime-key init`; do not copy this key into reports or workspaces.
 runtime:
-  cleanup_journal_key: ""
+  cleanup_journal_key: secret://runtime.cleanup_journal_key
 
 api:
   services:
@@ -53,17 +65,24 @@ api:
             - https://gateway-app-dev.nexuscube.cn
           allowed_http_methods: [GET, POST]
           cleanup_exempt_operations: []
+          # shared is the safe default. namespace injects one deterministic
+          # per-execution value through the reviewed header/query/body field.
+          isolation:
+            mode: shared
+          # Exact operation overrides. mutation_idempotent is accepted only
+          # when the server contract/team confirms the named header.
+          operation_policies: {}
           timeout_seconds: 30
           auth:
             login:
               kind: sms
               request_path: /member/app/login/phoneLogin
               tel_code: "+86"
-              phone: ""
-              sms_code: "000000"
+              phone: secret://api.member-service.dev.auth.login.phone
+              sms_code: secret://api.member-service.dev.auth.login.sms_code
               encryption:
                 algorithm: aes-128-cbc-pkcs7-base64-iv-prefix
-                key: ""
+                key: secret://api.member-service.dev.auth.login.encryption.key
                 fields: [phone, smsCode]
               success_condition:
                 json_path: $.code
@@ -72,4 +91,4 @@ api:
               injection:
                 name: accesstoken
                 prefix: ""
-            fallback_token: ""
+            fallback_token: secret://api.member-service.dev.auth.fallback_token

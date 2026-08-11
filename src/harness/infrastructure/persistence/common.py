@@ -71,6 +71,25 @@ def atomic_json(path: Path, payload: Any) -> None:
     atomic_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
 
+def create_only_text(path: Path, content: str) -> None:
+    """Durably create one immutable artifact without replacing an existing file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            descriptor = -1
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+    finally:
+        if descriptor != -1:
+            os.close(descriptor)
+
+
+def create_only_json(path: Path, payload: Any) -> None:
+    create_only_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+
+
 def atomic_bytes(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)

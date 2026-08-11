@@ -10,6 +10,7 @@
 | `config init` | 无 | 从 example create-only 创建本地配置；不覆盖 |
 | `config doctor` | 无 | 检查完整 Schema、路径、模型/RAG Key、数据库、连接器与全部 API 环境 |
 | `config runtime-key init` | 无 | 仅在缺失时生成 cleanup journal 加密 Key，不覆盖现有 Key |
+| `config secrets migrate` | 无 | 将旧版内联敏感值一次性迁移到 local Secret Provider；已有 provider 时拒绝覆盖 |
 
 ## API 垂直链路
 

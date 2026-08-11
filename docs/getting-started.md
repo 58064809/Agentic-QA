@@ -26,6 +26,10 @@ $env:RAG_API_KEY = "<仅远程 RAG 需要>"
 python -m harness config doctor
 ```
 
+从旧版配置升级时先执行一次 `python -m harness config secrets migrate`。敏感值会集中到文件顶部
+`secrets.values`，业务配置只保留 `secret://` 引用；CI 可改用 environment provider。模型和远程 RAG
+的实际 Key 仍由 `api_key_env` 指向环境变量。
+
 任何必要项缺失都会准确报告 `agentic-qa.local.yml` 的字段路径，并在产生 workspace、run 或模型调用前
 终止。
 
@@ -98,7 +102,9 @@ workspace 根目录的 `allure-history.jsonl` 由 Allure 3 维护，用于后续
 python -m harness api report allure <workspace> trial-001
 ```
 
-中途崩溃保存 `indeterminate`，业务请求不自动重放。加密 journal 中从未发送的 cleanup 需要显式恢复：
+中途崩溃保存 `indeterminate`；如果 mutation 已在发送边界，则保存 `cleanup_indeterminate` 和加密的
+`armed` obligation，要求人工核对环境。业务请求和 `armed` cleanup 均不自动重放。只有已确认从未发送的
+`pending` cleanup 可以显式恢复：
 
 ```powershell
 python -m harness api cleanup resume <workspace> trial-001 --environment dev

@@ -46,6 +46,9 @@ def _parser() -> argparse.ArgumentParser:
     runtime_key = config_commands.add_parser("runtime-key")
     runtime_key_commands = runtime_key.add_subparsers(dest="runtime_key_command", required=True)
     runtime_key_commands.add_parser("init")
+    secrets = config_commands.add_parser("secrets")
+    secret_commands = secrets.add_subparsers(dest="secret_command", required=True)
+    secret_commands.add_parser("migrate")
 
     workspace = commands.add_parser("workspace")
     workspace_commands = workspace.add_subparsers(dest="workspace_command", required=True)
@@ -260,6 +263,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             if args.config_command == "runtime-key":
                 print(loader.init_runtime_key())
+                return 0
+            if args.config_command == "secrets":
+                print(loader.migrate_inline_secrets())
                 return 0
             result = loader.check()
             _print(result)

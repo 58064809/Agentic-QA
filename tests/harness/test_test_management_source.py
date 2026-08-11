@@ -80,6 +80,7 @@ def _runtime_config(provider: str) -> AgenticQaLocalConfig:
         }
     return AgenticQaLocalConfig.model_validate(
         {
+            "secrets": {"provider": "local"},
             "model": {
                 "provider": "recorded",
                 "api_key_env": "UNIT_MODEL_KEY",

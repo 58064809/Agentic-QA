@@ -12,6 +12,7 @@ from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 def _unit_test_local_config() -> AgenticQaLocalConfig:
     return AgenticQaLocalConfig.model_validate(
         {
+            "secrets": {"provider": "local"},
             "model": {
                 "provider": "recorded",
                 "api_key_env": "DEEPSEEK_API_KEY",

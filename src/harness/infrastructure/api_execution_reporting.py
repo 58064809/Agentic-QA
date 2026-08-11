@@ -15,6 +15,7 @@ from harness.domain.schemas.api_execution_reporting import (
     ApiReportCase,
     ApiReportCounts,
     ApiReportSummary,
+    CleanupJournalSummary,
     GenerateApiAllureReportResult,
 )
 from harness.domain.schemas.api_test_cases import ApiTestCase
@@ -135,6 +136,7 @@ def build_report_summary(
     evidence: ExecutionEvidence,
     cases: list[ApiTestCase],
     events: list[ApiExecutionEvent] | None = None,
+    cleanup_summary: CleanupJournalSummary | None = None,
 ) -> ApiReportSummary:
     definitions = {case.id: case for case in cases}
     report_cases: list[ApiReportCase] = []
@@ -169,13 +171,22 @@ def build_report_summary(
                 evidence_status=item.status,
             )
         )
-    if cleanup_failures:
+    cleanup_incomplete = cleanup_summary is not None and cleanup_summary.status not in {
+        "complete",
+        "not_required",
+    }
+    if cleanup_failures or cleanup_incomplete:
+        reason_code = (
+            "CLEANUP_INDETERMINATE"
+            if cleanup_summary is not None and cleanup_summary.status == "indeterminate"
+            else "CLEANUP_INCOMPLETE"
+        )
         report_cases.append(
             ApiReportCase(
                 case_id="__environment_cleanup_integrity__",
                 title="Environment cleanup integrity",
                 status="broken",
-                reason_code="CLEANUP_INCOMPLETE",
+                reason_code=reason_code,
             )
         )
     if authentication_failed:
@@ -236,6 +247,8 @@ def _event_case_id(event: ApiExecutionEvent) -> str | None:
 def _allure_event_step(event: ApiExecutionEvent) -> dict[str, Any] | None:
     names = {
         "request.preparing": "Prepare request",
+        "isolation.applied": "Apply execution namespace",
+        "idempotency.configured": "Configure idempotency",
         "request.sent": "Send request",
         "response.received": "Receive response",
         "assertion.finished": "Evaluate assertion",

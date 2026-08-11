@@ -16,10 +16,16 @@ from harness import (
     LoginApiAuthentication,
     StaticTokenApiAuthentication,
 )
-from harness.domain.models import ExecutionEnvironmentPolicy
+from harness.domain.models import (
+    ApiIsolationPolicy,
+    ApiNamespaceInjection,
+    ApiOperationPolicy,
+    ExecutionEnvironmentPolicy,
+)
 from harness.domain.schemas.api_test_cases import (
     ApiTestCase,
     api_case_runtime_definition_errors,
+    validate_api_cleanup_policy,
 )
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.infrastructure.tools import api_execution as execution_module
@@ -244,6 +250,99 @@ def test_execution_records_pass_failure_and_policy_block() -> None:
     assert [item.status for item in evidence.cases] == ["passed", "failed", "blocked"]
     assert len(calls) == 2
     assert "secret.example.test" not in evidence.model_dump_json()
+
+
+def test_namespace_and_declared_idempotency_are_injected_without_raw_log_values() -> None:
+    calls: list[dict[str, object]] = []
+    events: list[tuple[str, dict[str, object]]] = []
+
+    def request(_method, url, **kwargs):
+        calls.append(kwargs)
+        return FakeResponse(200, {"code": 0}, url=url)
+
+    policy = ApiOperationPolicy(
+        classification="mutation_idempotent",
+        idempotency_header="Idempotency-Key",
+    )
+    isolation = ApiIsolationPolicy(
+        mode="namespace",
+        namespace=ApiNamespaceInjection(location="header", name="X-Test-Namespace"),
+    )
+    evidence = execute_api_cases(
+        [_case("API-IDEMPOTENT", "POST")],
+        run_id="execution-stable",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="staging",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["POST"],
+        ),
+        env={"TEST_BASE_URL": "https://api.example.test"},
+        request_func=request,
+        isolation=isolation,
+        operation_policies={"POST /api/api-idempotent": policy},
+        event_callback=lambda event_type, payload: events.append((event_type, payload)),
+    )
+
+    assert evidence.cases[0].status == "passed"
+    headers = calls[0]["headers"]
+    assert isinstance(headers, dict)
+    assert str(headers["X-Test-Namespace"]).startswith("aqa-")
+    assert str(headers["Idempotency-Key"]).startswith("aqa-")
+    event_payload = json.dumps(events, ensure_ascii=False)
+    assert str(headers["X-Test-Namespace"]) not in event_payload
+    assert str(headers["Idempotency-Key"]) not in event_payload
+    assert {event_type for event_type, _payload in events} >= {
+        "isolation.applied",
+        "idempotency.configured",
+        "request.sent",
+    }
+
+
+def test_manual_only_operation_is_blocked_without_transport() -> None:
+    calls: list[str] = []
+    evidence = execute_api_cases(
+        [_case("API-MANUAL", "POST")],
+        run_id="execution-manual",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="staging",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["POST"],
+        ),
+        env={"TEST_BASE_URL": "https://api.example.test"},
+        request_func=lambda _method, url, **_kwargs: calls.append(url),
+        operation_policies={
+            "POST /api/api-manual": ApiOperationPolicy(classification="mutation_manual")
+        },
+    )
+
+    assert evidence.cases[0].status == "blocked"
+    assert calls == []
+
+
+def test_operation_policy_controls_cleanup_for_nonstandard_method_semantics() -> None:
+    post = _case("API-READ-POST", "POST")
+    validate_api_cleanup_policy(
+        [post],
+        (),
+        {"POST /api/api-read-post": ApiOperationPolicy(classification="read_only")},
+    )
+
+    get = _case("API-MUTATING-GET", "GET")
+    with pytest.raises(ValueError, match="requires cleanup"):
+        validate_api_cleanup_policy(
+            [get],
+            (),
+            {"GET /api/api-mutating-get": ApiOperationPolicy(classification="mutation_cleanup")},
+        )
+
+    with pytest.raises(ValueError, match="manual-only"):
+        validate_api_cleanup_policy(
+            [post],
+            (),
+            {"POST /api/api-read-post": ApiOperationPolicy(classification="mutation_manual")},
+        )
 
 
 @pytest.mark.parametrize(

@@ -23,6 +23,7 @@ from harness.application.agent_request import (
 )
 from harness.bootstrap import build_application
 from harness.domain.models import ExecutionProfile, RunSnapshot, StartRunCommand
+from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 from harness.infrastructure.persistence.agent_workspace_provisioner import (
     ManagedAgentWorkspaceFilesystemProvisioner,
 )
@@ -181,6 +182,7 @@ def test_mcp_stdio_server_lists_restricted_tools(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
+    FilesystemLocalConfigLoader(repo).migrate_inline_secrets()
 
     async def scenario() -> set[str]:
         parameters = StdioServerParameters(

@@ -419,18 +419,34 @@ def validate_api_case_runtime_definitions(cases: list[ApiTestCase]) -> None:
 def validate_api_cleanup_policy(
     cases: list[ApiTestCase],
     cleanup_exempt_operations: list[str] | tuple[str, ...],
+    operation_policies: dict[str, Any] | None = None,
 ) -> None:
     exemptions = set(cleanup_exempt_operations)
+    policies = operation_policies or {}
     for case in cases:
-        if case.contract_status != "confirmed" or case.request.method not in {
-            "POST",
-            "PUT",
-            "PATCH",
-            "DELETE",
-        }:
+        if case.contract_status != "confirmed":
             continue
         operation = f"{case.request.method} {case.request.path}"
-        if operation not in exemptions and not parse_api_cleanup_steps(case.cleanup):
+        configured = policies.get(operation)
+        classification = (
+            configured.get("classification")
+            if isinstance(configured, dict)
+            else getattr(configured, "classification", None)
+        )
+        if classification is None:
+            classification = (
+                "mutation_cleanup"
+                if case.request.method in {"POST", "PUT", "PATCH", "DELETE"}
+                else "read_only"
+            )
+        if operation in exemptions:
+            classification = "read_only"
+        if classification == "mutation_manual":
+            raise ValueError(
+                f"{case.id} operation is manual-only and cannot be published as executable: "
+                f"{operation}"
+            )
+        if classification != "read_only" and not parse_api_cleanup_steps(case.cleanup):
             raise ValueError(
                 f"{case.id} mutating operation requires cleanup or an exact policy exemption: "
                 f"{operation}"

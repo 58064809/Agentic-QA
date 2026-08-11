@@ -1,5 +1,6 @@
 from harness.domain.models import ExecutionProfile
 from harness.domain.schemas.api_discovery import ApiDiscoveryCatalog
+from harness.domain.schemas.api_execution_reporting import ApiExecutionPlan
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
@@ -26,6 +27,7 @@ from harness.domain.schemas.qa_design import (
 
 __all__ = [
     "ApiDiscoveryCatalog",
+    "ApiExecutionPlan",
     "RunApiScenarioResult",
     "ApiTestCasesDraft",
     "BoundaryRequirement",

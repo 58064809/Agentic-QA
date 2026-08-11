@@ -29,6 +29,7 @@ workspaces/<workspace_id>/
 ├── allure-history.jsonl
 └── executions/<execution-id>/
     ├── manifest.json
+    ├── execution-plan.json         # 请求前 create-only 的脱敏执行快照
     ├── evidence.json
     ├── execution-events.jsonl
     ├── report-summary.json
@@ -53,7 +54,8 @@ workspaces/<workspace_id>/
 | published current | 当前版本指针内容 | 原子替换 | 使用者读取 |
 | API execution manifest/Evidence | 防重放状态与审计事实 | execution ID create-only | 试跑结论与产物索引 |
 | API execution events | 脱敏、追加式 SHA-256 哈希链 | append-only | 请求边界与崩溃定位 |
-| cleanup journal | AES-256-GCM 加密的恢复状态 | 原子替换 | 仅恢复从未发送的 cleanup |
+| execution plan | published 与执行策略的脱敏冻结快照 | create-only | 请求前冻结并由 manifest/cleanup resume 复验 Hash |
+| cleanup journal | AES-256-GCM 加密的 armed/pending/running 状态 | 原子替换 | armed 供人工核对；仅恢复从未发送的 pending cleanup |
 | Allure results/history/report | Evidence 的展示投影 | 可重新生成 | 状态浏览、趋势与回归 |
 
 ## 原子边界

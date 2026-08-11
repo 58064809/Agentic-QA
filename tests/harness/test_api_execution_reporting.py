@@ -8,7 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from harness.domain.schemas.api_execution_reporting import ApiReportSummary
+from harness.domain.schemas.api_execution_reporting import (
+    ApiReportSummary,
+    CleanupJournalCounts,
+    CleanupJournalSummary,
+)
 from harness.domain.schemas.api_test_cases import ApiCleanupStep, ApiTestCase
 from harness.domain.schemas.execution_evidence import (
     CaseExecutionEvidence,
@@ -193,6 +197,33 @@ def test_authentication_failure_is_one_broken_fixture_with_skipped_dependencies(
     assert summary.cases[-1].case_id == "__project_authentication__"
 
 
+def test_armed_mutation_marks_cleanup_integrity_broken() -> None:
+    evidence = _evidence()
+    cleanup = CleanupJournalSummary(
+        execution_id=evidence.run_id,
+        status="indeterminate",
+        counts=CleanupJournalCounts(
+            total=1,
+            armed=1,
+            pending=0,
+            running=0,
+            completed=0,
+            failed=0,
+        ),
+        obligation_ids=["TC-READ-001::cleanup::delete-item"],
+    )
+
+    summary = build_report_summary(
+        evidence,
+        [_case("TC-MEMBER-LOGIN-001", confirmed=False), _case("TC-READ-001", confirmed=True)],
+        cleanup_summary=cleanup,
+    )
+
+    assert summary.result == "failed"
+    assert summary.counts.broken == 1
+    assert summary.cases[-1].reason_code == "CLEANUP_INDETERMINATE"
+
+
 def test_cleanup_journal_encrypts_runtime_values_and_tracks_exactly_once(tmp_path: Path) -> None:
     key = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
     path = tmp_path / ".cleanup-journal.enc"
@@ -204,6 +235,7 @@ def test_cleanup_journal_encrypts_runtime_values_and_tracks_exactly_once(tmp_pat
         environment="qa",
         source_cases_sha256="a" * 64,
         structural_sha256="sha256:" + "b" * 64,
+        execution_plan_sha256="c" * 64,
     )
     step = ApiCleanupStep.model_validate(
         {
@@ -235,6 +267,56 @@ def test_cleanup_journal_encrypts_runtime_values_and_tracks_exactly_once(tmp_pat
             path,
             key=base64.urlsafe_b64encode(os.urandom(32)).decode("ascii"),
         )
+
+
+def test_cleanup_journal_arms_before_response_then_enriches_to_pending(
+    tmp_path: Path,
+) -> None:
+    key = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
+    path = tmp_path / ".cleanup-journal.enc"
+    journal = EncryptedCleanupJournal(
+        path,
+        key=key,
+        workspace_id="demo",
+        execution_id="trial-arm",
+        environment="qa",
+        source_cases_sha256="a" * 64,
+        structural_sha256="sha256:" + "b" * 64,
+        execution_plan_sha256="c" * 64,
+    )
+    step = ApiCleanupStep.model_validate(
+        {
+            "id": "delete-order",
+            "request": {"method": "DELETE", "path": "/orders/${{order_id}}"},
+            "assertions": [{"type": "status_code", "expected": 204}],
+        }
+    )
+
+    obligation_id = journal.arm(
+        case_id="CREATE-1",
+        title="create order",
+        cleanup=step,
+        runtime_variables={"client_id": "client-generated-id"},
+        request_operation="POST /orders",
+    )
+
+    armed = journal.summary()
+    assert armed.status == "indeterminate"
+    assert armed.counts.armed == 1
+    assert journal.pending() == []
+    payload = journal.payload["obligations"][0]
+    assert payload["mutation_may_happen"] is True
+    assert payload["request_operation"] == "POST /orders"
+    assert "client-generated-id" not in path.read_text(encoding="utf-8")
+
+    journal.enrich(
+        obligation_id,
+        runtime_variables={"client_id": "client-generated-id", "order_id": "server-id"},
+        ready=True,
+    )
+
+    assert journal.summary().status == "pending"
+    assert journal.summary().counts.pending == 1
 
 
 def test_pinned_allure_cli_generates_html_and_workspace_history(

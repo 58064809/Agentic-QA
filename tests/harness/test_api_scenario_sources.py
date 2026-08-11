@@ -32,6 +32,7 @@ from harness.infrastructure.api_scenario_sources import (
     validate_manual_case_mapping,
 )
 from harness.infrastructure.llm.gateway import CallableModelGateway
+from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 
 
 def _sha(value: str) -> str:
@@ -377,6 +378,7 @@ def test_prepare_review_and_run_vertical_loop_uses_one_api_agent(
         ),
         encoding="utf-8",
     )
+    FilesystemLocalConfigLoader(repo).migrate_inline_secrets()
     planner_calls = 0
     agent_calls = 0
 
@@ -540,7 +542,7 @@ def test_prepare_review_and_run_vertical_loop_uses_one_api_agent(
 
     local_path = repo / "agentic-qa.local.yml"
     local_payload = yaml.safe_load(local_path.read_text(encoding="utf-8"))
-    local_payload["api"]["services"]["orders"]["environments"]["qa"]["auth"]["fallback_token"] = ""
+    local_payload["secrets"]["values"]["api.orders.qa.auth.fallback_token"] = ""
     local_path.write_text(yaml.safe_dump(local_payload, sort_keys=False), encoding="utf-8")
     with pytest.raises(ValueError, match="LOCAL_CONFIG_INVALID"):
         harness.run_api_scenario(
