@@ -185,10 +185,11 @@ class GenerateApiAllureReportResult(StrictModel):
     )
     workspace_id: str
     execution_id: str
-    status: Literal["generated", "results_only"]
+    status: Literal["generated", "results_only", "failed"]
     allure_results_path: str
     allure_report_path: str | None = None
     message: str = ""
+    error_kind: str | None = None
 
 
 class ResumeApiCleanupCommand(StrictModel):

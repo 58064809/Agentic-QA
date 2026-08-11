@@ -95,6 +95,10 @@ class FilesystemApiScenarioRunService:
                 "execution_id": command.execution_id,
                 "environment": command.environment,
                 "status": "started",
+                "execution_status": "running",
+                "test_result": "not_run",
+                "cleanup_status": "not_started",
+                "report_status": "not_started",
                 "started_at": datetime.now(tz=UTC).isoformat(),
                 "source_cases_path": "published/api_test_draft/current.yml",
                 "source_cases_sha256": None,
@@ -204,6 +208,9 @@ class FilesystemApiScenarioRunService:
                 manifest.update(
                     {
                         "status": "preflight_failed",
+                        "execution_status": "preflight_failed",
+                        "test_result": "not_run",
+                        "cleanup_status": "not_started",
                         "completed_at": datetime.now(tz=UTC).isoformat(),
                         "error_kind": type(exc).__name__,
                     }
@@ -230,7 +237,6 @@ class FilesystemApiScenarioRunService:
                             preflight.source_cases_path,
                             profile,
                         )
-                current_events = read_execution_events(event_log_path)
                 cleanup_summary = (
                     cleanup_journal.summary()
                     if cleanup_journal is not None
@@ -239,38 +245,17 @@ class FilesystemApiScenarioRunService:
                 report_summary = build_report_summary(
                     evidence,
                     preflight.cases,
-                    current_events,
+                    read_execution_events(event_log_path),
                     cleanup_summary,
                 )
                 result_status = report_summary.result
                 atomic_json(evidence_path, evidence.model_dump(mode="json"))
-                atomic_json(report_summary_path, report_summary.model_dump(mode="json"))
                 atomic_json(cleanup_summary_path, cleanup_summary.model_dump(mode="json"))
-                atomic_text(
-                    summary_path,
-                    _render_summary(command, evidence, report_summary, cleanup_summary),
-                )
-                write_allure_results(
-                    results_path=allure_results_path,
-                    evidence=evidence,
-                    summary=report_summary,
-                    cases=preflight.cases,
-                    service=preflight.service,
-                    source_sha256=preflight.source_cases_sha256,
-                    events=current_events,
-                )
-                report_result = generate_allure_html(
-                    repo_root=self._store.repo_root,
-                    workspace_id=command.workspace_id,
-                    execution_id=command.execution_id,
-                    results_path=allure_results_path,
-                    report_path=allure_report_path,
-                )
                 event_writer.emit(
-                    "report.finished",
-                    phase="report",
-                    outcome="passed" if report_result.status == "generated" else "pending",
-                    details={"status": report_result.status},
+                    "execution.finished",
+                    phase="execution",
+                    outcome="passed" if result_status == "passed" else "failed",
+                    details={"result": result_status},
                 )
             except BaseException as exc:
                 cleanup_state: CleanupJournalSummary | None = None
@@ -292,6 +277,11 @@ class FilesystemApiScenarioRunService:
                             "cleanup_indeterminate"
                             if cleanup_state is not None and cleanup_state.status == "indeterminate"
                             else "indeterminate"
+                        ),
+                        "execution_status": "indeterminate",
+                        "test_result": "broken",
+                        "cleanup_status": (
+                            cleanup_state.status if cleanup_state is not None else "not_started"
                         ),
                         "observed_at": datetime.now(tz=UTC).isoformat(),
                         "error_kind": type(exc).__name__,
@@ -318,17 +308,15 @@ class FilesystemApiScenarioRunService:
                 {
                     "status": "completed",
                     "result": result_status,
+                    "execution_status": "completed",
+                    "test_result": result_status,
+                    "cleanup_status": cleanup_summary.status,
+                    "report_status": "not_started",
                     "completed_at": datetime.now(tz=UTC).isoformat(),
                     "evidence_path": evidence_path.relative_to(workspace_root).as_posix(),
                     "evidence_sha256": _sha256(evidence_path),
-                    "summary_path": summary_path.relative_to(workspace_root).as_posix(),
-                    "summary_sha256": _sha256(summary_path),
                     "event_log_sha256": _sha256(event_log_path),
                     "event_log_path": event_log_path.relative_to(workspace_root).as_posix(),
-                    "report_summary_path": report_summary_path.relative_to(
-                        workspace_root
-                    ).as_posix(),
-                    "report_summary_sha256": _sha256(report_summary_path),
                     "cleanup_summary_path": cleanup_summary_path.relative_to(
                         workspace_root
                     ).as_posix(),
@@ -341,15 +329,86 @@ class FilesystemApiScenarioRunService:
                     "cleanup_journal_sha256": (
                         _sha256(cleanup_journal_path) if cleanup_journal is not None else None
                     ),
-                    "allure_results_path": allure_results_path.relative_to(
-                        workspace_root
-                    ).as_posix(),
-                    "allure_results_sha256": _tree_sha256(allure_results_path),
-                    "allure_report_path": (
-                        report_result.allure_report_path
-                        if report_result.status == "generated"
+                    "summary": evidence.summary.model_dump(mode="json"),
+                    "cleanup": cleanup_summary.model_dump(mode="json"),
+                }
+            )
+            manifest["event_log_sha256"] = _sha256(event_log_path)
+            atomic_json(manifest_path, manifest)
+
+            event_writer.emit("report.started", phase="report", outcome="started")
+            try:
+                current_events = read_execution_events(event_log_path)
+                atomic_json(report_summary_path, report_summary.model_dump(mode="json"))
+                atomic_text(
+                    summary_path,
+                    _render_summary(command, evidence, report_summary, cleanup_summary),
+                )
+                write_allure_results(
+                    results_path=allure_results_path,
+                    evidence=evidence,
+                    summary=report_summary,
+                    cases=preflight.cases,
+                    service=preflight.service,
+                    source_sha256=preflight.source_cases_sha256,
+                    events=current_events,
+                )
+                report_result = generate_allure_html(
+                    repo_root=self._store.repo_root,
+                    workspace_id=command.workspace_id,
+                    execution_id=command.execution_id,
+                    results_path=allure_results_path,
+                    report_path=allure_report_path,
+                )
+            except Exception as exc:
+                report_result = GenerateApiAllureReportResult(
+                    workspace_id=command.workspace_id,
+                    execution_id=command.execution_id,
+                    status="failed",
+                    allure_results_path=allure_results_path.relative_to(workspace_root).as_posix(),
+                    message="Allure reporting failed without changing execution truth",
+                    error_kind=type(exc).__name__,
+                )
+            event_writer.emit(
+                "report.finished",
+                phase="report",
+                outcome=(
+                    "passed"
+                    if report_result.status == "generated"
+                    else "pending"
+                    if report_result.status == "results_only"
+                    else "broken"
+                ),
+                details={
+                    "status": report_result.status,
+                    "error_kind": report_result.error_kind,
+                },
+            )
+            manifest.update(
+                {
+                    "summary_path": (
+                        summary_path.relative_to(workspace_root).as_posix()
+                        if summary_path.is_file()
                         else None
                     ),
+                    "summary_sha256": _sha256(summary_path) if summary_path.is_file() else None,
+                    "report_summary_path": (
+                        report_summary_path.relative_to(workspace_root).as_posix()
+                        if report_summary_path.is_file()
+                        else None
+                    ),
+                    "report_summary_sha256": (
+                        _sha256(report_summary_path) if report_summary_path.is_file() else None
+                    ),
+                    "allure_results_path": (
+                        allure_results_path.relative_to(workspace_root).as_posix()
+                        if allure_results_path.is_dir()
+                        else None
+                    ),
+                    "allure_results_sha256": (
+                        _tree_sha256(allure_results_path) if allure_results_path.is_dir() else None
+                    ),
+                    "allure_report_path": report_result.allure_report_path,
                     "allure_report_sha256": (
                         _tree_sha256(allure_report_path)
                         if report_result.status == "generated"
@@ -361,24 +420,24 @@ class FilesystemApiScenarioRunService:
                         else None
                     ),
                     "report_status": report_result.status,
-                    "summary": evidence.summary.model_dump(mode="json"),
+                    "report_error_kind": report_result.error_kind,
                     "report_summary": report_summary.counts.model_dump(mode="json"),
-                    "cleanup": cleanup_summary.model_dump(mode="json"),
+                    "event_log_sha256": _sha256(event_log_path),
                 }
             )
-            event_writer.emit(
-                "execution.finished",
-                phase="execution",
-                outcome="passed" if result_status == "passed" else "failed",
-                details={"result": result_status},
-            )
-            manifest["event_log_sha256"] = _sha256(event_log_path)
-            atomic_json(manifest_path, manifest)
+            try:
+                atomic_json(manifest_path, manifest)
+            except OSError:
+                # The execution truth was already committed before reporting began.
+                pass
             return RunApiScenarioResult(
                 workspace_id=command.workspace_id,
                 execution_id=command.execution_id,
                 environment=command.environment,
                 status=result_status,
+                execution_status="completed",
+                test_result=result_status,
+                cleanup_status=cleanup_summary.status,
                 source_cases_sha256=preflight.source_cases_sha256,
                 manifest_path=manifest_path.relative_to(workspace_root).as_posix(),
                 evidence_path=evidence_path.relative_to(workspace_root).as_posix(),
@@ -605,6 +664,7 @@ class FilesystemApiScenarioRunService:
             manifest["status"] = "cleanup_indeterminate"
         elif summary.status == "pending":
             manifest["status"] = "cleanup_pending"
+        manifest["cleanup_status"] = summary.status
         manifest["event_log_sha256"] = _sha256(execution_root / "execution-events.jsonl")
         manifest["cleanup_summary_sha256"] = _sha256(cleanup_summary_path)
         manifest["cleanup_journal_sha256"] = _sha256(journal_path)
@@ -662,6 +722,7 @@ class FilesystemApiScenarioRunService:
             "original_policy_sha256": original_policy_sha256,
             "current_policy_sha256": current_policy_sha256,
         }
+        manifest["cleanup_status"] = status
         manifest["event_log_sha256"] = _sha256(execution_root / "execution-events.jsonl")
         manifest["cleanup_summary_sha256"] = _sha256(cleanup_summary_path)
         manifest["cleanup_journal_sha256"] = _sha256(journal.path)

@@ -336,7 +336,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             _print(result)
-            return 0 if result.status == "generated" else 2
+            return 0 if result.status == "generated" else 1
         if args.command == "api" and args.api_command == "cleanup":
             result = harness.resume_api_cleanup(
                 ResumeApiCleanupCommand(

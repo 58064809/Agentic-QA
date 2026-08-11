@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -256,6 +257,9 @@ def test_run_persists_redacted_reports_and_never_replays_id(
     plan = ApiExecutionPlan.model_validate_json(plan_text)
     assert manifest["status"] == "completed"
     assert manifest["result"] == "passed"
+    assert manifest["execution_status"] == "completed"
+    assert manifest["test_result"] == "passed"
+    assert manifest["cleanup_status"] == "not_required"
     assert manifest["source_cases_sha256"] == result.source_cases_sha256
     assert manifest["execution_plan_path"].endswith("execution-plan.json")
     assert manifest["execution_plan_sha256"] == hashlib.sha256(plan_text.encode()).hexdigest()
@@ -334,6 +338,37 @@ def test_failed_assertion_is_persisted_as_failed_result(
     )
     assert manifest["status"] == "completed"
     assert manifest["result"] == "failed"
+
+
+def test_allure_timeout_only_changes_report_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setattr("requests.request", lambda method, url, **kwargs: _Response(201, url))
+    monkeypatch.setattr(
+        "harness.infrastructure.api_scenario_run.generate_allure_html",
+        lambda **kwargs: (_ for _ in ()).throw(
+            subprocess.TimeoutExpired(cmd="allure", timeout=120)
+        ),
+    )
+
+    result = Harness(tmp_path).run_api_scenario(_command("report-timeout"))
+
+    assert result.status == "passed"
+    assert result.execution_status == "completed"
+    assert result.test_result == "passed"
+    assert result.cleanup_status == "not_required"
+    assert result.report_status == "failed"
+    manifest = json.loads(
+        (root / "executions" / "report-timeout" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["execution_status"] == "completed"
+    assert manifest["test_result"] == "passed"
+    assert manifest["cleanup_status"] == "not_required"
+    assert manifest["report_status"] == "failed"
+    assert manifest["report_error_kind"] == "TimeoutExpired"
+    assert (root / "executions" / "report-timeout" / "evidence.json").is_file()
 
 
 def test_mutation_is_armed_before_send_and_completed_cleanup_runs_lifo(

@@ -476,22 +476,33 @@ def generate_allure_html(
     environment["AGENTIC_QA_ALLURE_HISTORY_PATH"] = str(
         repo_root / "workspaces" / workspace_id / "allure-history.jsonl"
     )
-    completed = subprocess.run(
-        command,
-        cwd=repo_root,
-        env=environment,
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=repo_root,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return GenerateApiAllureReportResult(
+            workspace_id=workspace_id,
+            execution_id=execution_id,
+            status="failed",
+            allure_results_path=relative_results.as_posix(),
+            message="Allure HTML generation failed; rerun api report allure",
+            error_kind=type(exc).__name__,
+        )
     if completed.returncode != 0:
         return GenerateApiAllureReportResult(
             workspace_id=workspace_id,
             execution_id=execution_id,
-            status="results_only",
+            status="failed",
             allure_results_path=relative_results.as_posix(),
             message="Allure HTML generation failed; rerun api report allure",
+            error_kind="AllureProcessError",
         )
     workspace_root = repo_root / "workspaces" / workspace_id
     return GenerateApiAllureReportResult(
