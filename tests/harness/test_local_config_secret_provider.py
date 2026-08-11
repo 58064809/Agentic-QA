@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from harness.infrastructure.local_config import FilesystemLocalConfigLoader
+from harness.infrastructure.persistence.common import atomic_private_text
 
 
 def _legacy_payload() -> dict[str, object]:
@@ -51,8 +52,9 @@ def _legacy_payload() -> dict[str, object]:
 
 def _write_legacy(repo: Path) -> FilesystemLocalConfigLoader:
     (repo / "local-sources" / "api" / "orders").mkdir(parents=True)
-    (repo / "agentic-qa.local.yml").write_text(
-        yaml.safe_dump(_legacy_payload(), sort_keys=False), encoding="utf-8"
+    atomic_private_text(
+        repo / "agentic-qa.local.yml",
+        yaml.safe_dump(_legacy_payload(), sort_keys=False),
     )
     return FilesystemLocalConfigLoader(repo)
 
@@ -104,7 +106,7 @@ def test_environment_secret_provider_keeps_values_out_of_config(
             "api.orders.qa.auth.fallback_token": "api-secret",
         }[reference]
         monkeypatch.setenv(f"UNIT_SECRET_{index}", value)
-    loader.path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    atomic_private_text(loader.path, yaml.safe_dump(payload, sort_keys=False))
 
     loaded = loader.load_required()
 
@@ -128,7 +130,7 @@ def test_secret_provider_is_required_and_references_are_location_scoped(
     loader.migrate_inline_secrets()
     payload = yaml.safe_load(loader.path.read_text(encoding="utf-8"))
     payload["model"]["flash_model"] = "secret://postgres.password"
-    loader.path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    atomic_private_text(loader.path, yaml.safe_dump(payload, sort_keys=False))
 
     unexpected_reference = loader.check()
     assert unexpected_reference.ready is False
@@ -180,7 +182,7 @@ def test_cleanup_exemption_is_a_non_blocking_deprecation_warning(
     payload["api"]["services"]["orders"]["environments"]["qa"]["cleanup_exempt_operations"] = [
         "POST /notifications"
     ]
-    loader.path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    atomic_private_text(loader.path, yaml.safe_dump(payload, sort_keys=False))
     loader.migrate_inline_secrets()
 
     result = loader.check()
