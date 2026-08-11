@@ -576,6 +576,8 @@ def test_extended_assertion_failures_include_missing_and_mismatch_summaries(
         {"type": "unknown_assertion"},
         {"type": "json_field_equals", "path": "$.items[*]", "expected": 1},
         {"type": "json_field_equals", "path": "$.items"},
+        {"type": "json_field_exists", "path": "$.access_token"},
+        {"type": "json_field_exists", "path": "$.credential"},
         {"type": "header_equals", "path": "Set-Cookie", "expected": "value"},
         {"type": "response_time_ms_max", "expected": 0},
     ],

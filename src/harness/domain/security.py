@@ -4,7 +4,9 @@ import re
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-SECRET_KEY = re.compile(r"(authorization|cookie|token|secret|password|api[_-]?key)", re.I)
+SECRET_KEY = re.compile(
+    r"(authorization|cookie|token|secret|password|credential|api[_-]?key)", re.I
+)
 ENV_REFERENCE = re.compile(r"^\$\{[A-Z_][A-Z0-9_]*\}$")
 RUNTIME_VARIABLE_REFERENCE = re.compile(r"^\$\{\{[A-Za-z_][A-Za-z0-9_]*\}\}$")
 HTTP_HEADER_NAME = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")

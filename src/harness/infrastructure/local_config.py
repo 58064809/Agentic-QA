@@ -34,6 +34,10 @@ from harness.domain.schemas.local_config import (
     LocalStaticTokenLogin,
 )
 from harness.domain.security import validate_api_base_url_policy
+from harness.infrastructure.persistence.common import (
+    atomic_private_text,
+    create_only_private_text,
+)
 from harness.infrastructure.secret_provider import (
     SECRET_REFERENCE,
     build_secret_provider,
@@ -221,9 +225,8 @@ class FilesystemLocalConfigLoader:
         if not isinstance(values, dict):
             raise ValueError("local Secret Provider values must be an object")
         values["runtime.cleanup_journal_key"] = self._new_cleanup_journal_key()
-        rendered = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True).encode("utf-8")
-        with self.path.open("xb") as handle:
-            handle.write(rendered)
+        rendered = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+        create_only_private_text(self.path, rendered)
         return self.path
 
     @staticmethod
@@ -248,9 +251,7 @@ class FilesystemLocalConfigLoader:
         if str(values.get("runtime.cleanup_journal_key") or "").strip():
             raise FileExistsError("runtime.cleanup_journal_key is already configured")
         values["runtime.cleanup_journal_key"] = self._new_cleanup_journal_key()
-        from harness.infrastructure.persistence.common import atomic_text
-
-        atomic_text(
+        atomic_private_text(
             self.path,
             yaml.safe_dump(payload, sort_keys=False, allow_unicode=True),
         )
@@ -281,9 +282,7 @@ class FilesystemLocalConfigLoader:
             "secrets": {"provider": "local", "values": values},
             **payload,
         }
-        from harness.infrastructure.persistence.common import atomic_text
-
-        atomic_text(
+        atomic_private_text(
             self.path,
             yaml.safe_dump(payload, sort_keys=False, allow_unicode=True),
         )
@@ -325,6 +324,26 @@ class FilesystemLocalConfigLoader:
         try:
             if _is_link_or_reparse(self.path):
                 raise ValueError("configuration must not be a link or reparse point")
+            mode = self.path.stat().st_mode
+        except (OSError, ValueError) as exc:
+            return None, [
+                _issue(
+                    "LOCAL_CONFIG_INVALID",
+                    str(self.path),
+                    f"local configuration is invalid: {exc}",
+                    "Use a regular file inside the repository root",
+                )
+            ]
+        if os.name != "nt" and stat.S_IMODE(mode) & 0o077:
+            return None, [
+                _issue(
+                    "LOCAL_CONFIG_PERMISSION_TOO_OPEN",
+                    str(self.path),
+                    "local configuration is readable or writable by group/other users",
+                    f"Run `chmod 600 {LOCAL_CONFIG_NAME}`",
+                )
+            ]
+        try:
             raw = self.path.read_bytes()
             if len(raw) > MAX_LOCAL_CONFIG_BYTES:
                 raise ValueError(f"configuration exceeds {MAX_LOCAL_CONFIG_BYTES} bytes")

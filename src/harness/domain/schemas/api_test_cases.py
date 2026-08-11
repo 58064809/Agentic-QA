@@ -222,7 +222,9 @@ def validate_api_assertion_definition(assertion: ApiAssertion) -> None:
     }:
         if path is None:
             raise ValueError(f"{assertion_type} assertion requires path")
-        json_path_tokens(path)
+        tokens = json_path_tokens(path)
+        if any(isinstance(token, str) and SECRET_KEY.search(token) for token in tokens):
+            raise ValueError(f"{assertion_type} cannot target a sensitive JSON field")
         if assertion_type == "json_field_exists":
             if (
                 expected_is_set
@@ -233,11 +235,6 @@ def validate_api_assertion_definition(assertion: ApiAssertion) -> None:
         elif not expected_is_set:
             raise ValueError(f"{assertion_type} assertion requires expected")
         else:
-            if any(
-                isinstance(token, str) and SECRET_KEY.search(token)
-                for token in json_path_tokens(path)
-            ):
-                raise ValueError(f"{assertion_type} cannot target a sensitive JSON field")
             validate_api_assertion_expected_safety(
                 assertion.expected,
                 label=f"{assertion_type} assertion",
@@ -486,6 +483,7 @@ class ApiTestCase(StrictModel):
 class ConfirmedApiTestCase(ApiTestCase):
     contract_status: Literal["confirmed"]
     request: ConfirmedApiRequest
+    assertions: list[ApiAssertion] = Field(min_length=1)
 
 
 class UnconfirmedApiTestCase(ApiTestCase):

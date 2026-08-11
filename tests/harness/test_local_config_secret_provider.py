@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import os
 from pathlib import Path
 
 import pytest
@@ -153,3 +154,18 @@ def test_config_init_generates_runtime_key_in_local_provider(tmp_path: Path) -> 
     assert payload["runtime"]["cleanup_journal_key"] == ("secret://runtime.cleanup_journal_key")
     encoded_key = payload["secrets"]["values"]["runtime.cleanup_journal_key"]
     assert len(base64.urlsafe_b64decode(encoded_key)) == 32
+    if os.name != "nt":
+        assert target.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission contract")
+def test_config_doctor_rejects_group_or_other_permissions(tmp_path: Path) -> None:
+    loader = _write_legacy(tmp_path)
+    loader.migrate_inline_secrets()
+    os.chmod(loader.path, 0o644)
+
+    result = loader.check()
+
+    assert result.ready is False
+    assert result.issues[0].code == "LOCAL_CONFIG_PERMISSION_TOO_OPEN"
+    assert "chmod 600" in result.issues[0].remediation
