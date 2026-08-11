@@ -5,21 +5,25 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
+from harness.domain.schemas.api_test_cases import (
+    ApiTestCasesDraft,
+    load_api_test_cases,
+    load_api_test_cases_report_projection,
+)
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
+from harness.infrastructure.workflow.engine import default_recorded_api_test_cases
 
 UTC = timezone.utc
 
 
-def test_api_cases_only_accept_v1_1() -> None:
-    with pytest.raises(ValidationError, match="agentic-qa.api-cases.v1.1"):
+def test_api_cases_only_accept_current_v1_2() -> None:
+    with pytest.raises(ValidationError, match="agentic-qa.api-cases.v1.2"):
         ApiTestCasesDraft.model_validate(
             {
                 "schema_version": "agentic-qa.api-cases.v1",
                 "artifact_type": "api_automation_cases",
                 "status": "needs_human_review",
                 "human_review_required": True,
-                "base_url_env": "AGENTIC_QA_BASE_URL",
                 "business_rules": ["rule"],
                 "source_refs": [],
                 "cases": [],
@@ -28,15 +32,58 @@ def test_api_cases_only_accept_v1_1() -> None:
         )
 
 
+def test_api_cases_v1_1_reader_normalizes_without_base_url_env() -> None:
+    payload = default_recorded_api_test_cases("legacy reader").model_dump(mode="python")
+    payload["schema_version"] = "agentic-qa.api-cases.v1.1"
+    payload["base_url_env"] = "AGENTIC_QA_BASE_URL"
+
+    normalized = load_api_test_cases(payload)
+
+    assert normalized.schema_version == "agentic-qa.api-cases.v1.2"
+    assert "base_url_env" not in normalized.model_dump(mode="python")
+
+
+def test_v1_1_zero_assertion_case_is_report_only_metadata() -> None:
+    payload = default_recorded_api_test_cases("legacy report").model_dump(mode="python")
+    payload["schema_version"] = "agentic-qa.api-cases.v1.1"
+    payload["base_url_env"] = "AGENTIC_QA_BASE_URL"
+    payload["cases"][0].update(
+        {
+            "contract_status": "confirmed",
+            "pending": [],
+            "request": {"method": "GET", "path": "/health"},
+            "assertions": [],
+            "source_refs": [
+                {
+                    "source_type": "openapi",
+                    "source_path": "sources/openapi.yml",
+                    "chunk_id": "GET /health",
+                    "locator": "GET /health",
+                    "summary": "legacy operation",
+                    "confidence": "high",
+                }
+            ],
+        }
+    )
+
+    with pytest.raises(ValidationError, match="at least 1 item"):
+        load_api_test_cases(payload)
+
+    projection = load_api_test_cases_report_projection(payload)
+
+    assert projection.schema_version == "agentic-qa.api-cases.v1.2"
+    assert projection.cases[0].id == payload["cases"][0]["id"]
+    assert projection.cases[0].assertions[0].type == "status_code"
+
+
 def test_unconfirmed_api_case_cannot_look_executable() -> None:
     with pytest.raises(ValidationError, match="Input should be None"):
         ApiTestCasesDraft.model_validate(
             {
-                "schema_version": "agentic-qa.api-cases.v1.1",
+                "schema_version": "agentic-qa.api-cases.v1.2",
                 "artifact_type": "api_automation_cases",
                 "status": "needs_human_review",
                 "human_review_required": True,
-                "base_url_env": "AGENTIC_QA_BASE_URL",
                 "business_rules": ["RULE-001"],
                 "source_refs": [
                     {
@@ -87,7 +134,7 @@ def test_execution_summary_must_match_case_evidence() -> None:
                 "schema_version": "agentic-qa.execution-evidence.v1",
                 "run_id": "run-1",
                 "source_cases_path": "cases.yml",
-                "source_cases_schema_version": "agentic-qa.api-cases.v1.1",
+                "source_cases_schema_version": "agentic-qa.api-cases.v1.2",
                 "started_at": now,
                 "completed_at": now,
                 "environment": {

@@ -64,11 +64,10 @@ def _case(
 def _draft(*cases: dict[str, Any]) -> ApiTestCasesDraft:
     return ApiTestCasesDraft.model_validate(
         {
-            "schema_version": "agentic-qa.api-cases.v1.1",
+            "schema_version": "agentic-qa.api-cases.v1.2",
             "artifact_type": "api_automation_cases",
             "status": "needs_human_review",
             "human_review_required": True,
-            "base_url_env": "AGENTIC_QA_BASE_URL",
             "business_rules": ["ORDER-001"],
             "source_refs": [_reference()],
             "cases": list(cases),

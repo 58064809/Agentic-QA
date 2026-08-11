@@ -53,3 +53,19 @@ def test_workflows_do_not_replace_secret_bearing_business_fields() -> None:
     for path in paths:
         content = path.read_text(encoding="utf-8")
         assert not any(item in content for item in forbidden), path
+
+
+def test_ci_has_matrix_pip_check_and_independent_cold_start() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    ci = (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    nightly = (repo_root / ".github" / "workflows" / "nightly-live-eval.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'python-version: ["3.10", "3.11", "3.12"]' in ci
+    assert ci.count("python -m pip check") >= 1
+    assert "cold-start:" in ci
+    assert ".fresh-venv/bin/python -m pip check" in ci
+    assert ".fresh-venv/bin/python scripts/configure-ci-local.py --profile ci" in ci
+    assert "python -m pip check" in nightly
+    assert "python scripts/configure-ci-local.py --profile nightly" in nightly

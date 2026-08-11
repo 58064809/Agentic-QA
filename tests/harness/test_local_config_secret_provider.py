@@ -169,3 +169,29 @@ def test_config_doctor_rejects_group_or_other_permissions(tmp_path: Path) -> Non
     assert result.ready is False
     assert result.issues[0].code == "LOCAL_CONFIG_PERMISSION_TOO_OPEN"
     assert "chmod 600" in result.issues[0].remediation
+
+
+def test_cleanup_exemption_is_a_non_blocking_deprecation_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UNIT_MODEL_KEY", "model-key")
+    loader = _write_legacy(tmp_path)
+    payload = yaml.safe_load(loader.path.read_text(encoding="utf-8"))
+    payload["api"]["services"]["orders"]["environments"]["qa"]["cleanup_exempt_operations"] = [
+        "POST /notifications"
+    ]
+    loader.path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    loader.migrate_inline_secrets()
+
+    result = loader.check()
+    project = loader.resolve_api_project(loader.load_required(), "orders", "qa")
+
+    warning = next(
+        item for item in result.issues if item.code == "DEPRECATED_CLEANUP_EXEMPT_OPERATION"
+    )
+    assert result.ready is True
+    assert warning.severity == "warning"
+    assert (
+        project.policy.operation_policies["POST /notifications"].classification
+        == "mutation_no_cleanup"
+    )

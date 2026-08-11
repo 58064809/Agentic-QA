@@ -70,7 +70,7 @@ python -m harness run review <workspace> <run> approve `
 ```
 
 执行入口只接受无 partial、blocker、来源缺口或哈希漂移的已审核版本。审核后的
-`agentic-qa.api-cases.v1.1` YAML 是唯一事实来源；pytest 只是确定性执行壳。
+`agentic-qa.api-cases.v1.2` YAML 是唯一事实来源；pytest 只是确定性执行壳。
 
 ## 5. 受控 QA 试跑
 

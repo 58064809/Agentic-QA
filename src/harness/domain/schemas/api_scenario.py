@@ -15,7 +15,7 @@ class RunApiScenarioResult(StrictModel):
     workspace_id: str
     execution_id: str
     environment: str
-    status: Literal["passed", "failed"]
+    status: Literal["passed", "failed", "broken", "skipped"]
     execution_status: Literal["completed", "preflight_failed", "indeterminate"]
     test_result: Literal["not_run", "passed", "failed", "broken", "skipped"]
     cleanup_status: Literal[

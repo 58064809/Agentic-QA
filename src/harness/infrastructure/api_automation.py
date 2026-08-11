@@ -21,6 +21,8 @@ from harness.domain.schemas.api_test_cases import (
     ApiTestCase,
     ApiTestCasesDraft,
     api_execution_case_ids,
+    load_api_test_cases,
+    load_api_test_cases_report_projection,
     validate_api_case_runtime_definitions,
     validate_api_cleanup_policy,
 )
@@ -39,6 +41,7 @@ from harness.infrastructure.tools.api_execution import (
 class ApiExecutionPreflight:
     source_cases_path: str
     source_cases_sha256: str
+    source_cases_schema_version: str
     source_publication_id: str
     source_history_path: str
     cases: list[ApiTestCase]
@@ -193,7 +196,9 @@ class FilesystemApiAutomationService:
             source_history_path=source_history_path,
             source_cases_sha256=source_cases_sha256,
         )
-        draft = ApiTestCasesDraft.model_validate(yaml.safe_load(source.content.decode("utf-8")))
+        draft = load_api_test_cases_report_projection(
+            yaml.safe_load(source.content.decode("utf-8"))
+        )
         payload = self._store.workspace_config(workspace)
         binding = payload.get("api_project")
         service = binding.get("service") if isinstance(binding, dict) else None
@@ -236,7 +241,7 @@ class FilesystemApiAutomationService:
             raise ValueError("API automation only accepts published API cases")
         raw = target.read_bytes()
         payload = yaml.safe_load(raw.decode("utf-8"))
-        draft = ApiTestCasesDraft.model_validate(payload)
+        draft = load_api_test_cases(payload)
         return root, target, draft, hashlib.sha256(raw).hexdigest()
 
     def execute(self, command: ExecuteApiCasesCommand) -> ExecutionEvidence:
@@ -294,11 +299,14 @@ class FilesystemApiAutomationService:
             isolation=preflight.isolation,
             operation_policies=preflight.operation_policies,
             event_callback=event_callback,
+            source_cases_schema_version=preflight.source_cases_schema_version,
         )
 
     def preflight(self, command: ExecuteApiCasesCommand) -> ApiExecutionPreflight:
         source = self._published_sources.resolve_current(command.workspace_id)
-        draft = ApiTestCasesDraft.model_validate(yaml.safe_load(source.content.decode("utf-8")))
+        payload = yaml.safe_load(source.content.decode("utf-8"))
+        source_schema_version = str(payload.get("schema_version") or "")
+        draft = load_api_test_cases(payload)
         source_sha256 = source.content_sha256
         if command.source_cases_sha256 is not None and source_sha256 != command.source_cases_sha256:
             raise ValueError("published API cases hash changed before execution")
@@ -323,6 +331,7 @@ class FilesystemApiAutomationService:
         return ApiExecutionPreflight(
             source_cases_path=source.workspace_relative_path,
             source_cases_sha256=source_sha256,
+            source_cases_schema_version=source_schema_version,
             source_publication_id=source.publication_id,
             source_history_path=source.workspace_relative_path,
             cases=list(draft.cases),
@@ -355,7 +364,6 @@ class FilesystemApiAutomationService:
             workspace_id=command.workspace_id,
             cases_path=source.relative_to(root).as_posix(),
             source_sha256=source_sha256,
-            base_url_env=draft.base_url_env,
             evidence_case_ids=api_execution_case_ids(draft.cases),
             environment=binding["environment"],
         )
@@ -374,7 +382,6 @@ def render_pytest_adapter(
     workspace_id: str,
     cases_path: str,
     source_sha256: str,
-    base_url_env: str,
     evidence_case_ids: list[str],
     environment: str,
 ) -> str:
@@ -382,7 +389,6 @@ def render_pytest_adapter(
         "workspace_id": json.dumps(workspace_id, ensure_ascii=False),
         "cases_path": json.dumps(cases_path, ensure_ascii=False),
         "source_sha256": json.dumps(source_sha256),
-        "base_url_env": json.dumps(base_url_env),
         "evidence_case_ids": json.dumps(evidence_case_ids, ensure_ascii=False),
         "environment": json.dumps(environment, ensure_ascii=False),
     }
@@ -398,7 +404,6 @@ from harness import ExecuteApiCasesCommand, ExecutionProfile, Harness
 WORKSPACE_ID = {values["workspace_id"]}
 CASES_PATH = {values["cases_path"]}
 SOURCE_CASES_SHA256 = {values["source_sha256"]}
-BASE_URL_ENV = {values["base_url_env"]}
 EXPECTED_CASE_IDS = {values["evidence_case_ids"]}
 ENVIRONMENT = {values["environment"]}
 

@@ -277,6 +277,7 @@ class ApiOperationPolicy(StrictModel):
         "read_only",
         "mutation_cleanup",
         "mutation_idempotent",
+        "mutation_no_cleanup",
         "mutation_manual",
     ]
     idempotency_header: str | None = None

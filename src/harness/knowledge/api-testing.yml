@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.knowledge-spec.v1
 name: api-testing
-version: 1.16.0
+version: 1.17.0
 purpose: 根据完整 API 契约设计可验证的机器用例并记录执行边界。
 applies_to: [api-testing]
 inputs:
@@ -9,8 +9,8 @@ inputs:
   - ExecutionProfile
   - 脱敏测试数据或受控 fixture
 procedure:
-  - Classify exact canonical operations with reviewed policy. GET defaults to read_only; POST, PUT, PATCH, and DELETE default to mutation_cleanup. mutation_manual never enters transport. Legacy cleanup_exempt_operations means read_only only.
-  - Every mutation_cleanup or mutation_idempotent business case must declare verified cleanup. Project authentication is outside API Cases.
+  - Classify exact canonical operations with reviewed policy. GET defaults to read_only; POST, PUT, PATCH, and DELETE default to mutation_cleanup. mutation_manual never enters transport. mutation_no_cleanup remains a mutation and requires an exact reviewed operation policy.
+  - Every mutation_cleanup or mutation_idempotent business case must declare verified cleanup. Project authentication and explicitly reviewed mutation_no_cleanup operations are exempt; neither is treated as read_only.
   - Use mutation_idempotent only when the server contract or owning team confirms the declared header. Generate a deterministic execution/case/operation-bound key, but never auto-retry or replay a mutation.
   - Prefer a disposable environment supplied by CI/platform; otherwise use a reviewed per-execution namespace injection before teardown, recovery journal, or manual cleanup.
   - An unconfirmed manual login case handled by project authentication is reported as skipped, never as a product failure.
@@ -45,7 +45,7 @@ output_expectations:
   - 人工用例映射质量报告记录总数、confirmed 数、unconfirmed 数和未映射 ID。
   - cleanup 继承主用例的 OpenAPI 来源，并使用与主请求相同的 operation 与 Schema 校验。
   - 上游提取变量的来源和响应字段必须存在；生成期未知的叶子值类型延迟到执行期，不伪造示例值。
-  - 断言使用 agentic-qa.api-cases.v1.1 中的类型化 assertions。
+  - 断言使用 agentic-qa.api-cases.v1.2 中的类型化 assertions。
   - JSON 断言路径只使用根 $、对象 .field 和数组 [index]，不使用通配符或过滤器。
   - variables 只使用 datasets 与 extract；cleanup 只使用 id、title、request 与 assertions。
 evidence_policy:

@@ -16,7 +16,7 @@ from harness.application.quality import (
 )
 from harness.application.source import SourceCompleteness
 from harness.domain.schemas.api_test_cases import (
-    ApiTestCasesDraft,
+    load_api_test_cases,
     validate_api_case_runtime_definitions,
     validate_api_cleanup_policy,
 )
@@ -156,13 +156,13 @@ class GenericArtifactStrategy:
     ) -> tuple[list[QualityIssue], dict[str, object]]:
         try:
             payload = yaml.safe_load(content)
-            draft = ApiTestCasesDraft.model_validate(payload)
+            draft = load_api_test_cases(payload)
         except (yaml.YAMLError, ValidationError) as exc:
             return (
                 [
                     self._issue(
                         "invalid_api_test_draft",
-                        f"api_test_draft must satisfy agentic-qa.api-cases.v1.1: {exc}",
+                        f"api_test_draft must satisfy agentic-qa.api-cases.v1.2: {exc}",
                     )
                 ],
                 {},

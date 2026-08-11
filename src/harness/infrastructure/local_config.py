@@ -64,12 +64,20 @@ class ResolvedApiProject:
     policy_sha256: str
 
 
-def _issue(code: str, location: str, message: str, remediation: str) -> LocalConfigIssue:
+def _issue(
+    code: str,
+    location: str,
+    message: str,
+    remediation: str,
+    *,
+    severity: str = "error",
+) -> LocalConfigIssue:
     return LocalConfigIssue(
         code=code,
         location=location,
         message=message,
         remediation=remediation,
+        severity=severity,
     )
 
 
@@ -291,16 +299,17 @@ class FilesystemLocalConfigLoader:
     def check(self) -> LocalConfigCheckResult:
         _, issues = self._load()
         return LocalConfigCheckResult(
-            ready=not issues,
+            ready=not any(item.severity == "error" for item in issues),
             config_path=str(self.path),
             issues=issues,
         )
 
     def load_required(self) -> AgenticQaLocalConfig:
         config, issues = self._load()
-        if config is None or issues:
+        errors = [item for item in issues if item.severity == "error"]
+        if config is None or errors:
             details = "; ".join(
-                f"{item.code} at {item.location}: {item.remediation}" for item in issues
+                f"{item.code} at {item.location}: {item.remediation}" for item in errors
             )
             raise ValueError(f"local configuration check failed: {details}")
         return config
@@ -499,6 +508,18 @@ class FilesystemLocalConfigLoader:
                     )
                 )
             for environment, environment_config in value.environments.items():
+                if environment_config.cleanup_exempt_operations:
+                    issues.append(
+                        _issue(
+                            "DEPRECATED_CLEANUP_EXEMPT_OPERATION",
+                            f"api.services.{service}.environments.{environment}."
+                            "cleanup_exempt_operations",
+                            "cleanup_exempt_operations is deprecated and still represents "
+                            "a mutation",
+                            "Declare exact mutation_no_cleanup entries in operation_policies",
+                            severity="warning",
+                        )
+                    )
                 issues.extend(
                     self._api_environment_issues(service, environment, environment_config)
                 )
@@ -833,7 +854,7 @@ class FilesystemLocalConfigLoader:
         operation_policies = dict(value.operation_policies)
         operation_policies.update(
             {
-                operation: ApiOperationPolicy(classification="read_only")
+                operation: ApiOperationPolicy(classification="mutation_no_cleanup")
                 for operation in value.cleanup_exempt_operations
             }
         )

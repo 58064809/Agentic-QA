@@ -24,7 +24,7 @@
 | `review_run` | `ReviewRunCommand` | `RunSnapshot` | run 可审核且人工决定有效 | 写 Review；approve 可发布 |
 
 所有 run 操作显式携带 `workspace_id + run_id`，不全局扫描 run ID。控制面 Schema 使用
-`agentic-qa.harness.*.v2`；API cases 独立保持 `agentic-qa.api-cases.v1.1`。
+`agentic-qa.harness.*.v2`；API cases 独立保持 `agentic-qa.api-cases.v1.2`。
 
 外部 AI 的 `AgentRequest` 和 MCP 是独立受限门面，不增加 Harness 的 Review 权限，也不改变上述
 十二个方法；其契约见[跨 AI 接入](agent-integration.md)。

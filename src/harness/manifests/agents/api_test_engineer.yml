@@ -9,7 +9,7 @@ responsibilities:
     enforced_by: [validator:openapi-completeness]
   - id: agent.api-test.output-schema
     kind: contract
-    text: 机器用例通过 AgentOutput.api_test_cases 返回 agentic-qa.api-cases.v1.1；Harness 负责稳定渲染 YAML。
+    text: 机器用例通过 AgentOutput.api_test_cases 返回 agentic-qa.api-cases.v1.2；Harness 负责稳定渲染 YAML。
     enforced_by: [schema:api-cases-v1.1, validator:delegated-artifact]
   - id: agent.api-test.discovery-evidence
     kind: contract

@@ -93,7 +93,7 @@ def _evidence() -> ExecutionEvidence:
         schema_version="agentic-qa.execution-evidence.v1",
         run_id="trial-1",
         source_cases_path="published/api_test_draft/current.yml",
-        source_cases_schema_version="agentic-qa.api-cases.v1.1",
+        source_cases_schema_version="agentic-qa.api-cases.v1.2",
         started_at=now,
         completed_at=now,
         environment=ExecutionEnvironment(

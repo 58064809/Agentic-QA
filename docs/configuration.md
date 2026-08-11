@@ -144,9 +144,9 @@ api:
 `config init` 会在 local provider 中自动生成 `runtime.cleanup_journal_key` 对应的值。已有 provider 缺少该值时执行
 `python -m harness config runtime-key init`；命令只补缺失的 AES-256-GCM Key，绝不覆盖现有值。
 `operation_policies` 按精确的 `METHOD /path-template` 分类。默认 GET 为 `read_only`，POST/PUT/PATCH/DELETE
-为 `mutation_cleanup`；也可明确声明 `mutation_idempotent` 或 `mutation_manual`。幂等 Header 只有服务契约或
+为 `mutation_cleanup`；也可明确声明 `mutation_idempotent`、`mutation_no_cleanup` 或 `mutation_manual`。幂等 Header 只有服务契约或
 团队确认支持时才能配置，Harness 只生成确定性 key，不因此自动重试写请求。旧
-`cleanup_exempt_operations` 只作为 `read_only` 兼容入口，新配置应使用 operation policy。项目登录隐式豁免。
+`cleanup_exempt_operations` 是 deprecated 兼容入口，doctor 会告警，并按 `mutation_no_cleanup` 解释；新配置应使用 operation policy。项目登录隐式豁免。
 
 `isolation.mode: namespace` 为每个 execution 生成确定性命名空间，并通过已审核的 Header、query 或 body
 根字段注入；事件与执行计划只保存其 SHA-256。`shared` 是默认值。隔离与清理优先级是：可销毁环境、

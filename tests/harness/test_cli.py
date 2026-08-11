@@ -129,5 +129,9 @@ def test_api_run_cli_exit_codes_follow_persisted_result(monkeypatch) -> None:
     arguments = ["api", "run", "demo", "trial-001", "--environment", "qa"]
 
     assert cli.main(arguments) == 0
+    FakeHarness.status = "skipped"
+    assert cli.main(arguments) == 0
+    FakeHarness.status = "broken"
+    assert cli.main(arguments) == 1
     FakeHarness.status = "failed"
     assert cli.main(arguments) == 1

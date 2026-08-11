@@ -21,7 +21,6 @@ from harness.domain.schemas.api_execution_reporting import (
 )
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.api_test_cases import (
-    API_CASES_SCHEMA_VERSION,
     ApiTestCase,
     parse_api_case_variables,
     parse_api_cleanup_steps,
@@ -235,6 +234,7 @@ class FilesystemApiScenarioRunService:
                             command,
                             preflight.cases,
                             preflight.source_cases_path,
+                            preflight.source_cases_schema_version,
                             profile,
                         )
                 cleanup_summary = (
@@ -248,13 +248,23 @@ class FilesystemApiScenarioRunService:
                     read_execution_events(event_log_path),
                     cleanup_summary,
                 )
-                result_status = report_summary.result
+                if report_summary.counts.broken:
+                    result_status = "broken"
+                elif report_summary.counts.failed:
+                    result_status = "failed"
+                elif (
+                    report_summary.counts.total
+                    and report_summary.counts.skipped == report_summary.counts.total
+                ):
+                    result_status = "skipped"
+                else:
+                    result_status = "passed"
                 atomic_json(evidence_path, evidence.model_dump(mode="json"))
                 atomic_json(cleanup_summary_path, cleanup_summary.model_dump(mode="json"))
                 event_writer.emit(
                     "execution.finished",
                     phase="execution",
-                    outcome="passed" if result_status == "passed" else "failed",
+                    outcome=result_status,
                     details={"result": result_status},
                 )
             except BaseException as exc:
@@ -369,21 +379,6 @@ class FilesystemApiScenarioRunService:
                     message="Allure reporting failed without changing execution truth",
                     error_kind=type(exc).__name__,
                 )
-            event_writer.emit(
-                "report.finished",
-                phase="report",
-                outcome=(
-                    "passed"
-                    if report_result.status == "generated"
-                    else "pending"
-                    if report_result.status == "results_only"
-                    else "broken"
-                ),
-                details={
-                    "status": report_result.status,
-                    "error_kind": report_result.error_kind,
-                },
-            )
             manifest.update(
                 {
                     "summary_path": (
@@ -427,8 +422,37 @@ class FilesystemApiScenarioRunService:
             )
             try:
                 atomic_json(manifest_path, manifest)
-            except OSError:
+            except OSError as exc:
                 # The execution truth was already committed before reporting began.
+                report_result = GenerateApiAllureReportResult(
+                    workspace_id=command.workspace_id,
+                    execution_id=command.execution_id,
+                    status="failed",
+                    allure_results_path=allure_results_path.relative_to(workspace_root).as_posix(),
+                    message="report manifest update failed without changing execution truth",
+                    error_kind=type(exc).__name__,
+                )
+                manifest["report_status"] = "failed"
+                manifest["report_error_kind"] = type(exc).__name__
+            event_writer.emit(
+                "report.finished",
+                phase="report",
+                outcome=(
+                    "passed"
+                    if report_result.status == "generated"
+                    else "pending"
+                    if report_result.status == "results_only"
+                    else "broken"
+                ),
+                details={
+                    "status": report_result.status,
+                    "error_kind": report_result.error_kind,
+                },
+            )
+            manifest["event_log_sha256"] = _sha256(event_log_path)
+            try:
+                atomic_json(manifest_path, manifest)
+            except OSError:
                 pass
             return RunApiScenarioResult(
                 workspace_id=command.workspace_id,
@@ -468,46 +492,63 @@ class FilesystemApiScenarioRunService:
         evidence_path = execution_root / "evidence.json"
         if not evidence_path.is_file():
             raise ValueError("execution has no Evidence from which to build Allure results")
-        if not results_path.is_dir() or not (execution_root / "report-summary.json").is_file():
-            cases, service, source_sha256 = self._automation.published_report_source(
-                command.workspace_id,
-                source_publication_id=manifest.get("source_publication_id"),
-                source_history_path=manifest.get("source_history_path"),
-                source_cases_sha256=str(manifest.get("source_cases_sha256") or ""),
-            )
+        cases, service, source_sha256 = self._automation.published_report_source(
+            command.workspace_id,
+            source_publication_id=manifest.get("source_publication_id"),
+            source_history_path=manifest.get("source_history_path"),
+            source_cases_sha256=str(manifest.get("source_cases_sha256") or ""),
+        )
+        writer = ApiExecutionEventWriter(
+            execution_root / "execution-events.jsonl",
+            command.execution_id,
+        )
+        writer.emit("report.started", phase="report", outcome="started")
+        try:
             evidence = ExecutionEvidence.model_validate_json(
                 evidence_path.read_text(encoding="utf-8")
             )
-            report = build_report_summary(
-                evidence,
-                cases,
-                read_execution_events(execution_root / "execution-events.jsonl"),
-                _stored_cleanup_summary(execution_root, evidence),
-            )
-            atomic_json(
-                execution_root / "report-summary.json",
-                report.model_dump(mode="json"),
-            )
-            if not results_path.is_dir():
-                write_allure_results(
-                    results_path=results_path,
-                    evidence=evidence,
-                    summary=report,
-                    cases=cases,
-                    service=service,
-                    source_sha256=str(manifest.get("source_cases_sha256") or source_sha256),
-                    events=read_execution_events(execution_root / "execution-events.jsonl"),
+            if not results_path.is_dir() or not (execution_root / "report-summary.json").is_file():
+                report = build_report_summary(
+                    evidence,
+                    cases,
+                    read_execution_events(execution_root / "execution-events.jsonl"),
+                    _stored_cleanup_summary(execution_root, evidence),
                 )
-        result = generate_allure_html(
-            repo_root=self._store.repo_root,
-            workspace_id=command.workspace_id,
-            execution_id=command.execution_id,
-            results_path=results_path,
-            report_path=execution_root / "allure-report",
-        )
+                atomic_json(
+                    execution_root / "report-summary.json",
+                    report.model_dump(mode="json"),
+                )
+                if not results_path.is_dir():
+                    write_allure_results(
+                        results_path=results_path,
+                        evidence=evidence,
+                        summary=report,
+                        cases=cases,
+                        service=service,
+                        source_sha256=str(manifest.get("source_cases_sha256") or source_sha256),
+                        events=read_execution_events(execution_root / "execution-events.jsonl"),
+                    )
+            result = generate_allure_html(
+                repo_root=self._store.repo_root,
+                workspace_id=command.workspace_id,
+                execution_id=command.execution_id,
+                results_path=results_path,
+                report_path=execution_root / "allure-report",
+            )
+        except Exception as exc:
+            result = GenerateApiAllureReportResult(
+                workspace_id=command.workspace_id,
+                execution_id=command.execution_id,
+                status="failed",
+                allure_results_path=results_path.relative_to(workspace_root).as_posix(),
+                message="Allure report generation failed; API requests were not replayed",
+                error_kind=type(exc).__name__,
+            )
         manifest["report_status"] = result.status
         manifest["allure_results_path"] = results_path.relative_to(workspace_root).as_posix()
-        manifest["allure_results_sha256"] = _tree_sha256(results_path)
+        manifest["allure_results_sha256"] = (
+            _tree_sha256(results_path) if results_path.is_dir() else None
+        )
         manifest["allure_report_path"] = result.allure_report_path
         manifest["allure_report_sha256"] = (
             _tree_sha256(execution_root / "allure-report") if result.status == "generated" else None
@@ -521,7 +562,36 @@ class FilesystemApiScenarioRunService:
         manifest["allure_history_path"] = (
             "allure-history.jsonl" if (workspace_root / "allure-history.jsonl").is_file() else None
         )
-        atomic_json(manifest_path, manifest)
+        try:
+            atomic_json(manifest_path, manifest)
+        except OSError as exc:
+            result = GenerateApiAllureReportResult(
+                workspace_id=command.workspace_id,
+                execution_id=command.execution_id,
+                status="failed",
+                allure_results_path=results_path.relative_to(workspace_root).as_posix(),
+                message="report manifest update failed; API requests were not replayed",
+                error_kind=type(exc).__name__,
+            )
+            manifest["report_status"] = "failed"
+            manifest["report_error_kind"] = type(exc).__name__
+        writer.emit(
+            "report.finished",
+            phase="report",
+            outcome=(
+                "passed"
+                if result.status == "generated"
+                else "pending"
+                if result.status == "results_only"
+                else "broken"
+            ),
+            details={"report_status": result.status, "error_kind": result.error_kind},
+        )
+        manifest["event_log_sha256"] = _sha256(execution_root / "execution-events.jsonl")
+        try:
+            atomic_json(manifest_path, manifest)
+        except OSError:
+            pass
         return result
 
     def resume_cleanup(self, command: ResumeApiCleanupCommand) -> ResumeApiCleanupResult:
@@ -785,6 +855,8 @@ def _event_callback(writer: ApiExecutionEventWriter):
             outcome = "failed"
         elif event_type.endswith(".failed") or status in {"failed", "error", "blocked"}:
             outcome = "broken" if status != "failed" else "failed"
+        elif event_type.endswith(".indeterminate"):
+            outcome = "broken"
         elif event_type.endswith((".finished", ".received")):
             outcome = "passed"
         else:
@@ -852,6 +924,7 @@ def _authentication_failure_evidence(
     command: RunApiScenarioCommand,
     cases: list[ApiTestCase],
     source_cases_path: str,
+    source_cases_schema_version: str,
     profile: ExecutionProfile,
 ) -> ExecutionEvidence:
     started_at = datetime.now(tz=UTC)
@@ -879,7 +952,7 @@ def _authentication_failure_evidence(
         schema_version=EXECUTION_EVIDENCE_SCHEMA_VERSION,
         run_id=command.execution_id,
         source_cases_path=source_cases_path,
-        source_cases_schema_version=API_CASES_SCHEMA_VERSION,
+        source_cases_schema_version=source_cases_schema_version,
         started_at=started_at,
         completed_at=datetime.now(tz=UTC),
         environment=ExecutionEnvironment(

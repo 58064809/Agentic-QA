@@ -36,7 +36,11 @@ class ApiExecutionPlanCleanup(StrictModel):
     path_template: str
     request_structure_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     operation_classification: Literal[
-        "read_only", "mutation_cleanup", "mutation_idempotent", "mutation_manual"
+        "read_only",
+        "mutation_cleanup",
+        "mutation_idempotent",
+        "mutation_no_cleanup",
+        "mutation_manual",
     ]
     idempotency_header: str | None = None
     idempotency_key_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
@@ -53,7 +57,11 @@ class ApiExecutionPlanCase(StrictModel):
     cleanup_ids: list[str] = Field(default_factory=list)
     cleanups: list[ApiExecutionPlanCleanup] = Field(default_factory=list)
     operation_classification: Literal[
-        "read_only", "mutation_cleanup", "mutation_idempotent", "mutation_manual"
+        "read_only",
+        "mutation_cleanup",
+        "mutation_idempotent",
+        "mutation_no_cleanup",
+        "mutation_manual",
     ]
     idempotency_header: str | None = None
     idempotency_key_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")

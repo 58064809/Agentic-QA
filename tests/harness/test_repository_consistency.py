@@ -27,6 +27,7 @@ CORE_FILES = (
     "docs/rag-design.md",
     "docs/roadmap.md",
     "docs/schemas/api-cases.v1.1.schema.json",
+    "docs/schemas/api-cases.v1.2.schema.json",
     "docs/schemas/execution-evidence.v1.schema.json",
     "docs/schemas/failure-triage.v1.schema.json",
     "docs/schemas/agent-request.v1.schema.json",

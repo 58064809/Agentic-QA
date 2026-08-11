@@ -39,7 +39,7 @@ class PublishedApiSourceResolver:
         matches = [
             item
             for item in self._history_versions(root)
-            if item.get("content_sha256") == current_sha256
+            if _normalized_sha256(item.get("content_sha256")) == current_sha256
         ]
         if not matches:
             raise HistoricalSourceUnavailableError(
@@ -67,7 +67,11 @@ class PublishedApiSourceResolver:
         else:
             # Legacy execution plans did not persist publication identity. A unique
             # historical hash is the only safe deterministic migration path.
-            matches = [item for item in versions if item.get("content_sha256") == expected_sha256]
+            matches = [
+                item
+                for item in versions
+                if _normalized_sha256(item.get("content_sha256")) == expected_sha256
+            ]
         if len(matches) != 1:
             raise HistoricalSourceUnavailableError(
                 "execution source cannot be resolved to exactly one historical publication"
@@ -104,7 +108,7 @@ class PublishedApiSourceResolver:
         recorded_sha256 = entry.get("content_sha256")
         if not all(isinstance(item, str) and item for item in (publication_id, relative_path)):
             raise HistoricalSourceUnavailableError("publication history identity is invalid")
-        if recorded_sha256 != expected_sha256:
+        if _normalized_sha256(recorded_sha256) != expected_sha256:
             raise HistoricalSourceUnavailableError(
                 "publication history hash does not match execution"
             )
@@ -126,3 +130,7 @@ class PublishedApiSourceResolver:
 
 def _sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
+
+
+def _normalized_sha256(value: object) -> str:
+    return str(value or "").removeprefix("sha256:")

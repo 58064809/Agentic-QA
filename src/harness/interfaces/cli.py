@@ -327,7 +327,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             _print(result)
-            return 0 if result.status == "passed" else 1
+            return 0 if result.status in {"passed", "skipped"} else 1
         if args.command == "api" and args.api_command == "report":
             result = harness.generate_api_allure_report(
                 GenerateApiAllureReportCommand(

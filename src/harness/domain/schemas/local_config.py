@@ -283,6 +283,7 @@ class LocalConfigIssue(StrictModel):
     location: str = Field(min_length=1)
     message: str = Field(min_length=1)
     remediation: str = Field(min_length=1)
+    severity: Literal["warning", "error"] = "error"
 
 
 class LocalConfigCheckResult(StrictModel):
@@ -295,6 +296,6 @@ class LocalConfigCheckResult(StrictModel):
 
     @model_validator(mode="after")
     def validate_ready(self) -> LocalConfigCheckResult:
-        if self.ready != (not self.issues):
-            raise ValueError("ready must match issues")
+        if self.ready != (not any(item.severity == "error" for item in self.issues)):
+            raise ValueError("ready must match error issues")
         return self

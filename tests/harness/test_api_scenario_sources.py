@@ -276,11 +276,10 @@ def test_manual_mapping_requires_every_case_id() -> None:
     )
     draft = ApiTestCasesDraft.model_validate(
         {
-            "schema_version": "agentic-qa.api-cases.v1.1",
+            "schema_version": "agentic-qa.api-cases.v1.2",
             "artifact_type": "api_automation_cases",
             "status": "needs_human_review",
             "human_review_required": True,
-            "base_url_env": "AGENTIC_QA_BASE_URL",
             "business_rules": ["ORDER-001"],
             "source_refs": [
                 {
@@ -424,11 +423,10 @@ def test_prepare_review_and_run_vertical_loop_uses_one_api_agent(
             "summary": "assembled manual API scenario",
             "artifacts": {},
             "api_test_cases": {
-                "schema_version": "agentic-qa.api-cases.v1.1",
+                "schema_version": "agentic-qa.api-cases.v1.2",
                 "artifact_type": "api_automation_cases",
                 "status": "needs_human_review",
                 "human_review_required": True,
-                "base_url_env": "AGENTIC_QA_BASE_URL",
                 "business_rules": ["ORDER-001"],
                 "source_refs": [openapi_ref, manual_ref],
                 "cases": [

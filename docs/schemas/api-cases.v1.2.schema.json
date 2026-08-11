@@ -78,7 +78,7 @@
       "title": "ConfirmedApiRequest",
       "type": "object"
     },
-    "LegacyConfirmedApiTestCase": {
+    "ConfirmedApiTestCase": {
       "additionalProperties": false,
       "properties": {
         "id": {
@@ -147,6 +147,7 @@
           "items": {
             "$ref": "#/$defs/ApiAssertion"
           },
+          "minItems": 1,
           "title": "Assertions",
           "type": "array"
         },
@@ -176,7 +177,7 @@
         "variables",
         "cleanup"
       ],
-      "title": "LegacyConfirmedApiTestCase",
+      "title": "ConfirmedApiTestCase",
       "type": "object"
     },
     "SourceRef": {
@@ -399,7 +400,7 @@
       "items": {
         "discriminator": {
           "mapping": {
-            "confirmed": "#/$defs/LegacyConfirmedApiTestCase",
+            "confirmed": "#/$defs/ConfirmedApiTestCase",
             "missing": "#/$defs/UnconfirmedApiTestCase",
             "partial": "#/$defs/UnconfirmedApiTestCase",
             "pending_confirmation": "#/$defs/UnconfirmedApiTestCase"
@@ -408,7 +409,7 @@
         },
         "oneOf": [
           {
-            "$ref": "#/$defs/LegacyConfirmedApiTestCase"
+            "$ref": "#/$defs/ConfirmedApiTestCase"
           },
           {
             "$ref": "#/$defs/UnconfirmedApiTestCase"
@@ -428,13 +429,9 @@
       "type": "array"
     },
     "schema_version": {
-      "const": "agentic-qa.api-cases.v1.1",
+      "const": "agentic-qa.api-cases.v1.2",
+      "default": "agentic-qa.api-cases.v1.2",
       "title": "Schema Version",
-      "type": "string"
-    },
-    "base_url_env": {
-      "const": "AGENTIC_QA_BASE_URL",
-      "title": "Base Url Env",
       "type": "string"
     }
   },
@@ -445,10 +442,8 @@
     "business_rules",
     "source_refs",
     "cases",
-    "review_questions",
-    "schema_version",
-    "base_url_env"
+    "review_questions"
   ],
-  "title": "ApiTestCasesDraftV11",
+  "title": "ApiTestCasesDraft",
   "type": "object"
 }

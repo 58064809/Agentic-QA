@@ -215,11 +215,10 @@ def test_openapi_inspection_rejects_incomplete_or_external_contracts(
 def test_confirmed_api_case_requires_endpoint_from_inspected_frozen_contract() -> None:
     draft = ApiTestCasesDraft.model_validate(
         {
-            "schema_version": "agentic-qa.api-cases.v1.1",
+            "schema_version": "agentic-qa.api-cases.v1.2",
             "artifact_type": "api_automation_cases",
             "status": "needs_human_review",
             "human_review_required": True,
-            "base_url_env": "AGENTIC_QA_BASE_URL",
             "business_rules": ["RULE-001"],
             "source_refs": [
                 {

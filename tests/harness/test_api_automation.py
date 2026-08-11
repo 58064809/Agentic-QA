@@ -195,5 +195,5 @@ def test_public_api_execution_enforces_workspace_trusted_origin(
 
 def test_api_cases_schema_version_remains_v1_1() -> None:
     assert default_recorded_api_test_cases("schema check").schema_version == (
-        "agentic-qa.api-cases.v1.1"
+        "agentic-qa.api-cases.v1.2"
     )

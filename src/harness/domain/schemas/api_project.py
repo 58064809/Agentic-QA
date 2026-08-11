@@ -148,6 +148,7 @@ class ApiProjectIssue(StrictModel):
     env_names: list[str] = Field(default_factory=list)
     message: str = Field(min_length=1)
     remediation: str = Field(min_length=1)
+    severity: Literal["warning", "error"] = "error"
 
 
 class ApiProjectCheckCommand(StrictModel):
@@ -171,6 +172,7 @@ class ApiProjectCheckResult(StrictModel):
 
     @model_validator(mode="after")
     def validate_ready_state(self) -> ApiProjectCheckResult:
-        if self.ready != (not self.issues and self.execution_policy is not None):
+        errors = [item for item in self.issues if item.severity == "error"]
+        if self.ready != (not errors and self.execution_policy is not None):
             raise ValueError("ready must match issues and execution_policy")
         return self

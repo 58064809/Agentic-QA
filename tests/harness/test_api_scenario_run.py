@@ -163,11 +163,10 @@ def _workspace(
     }
     draft = ApiTestCasesDraft.model_validate(
         {
-            "schema_version": "agentic-qa.api-cases.v1.1",
+            "schema_version": "agentic-qa.api-cases.v1.2",
             "artifact_type": "api_automation_cases",
             "status": "needs_human_review",
             "human_review_required": True,
-            "base_url_env": "AGENTIC_QA_BASE_URL",
             "business_rules": ["ORDER-001"],
             "source_refs": [openapi_ref],
             "cases": [
@@ -269,7 +268,7 @@ def test_run_persists_redacted_reports_and_never_replays_id(
     assert manifest["source_publication_id"] == "published-v1"
     assert plan.execution_id == "trial-001"
     assert [item.case_id for item in plan.cases] == ["api-order-create"]
-    assert plan.cases[0].operation_classification == "read_only"
+    assert plan.cases[0].operation_classification == "mutation_no_cleanup"
     tampered_plan = plan.model_dump(mode="json")
     tampered_plan["environment"] = "tampered"
     with pytest.raises(ValueError, match="semantic hash"):
@@ -296,6 +295,9 @@ def test_run_persists_redacted_reports_and_never_replays_id(
     assert "request data values are intentionally omitted" in summary
     assert report_summary["result"] == "passed"
     assert '"event_type":"request.sent"' in events
+    assert events.index('"event_type":"mutation.intent.created"') < events.index(
+        '"event_type":"request.sent"'
+    )
     assert (execution_root / "allure-results").is_dir()
     result_files = list((execution_root / "allure-results").glob("*-result.json"))
     assert result_files
@@ -338,6 +340,36 @@ def test_failed_assertion_is_persisted_as_failed_result(
     )
     assert manifest["status"] == "completed"
     assert manifest["result"] == "failed"
+
+
+def test_request_exception_records_indeterminate_after_mutation_intent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _workspace(tmp_path)
+
+    def fail_request(method: str, url: str, **_kwargs: object) -> _Response:
+        raise RuntimeError("transport failed after dispatch")
+
+    monkeypatch.setattr("requests.request", fail_request)
+
+    result = Harness(tmp_path).run_api_scenario(_command("request-indeterminate"))
+
+    assert result.execution_status == "completed"
+    assert result.test_result == "broken"
+    events = [
+        json.loads(line)
+        for line in (root / "executions" / "request-indeterminate" / "execution-events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    event_types = [event["event_type"] for event in events]
+    assert event_types.index("mutation.intent.created") < event_types.index("request.sent")
+    assert event_types.index("request.sent") < event_types.index("request.indeterminate")
+    indeterminate = next(
+        event for event in events if event["event_type"] == "request.indeterminate"
+    )
+    assert indeterminate["outcome"] == "broken"
 
 
 def test_allure_timeout_only_changes_report_status(
@@ -783,6 +815,76 @@ def test_cleanup_resume_requires_manual_reapproval_after_policy_change(
     assert '"event_type":"cleanup.manual_review_required"' in events
     manifest = json.loads((execution_root / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["cleanup_recovery"]["status"] == "manual_reapproval_required"
+
+
+def test_cleanup_resume_allows_credential_rotation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _root, _key, journal, _draft, _execution_root = _recovery_journal(tmp_path, "credential-change")
+    journal.register(
+        case_id="pending-case",
+        title="pending",
+        cleanup=_cleanup_step("delete-pending", "/orders/pending"),
+        runtime_variables={},
+    )
+    local_path = tmp_path / "agentic-qa.local.yml"
+    local = yaml.safe_load(local_path.read_text(encoding="utf-8"))
+    local["secrets"]["values"]["api.demo.qa.auth.fallback_token"] = "rotated-token"
+    local_path.write_text(yaml.safe_dump(local, sort_keys=False), encoding="utf-8")
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "requests.request",
+        lambda method, url, **kwargs: (calls.append(url), _Response(204, url))[1],
+    )
+
+    result = Harness(tmp_path).resume_api_cleanup(
+        ResumeApiCleanupCommand(
+            workspace_id="demo",
+            execution_id="credential-change",
+            environment="qa",
+        )
+    )
+
+    assert result.status == "complete"
+    assert calls == ["https://qa.example.test/orders/pending"]
+
+
+def test_explicit_allure_failure_does_not_change_execution_truth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setattr("requests.request", lambda method, url, **kwargs: _Response(201, url))
+    harness = Harness(tmp_path)
+    harness.run_api_scenario(_command("explicit-report-failure"))
+    monkeypatch.setattr(
+        "harness.infrastructure.api_scenario_run.generate_allure_html",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("plugin failed")),
+    )
+
+    result = harness.generate_api_allure_report(
+        GenerateApiAllureReportCommand(
+            workspace_id="demo",
+            execution_id="explicit-report-failure",
+        )
+    )
+
+    assert result.status == "failed"
+    assert result.error_kind == "RuntimeError"
+    execution_root = root / "executions" / "explicit-report-failure"
+    manifest = json.loads((execution_root / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["execution_status"] == "completed"
+    assert manifest["test_result"] == "passed"
+    assert manifest["cleanup_status"] == "not_required"
+    assert manifest["report_status"] == "failed"
+    event_types = [
+        json.loads(line)["event_type"]
+        for line in (execution_root / "execution-events.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert event_types[-2:] == ["report.started", "report.finished"]
 
 
 def test_allure_rebuild_uses_execution_historical_source(

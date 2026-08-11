@@ -16,6 +16,7 @@ from harness.application.qa_design import (
 from harness.domain.models import StrictModel
 from harness.domain.schemas.api_test_cases import (
     ApiTestCasesDraft,
+    load_api_test_cases,
     parse_api_case_variables,
     parse_api_cleanup_steps,
     validate_api_case_runtime_definitions,
@@ -210,7 +211,7 @@ def evaluate_api_candidate_artifact(
     validation_issues: list[dict[str, Any]] = []
     try:
         payload = yaml.safe_load(api_cases_content)
-        candidate = ApiTestCasesDraft.model_validate(payload)
+        candidate = load_api_test_cases(payload)
         validate_api_case_runtime_definitions(candidate.cases)
     except ValidationError as exc:
         validation_issues = exc.errors(include_input=False, include_url=False)

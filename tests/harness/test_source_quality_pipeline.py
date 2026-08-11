@@ -102,11 +102,10 @@ def _workspace_store(tmp_path: Path, limits: SourceIngestionLimits | None = None
 def test_generic_quality_rejects_unknown_api_assertion() -> None:
     content = json.dumps(
         {
-            "schema_version": "agentic-qa.api-cases.v1.1",
+            "schema_version": "agentic-qa.api-cases.v1.2",
             "artifact_type": "api_automation_cases",
             "status": "needs_human_review",
             "human_review_required": True,
-            "base_url_env": "AGENTIC_QA_BASE_URL",
             "business_rules": ["RULE-001"],
             "source_refs": [
                 {

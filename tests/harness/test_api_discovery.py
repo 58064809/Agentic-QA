@@ -185,11 +185,10 @@ def test_observed_network_candidate_only_supports_an_unconfirmed_api_case() -> N
     }
     draft = ApiTestCasesDraft.model_validate(
         {
-            "schema_version": "agentic-qa.api-cases.v1.1",
+            "schema_version": "agentic-qa.api-cases.v1.2",
             "artifact_type": "api_automation_cases",
             "status": "needs_human_review",
             "human_review_required": True,
-            "base_url_env": "AGENTIC_QA_BASE_URL",
             "business_rules": [{"id": "BR-001", "summary": "用户可发起助力"}],
             "source_refs": [source_ref],
             "cases": [

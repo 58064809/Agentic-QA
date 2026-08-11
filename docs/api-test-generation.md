@@ -1,7 +1,7 @@
 # API 测试契约
 
 当测试目标包含 API 时，`api_test_draft` 提供可审核、可发布和可执行的机器用例。Candidate 与
-published 文件均为 YAML，数据契约是 `agentic-qa.api-cases.v1.1`。
+published 文件均为 YAML，数据契约是 `agentic-qa.api-cases.v1.2`。
 
 ## 场景
 
@@ -161,8 +161,8 @@ POST/PUT/PATCH/DELETE 默认为 `mutation_cleanup`；精确 policy 可改为 `mu
 实际支持的 Header，Harness 生成 execution/case/operation 绑定的确定性值，但不会自动重试 mutation。
 命名空间隔离同样由已审核策略精确声明 Header/query/body 注入位置，原值不写入报告。
 
-confirmed 的 `POST`、`PUT`、`PATCH`、`DELETE` 默认视为状态变更；缺少带断言 cleanup 的 Candidate 会被质量门拒绝。确实无副作用的
-operation 需要在根配置环境下以规范化 `METHOD /path-template` 写入 `cleanup_exempt_operations`；项目级登录
+confirmed 的 `POST`、`PUT`、`PATCH`、`DELETE` 默认视为状态变更；缺少带断言 cleanup 的 Candidate 会被质量门拒绝。确实无需自动 cleanup 的
+operation 需要在根配置环境下以规范化 `METHOD /path-template` 声明为 `mutation_no_cleanup`；它仍是 mutation、仍记录 intent，且不会自动重试。项目级登录
 不进入 API Cases，因此自动豁免。状态变更请求进入 transport 前，cleanup 会先以 `armed` 写入
 AES-256-GCM 加密 journal，其中保留 case、cleanup、路径模板、已知局部变量与
 `mutation_may_happen=true`。响应和提取结果返回后，可完整解析的 cleanup 从 `armed` 转为 `pending`，
@@ -187,11 +187,10 @@ cleanup 标识可以用于本次局部回收。该主用例记录为 error，提
 ## 示例
 
 ```yaml
-schema_version: agentic-qa.api-cases.v1.1
+schema_version: agentic-qa.api-cases.v1.2
 artifact_type: api_automation_cases
 status: needs_human_review
 human_review_required: true
-base_url_env: AGENTIC_QA_BASE_URL
 business_rules:
   - RULE-001
 source_refs:
@@ -241,7 +240,9 @@ review_questions:
   - 测试环境和数据由人工确认
 ```
 
-完整字段约束见机器可读 [API Cases JSON Schema](schemas/api-cases.v1.1.schema.json)。
+完整字段约束见机器可读 [API Cases v1.2 JSON Schema](schemas/api-cases.v1.2.schema.json)。
+历史 v1.1 published YAML 仍可读取，但新 Candidate 只生成 v1.2；v1.2 不再包含
+`base_url_env`，Base URL 由本地项目配置和审核后的 workspace policy 决定。
 
 ## 常见问题
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import re
 from typing import Annotated, Any, Literal
 
@@ -12,7 +13,8 @@ from harness.domain.security import (
     validate_api_request_safety,
 )
 
-API_CASES_SCHEMA_VERSION = "agentic-qa.api-cases.v1.1"
+API_CASES_SCHEMA_VERSION = "agentic-qa.api-cases.v1.2"
+LEGACY_API_CASES_SCHEMA_VERSION = "agentic-qa.api-cases.v1.1"
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"}
 SUPPORTED_API_ASSERTION_TYPES = frozenset(
     {
@@ -437,13 +439,15 @@ def validate_api_cleanup_policy(
                 else "read_only"
             )
         if operation in exemptions:
-            classification = "read_only"
+            classification = "mutation_no_cleanup"
         if classification == "mutation_manual":
             raise ValueError(
                 f"{case.id} operation is manual-only and cannot be published as executable: "
                 f"{operation}"
             )
-        if classification != "read_only" and not parse_api_cleanup_steps(case.cleanup):
+        if classification not in {"read_only", "mutation_no_cleanup"} and not (
+            parse_api_cleanup_steps(case.cleanup)
+        ):
             raise ValueError(
                 f"{case.id} mutating operation requires cleanup or an exact policy exemption: "
                 f"{operation}"
@@ -497,22 +501,86 @@ TypedApiTestCase = Annotated[
 ]
 
 
-class ApiTestCasesDraft(BaseModel):
+class LegacyConfirmedApiTestCase(ApiTestCase):
+    contract_status: Literal["confirmed"]
+    request: ConfirmedApiRequest
+
+
+LegacyTypedApiTestCase = Annotated[
+    LegacyConfirmedApiTestCase | UnconfirmedApiTestCase,
+    Field(discriminator="contract_status"),
+]
+
+
+class _ApiTestCasesDraftBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["agentic-qa.api-cases.v1.1"]
     artifact_type: Literal["api_automation_cases"]
     status: Literal["needs_human_review"]
     human_review_required: Literal[True]
-    base_url_env: Literal["AGENTIC_QA_BASE_URL"]
     business_rules: list[Any] = Field(min_length=1)
     source_refs: list[SourceRef] = Field(min_length=1)
     cases: list[TypedApiTestCase] = Field(min_length=1)
     review_questions: list[str] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def validate_unique_case_ids(self) -> ApiTestCasesDraft:
+    def validate_unique_case_ids(self) -> _ApiTestCasesDraftBase:
         case_ids = [case.id for case in self.cases]
         if len(case_ids) != len(set(case_ids)):
             raise ValueError("API case ids must be unique")
         return self
+
+
+class ApiTestCasesDraftV11(_ApiTestCasesDraftBase):
+    schema_version: Literal["agentic-qa.api-cases.v1.1"]
+    base_url_env: Literal["AGENTIC_QA_BASE_URL"]
+    cases: list[LegacyTypedApiTestCase] = Field(min_length=1)
+
+
+class ApiTestCasesDraft(_ApiTestCasesDraftBase):
+    schema_version: Literal["agentic-qa.api-cases.v1.2"] = API_CASES_SCHEMA_VERSION
+
+
+def load_api_test_cases(value: Any) -> ApiTestCasesDraft:
+    if not isinstance(value, dict):
+        raise ValueError("API cases payload must be an object")
+    if value.get("schema_version") == LEGACY_API_CASES_SCHEMA_VERSION:
+        legacy = ApiTestCasesDraftV11.model_validate(value)
+        normalized = legacy.model_dump(mode="python", exclude={"base_url_env"})
+        normalized["schema_version"] = API_CASES_SCHEMA_VERSION
+        return ApiTestCasesDraft.model_validate(normalized)
+    return ApiTestCasesDraft.model_validate(value)
+
+
+def load_api_test_cases_report_projection(value: Any) -> ApiTestCasesDraft:
+    """Load immutable case metadata for reports without making it executable.
+
+    Early v1.1 publications could contain confirmed cases without assertions. They
+    remain usable for reconstructing report metadata, but must not pass the normal
+    execution or publication reader. A synthetic assertion exists only inside this
+    read-only projection so the rest of the legacy wire shape is still validated.
+    """
+    try:
+        return load_api_test_cases(value)
+    except ValueError:
+        if not isinstance(value, dict) or value.get("schema_version") != (
+            LEGACY_API_CASES_SCHEMA_VERSION
+        ):
+            raise
+        projection = copy.deepcopy(value)
+        cases = projection.get("cases")
+        if not isinstance(cases, list):
+            raise
+        projected = False
+        for case in cases:
+            if not isinstance(case, dict) or case.get("contract_status") != "confirmed":
+                continue
+            if case.get("assertions") == []:
+                case["assertions"] = [{"type": "status_code", "expected": 200}]
+                projected = True
+        if not projected:
+            raise
+        legacy = ApiTestCasesDraftV11.model_validate(projection)
+        normalized = legacy.model_dump(mode="python", exclude={"base_url_env"})
+        normalized["schema_version"] = API_CASES_SCHEMA_VERSION
+        return ApiTestCasesDraft.model_validate(normalized)

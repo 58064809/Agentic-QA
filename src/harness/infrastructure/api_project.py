@@ -31,12 +31,20 @@ def _sha256(value: bytes) -> str:
     return f"sha256:{hashlib.sha256(value).hexdigest()}"
 
 
-def _issue(code: str, location: str, message: str, remediation: str) -> ApiProjectIssue:
+def _issue(
+    code: str,
+    location: str,
+    message: str,
+    remediation: str,
+    *,
+    severity: str = "error",
+) -> ApiProjectIssue:
     return ApiProjectIssue(
         code=code,
         location=location,
         message=message,
         remediation=remediation,
+        severity=severity,
     )
 
 
@@ -51,7 +59,13 @@ class FilesystemApiProjectChecker:
         issues: list[ApiProjectIssue] = []
         config, local_issues = self._loader.load_with_issues()
         issues.extend(
-            _issue(item.code, item.location, item.message, item.remediation)
+            _issue(
+                item.code,
+                item.location,
+                item.message,
+                item.remediation,
+                severity=item.severity,
+            )
             for item in local_issues
         )
         legacy = source / PROJECT_CONFIG_NAME
@@ -97,15 +111,16 @@ class FilesystemApiProjectChecker:
                     "Configure the environment only in agentic-qa.local.yml",
                 )
             )
+        errors = [item for item in issues if item.severity == "error"]
         return ApiProjectCheckResult(
-            ready=not issues and project is not None,
+            ready=not errors and project is not None,
             service=project.service if project else None,
             environment=command.environment,
             config_path=str(self._loader.path),
             selected_authentication=project.selected_authentication if project else None,
             issues=issues,
-            execution_policy=project.policy if not issues and project else None,
-            structural_sha256=project.structural_sha256 if not issues and project else None,
+            execution_policy=project.policy if not errors and project else None,
+            structural_sha256=project.structural_sha256 if not errors and project else None,
         )
 
     @staticmethod

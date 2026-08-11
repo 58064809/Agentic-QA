@@ -390,7 +390,6 @@ def default_recorded_api_test_cases(goal: str) -> ApiTestCasesDraft:
         artifact_type="api_automation_cases",
         status="needs_human_review",
         human_review_required=True,
-        base_url_env="AGENTIC_QA_BASE_URL",
         business_rules=[{"id": "GOAL-001", "summary": goal}],
         source_refs=[source],
         cases=[

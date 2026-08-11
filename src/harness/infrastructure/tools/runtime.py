@@ -14,7 +14,7 @@ from jsonschema import ValidationError, validate
 
 from harness.domain.budget import Budget
 from harness.domain.models import ExecutionProfile
-from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
+from harness.domain.schemas.api_test_cases import load_api_test_cases
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.failure_triage import FailureTriage
 from harness.domain.schemas.local_config import (
@@ -527,7 +527,7 @@ class ToolRuntime:
         if not target.is_file() or root / "published" not in target.parents:
             raise ValueError("api.execute only accepts published API cases")
         payload = yaml.safe_load(target.read_text(encoding="utf-8"))
-        cases = ApiTestCasesDraft.model_validate(payload)
+        cases = load_api_test_cases(payload)
         policy = self.store.validate_execution_profile(workspace, profile)
         binding = self.store.workspace_config(workspace).get("api_project")
         if not isinstance(binding, dict):

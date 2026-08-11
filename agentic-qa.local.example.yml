@@ -64,13 +64,12 @@ api:
           trusted_origins:
             - https://gateway-app-dev.nexuscube.cn
           allowed_http_methods: [GET, POST]
-          cleanup_exempt_operations: []
           # shared is the safe default. namespace injects one deterministic
           # per-execution value through the reviewed header/query/body field.
           isolation:
             mode: shared
-          # Exact operation overrides. mutation_idempotent is accepted only
-          # when the server contract/team confirms the named header.
+          # Exact operation overrides. Use mutation_no_cleanup for a reviewed
+          # mutation that has no cleanup; it is never treated as read-only.
           operation_policies: {}
           timeout_seconds: 30
           auth:

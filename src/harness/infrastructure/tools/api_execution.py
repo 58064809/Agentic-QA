@@ -687,6 +687,15 @@ def _execute_request(
                 key_sha256=hashlib.sha256(idempotency_key.encode()).hexdigest(),
             )
         journal = _CURRENT_CLEANUP_JOURNAL.get()
+        if operation_policy.classification != "read_only":
+            _emit_event(
+                event_callback,
+                "mutation.intent.created",
+                case_id=case_id,
+                method=method,
+                path=path,
+                operation_classification=operation_policy.classification,
+            )
         if journal is not None:
             for cleanup in cleanup_steps or []:
                 journal.arm(
@@ -834,6 +843,15 @@ def _execute_request(
             request_sent=False,
         )
     except Exception as exc:
+        if request_sent:
+            _emit_event(
+                event_callback,
+                "request.indeterminate",
+                case_id=case_id,
+                method=method,
+                path=path,
+                error_kind=type(exc).__name__,
+            )
         return _RequestOutcome(
             evidence=CaseExecutionEvidence(
                 case_id=case_id,
@@ -865,6 +883,7 @@ def execute_api_cases(
     operation_policies: dict[str, ApiOperationPolicy] | None = None,
     execution_identity: str | None = None,
     event_callback: ApiExecutionEventCallback | None = None,
+    source_cases_schema_version: str = API_CASES_SCHEMA_VERSION,
 ) -> ExecutionEvidence:
     isolation = isolation or ApiIsolationPolicy()
     operation_policies = operation_policies or {}
@@ -1102,7 +1121,7 @@ def execute_api_cases(
         schema_version=EXECUTION_EVIDENCE_SCHEMA_VERSION,
         run_id=run_id,
         source_cases_path=source_cases_path,
-        source_cases_schema_version=API_CASES_SCHEMA_VERSION,
+        source_cases_schema_version=source_cases_schema_version,
         started_at=started_at,
         completed_at=datetime.now(tz=UTC),
         environment=ExecutionEnvironment(
