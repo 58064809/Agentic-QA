@@ -407,6 +407,122 @@ def test_allure_timeout_only_changes_report_status(
     assert (root / "executions" / "report-timeout" / "evidence.json").is_file()
 
 
+@pytest.mark.parametrize("event_type", ["report.started", "report.finished"])
+def test_reporting_event_failure_does_not_change_execution_truth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    event_type: str,
+) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setattr("requests.request", lambda method, url, **kwargs: _Response(201, url))
+    from harness.infrastructure import api_scenario_run as scenario_run
+
+    original_emit = scenario_run.ApiExecutionEventWriter.emit
+
+    def emit(self: object, current_type: str, **kwargs: object) -> object:
+        if current_type == event_type:
+            raise OSError(f"cannot persist {event_type}")
+        return original_emit(self, current_type, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(scenario_run.ApiExecutionEventWriter, "emit", emit)
+
+    result = Harness(tmp_path).run_api_scenario(
+        _command(f"report-event-{event_type.rsplit('.', maxsplit=1)[-1]}")
+    )
+
+    assert result.execution_status == "completed"
+    assert result.test_result == "passed"
+    assert result.cleanup_status == "not_required"
+    assert result.report_status == "failed"
+    execution_root = root / "executions" / result.execution_id
+    manifest = json.loads((execution_root / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["execution_status"] == "completed"
+    assert manifest["test_result"] == "passed"
+    assert manifest["cleanup_status"] == "not_required"
+    assert manifest["report_status"] == "failed"
+
+
+@pytest.mark.parametrize("artifact_name", ["summary.md", "report-summary.json"])
+def test_reporting_artifact_failure_does_not_change_execution_truth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    artifact_name: str,
+) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setattr("requests.request", lambda method, url, **kwargs: _Response(201, url))
+    from harness.infrastructure import api_scenario_run as scenario_run
+
+    function_name = "atomic_text" if artifact_name.endswith(".md") else "atomic_json"
+    original_write = getattr(scenario_run, function_name)
+
+    def write(path: Path, payload: object) -> None:
+        if path.name == artifact_name:
+            raise OSError(f"cannot write {artifact_name}")
+        original_write(path, payload)
+
+    monkeypatch.setattr(scenario_run, function_name, write)
+
+    result = Harness(tmp_path).run_api_scenario(
+        _command(f"report-artifact-{artifact_name.split('.')[0]}")
+    )
+
+    assert result.execution_status == "completed"
+    assert result.test_result == "passed"
+    assert result.cleanup_status == "not_required"
+    assert result.report_status == "failed"
+    manifest = json.loads(
+        (root / "executions" / result.execution_id / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["execution_status"] == "completed"
+    assert manifest["test_result"] == "passed"
+    assert manifest["cleanup_status"] == "not_required"
+
+
+def test_allure_results_failure_does_not_change_execution_truth(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setattr("requests.request", lambda method, url, **kwargs: _Response(201, url))
+    monkeypatch.setattr(
+        "harness.infrastructure.api_scenario_run.write_allure_results",
+        lambda **kwargs: (_ for _ in ()).throw(OSError("results unavailable")),
+    )
+
+    result = Harness(tmp_path).run_api_scenario(_command("report-results-failure"))
+
+    assert result.execution_status == "completed"
+    assert result.test_result == "passed"
+    assert result.cleanup_status == "not_required"
+    assert result.report_status == "failed"
+    manifest = json.loads(
+        (root / "executions" / result.execution_id / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["execution_status"] == "completed"
+    assert manifest["test_result"] == "passed"
+    assert manifest["cleanup_status"] == "not_required"
+
+
+def test_execution_event_failure_remains_strict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _workspace(tmp_path)
+    from harness.infrastructure import api_scenario_run as scenario_run
+
+    original_emit = scenario_run.ApiExecutionEventWriter.emit
+
+    def emit(self: object, event_type: str, **kwargs: object) -> object:
+        if event_type == "execution.started":
+            raise OSError("execution event unavailable")
+        return original_emit(self, event_type, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(scenario_run.ApiExecutionEventWriter, "emit", emit)
+
+    with pytest.raises(OSError, match="execution event unavailable"):
+        Harness(tmp_path).run_api_scenario(_command("execution-event-strict"))
+
+
 def test_mutation_is_armed_before_send_and_completed_cleanup_runs_lifo(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
