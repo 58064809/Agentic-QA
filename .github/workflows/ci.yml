@@ -49,8 +49,9 @@ jobs:
           python -m pip install -e ".[dev,docs]" -c constraints.txt
       - name: Create local test configuration
         run: |
-          cp agentic-qa.local.example.yml agentic-qa.local.yml
-          python -c "import yaml; p='agentic-qa.local.yml'; d=yaml.safe_load(open(p)); d['postgres']['password']='postgres'; d['api']['services']={}; open(p,'w').write(yaml.safe_dump(d, sort_keys=False))"
+          python -m harness config init
+          python scripts/configure-ci-local.py --profile ci
+          python -m harness config doctor
       - name: Install pinned Allure 3
         if: matrix.python-version == '3.12'
         run: |
@@ -100,8 +101,9 @@ jobs:
           python -m pip install -e ".[dev]" -c constraints.txt
       - name: Create local test configuration
         run: |
-          cp agentic-qa.local.example.yml agentic-qa.local.yml
-          python -c "import yaml; p='agentic-qa.local.yml'; d=yaml.safe_load(open(p)); d['postgres']['password']='postgres'; d['api']['services']={}; open(p,'w').write(yaml.safe_dump(d, sort_keys=False))"
+          python -m harness config init
+          python scripts/configure-ci-local.py --profile ci
+          python -m harness config doctor
       - name: Install Playwright MCP browser
         run: npx --yes @playwright/mcp@latest install-browser chrome
       - name: Run official Playwright MCP live smoke

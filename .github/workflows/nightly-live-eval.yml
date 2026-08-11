@@ -36,8 +36,9 @@ jobs:
           python -m pip install -e ".[dev]" -c constraints.txt
       - name: Create local live-eval configuration
         run: |
-          cp agentic-qa.local.example.yml agentic-qa.local.yml
-          python -c "import yaml; p='agentic-qa.local.yml'; d=yaml.safe_load(open(p)); d['postgres']['password']='nightly-unused'; d['api']['services']={}; open(p,'w').write(yaml.safe_dump(d, sort_keys=False))"
+          python -m harness config init
+          python scripts/configure-ci-local.py --profile nightly
+          python -m harness config doctor
       - name: Run live candidate eval
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
