@@ -569,6 +569,42 @@ def test_report_manifest_failure_returns_failed_with_committed_execution_truth(
     assert manifest["cleanup_status"] == "not_required"
 
 
+def test_report_path_inspection_failure_is_isolated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _workspace(tmp_path)
+    monkeypatch.setattr("requests.request", lambda method, url, **kwargs: _Response(201, url))
+    from harness.infrastructure import api_scenario_run as scenario_run
+
+    original_existing_relative = scenario_run._existing_relative
+
+    def existing_relative(path: Path, root_path: Path, *, directory: bool = False) -> str | None:
+        if path.name == "summary.md":
+            raise OSError("path metadata unavailable")
+        return original_existing_relative(path, root_path, directory=directory)
+
+    monkeypatch.setattr(scenario_run, "_existing_relative", existing_relative)
+
+    result = Harness(tmp_path).run_api_scenario(_command("report-path-inspection-failure"))
+
+    assert result.execution_status == "completed"
+    assert result.test_result == "passed"
+    assert result.cleanup_status == "not_required"
+    assert result.report_status == "failed"
+    assert result.event_log_path is None
+    assert result.summary_path is None
+    assert result.report_summary_path is None
+    assert result.allure_results_path is None
+    assert result.allure_report_path is None
+    manifest = json.loads(
+        (root / "executions" / result.execution_id / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["execution_status"] == "completed"
+    assert manifest["test_result"] == "passed"
+    assert manifest["cleanup_status"] == "not_required"
+
+
 def test_execution_event_failure_remains_strict(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

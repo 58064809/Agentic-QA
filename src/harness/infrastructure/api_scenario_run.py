@@ -902,15 +902,36 @@ def _reporting_outcome(
     workspace_root: Path,
     execution_root: Path,
 ) -> _ReportingPhaseOutcome:
-    event_log_path = _existing_relative(execution_root / "execution-events.jsonl", workspace_root)
-    summary_path = _existing_relative(execution_root / "summary.md", workspace_root)
-    report_summary_path = _existing_relative(execution_root / "report-summary.json", workspace_root)
-    allure_results_path = _existing_relative(
-        execution_root / "allure-results", workspace_root, directory=True
-    )
-    allure_report_path = _existing_relative(
-        execution_root / "allure-report", workspace_root, directory=True
-    )
+    try:
+        event_log_path = _existing_relative(
+            execution_root / "execution-events.jsonl", workspace_root
+        )
+        summary_path = _existing_relative(execution_root / "summary.md", workspace_root)
+        report_summary_path = _existing_relative(
+            execution_root / "report-summary.json", workspace_root
+        )
+        allure_results_path = _existing_relative(
+            execution_root / "allure-results", workspace_root, directory=True
+        )
+        allure_report_path = _existing_relative(
+            execution_root / "allure-report", workspace_root, directory=True
+        )
+    except Exception as exc:
+        failed_result = GenerateApiAllureReportResult(
+            workspace_id=result.workspace_id,
+            execution_id=result.execution_id,
+            status="failed",
+            message="report path inspection failed without changing execution truth",
+            error_kind=type(exc).__name__,
+        )
+        return _ReportingPhaseOutcome(
+            result=failed_result,
+            event_log_path=None,
+            summary_path=None,
+            report_summary_path=None,
+            allure_results_path=None,
+            allure_report_path=None,
+        )
     truthful_result = result.model_copy(
         update={
             "allure_results_path": allure_results_path,
