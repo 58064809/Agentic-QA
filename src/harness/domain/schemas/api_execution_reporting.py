@@ -212,6 +212,9 @@ class ResumeApiCleanupResult(StrictModel):
     workspace_id: str
     execution_id: str
     recovery_id: str
-    status: Literal["complete", "failed", "indeterminate"]
+    status: Literal["complete", "failed", "indeterminate", "manual_reapproval_required"]
     cleanup_summary_path: str
     summary: CleanupJournalSummary
+    original_policy_sha256: str | None = None
+    current_policy_sha256: str | None = None
+    reason: str | None = None

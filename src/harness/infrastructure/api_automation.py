@@ -59,20 +59,12 @@ class FilesystemApiAutomationService:
         self._published_sources = PublishedApiSourceResolver(store)
 
     def runtime_project(self, workspace: str, environment: str) -> ResolvedApiProject:
-        payload = self._store.workspace_config(workspace)
-        binding = payload.get("api_project")
-        if not isinstance(binding, dict):
-            raise PermissionError("workspace is not bound to a configured API project")
-        if binding.get("environment") != environment:
-            raise PermissionError("requested environment differs from the reviewed API project")
-        service = str(binding.get("service") or "")
-        config = self._local_config.load_required()
-        project = self._local_config.resolve_api_project(config, service, environment)
+        project, binding = self._configured_project(workspace, environment)
         if binding.get("structural_sha256") != project.structural_sha256:
             raise PermissionError(
                 "API safety policy changed after prepare; rerun prepare and Review Gate"
             )
-        execution = payload.get("execution") or {}
+        execution = self._store.workspace_config(workspace).get("execution") or {}
         environments = execution.get("environments") if isinstance(execution, dict) else None
         raw_policy = environments.get(environment) if isinstance(environments, dict) else None
         if (
@@ -85,6 +77,24 @@ class FilesystemApiAutomationService:
             )
         return project
 
+    def recovery_runtime_project(self, workspace: str, environment: str) -> ResolvedApiProject:
+        project, _binding = self._configured_project(workspace, environment)
+        return project
+
+    def _configured_project(
+        self, workspace: str, environment: str
+    ) -> tuple[ResolvedApiProject, dict[str, object]]:
+        payload = self._store.workspace_config(workspace)
+        binding = payload.get("api_project")
+        if not isinstance(binding, dict):
+            raise PermissionError("workspace is not bound to a configured API project")
+        if binding.get("environment") != environment:
+            raise PermissionError("requested environment differs from the reviewed API project")
+        service = str(binding.get("service") or "")
+        config = self._local_config.load_required()
+        project = self._local_config.resolve_api_project(config, service, environment)
+        return project, binding
+
     def cleanup_journal_key(self) -> str:
         return self._local_config.load_required().runtime.cleanup_journal_key
 
@@ -95,9 +105,16 @@ class FilesystemApiAutomationService:
         environment: str,
         execution_id: str,
         obligation: dict[str, object],
+        project: ResolvedApiProject | None = None,
     ):
-        project = self.runtime_project(workspace, environment)
-        profile = self.execution_profile(workspace, environment)
+        project = project or self.runtime_project(workspace, environment)
+        profile = ExecutionProfile(
+            environment=environment,
+            base_url_env=project.policy.base_url_env,
+            allowed_http_methods=project.policy.allowed_http_methods,
+            allow_ui_mutations=False,
+            request_timeout_seconds=project.policy.max_request_timeout_seconds,
+        )
         policy = self._store.validate_execution_profile(workspace, profile)
         step = ApiCleanupStep.model_validate(obligation["step"])
         runtime_variables = dict(obligation.get("runtime_variables") or {})

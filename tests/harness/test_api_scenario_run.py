@@ -498,10 +498,9 @@ def test_leftover_started_manifest_becomes_indeterminate(
     assert json.loads(manifest_path.read_text(encoding="utf-8"))["status"] == "indeterminate"
 
 
-def test_explicit_cleanup_resume_executes_only_pending_obligation(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _recovery_journal(
+    tmp_path: Path, execution_id: str
+) -> tuple[Path, str, EncryptedCleanupJournal, ApiTestCasesDraft, Path]:
     root = _workspace(tmp_path)
     key = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
     local_path = tmp_path / "agentic-qa.local.yml"
@@ -524,7 +523,7 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
         encoding="utf-8",
     )
 
-    execution_root = root / "executions" / "cleanup-recovery"
+    execution_root = root / "executions" / execution_id
     execution_root.mkdir(parents=True)
     published = root / "published" / "api_test_draft" / "current.yml"
     source_sha256 = hashlib.sha256(published.read_bytes()).hexdigest()
@@ -534,7 +533,7 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
     profile = Harness(tmp_path).api_execution_profile("demo", "qa")
     plan = build_api_execution_plan(
         workspace_id="demo",
-        execution_id="cleanup-recovery",
+        execution_id=execution_id,
         service="demo",
         environment="qa",
         source_cases_path="published/api_test_draft/current.yml",
@@ -557,7 +556,7 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
             {
                 "schema_version": "agentic-qa.harness.api-execution-manifest.v2",
                 "workspace_id": "demo",
-                "execution_id": "cleanup-recovery",
+                "execution_id": execution_id,
                 "environment": "qa",
                 "status": "indeterminate",
                 "execution_plan_sha256": hashlib.sha256(plan_path.read_bytes()).hexdigest(),
@@ -569,7 +568,7 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
         execution_root / ".cleanup-journal.enc",
         key=key,
         workspace_id="demo",
-        execution_id="cleanup-recovery",
+        execution_id=execution_id,
         environment="qa",
         source_cases_sha256=source_sha256,
         source_publication_id="published-v1",
@@ -578,16 +577,30 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
         policy_sha256=project.policy_sha256,
         execution_plan_sha256=plan.plan_sha256,
     )
+    return root, key, journal, published_draft, execution_root
+
+
+def _cleanup_step(identifier: str, path: str) -> ApiCleanupStep:
+    return ApiCleanupStep.model_validate(
+        {
+            "id": identifier,
+            "request": {"method": "DELETE", "path": path},
+            "assertions": [{"type": "status_code", "expected": 204}],
+        }
+    )
+
+
+def test_explicit_cleanup_resume_executes_only_pending_obligation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root, key, journal, published_draft, execution_root = _recovery_journal(
+        tmp_path, "cleanup-recovery"
+    )
     journal.register(
         case_id="api-order-create",
         title="create order",
-        cleanup=ApiCleanupStep.model_validate(
-            {
-                "id": "delete-order",
-                "request": {"method": "DELETE", "path": "/orders/recovery-id"},
-                "assertions": [{"type": "status_code", "expected": 204}],
-            }
-        ),
+        cleanup=_cleanup_step("delete-order", "/orders/recovery-id"),
         runtime_variables={},
     )
     v2_payload = published_draft.model_dump(mode="json")
@@ -634,6 +647,107 @@ def test_explicit_cleanup_resume_executes_only_pending_obligation(
             )
         )
     assert len(calls) == 1
+
+
+def test_cleanup_resume_executes_pending_when_another_obligation_is_armed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _root, _key, journal, _draft, _execution_root = _recovery_journal(tmp_path, "mixed-armed")
+    journal.register(
+        case_id="pending-case",
+        title="pending",
+        cleanup=_cleanup_step("delete-pending", "/orders/pending"),
+        runtime_variables={},
+    )
+    journal.arm(
+        case_id="armed-case",
+        title="armed",
+        cleanup=_cleanup_step("delete-armed", "/orders/armed"),
+        runtime_variables={},
+        request_operation="POST /orders",
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "requests.request",
+        lambda method, url, **kwargs: (calls.append(url), _Response(204, url))[1],
+    )
+
+    result = Harness(tmp_path).resume_api_cleanup(
+        ResumeApiCleanupCommand(workspace_id="demo", execution_id="mixed-armed", environment="qa")
+    )
+
+    assert calls == ["https://qa.example.test/orders/pending"]
+    assert result.status == "indeterminate"
+    assert result.summary.counts.completed == 1
+    assert result.summary.counts.armed == 1
+
+
+def test_cleanup_resume_executes_pending_when_another_obligation_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _root, _key, journal, _draft, _execution_root = _recovery_journal(tmp_path, "mixed-failed")
+    failed_id = journal.register(
+        case_id="failed-case",
+        title="failed",
+        cleanup=_cleanup_step("delete-failed", "/orders/failed"),
+        runtime_variables={},
+    )
+    journal.before(failed_id)
+    journal.after(failed_id, status="failed", request_sent=True)
+    journal.register(
+        case_id="pending-case",
+        title="pending",
+        cleanup=_cleanup_step("delete-pending", "/orders/pending"),
+        runtime_variables={},
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "requests.request",
+        lambda method, url, **kwargs: (calls.append(url), _Response(204, url))[1],
+    )
+
+    result = Harness(tmp_path).resume_api_cleanup(
+        ResumeApiCleanupCommand(workspace_id="demo", execution_id="mixed-failed", environment="qa")
+    )
+
+    assert calls == ["https://qa.example.test/orders/pending"]
+    assert result.status == "failed"
+    assert result.summary.counts.completed == 1
+    assert result.summary.counts.failed == 1
+
+
+def test_cleanup_resume_requires_manual_reapproval_after_policy_change(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _root, _key, journal, _draft, execution_root = _recovery_journal(tmp_path, "policy-change")
+    journal.register(
+        case_id="pending-case",
+        title="pending",
+        cleanup=_cleanup_step("delete-pending", "/orders/pending"),
+        runtime_variables={},
+    )
+    local_path = tmp_path / "agentic-qa.local.yml"
+    local = yaml.safe_load(local_path.read_text(encoding="utf-8"))
+    local["api"]["services"]["demo"]["environments"]["qa"]["allowed_http_methods"].append("PATCH")
+    local_path.write_text(yaml.safe_dump(local, sort_keys=False), encoding="utf-8")
+    calls: list[str] = []
+    monkeypatch.setattr("requests.request", lambda method, url, **kwargs: calls.append(url))
+
+    result = Harness(tmp_path).resume_api_cleanup(
+        ResumeApiCleanupCommand(workspace_id="demo", execution_id="policy-change", environment="qa")
+    )
+
+    assert result.status == "manual_reapproval_required"
+    assert result.reason == "SAFETY_POLICY_CHANGED"
+    assert result.original_policy_sha256 != result.current_policy_sha256
+    assert calls == []
+    events = (execution_root / "execution-events.jsonl").read_text(encoding="utf-8")
+    assert '"event_type":"cleanup.manual_review_required"' in events
+    manifest = json.loads((execution_root / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["cleanup_recovery"]["status"] == "manual_reapproval_required"
 
 
 def test_allure_rebuild_uses_execution_historical_source(

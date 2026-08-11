@@ -484,7 +484,6 @@ class FilesystemApiScenarioRunService:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if manifest.get("environment") != command.environment:
             raise PermissionError("cleanup environment differs from the original execution")
-        project = self._automation.runtime_project(command.workspace_id, command.environment)
         journal = EncryptedCleanupJournal.load(
             journal_path,
             key=self._automation.cleanup_journal_key(),
@@ -517,8 +516,6 @@ class FilesystemApiScenarioRunService:
             source_history_path=source_history_path,
             source_cases_sha256=source_cases_sha256,
         )
-        if payload.get("structural_sha256") != project.structural_sha256:
-            raise PermissionError("API safety policy changed; cleanup recovery is blocked")
         recovery_id = str(uuid.uuid4())
         writer = ApiExecutionEventWriter(
             execution_root / "execution-events.jsonl",
@@ -530,43 +527,67 @@ class FilesystemApiScenarioRunService:
             outcome="started",
             details={"recovery_id": recovery_id},
         )
-        initial = journal.summary()
-        if initial.counts.armed or initial.counts.running:
-            status = "indeterminate"
-        elif initial.counts.failed:
-            status = "failed"
-        else:
-            try:
-                with api_execution_events(_event_callback(writer)):
-                    for obligation in reversed(journal.pending()):
-                        obligation_id = str(obligation["obligation_id"])
-                        # Persist running before authentication or transport. A crash from
-                        # this point is intentionally never auto-replayed.
-                        journal.before(obligation_id)
-                        outcome = self._automation.execute_cleanup_obligation(
-                            workspace=command.workspace_id,
-                            environment=command.environment,
-                            execution_id=command.execution_id,
-                            obligation=obligation,
-                        )
-                        journal.after(
-                            obligation_id,
-                            status=outcome.status,
-                            request_sent=True,
-                        )
-                status = "complete" if journal.summary().status == "complete" else "failed"
-            except BaseException as exc:
-                status = "indeterminate"
-                writer.emit(
-                    "cleanup.recovery.indeterminate",
-                    phase="cleanup",
-                    outcome="broken",
-                    details={
-                        "recovery_id": recovery_id,
-                        "error_kind": type(exc).__name__,
-                    },
-                )
+        project = self._automation.recovery_runtime_project(
+            command.workspace_id, command.environment
+        )
+        original_policy_sha256 = payload.get("policy_sha256") or getattr(
+            execution_plan, "policy_sha256", None
+        )
+        current_policy_sha256 = project.policy_sha256
+        legacy_policy_changed = (
+            original_policy_sha256 is None
+            and payload.get("structural_sha256") != project.structural_sha256
+        )
+        if legacy_policy_changed or (
+            original_policy_sha256 is not None and original_policy_sha256 != current_policy_sha256
+        ):
+            return self._manual_reapproval_required(
+                command=command,
+                workspace_root=workspace_root,
+                execution_root=execution_root,
+                manifest_path=manifest_path,
+                manifest=manifest,
+                journal=journal,
+                writer=writer,
+                recovery_id=recovery_id,
+                original_policy_sha256=str(
+                    original_policy_sha256 or payload.get("structural_sha256") or ""
+                ),
+                current_policy_sha256=current_policy_sha256,
+            )
+        with api_execution_events(_event_callback(writer)):
+            for obligation in reversed(journal.pending()):
+                obligation_id = str(obligation["obligation_id"])
+                # Persist running before authentication or transport. A crash from
+                # this point is intentionally never auto-replayed.
+                journal.before(obligation_id)
+                try:
+                    outcome = self._automation.execute_cleanup_obligation(
+                        workspace=command.workspace_id,
+                        environment=command.environment,
+                        execution_id=command.execution_id,
+                        obligation=obligation,
+                        project=project,
+                    )
+                except Exception as exc:
+                    writer.emit(
+                        "cleanup.recovery.indeterminate",
+                        phase="cleanup",
+                        outcome="broken",
+                        cleanup_id=str(obligation.get("cleanup_id") or ""),
+                        details={
+                            "recovery_id": recovery_id,
+                            "error_kind": type(exc).__name__,
+                        },
+                    )
+                else:
+                    journal.after(
+                        obligation_id,
+                        status=outcome.status,
+                        request_sent=True,
+                    )
         summary = journal.summary()
+        status = "complete" if summary.status == "not_required" else summary.status
         cleanup_summary_path = execution_root / "cleanup-summary.json"
         atomic_json(cleanup_summary_path, summary.model_dump(mode="json"))
         writer.emit(
@@ -595,6 +616,66 @@ class FilesystemApiScenarioRunService:
             status=status,
             cleanup_summary_path=cleanup_summary_path.relative_to(workspace_root).as_posix(),
             summary=summary,
+        )
+
+    def _manual_reapproval_required(
+        self,
+        *,
+        command: ResumeApiCleanupCommand,
+        workspace_root: Path,
+        execution_root: Path,
+        manifest_path: Path,
+        manifest: dict[str, Any],
+        journal: EncryptedCleanupJournal,
+        writer: ApiExecutionEventWriter,
+        recovery_id: str,
+        original_policy_sha256: str,
+        current_policy_sha256: str,
+    ) -> ResumeApiCleanupResult:
+        status = "manual_reapproval_required"
+        reason = "SAFETY_POLICY_CHANGED"
+        summary = journal.summary()
+        cleanup_summary_path = execution_root / "cleanup-summary.json"
+        atomic_json(cleanup_summary_path, summary.model_dump(mode="json"))
+        writer.emit(
+            "cleanup.manual_review_required",
+            phase="cleanup",
+            outcome="pending",
+            details={
+                "recovery_id": recovery_id,
+                "reason": reason,
+                "original_policy_sha256": original_policy_sha256,
+                "current_policy_sha256": current_policy_sha256,
+            },
+        )
+        writer.emit(
+            "cleanup.recovery.finished",
+            phase="cleanup",
+            outcome="pending",
+            details={"recovery_id": recovery_id, "status": status},
+        )
+        manifest["cleanup_recovery"] = {
+            "recovery_id": recovery_id,
+            "status": status,
+            "completed_at": datetime.now(tz=UTC).isoformat(),
+            "reason": reason,
+            "original_policy_sha256": original_policy_sha256,
+            "current_policy_sha256": current_policy_sha256,
+        }
+        manifest["event_log_sha256"] = _sha256(execution_root / "execution-events.jsonl")
+        manifest["cleanup_summary_sha256"] = _sha256(cleanup_summary_path)
+        manifest["cleanup_journal_sha256"] = _sha256(journal.path)
+        atomic_json(manifest_path, manifest)
+        return ResumeApiCleanupResult(
+            workspace_id=command.workspace_id,
+            execution_id=command.execution_id,
+            recovery_id=recovery_id,
+            status=status,
+            cleanup_summary_path=cleanup_summary_path.relative_to(workspace_root).as_posix(),
+            summary=summary,
+            original_policy_sha256=original_policy_sha256,
+            current_policy_sha256=current_policy_sha256,
+            reason=reason,
         )
 
     @staticmethod
