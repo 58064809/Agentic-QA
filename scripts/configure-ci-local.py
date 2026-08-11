@@ -35,6 +35,21 @@ def _require_secret_references(payload: dict[str, object]) -> None:
             )
 
 
+def _create_declared_source_directories(payload: dict[str, object], root: Path) -> None:
+    api = payload.get("api")
+    services = api.get("services") if isinstance(api, dict) else None
+    if not isinstance(services, dict):
+        return
+    for service in services.values():
+        source = service.get("source_directory") if isinstance(service, dict) else None
+        if not isinstance(source, str) or not source:
+            raise SystemExit("api service source_directory must be configured")
+        target = (root / source).resolve()
+        if root.resolve() not in target.parents:
+            raise SystemExit("api service source_directory must stay below the repository")
+        target.mkdir(parents=True, exist_ok=True)
+
+
 def main() -> int:
     args = _parse_args()
     path = Path(args.config)
@@ -55,6 +70,7 @@ def main() -> int:
     values["api.member-service.dev.auth.login.sms_code"] = "000000"
     values["api.member-service.dev.auth.login.encryption.key"] = "ci-only-aes-key!"
     values["api.member-service.dev.auth.fallback_token"] = ""
+    _create_declared_source_directories(payload, path.parent)
 
     path.write_text(
         yaml.safe_dump(payload, allow_unicode=True, sort_keys=False),

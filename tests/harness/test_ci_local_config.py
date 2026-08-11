@@ -15,7 +15,6 @@ def test_ci_bootstrap_only_populates_secret_provider_storage(tmp_path: Path) -> 
         (repo_root / "agentic-qa.local.example.yml").read_text(encoding="utf-8"),
         encoding="utf-8",
     )
-    (tmp_path / "local-sources" / "api" / "member-service").mkdir(parents=True)
     loader = FilesystemLocalConfigLoader(tmp_path)
     loader.init()
 
@@ -35,6 +34,7 @@ def test_ci_bootstrap_only_populates_secret_provider_storage(tmp_path: Path) -> 
     assert raw["postgres"]["password"] == "secret://postgres.password"
     assert raw["runtime"]["cleanup_journal_key"] == ("secret://runtime.cleanup_journal_key")
     assert raw["secrets"]["values"]["postgres.password"] == "postgres"
+    assert (tmp_path / "local-sources" / "api" / "member-service").is_dir()
     assert loader.check().ready is True
 
 
