@@ -49,13 +49,17 @@ class FilesystemFailureReportService:
         if not collections:
             raise ValueError("no matching validated failure triage")
         if command.collection_id is None:
-            latest: dict[tuple[str, str | None], tuple[int, Path, FailureTriageV2]] = {}
+            grouped: dict[tuple[str, str | None], list[tuple[Path, FailureTriageV2]]] = {}
             for item, triage in collections:
-                key = (triage.case_id, triage.dataset_id)
-                stamp = (item / "failure-triage.json").stat().st_mtime_ns
-                if key not in latest or stamp > latest[key][0]:
-                    latest[key] = (stamp, item, triage)
-            collections = [(value[1], value[2]) for _, value in sorted(latest.items())]
+                grouped.setdefault((triage.case_id, triage.dataset_id), []).append((item, triage))
+            ambiguous = [key for key, values in grouped.items() if len(values) > 1]
+            if ambiguous:
+                case_id, dataset_id = sorted(ambiguous)[0]
+                raise ValueError(
+                    "multiple validated failure triage collections match "
+                    f"{case_id}/{dataset_id or 'default'}; specify collection_id"
+                )
+            collections = [values[0] for _, values in sorted(grouped.items())]
         for item, triage in collections:
             self._validate_sources(item, triage, workspace_root, command.execution_id)
         reports = [
@@ -104,32 +108,6 @@ class FilesystemFailureReportService:
         bug = self._bug_draft(triage)
         if bug is not None:
             artifacts.append("bug_draft")
-        try:
-            snapshot = self._store.load_snapshot_read_only(command.workspace_id, run_id)
-            if snapshot.request.expected_artifacts != artifacts:
-                raise ValueError("existing triage run artifact scope differs")
-            return PreparedFailureReport(
-                collection_id=triage.collection_id,
-                run_id=run_id,
-                candidate_artifacts=artifacts,
-            )
-        except FileNotFoundError:
-            pass
-        snapshot = RunSnapshot(
-            run_id=run_id,
-            workspace_id=command.workspace_id,
-            status="needs_human_review",
-            request=StartRunCommand(
-                workspace_id=command.workspace_id,
-                goal=f"Review failure triage for {triage.case_id}",
-                expected_artifacts=artifacts,
-            ),
-            interrupt={
-                "type": "review_gate",
-                "reason": "failure triage candidates require human review",
-            },
-        )
-        self._store.create_run(snapshot)
         source_documents = {
             f"derived/{name}": path.read_text(encoding="utf-8")
             for name, path in {
@@ -142,9 +120,6 @@ class FilesystemFailureReportService:
                 "failure-triage.json": collection_root / "failure-triage.json",
             }.items()
         }
-        source_bundle = self._store.create_derived_source_bundle(
-            command.workspace_id, run_id, source_documents
-        )
         contents = {"failure_analysis": self._analysis_markdown(triage)}
         attachment_bytes = {
             "failure-triage.json": (collection_root / "failure-triage.json").read_bytes(),
@@ -152,9 +127,37 @@ class FilesystemFailureReportService:
             "log-evidence.json": (collection_root / "log-evidence.json").read_bytes(),
         }
         if bug is not None:
-            create_only_json(collection_root / "bug-draft.json", bug.model_dump(mode="json"))
+            bug_path = collection_root / "bug-draft.json"
+            if bug_path.exists():
+                if BugDraft.model_validate_json(bug_path.read_text(encoding="utf-8")) != bug:
+                    raise FileExistsError("existing bug draft differs from immutable triage")
+            else:
+                create_only_json(bug_path, bug.model_dump(mode="json"))
             contents["bug_draft"] = self._bug_markdown(bug)
-            attachment_bytes["bug-draft.json"] = (collection_root / "bug-draft.json").read_bytes()
+            attachment_bytes["bug-draft.json"] = bug_path.read_bytes()
+        try:
+            snapshot = self._store.load_snapshot_read_only(command.workspace_id, run_id)
+            if snapshot.request.expected_artifacts != artifacts:
+                raise ValueError("existing triage run artifact scope differs")
+        except FileNotFoundError:
+            snapshot = RunSnapshot(
+                run_id=run_id,
+                workspace_id=command.workspace_id,
+                status="needs_human_review",
+                request=StartRunCommand(
+                    workspace_id=command.workspace_id,
+                    goal=f"Review failure triage for {triage.case_id}",
+                    expected_artifacts=artifacts,
+                ),
+                interrupt={
+                    "type": "review_gate",
+                    "reason": "failure triage candidates require human review",
+                },
+            )
+            self._store.create_run(snapshot)
+        source_bundle = self._store.create_derived_source_bundle(
+            command.workspace_id, run_id, source_documents
+        )
         candidates = []
         for artifact, content in contents.items():
             context = QualityContext(
@@ -180,6 +183,14 @@ class FilesystemFailureReportService:
                 },
             )
             candidates.append(candidate)
+        if snapshot.candidates:
+            if snapshot.candidates != candidates:
+                raise ValueError("existing triage run differs from committed candidates")
+            return PreparedFailureReport(
+                collection_id=triage.collection_id,
+                run_id=run_id,
+                candidate_artifacts=artifacts,
+            )
         snapshot.candidates = candidates
         snapshot.review_status = {artifact: "needs_human_review" for artifact in artifacts}
         self._store.save_snapshot(snapshot)

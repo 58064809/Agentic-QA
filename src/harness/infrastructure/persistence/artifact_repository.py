@@ -99,6 +99,7 @@ class ArtifactReviewFilesystemRepository:
                     artifact,
                     assessment,
                     api_discovery_export=api_discovery_export,
+                    attachments=attachments,
                 )
             staging_root = run_root / ".staging"
             staging_root.mkdir(parents=True, exist_ok=True)
@@ -162,6 +163,7 @@ class ArtifactReviewFilesystemRepository:
                         artifact,
                         assessment,
                         api_discovery_export=api_discovery_export,
+                        attachments=attachments,
                     )
                 os.rename(staging, final)
                 self._sync_directory(run_root)
@@ -542,6 +544,7 @@ class ArtifactReviewFilesystemRepository:
         assessment: CandidateAssessment,
         *,
         api_discovery_export: ApiDiscoveryExport | None,
+        attachments: dict[str, tuple[bytes, str]] | None,
     ) -> tuple[ArtifactCandidate, bool]:
         manifest = self._validated_manifest(final)
         if manifest["assessment_key"] != assessment.report.assessment_key:
@@ -553,6 +556,22 @@ class ArtifactReviewFilesystemRepository:
         )
         if manifest["files"].get("discovery-catalog.json") != expected_catalog_hash:
             raise FileExistsError("candidate 已存在且 discovery catalog 不同，不允许覆盖")
+        expected_attachments = {
+            name: {
+                "content_sha256": _sha256_bytes(content),
+                "media_type": media_type,
+            }
+            for name, (content, media_type) in sorted((attachments or {}).items())
+        }
+        actual_attachments = {
+            name: {
+                "content_sha256": manifest["files"].get(name),
+                "media_type": metadata.get("media_type") if isinstance(metadata, dict) else None,
+            }
+            for name, metadata in sorted((manifest.get("attachments") or {}).items())
+        }
+        if actual_attachments != expected_attachments:
+            raise FileExistsError("candidate already exists with different immutable attachments")
         return self._candidate(final, artifact), False
 
     def _candidate(

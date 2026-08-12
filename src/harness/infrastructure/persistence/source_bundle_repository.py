@@ -196,7 +196,14 @@ class SourceBundleFilesystemRepository:
         manifest_path = run_root / "source-bundle.json"
         with exclusive_file_lock(run_root / ".source-bundle.lock"):
             if manifest_path.exists():
-                return self.load_source_bundle(workspace, run_id)
+                existing = self.load_source_bundle(workspace, run_id)
+                expected = {path: _sha256(text.encode("utf-8")) for path, text in documents.items()}
+                actual = {item.path: item.parsed_sha256 for item in existing.documents}
+                if actual != expected:
+                    raise FileExistsError(
+                        "derived source bundle already exists with different immutable inputs"
+                    )
+                return existing
             source_documents = [
                 SourceDocument(
                     path=path,

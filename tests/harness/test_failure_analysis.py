@@ -117,3 +117,73 @@ def test_analysis_rejects_log_evidence_hash_drift(tmp_path) -> None:
                 collection_id="collection-a",
             )
         )
+
+
+def test_analysis_requires_collection_id_when_case_has_multiple_collections(
+    tmp_path,
+) -> None:
+    store = FilesystemStore(tmp_path)
+    workspace = store.init_workspace("workspace-1", quality_policies=[])
+    roots = [
+        workspace / "executions" / "execution-1" / "triage" / "collections" / name
+        for name in ("collection-a", "collection-b")
+    ]
+    for root in roots:
+        root.mkdir(parents=True)
+        (root / "log-evidence.json").write_text(_minimal_log_bundle(root.name), encoding="utf-8")
+
+    import pytest
+
+    with pytest.raises(ValueError, match="specify collection_id"):
+        FilesystemFailureAnalysisService(store).analyze(
+            AnalyzeFailureCommand(workspace_id="workspace-1", execution_id="execution-1")
+        )
+
+
+def _minimal_log_bundle(collection_id: str) -> str:
+    now = datetime.now(tz=UTC).replace(microsecond=0)
+    query = LogQueryRequest(
+        workspace_id="workspace-1",
+        execution_id="execution-1",
+        case_id="CASE-1",
+        environment="qa",
+        api_service="order-api",
+        services=["order-service"],
+        started_at=now,
+        completed_at=now,
+        max_entries=10,
+    )
+    payload = {
+        "schema_version": "agentic-qa.log-evidence.v1",
+        "collection_id": collection_id,
+        "execution_id": "execution-1",
+        "case_id": "CASE-1",
+        "execution_evidence_sha256": "a" * 64,
+        "provider": "local-file",
+        "provider_structure_sha256": "b" * 64,
+        "query": query.model_dump(mode="json"),
+        "status": "empty",
+        "entries": [],
+        "diagnostics": [],
+        "stats": {
+            "entry_count": 0,
+            "service_counts": {},
+            "level_counts": {},
+            "redaction_count": 0,
+        },
+    }
+    payload["content_sha256"] = hashlib.sha256(
+        json.dumps(
+            LogEvidenceBundle.model_construct(
+                **{
+                    **payload,
+                    "query": query,
+                    "stats": LogEvidenceStats.model_validate(payload["stats"]),
+                },
+                content_sha256="0" * 64,
+            ).model_dump(mode="json", exclude={"content_sha256"}),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    return json.dumps(payload)

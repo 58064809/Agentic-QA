@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -149,3 +150,68 @@ def test_failure_report_rejects_tampered_source_before_candidate(tmp_path: Path)
 
     runs = tmp_path / "workspaces" / "workspace-1" / "runs"
     assert not list(runs.iterdir())
+
+
+def test_failure_report_resumes_incomplete_run_after_candidate_crash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, _workspace, _collection, service = _service(tmp_path)
+    original = store.commit_candidate
+    calls = 0
+
+    def crash_on_second_candidate(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("simulated process crash")
+        return original(**kwargs)
+
+    monkeypatch.setattr(store, "commit_candidate", crash_on_second_candidate)
+    command = PrepareFailureReportCommand(workspace_id="workspace-1", execution_id="execution-1")
+    with pytest.raises(RuntimeError, match="simulated process crash"):
+        service.prepare(command)
+
+    incomplete = store.load_snapshot_read_only("workspace-1", "triage-a")
+    assert incomplete.candidates == []
+    monkeypatch.setattr(store, "commit_candidate", original)
+
+    result = service.prepare(command)
+
+    assert result.reports[0].candidate_artifacts == ["failure_analysis", "bug_draft"]
+    recovered = store.load_snapshot_read_only("workspace-1", "triage-a")
+    assert {item.artifact for item in recovered.candidates} == {
+        "failure_analysis",
+        "bug_draft",
+    }
+    assert recovered.status == "needs_human_review"
+
+
+def test_failure_report_requires_collection_id_for_ambiguous_case(tmp_path: Path) -> None:
+    _store, _workspace, collection, service = _service(tmp_path)
+    second = collection.parent / "collection-b"
+    shutil.copytree(collection, second)
+    triage_path = second / "failure-triage.json"
+    payload = json.loads(triage_path.read_text(encoding="utf-8"))
+    payload["collection_id"] = "collection-b"
+    payload = _triage_payload(
+        execution_sha=payload["execution_evidence_sha256"],
+        logs_sha=payload["log_evidence_sha256"],
+        analysis_sha=payload["log_analysis_sha256"],
+    )
+    payload["collection_id"] = "collection-b"
+    draft = FailureTriageV2.model_construct(
+        **{
+            **payload,
+            "primary": FailureHypothesis.model_validate(payload["primary"]),
+        }
+    )
+    canonical = draft.model_dump(mode="json", exclude={"content_sha256"})
+    payload["content_sha256"] = hashlib.sha256(
+        json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    triage_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="specify collection_id"):
+        service.prepare(
+            PrepareFailureReportCommand(workspace_id="workspace-1", execution_id="execution-1")
+        )

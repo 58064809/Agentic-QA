@@ -357,7 +357,14 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             _print(result)
-            return 0 if all(item.analysis_status != "failed" for item in result.analyses) else 1
+            return (
+                0
+                if all(
+                    item.analysis_status != "failed" and item.triage_status != "failed"
+                    for item in result.analyses
+                )
+                else 1
+            )
         if args.command == "failure" and args.failure_command == "report":
             result = harness.prepare_failure_report(
                 PrepareFailureReportCommand(

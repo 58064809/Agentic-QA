@@ -59,22 +59,27 @@ class FilesystemFailureAnalysisService:
         paths = [item for item in root.iterdir() if item.is_dir()]
         if command.collection_id:
             return [item for item in paths if item.name == command.collection_id]
-        candidates: dict[tuple[str, str | None], tuple[int, Path]] = {}
+        candidates: dict[tuple[str, str | None], list[Path]] = defaultdict(list)
         for path in paths:
             evidence_path = path / "log-evidence.json"
             try:
                 bundle = LogEvidenceBundle.model_validate_json(
                     evidence_path.read_text(encoding="utf-8")
                 )
-                stamp = evidence_path.stat().st_mtime_ns
             except (OSError, ValueError):
                 continue
             if command.case_id and bundle.case_id != command.case_id:
                 continue
             key = (bundle.case_id, bundle.dataset_id)
-            if key not in candidates or stamp > candidates[key][0]:
-                candidates[key] = (stamp, path)
-        return [value[1] for _, value in sorted(candidates.items())]
+            candidates[key].append(path)
+        ambiguous = [key for key, values in candidates.items() if len(values) > 1]
+        if ambiguous:
+            case_id, dataset_id = sorted(ambiguous)[0]
+            raise ValueError(
+                "multiple failure log collections match "
+                f"{case_id}/{dataset_id or 'default'}; specify collection_id"
+            )
+        return [values[0] for _, values in sorted(candidates.items())]
 
     def _analyze_one(self, root: Path, workspace_root: Path) -> FailureAnalysisItem:
         evidence_path = root / "log-evidence.json"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import yaml
 
@@ -132,6 +133,41 @@ def test_api_run_cli_exit_codes_follow_persisted_result(monkeypatch) -> None:
     FakeHarness.status = "skipped"
     assert cli.main(arguments) == 0
     FakeHarness.status = "broken"
+    assert cli.main(arguments) == 1
+
+
+def test_failure_analyze_cli_exit_code_includes_ai_triage_status(monkeypatch) -> None:
+    class Result:
+        def __init__(self, analysis_status: str, triage_status: str) -> None:
+            self.analyses = [
+                SimpleNamespace(
+                    analysis_status=analysis_status,
+                    triage_status=triage_status,
+                )
+            ]
+
+        def model_dump(self, *, mode: str) -> dict[str, object]:
+            assert mode == "json"
+            return {"analyses": []}
+
+    class FakeHarness:
+        result = Result("success", "success")
+
+        def __init__(self, _repo_root) -> None:
+            pass
+
+        def analyze_failure(self, _command):
+            return self.result
+
+    monkeypatch.setattr(cli, "Harness", FakeHarness)
+    arguments = ["failure", "analyze", "demo", "execution-1"]
+
+    assert cli.main(arguments) == 0
+    FakeHarness.result = Result("success", "insufficient_evidence")
+    assert cli.main(arguments) == 0
+    FakeHarness.result = Result("success", "failed")
+    assert cli.main(arguments) == 1
+    FakeHarness.result = Result("failed", "not_started")
     assert cli.main(arguments) == 1
     FakeHarness.status = "failed"
     assert cli.main(arguments) == 1
