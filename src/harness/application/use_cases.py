@@ -45,6 +45,7 @@ from harness.domain.schemas.api_project import ApiProjectCheckCommand, ApiProjec
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.local_config import AgenticQaLocalConfig, LocalConfigCheckResult
+from harness.domain.schemas.log_analysis import AnalyzeFailureCommand, AnalyzeFailureResult
 from harness.domain.schemas.log_evidence import CollectFailureLogsCommand, CollectFailureLogsResult
 
 
@@ -152,6 +153,11 @@ class HarnessApplication:
         if self._failure_logs is None:
             raise RuntimeError("failure log collection is not configured")
         return self._failure_logs.collect(command)
+
+    def analyze_failure(self, command: AnalyzeFailureCommand) -> AnalyzeFailureResult:
+        if self._failure_logs is None:
+            raise RuntimeError("failure analysis is not configured")
+        return self._failure_logs.analyze(command)
 
     def export_api_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:
         if self._api_automation is None:

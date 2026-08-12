@@ -1,0 +1,233 @@
+{
+  "$defs": {
+    "FailureTimelineEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "title": "Reference",
+          "type": "string"
+        },
+        "timestamp": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timestamp"
+        },
+        "source": {
+          "enum": [
+            "execution",
+            "log"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "service": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service"
+        },
+        "event": {
+          "title": "Event",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reference",
+        "source",
+        "event"
+      ],
+      "title": "FailureTimelineEvent",
+      "type": "object"
+    },
+    "LogSignal": {
+      "additionalProperties": false,
+      "properties": {
+        "signal_id": {
+          "pattern": "^SIGNAL-[0-9]{4}$",
+          "title": "Signal Id",
+          "type": "string"
+        },
+        "category": {
+          "enum": [
+            "exception",
+            "http",
+            "database",
+            "rpc",
+            "redis",
+            "mq",
+            "network",
+            "timeout"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "service": {
+          "title": "Service",
+          "type": "string"
+        },
+        "fingerprint": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Fingerprint",
+          "type": "string"
+        },
+        "exception_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exception Type"
+        },
+        "normalized_message": {
+          "title": "Normalized Message",
+          "type": "string"
+        },
+        "top_frames": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Top Frames",
+          "type": "array"
+        },
+        "occurrence_count": {
+          "minimum": 1,
+          "title": "Occurrence Count",
+          "type": "integer"
+        },
+        "first_seen": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Seen"
+        },
+        "last_seen": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Seen"
+        },
+        "sample_refs": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 10,
+          "minItems": 1,
+          "title": "Sample Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "signal_id",
+        "category",
+        "service",
+        "fingerprint",
+        "normalized_message",
+        "occurrence_count",
+        "sample_refs"
+      ],
+      "title": "LogSignal",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.log-analysis.v1",
+      "default": "agentic-qa.log-analysis.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "collection_id": {
+      "title": "Collection Id",
+      "type": "string"
+    },
+    "execution_id": {
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "case_id": {
+      "title": "Case Id",
+      "type": "string"
+    },
+    "dataset_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset Id"
+    },
+    "log_evidence_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Log Evidence Sha256",
+      "type": "string"
+    },
+    "signals": {
+      "items": {
+        "$ref": "#/$defs/LogSignal"
+      },
+      "maxItems": 300,
+      "title": "Signals",
+      "type": "array"
+    },
+    "timeline": {
+      "items": {
+        "$ref": "#/$defs/FailureTimelineEvent"
+      },
+      "maxItems": 5002,
+      "title": "Timeline",
+      "type": "array"
+    },
+    "content_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "collection_id",
+    "execution_id",
+    "case_id",
+    "log_evidence_sha256",
+    "content_sha256"
+  ],
+  "title": "LogAnalysis",
+  "type": "object"
+}

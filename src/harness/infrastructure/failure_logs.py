@@ -24,6 +24,7 @@ from harness.domain.schemas.log_evidence import (
 )
 from harness.infrastructure.api_execution_snapshot import ExecutionSourceSnapshotResolver
 from harness.infrastructure.api_published_source import PublishedApiSourceResolver
+from harness.infrastructure.failure_analysis import FilesystemFailureAnalysisService
 from harness.infrastructure.log_sanitization import sanitize_log_text
 from harness.infrastructure.persistence.common import create_only_json
 from harness.infrastructure.persistence.filesystem import FilesystemStore
@@ -233,6 +234,10 @@ class FilesystemFailureLogService:
         self._store = store
         self._config = config
         self._snapshots = ExecutionSourceSnapshotResolver(store, PublishedApiSourceResolver(store))
+        self._analysis = FilesystemFailureAnalysisService(store)
+
+    def analyze(self, command):
+        return self._analysis.analyze(command)
 
     def collect(self, command: CollectFailureLogsCommand) -> CollectFailureLogsResult:
         snapshot = self._snapshots.resolve(command.workspace_id, command.execution_id)

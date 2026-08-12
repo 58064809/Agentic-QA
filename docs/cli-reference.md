@@ -33,12 +33,15 @@
 
 ```powershell
 python -m harness failure collect <workspace> <execution-id> [--case-id <case/dataset-id>]
+python -m harness failure analyze <workspace> <execution-id> [--case-id <case/dataset-id>] [--collection-id <id>]
 ```
 
 `failure collect` 是显式触发的只读日志采集。默认选择 ExecutionEvidence 中全部 `failed`，以及
 已经发送请求的 `error` 实例；blocked 和未发送请求的 error 不查询日志。成功或有效空结果返回
 0，部分 provider 失败返回 1，配置、身份、生产环境或 hash 错误返回 2。产物写入对应 execution
 的 create-only `triage/collections/<collection-id>/`，重复相同输入复用原 collection。
+`failure analyze` 从已验证的 Log Evidence 生成确定性 `log-analysis.json`，其中 fingerprint、
+occurrence、时间线和 `LOG-*` 引用均可复算；该命令不调用模型。
 
 | 命令 | 关键参数 |
 |---|---|

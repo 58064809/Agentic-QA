@@ -41,6 +41,7 @@ from harness.domain.schemas.api_project import ApiProjectCheckCommand, ApiProjec
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.local_config import LocalConfigCheckResult
+from harness.domain.schemas.log_analysis import AnalyzeFailureCommand, AnalyzeFailureResult
 from harness.domain.schemas.log_evidence import CollectFailureLogsCommand, CollectFailureLogsResult
 
 
@@ -72,6 +73,8 @@ class ApiScenarioRunner(Protocol):
 
 class FailureLogService(Protocol):
     def collect(self, command: CollectFailureLogsCommand) -> CollectFailureLogsResult: ...
+
+    def analyze(self, command: AnalyzeFailureCommand) -> AnalyzeFailureResult: ...
 
 
 class ApiProjectChecker(Protocol):

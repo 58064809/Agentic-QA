@@ -9,6 +9,7 @@ import yaml
 
 from harness import (
     AgentRequest,
+    AnalyzeFailureCommand,
     ApiProjectCheckCommand,
     ApiScenarioPrepareCommand,
     ArtifactDiffEndpoint,
@@ -178,6 +179,11 @@ def _parser() -> argparse.ArgumentParser:
     failure_collect.add_argument("workspace_id")
     failure_collect.add_argument("execution_id")
     failure_collect.add_argument("--case-id")
+    failure_analyze = failure_commands.add_parser("analyze")
+    failure_analyze.add_argument("workspace_id")
+    failure_analyze.add_argument("execution_id")
+    failure_analyze.add_argument("--case-id")
+    failure_analyze.add_argument("--collection-id")
     return parser
 
 
@@ -335,6 +341,17 @@ def main(argv: list[str] | None = None) -> int:
             )
             _print(result)
             return 0 if result.failed == 0 else 1
+        if args.command == "failure" and args.failure_command == "analyze":
+            result = harness.analyze_failure(
+                AnalyzeFailureCommand(
+                    workspace_id=args.workspace_id,
+                    execution_id=args.execution_id,
+                    case_id=args.case_id,
+                    collection_id=args.collection_id,
+                )
+            )
+            _print(result)
+            return 0 if all(item.analysis_status != "failed" for item in result.analyses) else 1
         if args.command == "api" and args.api_command == "run":
             result = harness.run_api_scenario(
                 RunApiScenarioCommand(
