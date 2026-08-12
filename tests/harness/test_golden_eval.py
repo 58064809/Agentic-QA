@@ -5,7 +5,11 @@ from shutil import copytree
 import yaml
 
 from harness.domain.schemas.qa_design import RequirementCatalog
-from harness.testing.evals import recorded_model_gateway, run_live_eval
+from harness.testing.evals import (
+    recorded_model_gateway,
+    run_failure_triage_model_live_eval,
+    run_live_eval,
+)
 from harness.testing.golden import (
     _rule_aliases,
     evaluate_api_candidate_artifact,
@@ -23,8 +27,8 @@ def test_golden_eval_measures_artifact_quality() -> None:
     assert result["case_count"] == 6
     assert result["api_case_count"] == 1
     assert result["api_cases"][0]["metrics"]["coverage_rate"] == 1
-    assert result["failure_triage"]["case_count"] == 10
-    assert result["failure_triage"]["metrics"] == {
+    assert result["failure_triage_contract_safety"]["case_count"] == 10
+    assert result["failure_triage_contract_safety"]["metrics"] == {
         "secret_leakage_rate": 0.0,
         "unsupported_high_confidence_claim_rate": 0.0,
         "unresolved_reference_count": 0,
@@ -54,6 +58,38 @@ def test_failure_triage_golden_blocks_unsupported_high_confidence_claim(
 
     assert not result["passed"]
     assert result["metrics"]["unsupported_high_confidence_claim_rate"] > 0
+
+
+def test_failure_triage_live_eval_calls_current_prompt_and_model_gateway() -> None:
+    captured: list[dict[str, object]] = []
+
+    def callback(**kwargs):
+        captured.append(kwargs)
+        context = json.loads(kwargs["prompt"])
+        signal = context["log_analysis"][0]
+        category = signal["category"]
+        return {
+            "primary": {
+                "category": category,
+                "service": signal["service"],
+                "exception_type": signal["exception_type"],
+                "summary": "Cited live-eval hypothesis",
+                "confidence": 0.9,
+                "evidence_refs": signal["evidence_refs"],
+            },
+            "alternatives": [],
+            "recommended_actions": [],
+        }
+
+    from harness.infrastructure.llm.gateway import CallableModelGateway
+
+    result = run_failure_triage_model_live_eval(model_gateway=CallableModelGateway(callback))
+
+    assert result["passed"]
+    assert result["case_count"] == 10
+    assert len(captured) == 10
+    assert all(call["tools"] == [] for call in captured)
+    assert all("failure_triager" in str(call["system"]) for call in captured)
 
 
 def test_api_golden_eval_rejects_missing_data_flow_and_cleanup() -> None:

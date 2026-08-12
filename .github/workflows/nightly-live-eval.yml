@@ -66,3 +66,36 @@ jobs:
             ${{ runner.temp }}/agentic-qa-live-eval/api_test_draft/raw.yml
             ${{ runner.temp }}/agentic-qa-live-eval/api_test_draft/quality-report.json
             ${{ runner.temp }}/agentic-qa-live-eval/api_test_draft/generation-report.json
+
+  failure-triage-live-eval:
+    runs-on: ubuntu-latest
+    environment: nightly-live-eval
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]" -c constraints.txt
+          python -m pip check
+      - name: Create local live-eval configuration
+        run: |
+          python -m harness config init
+          python scripts/configure-ci-local.py --profile nightly
+          python -m harness config doctor
+      - name: Run Failure Triager live eval
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: >-
+          python -m harness eval failure-triage-live
+          | tee "${{ runner.temp }}/failure-triage-live-eval-result.json"
+      - name: Upload Failure Triager eval result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-triage-live-eval-${{ github.run_id }}
+          if-no-files-found: error
+          path: ${{ runner.temp }}/failure-triage-live-eval-result.json

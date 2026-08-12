@@ -653,6 +653,21 @@ def run_eval() -> dict[str, Any]:
     }
 
 
+def run_failure_triage_model_live_eval(*, model_gateway: Any | None = None) -> dict[str, Any]:
+    from harness.infrastructure.llm.gateway import model_gateway_from_config
+    from harness.infrastructure.local_config import FilesystemLocalConfigLoader
+    from harness.testing.golden import run_failure_triage_live_eval
+
+    config = FilesystemLocalConfigLoader(Path.cwd()).load_required()
+    gateway = model_gateway or model_gateway_from_config(config.model)
+    roots = [
+        Path.cwd() / "evals" / "failure-triage",
+        Path(__file__).resolve().parents[3] / "evals" / "failure-triage",
+    ]
+    root = next((item for item in roots if item.is_dir()), roots[0])
+    return run_failure_triage_live_eval(root, model_gateway=gateway)
+
+
 def run_live_eval(
     case_name: str | None = None,
     *,

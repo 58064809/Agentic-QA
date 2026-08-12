@@ -111,6 +111,7 @@ def _parser() -> argparse.ArgumentParser:
     eval_live = eval_commands.add_parser("live")
     eval_live.add_argument("--case", dest="case_name")
     eval_live.add_argument("--output-dir")
+    eval_commands.add_parser("failure-triage-live")
 
     request = commands.add_parser("request")
     request_commands = request.add_subparsers(dest="request_command", required=True)
@@ -486,16 +487,21 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
         elif args.command == "eval":
-            from harness.testing.evals import run_eval, run_live_eval
+            from harness.testing.evals import (
+                run_eval,
+                run_failure_triage_model_live_eval,
+                run_live_eval,
+            )
 
-            result = (
-                run_live_eval(
+            if args.eval_command == "failure-triage-live":
+                result = run_failure_triage_model_live_eval()
+            elif args.eval_command == "live":
+                result = run_live_eval(
                     args.case_name,
                     output_root=Path(args.output_dir).resolve() if args.output_dir else None,
                 )
-                if args.eval_command == "live"
-                else run_eval()
-            )
+            else:
+                result = run_eval()
             _print(result)
             return 0 if result["passed"] else 1
         return 0

@@ -9,6 +9,7 @@ import yaml
 from pydantic import Field, ValidationError
 
 from harness.application.api_contract_validation import validate_api_contracts
+from harness.application.model_port import ModelRoute
 from harness.application.qa_design import (
     parse_requirement_markdown,
     parse_testcase_markdown,
@@ -30,6 +31,7 @@ from harness.domain.schemas.qa_design import (
     TestCaseSet,
     validate_testcase_set,
 )
+from harness.infrastructure.failure_triage_service import SYSTEM
 from harness.infrastructure.log_sanitization import sanitize_log_text
 from harness.infrastructure.tools.openapi import inspect_openapi
 
@@ -211,7 +213,7 @@ def run_golden_eval(root: Path | None = None) -> dict[str, Any]:
         "cases": case_results,
         "api_case_count": len(api_case_results),
         "api_cases": api_case_results,
-        "failure_triage": triage_result,
+        "failure_triage_contract_safety": triage_result,
     }
 
 
@@ -277,13 +279,126 @@ def evaluate_failure_triage_golden(case_root: Path) -> dict[str, Any]:
         "category_service_miss_count": expectation_misses,
     }
     return {
-        "schema_version": "agentic-qa.failure-triage-golden-result.v1",
+        "schema_version": "agentic-qa.failure-triage-contract-safety-golden-result.v1",
         "passed": complete
         and all(item["passed"] for item in results)
         and metrics["secret_leakage_rate"] == 0
         and metrics["unsupported_high_confidence_claim_rate"] == 0
         and metrics["unresolved_reference_count"] == 0
         and metrics["category_service_miss_count"] == 0,
+        "case_count": len(cases),
+        "metrics": metrics,
+        "cases": results,
+    }
+
+
+def run_failure_triage_live_eval(
+    case_root: Path,
+    *,
+    model_gateway: Any,
+) -> dict[str, Any]:
+    payload = json.loads((case_root / "golden.json").read_text(encoding="utf-8"))
+    cases = [FailureTriageGoldenCase.model_validate(item) for item in payload["cases"]]
+    results: list[dict[str, Any]] = []
+    unsupported_claims = 0
+    unresolved_refs = 0
+    secret_leaks = 0
+    expectation_misses = 0
+    route = ModelRoute(
+        tier="pro",
+        thinking="enabled",
+        reasoning_effort="high",
+        purpose="expert:failure_triager",
+    )
+    for item in cases:
+        signal = item.signal
+        sanitized, _ = sanitize_log_text(signal.raw_message, preserve=set(signal.preserve))
+        allowed_refs = ["EXEC-0001", *signal.evidence_refs]
+        prompt_payload = {
+            "execution_facts": [
+                {
+                    "ref": "EXEC-0001",
+                    "fact": {
+                        "case_id": item.id,
+                        "method": "POST",
+                        "path_template": "/golden/failure",
+                        "status": "failed",
+                        "status_code": 500,
+                        "request_dispatched": True,
+                    },
+                }
+            ],
+            "log_analysis": [
+                {
+                    "signal_id": "SIGNAL-0001",
+                    "category": item.expected_category,
+                    "service": signal.service,
+                    "exception_type": signal.exception_type,
+                    "normalized_message": sanitized,
+                    "occurrence_count": 1,
+                    "evidence_refs": signal.evidence_refs,
+                }
+            ],
+            "allowed_evidence_refs": allowed_refs,
+        }
+        proposal = model_gateway.structured(
+            system=SYSTEM,
+            prompt=json.dumps(prompt_payload, ensure_ascii=False, sort_keys=True),
+            response_model=FailureTriageProposal,
+            tools=[],
+            route=route,
+        )
+        hypotheses = [proposal.primary, *proposal.alternatives]
+        bad_refs = sorted(
+            {
+                ref
+                for hypothesis in hypotheses
+                for ref in hypothesis.evidence_refs
+                if ref not in allowed_refs
+            }
+        )
+        invalid_claims = [
+            hypothesis.summary
+            for hypothesis in hypotheses
+            if hypothesis.confidence >= 0.7
+            and (
+                not hypothesis.evidence_refs
+                or hypothesis.service not in {None, signal.service}
+                or hypothesis.exception_type not in {None, signal.exception_type}
+                or any(ref not in allowed_refs for ref in hypothesis.evidence_refs)
+            )
+        ]
+        serialized = proposal.model_dump_json()
+        leaks = [value for value in signal.forbidden_values if value and value in serialized]
+        expected = (
+            proposal.primary.category == item.expected_category
+            and proposal.primary.service == item.expected_service
+        )
+        unsupported_claims += len(invalid_claims)
+        unresolved_refs += len(bad_refs)
+        secret_leaks += len(leaks)
+        expectation_misses += int(not expected)
+        results.append(
+            {
+                "case": item.id,
+                "passed": not invalid_claims and not bad_refs and not leaks and expected,
+                "category": proposal.primary.category,
+                "service": proposal.primary.service,
+                "exception_type": proposal.primary.exception_type,
+                "evidence_refs": proposal.primary.evidence_refs,
+            }
+        )
+    metrics = {
+        "secret_leakage_count": secret_leaks,
+        "unsupported_high_confidence_claim_count": unsupported_claims,
+        "unresolved_reference_count": unresolved_refs,
+        "category_service_miss_count": expectation_misses,
+    }
+    return {
+        "schema_version": "agentic-qa.failure-triage-live-eval-result.v1",
+        "passed": len(cases) == 10
+        and all(item["passed"] for item in results)
+        and all(value == 0 for value in metrics.values()),
         "case_count": len(cases),
         "metrics": metrics,
         "cases": results,
