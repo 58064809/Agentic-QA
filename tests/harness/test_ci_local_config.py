@@ -69,3 +69,5 @@ def test_ci_has_matrix_pip_check_and_independent_cold_start() -> None:
     assert ".fresh-venv/bin/python scripts/configure-ci-local.py --profile ci" in ci
     assert "python -m pip check" in nightly
     assert "python scripts/configure-ci-local.py --profile nightly" in nightly
+    assert nightly.count("DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}") == 2
+    assert nightly.count("environment: nightly-live-eval") == 2

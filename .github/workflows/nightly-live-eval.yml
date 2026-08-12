@@ -24,6 +24,8 @@ jobs:
   live-eval:
     runs-on: ubuntu-latest
     environment: nightly-live-eval
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,8 +43,6 @@ jobs:
           python scripts/configure-ci-local.py --profile nightly
           python -m harness config doctor
       - name: Run live candidate eval
-        env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: >-
           python -m harness eval live
           --case "${{ inputs.case || (github.event.schedule == '30 16 * * 0' && 'order-lifecycle') || (github.event.schedule == '30 17 * * 0' && 'lottery-assistance') || 'login-lock' }}"
@@ -70,6 +70,8 @@ jobs:
   failure-triage-live-eval:
     runs-on: ubuntu-latest
     environment: nightly-live-eval
+    env:
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -87,8 +89,6 @@ jobs:
           python scripts/configure-ci-local.py --profile nightly
           python -m harness config doctor
       - name: Run Failure Triager live eval
-        env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: >-
           python -m harness eval failure-triage-live
           | tee "${{ runner.temp }}/failure-triage-live-eval-result.json"
