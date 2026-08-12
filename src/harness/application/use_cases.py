@@ -9,6 +9,7 @@ from harness.application.ports import (
     ApiProjectChecker,
     ApiScenarioRunner,
     ArtifactReviewRepository,
+    FailureLogService,
     LocalConfigChecker,
     QualityStrategyCatalog,
     RunEventRepository,
@@ -44,6 +45,7 @@ from harness.domain.schemas.api_project import ApiProjectCheckCommand, ApiProjec
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.local_config import AgenticQaLocalConfig, LocalConfigCheckResult
+from harness.domain.schemas.log_evidence import CollectFailureLogsCommand, CollectFailureLogsResult
 
 
 class HarnessApplication:
@@ -61,6 +63,7 @@ class HarnessApplication:
         api_project_checker: ApiProjectChecker | None = None,
         local_config_checker: LocalConfigChecker | None = None,
         local_config: AgenticQaLocalConfig | None = None,
+        failure_logs: FailureLogService | None = None,
     ) -> None:
         self._workspaces = workspaces
         self._runs = runs
@@ -73,6 +76,7 @@ class HarnessApplication:
         self._api_project_checker = api_project_checker
         self._local_config_checker = local_config_checker
         self._local_config = local_config
+        self._failure_logs = failure_logs
 
     def check_local_config(self) -> LocalConfigCheckResult:
         if self._local_config_checker is None:
@@ -143,6 +147,11 @@ class HarnessApplication:
         if self._api_scenario_runner is None:
             raise RuntimeError("API scenario runner is not configured")
         return self._api_scenario_runner.resume_cleanup(command)
+
+    def collect_failure_logs(self, command: CollectFailureLogsCommand) -> CollectFailureLogsResult:
+        if self._failure_logs is None:
+            raise RuntimeError("failure log collection is not configured")
+        return self._failure_logs.collect(command)
 
     def export_api_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:
         if self._api_automation is None:

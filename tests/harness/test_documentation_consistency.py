@@ -14,6 +14,7 @@ from harness.domain.schemas.api_discovery import ApiDiscoveryCatalog, ApiDiscove
 from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.failure_triage import FailureTriage
+from harness.domain.schemas.log_evidence import LogEvidenceBundle
 from harness.infrastructure.manifests.registry import KnowledgeRegistry, SkillRegistry
 from harness.interfaces.facade import Harness
 
@@ -29,6 +30,7 @@ SCHEMAS = {
     "api-cases.v1.2.schema.json": ApiTestCasesDraft,
     "execution-evidence.v2.schema.json": ExecutionEvidence,
     "failure-triage.v1.schema.json": FailureTriage,
+    "log-evidence.v1.schema.json": LogEvidenceBundle,
 }
 CONSUMED_ENV = {
     "DEEPSEEK_API_KEY",

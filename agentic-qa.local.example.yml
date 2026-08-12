@@ -94,3 +94,22 @@ api:
                 name: accesstoken
                 prefix: ""
             fallback_token: secret://api.member-service.dev.auth.fallback_token
+
+logs:
+  provider: none
+  allowed_environments: [dev, test, qa, staging]
+  query:
+    default_window_seconds: 30
+    max_window_seconds: 300
+    default_max_entries: 1000
+    hard_max_entries: 5000
+    max_response_bytes: 8388608
+  api_service_scopes: {}
+  # To enable bounded local collection:
+  # provider: local-file
+  # api_service_scopes:
+  #   member-service: [member-service]
+  # local_file:
+  #   services:
+  #     member-service:
+  #       files: [local-logs/member-service/*.log]

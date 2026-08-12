@@ -12,6 +12,7 @@ from harness.infrastructure.api_automation import FilesystemApiAutomationService
 from harness.infrastructure.api_project import FilesystemApiProjectChecker
 from harness.infrastructure.api_scenario_run import FilesystemApiScenarioRunService
 from harness.infrastructure.api_scenario_sources import FilesystemApiScenarioSourceCatalog
+from harness.infrastructure.failure_logs import FilesystemFailureLogService
 from harness.infrastructure.llm.gateway import model_gateway_from_config
 from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
@@ -141,4 +142,5 @@ def build_application(
         local_config=local_config,
         artifacts=store,
         agent_requests=agent_requests,
+        failure_logs=FilesystemFailureLogService(store, local_config),
     )

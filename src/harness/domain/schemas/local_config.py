@@ -142,6 +142,86 @@ class LocalRuntimeConfig(StrictModel):
         return value
 
 
+class LocalLogQueryLimits(StrictModel):
+    default_window_seconds: int = Field(default=30, ge=1, le=300)
+    max_window_seconds: int = Field(default=300, ge=1, le=300)
+    default_max_entries: int = Field(default=1000, ge=1, le=5000)
+    hard_max_entries: int = Field(default=5000, ge=1, le=5000)
+    max_response_bytes: int = Field(default=8_388_608, ge=1024, le=16_777_216)
+
+    @model_validator(mode="after")
+    def validate_defaults(self) -> LocalLogQueryLimits:
+        if self.default_window_seconds > self.max_window_seconds:
+            raise ValueError("logs default window exceeds max window")
+        if self.default_max_entries > self.hard_max_entries:
+            raise ValueError("logs default entries exceeds hard max entries")
+        return self
+
+
+class LocalLogFileService(StrictModel):
+    files: list[str] = Field(min_length=1)
+
+    @field_validator("files")
+    @classmethod
+    def validate_file_patterns(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip().replace("\\", "/") for item in value if item.strip()]
+        if (
+            not normalized
+            or len(normalized) != len(set(normalized))
+            or any(
+                not item.startswith("local-logs/")
+                or item.startswith("local-logs//")
+                or ".." in item.split("/")
+                or ":" in item
+                for item in normalized
+            )
+        ):
+            raise ValueError("local log patterns must be unique paths below local-logs/")
+        return normalized
+
+
+class LocalFileLogProvider(StrictModel):
+    services: dict[str, LocalLogFileService] = Field(default_factory=dict)
+    max_files: int = Field(default=100, ge=1, le=1000)
+    max_file_bytes: int = Field(default=4_194_304, ge=1024, le=16_777_216)
+
+
+class LocalLogsConfig(StrictModel):
+    provider: Literal["none", "local-file", "loki"] = "none"
+    allowed_environments: list[str] = Field(
+        default_factory=lambda: ["dev", "test", "qa", "staging"]
+    )
+    query: LocalLogQueryLimits = Field(default_factory=LocalLogQueryLimits)
+    api_service_scopes: dict[str, list[str]] = Field(default_factory=dict)
+    local_file: LocalFileLogProvider | None = None
+
+    @field_validator("allowed_environments")
+    @classmethod
+    def normalize_environments(cls, value: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(item.strip().casefold() for item in value if item.strip()))
+        if len(normalized) != len(value):
+            raise ValueError("logs.allowed_environments must be unique non-empty names")
+        return normalized
+
+    @field_validator("api_service_scopes")
+    @classmethod
+    def normalize_scopes(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        normalized: dict[str, list[str]] = {}
+        for api_service, services in value.items():
+            key = api_service.strip()
+            items = list(dict.fromkeys(item.strip() for item in services if item.strip()))
+            if not key or not items:
+                raise ValueError("log service scopes require non-empty API and log services")
+            normalized[key] = items
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_provider(self) -> LocalLogsConfig:
+        if self.provider == "local-file" and self.local_file is None:
+            raise ValueError("logs.provider local-file requires logs.local_file")
+        return self
+
+
 class LocalApiEncryption(StrictModel):
     algorithm: Literal["aes-128-cbc-pkcs7-base64-iv-prefix"]
     key: str
@@ -304,6 +384,7 @@ class AgenticQaLocalConfig(StrictModel):
     workspace_defaults: LocalWorkspaceDefaults = Field(default_factory=LocalWorkspaceDefaults)
     runtime: LocalRuntimeConfig = Field(default_factory=LocalRuntimeConfig)
     api: LocalApiConfig = Field(default_factory=LocalApiConfig)
+    logs: LocalLogsConfig = Field(default_factory=LocalLogsConfig)
 
 
 class LocalConfigIssue(StrictModel):

@@ -21,6 +21,7 @@ Thumbs.db
 
 # Local generated logs
 *.log
+/local-logs/
 
 # Legacy data and runtime workspaces stay local
 /prd/

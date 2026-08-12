@@ -14,6 +14,7 @@ from harness import (
     ArtifactDiffEndpoint,
     ArtifactVariant,
     ArtifactVersionRef,
+    CollectFailureLogsCommand,
     CreateWorkspaceCommand,
     ExecuteApiCasesCommand,
     ExecutionProfile,
@@ -171,6 +172,12 @@ def _parser() -> argparse.ArgumentParser:
     api_export.add_argument("--cases-path", default="published/api_test_draft/current.yml")
     api_export.add_argument("--output-path", default="exports/api_test_draft/test_api_cases.py")
     api_export.add_argument("--overwrite", action="store_true")
+    failure = commands.add_parser("failure")
+    failure_commands = failure.add_subparsers(dest="failure_command", required=True)
+    failure_collect = failure_commands.add_parser("collect")
+    failure_collect.add_argument("workspace_id")
+    failure_collect.add_argument("execution_id")
+    failure_collect.add_argument("--case-id")
     return parser
 
 
@@ -318,6 +325,16 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         harness = Harness(repo_root)
+        if args.command == "failure" and args.failure_command == "collect":
+            result = harness.collect_failure_logs(
+                CollectFailureLogsCommand(
+                    workspace_id=args.workspace_id,
+                    execution_id=args.execution_id,
+                    case_id=args.case_id,
+                )
+            )
+            _print(result)
+            return 0 if result.failed == 0 else 1
         if args.command == "api" and args.api_command == "run":
             result = harness.run_api_scenario(
                 RunApiScenarioCommand(

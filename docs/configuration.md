@@ -156,6 +156,35 @@ execution namespace、正常 teardown、加密恢复 journal、最后人工核�
 
 ## 持久化边界
 
+### 失败日志采集
+
+根配置的 `logs` 段默认使用 `provider: none`，因此不会自动读取日志。LocalFile MVP 使用
+`provider: local-file`，并通过 `api_service_scopes` 将 execution plan 中的 API service 映射到
+明确的日志服务列表；每个日志服务的文件模式位于 `local_file.services`，路径范围固定在仓库
+`local-logs/` 下。查询窗口、条数、文件数和字节数均受配置上限约束，production-like 环境不进入
+日志采集。自定义 correlation response header 由 API 环境的
+`correlation_response_headers` allowlist 控制，并参与 Review 后的结构策略哈希。
+
+```yaml
+logs:
+  provider: local-file
+  allowed_environments: [dev, test, qa, staging]
+  query:
+    default_window_seconds: 30
+    max_window_seconds: 300
+    default_max_entries: 1000
+    hard_max_entries: 5000
+    max_response_bytes: 8388608
+  api_service_scopes:
+    order-api: [gateway, order-service]
+  local_file:
+    services:
+      gateway:
+        files: [local-logs/gateway/*.log]
+      order-service:
+        files: [local-logs/order-service/*.log]
+```
+
 workspace 只保存服务名、环境、非敏感执行策略与结构 SHA-256。手机号、密码、验证码、AES Key、
 Token、数据库密码和连接器凭据每次运行都通过 Secret Provider 重新解析。凭据值变化沿用已有 Review；Base URL、
 trusted Origin、方法 allowlist、登录路径、算法或 Token 注入规则变化会阻止请求，并进入新的 prepare 和

@@ -74,6 +74,14 @@ from harness.domain.schemas.api_project import (
 )
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.local_config import AgenticQaLocalConfig, LocalConfigCheckResult
+from harness.domain.schemas.log_evidence import (
+    CollectFailureLogsCommand,
+    CollectFailureLogsResult,
+    LogEvidenceBundle,
+    LogQueryRequest,
+    LogQueryResult,
+    NormalizedLogEntry,
+)
 
 __all__ = [
     "AgentCandidateSummary",
@@ -118,6 +126,8 @@ __all__ = [
     "ArtifactVersionRef",
     "BudgetUsage",
     "CreateWorkspaceCommand",
+    "CollectFailureLogsCommand",
+    "CollectFailureLogsResult",
     "ExecuteApiCasesCommand",
     "ExportApiPytestCommand",
     "EvidenceRequirement",
@@ -138,6 +148,10 @@ __all__ = [
     "RunSnapshot",
     "SkillManifest",
     "LoginApiAuthentication",
+    "LogEvidenceBundle",
+    "LogQueryRequest",
+    "LogQueryResult",
+    "NormalizedLogEntry",
     "LocalConfigCheckResult",
     "StaticTokenApiAuthentication",
     "StartRunCommand",

@@ -37,6 +37,7 @@ from harness.domain.schemas.api_project import ApiProjectCheckCommand, ApiProjec
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.local_config import LocalConfigCheckResult
+from harness.domain.schemas.log_evidence import CollectFailureLogsCommand, CollectFailureLogsResult
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.quality import QualityStrategyRegistry
 
@@ -112,6 +113,9 @@ class Harness:
 
     def resume_api_cleanup(self, command: ResumeApiCleanupCommand) -> ResumeApiCleanupResult:
         return self._application.resume_api_cleanup(command)
+
+    def collect_failure_logs(self, command: CollectFailureLogsCommand) -> CollectFailureLogsResult:
+        return self._application.collect_failure_logs(command)
 
     def export_api_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:
         return self._application.export_api_pytest(command)

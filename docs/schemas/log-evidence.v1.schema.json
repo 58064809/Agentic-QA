@@ -1,0 +1,381 @@
+{
+  "$defs": {
+    "LogEvidenceStats": {
+      "additionalProperties": false,
+      "properties": {
+        "entry_count": {
+          "minimum": 0,
+          "title": "Entry Count",
+          "type": "integer"
+        },
+        "service_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Service Counts",
+          "type": "object"
+        },
+        "level_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Level Counts",
+          "type": "object"
+        },
+        "redaction_count": {
+          "minimum": 0,
+          "title": "Redaction Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "entry_count",
+        "redaction_count"
+      ],
+      "title": "LogEvidenceStats",
+      "type": "object"
+    },
+    "LogQueryRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "workspace_id": {
+          "title": "Workspace Id",
+          "type": "string"
+        },
+        "execution_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "case_id": {
+          "minLength": 1,
+          "title": "Case Id",
+          "type": "string"
+        },
+        "dataset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dataset Id"
+        },
+        "environment": {
+          "minLength": 1,
+          "title": "Environment",
+          "type": "string"
+        },
+        "api_service": {
+          "minLength": 1,
+          "title": "Api Service",
+          "type": "string"
+        },
+        "services": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Services",
+          "type": "array"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "completed_at": {
+          "format": "date-time",
+          "title": "Completed At",
+          "type": "string"
+        },
+        "max_entries": {
+          "maximum": 5000,
+          "minimum": 1,
+          "title": "Max Entries",
+          "type": "integer"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "custom_ids": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Custom Ids",
+          "type": "object"
+        }
+      },
+      "required": [
+        "workspace_id",
+        "execution_id",
+        "case_id",
+        "environment",
+        "api_service",
+        "services",
+        "started_at",
+        "completed_at",
+        "max_entries"
+      ],
+      "title": "LogQueryRequest",
+      "type": "object"
+    },
+    "NormalizedLogEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "entry_id": {
+          "pattern": "^LOG-[0-9]{6}$",
+          "title": "Entry Id",
+          "type": "string"
+        },
+        "timestamp": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timestamp"
+        },
+        "service": {
+          "minLength": 1,
+          "title": "Service",
+          "type": "string"
+        },
+        "level": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Level",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "trace_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Id"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "exception_type": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exception Type"
+        },
+        "source_ref": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Source Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entry_id",
+        "service",
+        "level",
+        "message",
+        "source_ref"
+      ],
+      "title": "NormalizedLogEntry",
+      "type": "object"
+    },
+    "ProviderDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "service": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service"
+        },
+        "detail": {
+          "minLength": 1,
+          "title": "Detail",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "detail"
+      ],
+      "title": "ProviderDiagnostic",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.log-evidence.v1",
+      "default": "agentic-qa.log-evidence.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "collection_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Collection Id",
+      "type": "string"
+    },
+    "execution_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "case_id": {
+      "minLength": 1,
+      "title": "Case Id",
+      "type": "string"
+    },
+    "dataset_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset Id"
+    },
+    "execution_evidence_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Execution Evidence Sha256",
+      "type": "string"
+    },
+    "provider": {
+      "enum": [
+        "local-file",
+        "loki"
+      ],
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_structure_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Provider Structure Sha256",
+      "type": "string"
+    },
+    "query": {
+      "$ref": "#/$defs/LogQueryRequest"
+    },
+    "status": {
+      "enum": [
+        "success",
+        "empty",
+        "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/NormalizedLogEntry"
+      },
+      "maxItems": 5000,
+      "title": "Entries",
+      "type": "array"
+    },
+    "diagnostics": {
+      "items": {
+        "$ref": "#/$defs/ProviderDiagnostic"
+      },
+      "title": "Diagnostics",
+      "type": "array"
+    },
+    "stats": {
+      "$ref": "#/$defs/LogEvidenceStats"
+    },
+    "content_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "collection_id",
+    "execution_id",
+    "case_id",
+    "execution_evidence_sha256",
+    "provider",
+    "provider_structure_sha256",
+    "query",
+    "status",
+    "stats",
+    "content_sha256"
+  ],
+  "title": "LogEvidenceBundle",
+  "type": "object"
+}

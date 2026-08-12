@@ -41,6 +41,7 @@ from harness.domain.schemas.api_project import ApiProjectCheckCommand, ApiProjec
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.local_config import LocalConfigCheckResult
+from harness.domain.schemas.log_evidence import CollectFailureLogsCommand, CollectFailureLogsResult
 
 
 class WorkspaceRepository(Protocol):
@@ -67,6 +68,10 @@ class ApiScenarioRunner(Protocol):
     ) -> GenerateApiAllureReportResult: ...
 
     def resume_cleanup(self, command: ResumeApiCleanupCommand) -> ResumeApiCleanupResult: ...
+
+
+class FailureLogService(Protocol):
+    def collect(self, command: CollectFailureLogsCommand) -> CollectFailureLogsResult: ...
 
 
 class ApiProjectChecker(Protocol):
