@@ -61,7 +61,7 @@ python -m harness api prepare .\local-sources\api\member-service --environment d
 先查看差异，再选择明确版本批准：
 
 ```powershell
-python -m harness run diff <workspace> <run> api_test_draft --before raw --after quality
+python -m harness run diff <workspace> <run> api_test_draft --before raw --after normalized
 python -m harness run review <workspace> <run> approve `
   --artifact api_test_draft `
   --variant api_test_draft=raw `
@@ -83,6 +83,7 @@ python -m harness api run <workspace> trial-001 --environment dev
 ```text
 workspaces/<workspace>/executions/trial-001/
 ├─ manifest.json
+├─ execution-plan.json
 ├─ evidence.json
 ├─ execution-events.jsonl
 ├─ report-summary.json
@@ -90,13 +91,16 @@ workspaces/<workspace>/executions/trial-001/
 ├─ .cleanup-journal.enc          # 有 cleanup 时存在
 ├─ allure-results/
 ├─ allure-report/
+├─ triage/collections/            # 显式 failure collect 后按 collection 建立
 └─ summary.md
 ```
 
 workspace 根目录的 `allure-history.jsonl` 由 Allure 3 维护，用于后续执行的趋势、回归和 flaky 展示。
 
 只包含 passed/skipped 且 cleanup 完成时返回 0；存在 failed/broken 或未完成 cleanup 返回 1；配置或命令错误返回 2。
-`allure-results` 总会生成；执行 `npm ci` 后会自动生成 HTML，也可稍后运行：
+报告阶段采用 best-effort 隔离：执行事实已提交后，即使报告写入失败也不改变测试结论。
+`allure-results`、HTML、Markdown 和报告汇总的返回路径以实际生成产物为准；本地未安装 Allure CLI 时通常
+保留 results 并标记 `results_only`。执行 `npm ci` 后可生成 HTML，也可稍后运行：
 
 ```powershell
 python -m harness api report allure <workspace> trial-001
@@ -111,6 +115,9 @@ python -m harness api cleanup resume <workspace> trial-001 --environment dev
 ```
 
 报告和结构化日志不保存响应原值、Token、Cookie、请求业务值或配置凭据。
+
+失败实例需要日志辅助定位时，继续阅读 [Failure Triage](failure-triage.md)。日志不会随 API 执行自动
+拉取，显式 collect/analyze/report 也不会修改原 execution 的四套状态。
 
 ## 6. 导出确定性 pytest 壳
 

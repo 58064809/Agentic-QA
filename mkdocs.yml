@@ -34,4 +34,5 @@ nav:
       - 测试用例标准: testcase-standards.md
       - API 测试契约: api-test-generation.md
       - API Discovery: api-discovery.md
+      - Failure Triage: failure-triage.md
   - 路线图: roadmap.md

@@ -108,7 +108,6 @@ api:
           base_url: https://gateway-app-dev.nexuscube.cn
           trusted_origins: [https://gateway-app-dev.nexuscube.cn]
           allowed_http_methods: [GET, POST]
-          cleanup_exempt_operations: []
           isolation:
             mode: namespace
             namespace: {location: header, name: X-Test-Namespace, prefix: aqa}

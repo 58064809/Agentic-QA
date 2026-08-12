@@ -36,7 +36,13 @@ workspaces/<workspace_id>/
     ├── cleanup-summary.json
     ├── .cleanup-journal.enc       # 仅在需要 cleanup 时存在
     ├── allure-results/
-    └── allure-report/             # 本地 Allure CLI 可用时存在
+    ├── allure-report/             # 本地 Allure CLI 可用时存在
+    └── triage/collections/<collection-id>/
+        ├── collection-manifest.json
+        ├── log-evidence.json
+        ├── log-analysis.json
+        ├── failure-triage.json
+        └── bug-draft.json         # Bug Gate 通过时存在
 ```
 
 ## 事实与可变性
@@ -52,11 +58,13 @@ workspaces/<workspace_id>/
 | Review Record | 人工决定与批准版本 | 按 artifact 原子写 | 审计 |
 | published history | 已发布只增不改版本 | create-only | 历史追踪 |
 | published current | 当前版本指针内容 | 原子替换 | 使用者读取 |
-| API execution manifest/Evidence | 防重放状态与审计事实 | execution ID create-only | 试跑结论与产物索引 |
+| API execution manifest | 防重放状态与产物索引投影 | 原子替换 | 执行、测试、cleanup、报告四状态 |
+| API Execution Evidence | 用例与断言审计事实 | create-only | 试跑结论；v2 为新执行，v1 只读投影 |
 | API execution events | 脱敏、追加式 SHA-256 哈希链 | append-only | 请求边界与崩溃定位 |
 | execution plan | published 与执行策略的脱敏冻结快照 | create-only | 请求前冻结；cleanup resume 和历史报告从这里解析原发布版本 |
 | cleanup journal | AES-256-GCM 加密的 armed/pending/running 状态 | 原子替换 | armed 供人工核对；仅恢复从未发送的 pending cleanup |
 | Allure results/history/report | Evidence 的展示投影 | 可重新生成 | 状态浏览、趋势与回归 |
+| Failure collection 产物 | 脱敏日志、确定性分析、引用式分诊和可选 Bug Draft | collection 内 create-only | 显式失败分诊；不修改原 execution |
 
 历史 Allure 重建以 execution 目录中的 immutable Execution Plan 为入口，再精确解析 published
 history；workspace 当前服务绑定、current YAML、认证和安全策略不参与历史结果解释。Plan、manifest、

@@ -45,6 +45,7 @@ python -m harness workspace create demo
 | CLI 使用者 | [从零开始](docs/getting-started.md) | [CLI 参考](docs/cli-reference.md)、[配置](docs/configuration.md) |
 | AI 集成者 | [跨 AI 接入](docs/agent-integration.md) | MCP 与 YAML/JSON AgentRequest |
 | Python 集成者 | [Harness 契约](docs/harness-contracts.md) | [Review Gate](docs/review-gate.md) |
+| 故障分析者 | [Failure Triage](docs/failure-triage.md) | 受限日志、引用式分析与待审核 Bug Draft |
 | 维护者 | [架构](docs/architecture.md) | [存储与版本](docs/artifact-versioning.md)、[RAG](docs/rag-design.md) |
 | 内容维护者 | [内容分类](content-audiences.yml) | 人类文档、运行时 AI、机器契约与编码 Agent 的边界 |
 
@@ -57,4 +58,4 @@ python -m build --wheel
 ```
 
 公开 Harness v2 方法以 `src/harness/interfaces/facade.py` 和
-[Harness 契约](docs/harness-contracts.md)为准。
+[Harness 契约](docs/harness-contracts.md)为准；README 不复制方法数量或 Schema 清单。

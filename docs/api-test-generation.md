@@ -28,7 +28,7 @@ Candidate 停在人工 Review Gate。人工选择通过质量门的版本后，�
 workspaces/<workspace>/published/api_test_draft/current.yml
 ```
 
-`api.execute` 读取这份 published YAML，并继续受 ExecutionProfile、workspace policy、环境变量和
+`api.execute` 读取这份 published YAML，并继续受 ExecutionProfile、workspace policy、根配置和
 HTTP method allowlist 控制。请求位于 `request.method/path`，断言位于类型化 `assertions`。
 workspace 环境可以选择静态 token 或执行前登录取 token；认证头由执行器统一注入，不改变
 API Cases v1.2 文件。
@@ -39,9 +39,9 @@ API Cases v1.2 文件。
 执行前预检共同拒绝未知字段、非法路径、前向变量引用或错误 cleanup；历史 published 文件定义无效
 时记录 `blocked`，不发送该用例请求。
 
-每个业务请求和 cleanup 请求都会在发送前解析其 `${ENV_NAME}` 引用；任一值缺失时，该请求记录为
+每个业务请求和 cleanup 请求都会在发送前解析运行时变量；任一必需值缺失时，该请求记录为
 `blocked`。请求路径、Header 名称与换行、传输层 Header，以及认证/密钥类字段也使用与登录请求相同
-的安全校验。敏感字段值使用环境变量或已声明的运行时变量引用。
+的安全校验。敏感配置由根配置中的 `secret://` 引用经 Secret Provider 解析。
 
 运行时变量使用 `${{name}}`，与环境变量 `${ENV_NAME}` 区分。完整占位符保留数字、布尔、对象或
 数组类型；嵌入字符串时只接受标量。响应提取值仅在本次执行进程内保存，不写回 YAML 或 Evidence。
@@ -92,7 +92,7 @@ cleanup:
 | `response_json` | 使用同一受限 JSON 路径语法提取 |
 | `response_header` | 头名大小写不敏感；拒绝 Cookie、Token 等敏感头名 |
 | 跨用例变量 | 系统校验引用来自更早用例声明的提取变量；上游未产生所需值时下游为 `blocked` |
-| cleanup | 主请求发出后登记，全部业务用例结束后逆序执行；每一步形成独立 Evidence case |
+| cleanup | mutation transport 前先以 `armed` 登记，响应与提取完成后转为 `pending`；全部业务用例结束后逆序执行，每一步形成独立 Evidence case |
 
 提取变量仅在生产者状态为 `passed` 时进入共享作用域。失败、错误或 blocked 的生产者不会向下游发布
 变量；已发出主请求的 cleanup 仍保留该次迭代的局部变量快照。数据集值、共享变量和 cleanup 局部值
@@ -108,10 +108,7 @@ cleanup:
 
 ```powershell
 python -m harness api execute demo run-api-001 `
-  --environment qa `
-  --allow-http-method GET `
-  --allow-http-method POST `
-  --allow-http-method DELETE
+  --environment qa
 ```
 
 确定性导出 pytest adapter：
@@ -255,7 +252,7 @@ v1.1 与 v1.2 都是已发布、按字节冻结的契约；普通模型代码生
 | Candidate 已生成但执行工具拒绝 | `api.execute` 只读取人工审核后发布的 YAML |
 | 环境名称类似 production | ExecutionProfile 校验返回错误 |
 | POST 未在 allowlist | 执行证据记录为 blocked，不发送请求 |
-| 静态 token 环境变量为空 | `api.execute` 返回认证配置错误，不发送用例请求 |
+| 静态 token Secret 为空 | `api.execute` 返回认证配置错误，不发送用例请求 |
 | 登录状态码或 token JSON 路径不匹配 | `api.execute` 返回认证错误，不发送后续用例请求 |
 | 断言类型未知或参数错误 | Candidate 进入修订；历史 published 用例执行时记录 blocked 且不发送请求 |
 | JSON 或响应头断言失败 | 证据保留类型与 SHA-256 摘要，不写入原始响应值 |

@@ -56,7 +56,7 @@ StartRunCommand
   → 冲突保留并合并为唯一 RequirementCatalog
   → 确定性渲染 requirement_analysis.md
   → RiskCatalog（只消费 RequirementCatalog）
-  → 每批最多 5 条规则的独立 Test Designer 调用
+  → 当前每批 6 条规则的独立 Test Designer 调用
   → 批次 TestCaseSet 强类型校验与确定性合并
   → 跨目录确定性校验
   → 确定性渲染 testcases.md

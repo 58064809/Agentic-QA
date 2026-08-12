@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import json
 import re
+import shlex
 from fnmatch import fnmatch
 from pathlib import Path
 from urllib.parse import unquote
@@ -11,12 +12,28 @@ import yaml
 
 from harness.application.agent_request import AgentRequest, AgentRequestResult
 from harness.domain.schemas.api_discovery import ApiDiscoveryCatalog, ApiDiscoveryExport
-from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
-from harness.domain.schemas.execution_evidence import ExecutionEvidence
-from harness.domain.schemas.failure_triage import BugDraft, FailureTriage, FailureTriageV2
+from harness.domain.schemas.api_test_cases import (
+    API_CASES_SCHEMA_VERSION,
+    LEGACY_API_CASES_SCHEMA_VERSION,
+    ApiTestCasesDraft,
+)
+from harness.domain.schemas.execution_evidence import (
+    EXECUTION_EVIDENCE_SCHEMA_VERSION,
+    EXECUTION_EVIDENCE_V1_SCHEMA_VERSION,
+    ExecutionEvidence,
+)
+from harness.domain.schemas.failure_triage import (
+    FAILURE_TRIAGE_SCHEMA_VERSION,
+    FAILURE_TRIAGE_V2_SCHEMA_VERSION,
+    BugDraft,
+    FailureTriage,
+    FailureTriageV2,
+)
 from harness.domain.schemas.log_analysis import LogAnalysis
 from harness.domain.schemas.log_evidence import LogEvidenceBundle
 from harness.infrastructure.manifests.registry import KnowledgeRegistry, SkillRegistry
+from harness.infrastructure.workflow.engine import TESTCASE_RULE_BATCH_SIZE
+from harness.interfaces.cli import _parser
 from harness.interfaces.facade import Harness
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -210,3 +227,123 @@ def test_human_documentation_describes_behavior_without_directive_language() -> 
             if DIRECTIVE.search(line):
                 violations.append(f"{document.relative_to(ROOT)}:{line_number}: {line.strip()}")
     assert not violations, "人类文档包含命令式规则语言:\n- " + "\n- ".join(violations)
+
+
+def _documented_harness_commands() -> list[tuple[Path, str]]:
+    commands: list[tuple[Path, str]] = []
+    documents = [ROOT / "README.md", ROOT / "COMMANDS.md", *DOCS.rglob("*.md")]
+    for document in documents:
+        lines = document.read_text(encoding="utf-8").splitlines()
+        index = 0
+        while index < len(lines):
+            line = lines[index].strip()
+            if not line.startswith("python -m harness "):
+                index += 1
+                continue
+            command = line.removeprefix("python -m harness ")
+            while command.rstrip().endswith("`") and index + 1 < len(lines):
+                command = command.rstrip()[:-1] + " " + lines[index + 1].strip()
+                index += 1
+            commands.append((document, command))
+            index += 1
+    return commands
+
+
+def test_documented_cli_commands_are_accepted_by_current_parser() -> None:
+    parser = _parser()
+    errors: list[str] = []
+    for document, command in _documented_harness_commands():
+        normalized = re.sub(r"\[[^]]*]", "", command)
+        normalized = re.sub(r"<[^>]+>", "example", normalized)
+        try:
+            parser.parse_args(shlex.split(normalized, posix=False))
+        except SystemExit:
+            errors.append(f"{document.relative_to(ROOT)}: {command}")
+    assert not errors, "文档 CLI 示例与 argparse 不一致:\n- " + "\n- ".join(errors)
+
+
+def test_capability_inventory_marks_current_and_legacy_contracts() -> None:
+    payload = yaml.safe_load((DOCS / "capabilities.yml").read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "agentic-qa.capabilities.v1"
+    capabilities = payload["capabilities"]
+    expected = {
+        "api_generation": (
+            API_CASES_SCHEMA_VERSION,
+            LEGACY_API_CASES_SCHEMA_VERSION,
+        ),
+        "api_execution": (
+            EXECUTION_EVIDENCE_SCHEMA_VERSION,
+            EXECUTION_EVIDENCE_V1_SCHEMA_VERSION,
+        ),
+        "failure_triage": (
+            FAILURE_TRIAGE_V2_SCHEMA_VERSION,
+            FAILURE_TRIAGE_SCHEMA_VERSION,
+        ),
+    }
+    for name, (current, legacy) in expected.items():
+        item = capabilities[name]
+        assert item["status"] == "implemented"
+        assert item["current_contract"] == current
+        assert item["legacy_read_only_contracts"] == [legacy]
+        assert (DOCS / item["documentation"]).is_file()
+    assert capabilities["bug_draft_review"]["external_issue_write"] is False
+
+
+def test_high_risk_documentation_semantics_follow_runtime_contracts() -> None:
+    agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    api = (DOCS / "api-test-generation.md").read_text(encoding="utf-8")
+    cli = (DOCS / "cli-reference.md").read_text(encoding="utf-8")
+    config = (DOCS / "configuration.md").read_text(encoding="utf-8")
+    getting_started = (DOCS / "getting-started.md").read_text(encoding="utf-8")
+    triage = (DOCS / "failure-triage.md").read_text(encoding="utf-8")
+
+    assert "新 API Candidate 只生成 `agentic-qa.api-cases.v1.2`" in agents
+    assert "v1.1 仅供历史只读解释" in agents
+    assert "只接受 `agentic-qa.api-cases.v1.1`" not in agents
+    assert "mutation transport 前先以 `armed` 登记" in api
+    assert "--allow-http-method GET" not in api
+    assert "随后调用受限 `failure_triager` 模型" in cli
+    assert "该命令不调用模型" not in cli
+    assert "`allure-results`、HTML、Markdown 和报告汇总的返回路径以实际生成产物为准" in (
+        getting_started
+    )
+    assert "工具列表为空" in triage
+    assert "不会自动创建 Jira" in triage
+    assert "现有 diff / Review Gate" in triage
+    assert "api_key: secret://test_management.api_key" in config
+    assert "cleanup_exempt_operations:" not in config
+    rag = (DOCS / "rag-design.md").read_text(encoding="utf-8")
+    architecture = (DOCS / "architecture.md").read_text(encoding="utf-8")
+    assert f"当前每批 {TESTCASE_RULE_BATCH_SIZE} 条" in rag
+    assert f"当前每批 {TESTCASE_RULE_BATCH_SIZE} 条" in architecture
+
+
+def test_canonical_local_config_keeps_secret_bearing_business_fields_as_references() -> None:
+    payload = yaml.safe_load((ROOT / "agentic-qa.local.example.yml").read_text(encoding="utf-8"))
+    environment = payload["api"]["services"]["member-service"]["environments"]["dev"]
+    login = environment["auth"]["login"]
+    references = [
+        payload["postgres"]["password"],
+        payload["runtime"]["cleanup_journal_key"],
+        login["phone"],
+        login["sms_code"],
+        login["encryption"]["key"],
+        environment["auth"]["fallback_token"],
+    ]
+    assert all(str(value).startswith("secret://") for value in references)
+    assert "cleanup_exempt_operations" not in environment
+
+
+def test_schema_index_has_one_current_and_one_legacy_entry_per_versioned_domain() -> None:
+    index = (DOCS / "index.md").read_text(encoding="utf-8")
+    entries = {
+        "api-cases.v1.2.schema.json": "API cases v1.2",
+        "api-cases.v1.1.schema.json": "API cases v1.1（历史读取）",
+        "execution-evidence.v2.schema.json": "Execution evidence v2",
+        "execution-evidence.v1.schema.json": "Execution evidence v1（只读兼容、已冻结）",
+        "failure-triage.v2.schema.json": "Failure triage v2",
+        "failure-triage.v1.schema.json": "Failure triage v1（只读兼容、已冻结）",
+    }
+    for filename, label in entries.items():
+        assert index.count(f"({f'schemas/{filename}'})") == 1
+        assert f"| {label} |" in index

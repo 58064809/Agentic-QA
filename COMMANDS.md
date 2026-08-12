@@ -6,6 +6,7 @@
 - [CLI 参考](docs/cli-reference.md)：命令、参数、状态、Artifact 和退出码。
 - [配置参考](docs/configuration.md)：根级本地配置、仅模型/RAG Key 环境变量及安全边界。
 - [跨 AI 接入](docs/agent-integration.md)：Codex、Claude、Cursor 的 MCP 与请求文件入口。
+- [Failure Triage](docs/failure-triage.md)：API 失败后的受限日志、引用分析和 Review-gated Bug Draft。
 
 使用 AI 生成测试用例时，把每项需求放在
 `local-sources/requirements/<需求名>/`。该目录不会提交到 Git，并在首次运行项目时自动创建。Codex

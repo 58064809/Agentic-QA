@@ -1,0 +1,26 @@
+schema_version: agentic-qa.capabilities.v1
+capabilities:
+  api_generation:
+    status: implemented
+    documentation: api-test-generation.md
+    current_contract: agentic-qa.api-cases.v1.2
+    legacy_read_only_contracts: [agentic-qa.api-cases.v1.1]
+  api_execution:
+    status: implemented
+    documentation: getting-started.md
+    current_contract: agentic-qa.execution-evidence.v2
+    legacy_read_only_contracts: [agentic-qa.execution-evidence.v1]
+  failure_triage:
+    status: implemented
+    documentation: failure-triage.md
+    current_contract: agentic-qa.failure-triage.v2
+    legacy_read_only_contracts: [agentic-qa.failure-triage.v1]
+  bug_draft_review:
+    status: implemented
+    documentation: failure-triage.md
+    current_contract: agentic-qa.bug-draft.v1
+    external_issue_write: false
+  failure_triage_live_eval:
+    status: implemented
+    documentation: failure-triage.md
+    command: python -m harness eval failure-triage-live

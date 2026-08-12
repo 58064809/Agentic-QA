@@ -1,6 +1,7 @@
 # 路线图
 
 本页区分已实现能力、后续方向和当前产品边界；“计划中”不代表运行时已经提供对应接口。
+机器可读能力索引位于 `docs/capabilities.yml`；本页是它的面向人投影。
 
 ## 已实现
 
@@ -21,10 +22,13 @@
 | API Discovery 脱敏目录导出 | 已实现 | Candidate manifest 哈希绑定；Review 后确定性发布 `current.catalog.json` |
 | API cases、execution evidence、failure triage Schema | 已实现 | `src/harness/domain/schemas/` |
 | API 值、响应头与耗时断言 | 已实现 | Candidate 预检、受限 JSON 路径、安全摘要与执行证据 |
-| API 数据集、跨用例变量与 cleanup | 已实现 | v1.1 既有字段内的严格定义校验、内存变量作用域、逆序清理证据 |
+| API 数据集、跨用例变量与 cleanup | 已实现 | API Cases v1.2、运行时变量作用域、transport 前 armed 与 LIFO 清理证据 |
 | published API YAML 的 pytest adapter | 已实现 | 公开强类型执行/导出契约、源 SHA-256 绑定、workspace policy 复用 |
-| TestRail 只读测试资产连接器 | 已实现 | 固定查询 allowlist、环境变量凭据、分页与响应预算、run 工具记录 |
-| Qase 只读测试资产连接器 | 已实现 | 独立强类型配置、固定 GET 端点、Token 环境变量、分页与响应预算 |
+| TestRail 只读测试资产连接器 | 已实现 | 固定查询 allowlist、Secret Provider 凭据、分页与响应预算、run 工具记录 |
+| Qase 只读测试资产连接器 | 已实现 | 独立强类型配置、固定 GET 端点、Secret Provider Token、分页与响应预算 |
+| Failure Triage LocalFile/Loki 日志采集 | 已实现 | 显式触发、非生产环境、服务与时间窗有界、落盘前脱敏 |
+| 引用式 FailureTriage v2 与 Bug Draft Candidate | 已实现 | 当前模型 Prompt 仅消费脱敏事实；Bug Gate 后仍停在既有 Review Gate |
+| Failure Triage 离线契约 Golden 与 Nightly Live Eval | 已实现 | 离线安全/契约门与真实模型 Prompt/路由分开评测 |
 
 ## 计划中
 
@@ -39,6 +43,6 @@
 | 自动批准或绕过 Review Gate | 破坏人工发布边界 |
 | 原始 HAR 进入 Candidate 或 published | Header、Cookie、query 和 body 可能包含凭据或个人数据；脱敏目录承担可携带导出 |
 | 生产环境 API/UI mutation | ExecutionProfile 会拒绝 production-like 环境 |
-| 外部缺陷系统自动写入 | 当前只生成 unconfirmed 候选，不连接外部写入端口 |
+| 外部缺陷系统自动写入 | 当前只生成待人工审核的 `failure_analysis`/可选 `bug_draft` Candidate，不连接外部写入端口 |
 | v1 workspace 自动迁移 | 旧数据只保留，不读取、不改写 |
 | SQLite 或生产内存 checkpoint | PostgreSQL 是唯一生产 checkpoint |

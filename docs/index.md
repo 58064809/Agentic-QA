@@ -10,13 +10,14 @@ Agentic-QA 生成 create-only 候选产物，并以人工 Review Gate 隔离 Age
 | CLI 使用者 | [CLI 参考](cli-reference.md) | 每条命令、参数和退出码是什么 |
 | AI 集成者 | [跨 AI 接入](agent-integration.md) | MCP 与 AgentRequest 如何稳定触发生成 |
 | 环境维护者 | [配置参考](configuration.md) | 根配置、模型/RAG Key、API 和 PostgreSQL 如何配置 |
-| Python 集成者 | [Harness 契约](harness-contracts.md) | 七个公开方法与强类型输入输出 |
+| Python 集成者 | [Harness 契约](harness-contracts.md) | 当前公开方法与强类型输入输出 |
 | 审核人 | [Review Gate](review-gate.md) | 哪些版本能批准，发布如何防绕过 |
 | 维护者 | [架构](architecture.md) | 分层依赖、组合根和运行链路 |
 | 维护者 | [工作区与产物版本](artifact-versioning.md) | 文件职责、原子提交和恢复边界 |
 | 测试设计者 | [测试用例标准](testcase-standards.md) | 固定 11 列与证据要求 |
 | API 测试者 | [API 测试契约](api-test-generation.md) | 来源可信度和机器 Schema |
 | API 测试者 | [API Discovery](api-discovery.md) | 如何把已有网络抓包转成脱敏接口观察报告 |
+| 故障分析者 | [Failure Triage](failure-triage.md) | 如何从失败执行得到受限日志证据与待审核 Bug Draft |
 
 ## 事实来源
 
@@ -48,6 +49,5 @@ Agentic-QA 生成 create-only 候选产物，并以人工 Review Gate 隔离 Age
 | Failure triage v1（只读兼容、已冻结） | [JSON Schema](schemas/failure-triage.v1.schema.json) |
 | Failure triage v2 | [JSON Schema](schemas/failure-triage.v2.schema.json) |
 | Bug draft v1 | [JSON Schema](schemas/bug-draft.v1.schema.json) |
-| Failure triage v1 | [JSON Schema](schemas/failure-triage.v1.schema.json) |
 | AgentRequest v1 | [JSON Schema](schemas/agent-request.v1.schema.json) |
 | AgentRequestResult v1 | [JSON Schema](schemas/agent-request-result.v1.schema.json) |

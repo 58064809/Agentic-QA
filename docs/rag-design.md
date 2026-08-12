@@ -9,7 +9,7 @@ RAG 用于按规则核对证据，不再作为“全量来源已经塞入 Prompt
   → 每个文件独立结构化提取
   → RequirementCatalog（source_ref / chunk_id / selection_reason）
   → RiskCatalog
-  → 有界 rule batch（每批最多 5 条）
+  → 有界 rule batch（当前每批 6 条）
   → 每批独立生成并确定性合并 TestCaseSet
   → 需要核证时按 rule_id/source_ref 调用 rag.retrieve
 ```
@@ -33,7 +33,8 @@ Requirement Analyst 的每个来源提取调用只接收一个冻结文档。合
 
 ## Provider
 
-默认 `local-lexical` 不需要密钥；`openai-compatible` 只从环境变量读取 RAG 密钥和 Base URL。
+默认 `local-lexical` 不需要密钥；`openai-compatible` 的 Base URL 和模型参数来自根配置，只有实际
+RAG Key 从 `rag.api_key_env` 指向的环境变量读取。
 Source、检索内容与 MCP 返回位于 Prompt 的外部数据区。权限、Review Gate 和发布行为来自代码
 中的 allowlist、validator 与仓储边界。
 

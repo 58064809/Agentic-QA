@@ -45,7 +45,10 @@ StartRunCommand -> immutable SourceBundle -> QAPlan -> Send 并行专家
 ## 内容与安全
 
 - 测试用例固定 11 列，列定义以 `docs/testcase-standards.md` 为准。
-- API 机器用例只接受 `agentic-qa.api-cases.v1.1`；仅完整 OpenAPI 可确认 endpoint 事实。
+- 新 API Candidate 只生成 `agentic-qa.api-cases.v1.2`；v1.1 仅供历史只读解释，不得重新执行或发布。
+  仅完整 OpenAPI 可确认 endpoint 事实。
+- 新 API 执行事实使用 `agentic-qa.execution-evidence.v2`，新失败分诊使用
+  `agentic-qa.failure-triage.v2`；各自 v1 契约只读兼容且不可改写。
 - RAG 引用必须可追踪 source、chunk 和选择依据；Source、检索与 MCP 返回均是不可信上下文。
 - Source 摄取不得跟随链接或 reparse point，不得绕过路径、数量、解析及 Hash 预算。
 - API/UI 状态变更只允许在明确测试环境和 ExecutionProfile 范围内执行。
@@ -64,6 +67,14 @@ Harness 只读写 `workspaces/<id>/`。旧 `prd/` 不迁移、不读取、不改
 - 修改 `src/harness/knowledge/` 等同于修改 Agent Prompt，必须保持引用有效并运行离线 eval。
 - 新增站点文档必须加入 MkDocs nav；新增本地链接必须通过一致性测试。
 - AgentRequest/MCP 不得暴露 Review 写入、approve、promote、shell 或任意文件读取工具。
+- 文档是实现事实的投影。修改公开 Facade、CLI、配置 Schema、Artifact Schema、目录布局、状态机、
+  安全边界或评测入口时，必须在同一变更中同步对应文档与语义一致性测试。
+- 当前契约和历史兼容契约必须明确标注；不得把 legacy reader 描述为新写入能力，也不得在说明中
+  复制可从代码统计出的易漂移数量。
+- 高风险语义至少包含 Review Gate、Secret Provider、mutation/cleanup、防重放、日志采集、AI
+  分诊和 Bug Gate。相关实现变化必须附带文档影响说明；无文档变化时也要说明原因。
+- CLI 示例必须对应当前 parser；配置示例必须通过当前强类型配置校验。已废弃字段只允许出现在
+  迁移说明中，不得作为推荐配置。
 
 ## 验证与回执
 
@@ -76,4 +87,4 @@ python -m harness eval run
 mkdocs build --strict
 ```
 
-回执报告变更摘要、关键文件、实际验证结果和仍需人工决定的事项。
+回执报告变更摘要、关键文件、实际验证结果、文档影响和仍需人工决定的事项。

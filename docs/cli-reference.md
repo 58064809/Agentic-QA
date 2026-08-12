@@ -42,7 +42,11 @@ python -m harness failure report <workspace> <execution-id> [--case-id <case/dat
 0，部分 provider 失败返回 1，配置、身份、生产环境或 hash 错误返回 2。产物写入对应 execution
 的 create-only `triage/collections/<collection-id>/`，重复相同输入复用原 collection。
 `failure analyze` 从已验证的 Log Evidence 生成确定性 `log-analysis.json`，其中 fingerprint、
-occurrence、时间线和 `LOG-*` 引用均可复算；该命令不调用模型。
+occurrence、时间线和 `LOG-*` 引用均可复算；随后调用受限 `failure_triager` 模型，只向模型提供
+脱敏执行事实、聚合分析和允许引用表，并写入 `failure-triage.json`。模型或结构化校验失败时
+`triage_status=failed`，命令返回 1；有效的 `insufficient_evidence` 返回 0。
+同一 case/dataset 存在多个 collection 且未指定 `--collection-id` 时，`analyze/report` fail closed，
+避免用文件时间推测用户意图。
 `failure report` 为每个 collection 创建独立 triage run。`failure_analysis` 始终进入 Candidate；
 只有产品、依赖、数据库等具有有效引用且至少 probable 的结果才增加 `bug_draft`。后续继续使用
 `run diff` 与 `run review`，命令本身不批准、不发布，也不创建外部 Issue。
@@ -61,10 +65,13 @@ occurrence、时间线和 `LOG-*` 引用均可复算；该命令不调用模型�
 ```powershell
 python -m harness eval run
 python -m harness eval live --case order-lifecycle --output-dir .\build\live-eval
+python -m harness eval failure-triage-live
 ```
 
 Live Eval 的 case 和输出目录是一次性 CLI 选择，不再读取 `AGENTIC_QA_LIVE_EVAL_CASE` 或
 `AGENTIC_QA_LIVE_EVAL_OUTPUT`。
+`eval run` 包含离线 Failure Triage 契约/安全 Golden；`failure-triage-live` 使用当前模型路由和当前
+分诊 Prompt，属于独立 Nightly Live Eval。
 
 ## Agent Request 与 MCP
 

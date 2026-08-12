@@ -1,7 +1,8 @@
 # 测试管理来源
 
 TestRail 与 Qase 是只读测试资产来源。地址和凭据统一写在仓库根目录
-`agentic-qa.local.yml`，不再写入 `workspace.yml`，也不再通过环境变量名间接引用。
+`agentic-qa.local.yml`。地址直接配置，凭据字段使用 `secret://` 引用并由统一 Secret Provider 解析；
+它们不进入 `workspace.yml`、Prompt 或生成产物。
 
 ## TestRail
 
@@ -10,7 +11,7 @@ test_management:
   provider: testrail
   base_url: https://example.testrail.io
   username: qa@example.com
-  api_key: local-value
+  api_key: secret://test_management.testrail.api_key
   timeout_seconds: 10
   max_items: 250
   max_response_bytes: 1048576
@@ -22,7 +23,7 @@ test_management:
 test_management:
   provider: qase
   base_url: https://api.qase.io
-  api_token: local-value
+  api_token: secret://test_management.qase.api_token
   timeout_seconds: 10
   max_items: 100
   max_response_bytes: 1048576

@@ -19,6 +19,8 @@ entries:
     audience: human
   - pattern: docs/*.md
     audience: human
+  - pattern: docs/*.yml
+    audience: machine_contract
   - pattern: AGENTS.md
     audience: contributor_agent
   - pattern: src/harness/manifests/**/*.yml

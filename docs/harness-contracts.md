@@ -15,12 +15,12 @@
 | `stream_run` | `StartRunCommand` | `Iterator[HarnessEvent]` | 同 `start_run` | 同一执行的事件流 |
 | `get_run` | `RunRef` | `RunSnapshot` | `workspace_id + run_id` 存在 | 只读；可触发未完成发布恢复 |
 | `get_artifact_diff` | `GetArtifactDiffQuery` | `ArtifactDiffResult` | 两端版本存在 | 只读 |
-| `execute_api_cases` | `ExecuteApiCasesCommand` | `ExecutionEvidence` | published API YAML、测试环境策略和环境变量有效 | 发送允许的 API 请求；不写 Review 或 published |
-| `run_api_scenario` | `RunApiScenarioCommand` | `RunApiScenarioResult` v4 | published API YAML、workspace 环境策略和新的 execution ID 有效 | create-only 写 manifest v3、Evidence、哈希链日志、cleanup 状态和 Allure results/HTML；不自动重放 |
+| `execute_api_cases` | `ExecuteApiCasesCommand` | `ExecutionEvidence` | published API YAML 与测试环境策略有效 | 发送允许的 API 请求；不写 Review 或 published |
+| `run_api_scenario` | `RunApiScenarioCommand` | `RunApiScenarioResult` v4 | published API YAML、workspace 环境策略和新的 execution ID 有效 | 写 manifest v3、Evidence、哈希链日志与 cleanup 事实；best-effort 生成 Allure，不自动重放 |
 | `generate_api_allure_report` | `GenerateApiAllureReportCommand` | `GenerateApiAllureReportResult` v2 | execution 已存在且 Execution Plan、历史发布与 Evidence 一致 | 从历史事实生成 Allure 产物；不发送 API 请求 |
 | `resume_api_cleanup` | `ResumeApiCleanupCommand` | `ResumeApiCleanupResult` | 加密 journal、环境、published hash 和策略 hash 一致 | 只发送 pending cleanup；不重放业务请求或不确定 cleanup |
 | `collect_failure_logs` | `CollectFailureLogsCommand` | `CollectFailureLogsResult` | immutable execution plan、Evidence hash 与根日志配置一致 | 显式读取受限日志范围并写 create-only 脱敏 Log Evidence；不修改 API execution |
-| `analyze_failure` | `AnalyzeFailureCommand` | `AnalyzeFailureResult` | create-only Log Evidence 与 collection manifest hash 一致 | 确定性聚合异常、依赖信号、fingerprint 与可引用 timeline；不调用模型 |
+| `analyze_failure` | `AnalyzeFailureCommand` | `AnalyzeFailureResult` | create-only Log Evidence 与 collection manifest hash 一致 | 先确定性聚合异常、依赖信号与 timeline，再由受限模型生成带引用 FailureTriage v2 |
 | `prepare_failure_report` | `PrepareFailureReportCommand` | `PrepareFailureReportResult` | validated FailureTriage v2 及全部 attachment hash 一致 | 创建独立 triage run 与 `failure_analysis`/可选 `bug_draft` Candidate，停在现有 Review Gate |
 | `export_api_pytest` | `ExportApiPytestCommand` | `ApiPytestExportResult` | 来源是 published API YAML，目标位于 workspace `exports/` | 确定性写入 pytest adapter；默认 create-only |
 | `resume_run` | `ResumeRunCommand` | `RunSnapshot` | planning/running/recoverable | 从同一 PostgreSQL thread 恢复 |
@@ -40,7 +40,7 @@ API trial run 的状态维度彼此独立：`execution_status` 表示执行生�
 基础设施异常只会把 `report_status` 置为 `failed`；已经提交的前三项事实及 `api run` 退出码不变。
 
 外部 AI 的 `AgentRequest` 和 MCP 是独立受限门面，不增加 Harness 的 Review 权限，也不改变上述
-十二个方法；其契约见[跨 AI 接入](agent-integration.md)。
+方法集合；其契约见[跨 AI 接入](agent-integration.md)。
 
 pytest adapter 固定来源 YAML 的 SHA-256，执行时重新校验 hash。它调用同一公开
 `execute_api_cases` 用例，不复制断言、变量或 cleanup 解释逻辑；workspace 执行策略与 Review Gate
@@ -58,8 +58,8 @@ Origin。公开 Harness API 和内置 `api.execute` 都在认证前校验实际 
 | `static_token` | `StaticTokenApiAuthentication` | 从直接 `token` 或 `token_env` 二选一取值，按 `ApiTokenInjection` 注入请求头 |
 | `login` | `LoginApiAuthentication` | 按 `ApiLoginRequest` 登录一次，从 `token_json_path` 提取并注入 token |
 
-认证配置属于 workspace 执行策略，不进入 API Cases v1.1。`LoginApiAuthentication` 当前接受相对
-POST 路径、预期状态码、JSON 点路径和 header 注入；敏感请求字段引用环境变量。配置解析、HTTP
+认证配置属于 workspace 执行策略，不进入 API Cases v1.2。`LoginApiAuthentication` 当前接受相对
+POST 路径、预期状态码、JSON 点路径和 header 注入；敏感请求字段通过 Secret Provider 解析。配置解析、HTTP
 method allowlist 和执行器共同确定是否发送登录及后续请求。
 
 ## Candidate provenance
