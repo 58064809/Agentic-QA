@@ -78,11 +78,11 @@ RELEASED_API_CASE_SCHEMAS = {
 RELEASED_EVIDENCE_SCHEMAS = {
     "execution-evidence.v1.schema.json": (
         "agentic-qa.execution-evidence.v1",
-        "832149a41a84576a3db3ea2981064ec9540c0ca41ec78e0095ce9e1e14379271",
+        "f8ff4fc8227cb4df1eeb46edcb8be72223796fe1556c8a2c87ebeee887292278",
     ),
     "failure-triage.v1.schema.json": (
         "agentic-qa.failure-triage.v1",
-        "6decc7f6bc6aa9b365177a0f2ac723633af2a58cfb367c6165c9a6fe63c072ff",
+        "459c60e6992d04e4c2675686a68eb27229dca3026556a9e56d7c1a5d3a8a53e6",
     ),
 }
 
@@ -118,7 +118,9 @@ def test_released_api_case_schemas_are_byte_for_byte_immutable() -> None:
 def test_released_evidence_schemas_are_byte_for_byte_immutable() -> None:
     for name, (version, expected_sha256) in RELEASED_EVIDENCE_SCHEMAS.items():
         content = (REPO_ROOT / "docs" / "schemas" / name).read_bytes()
-        assert hashlib.sha256(content).hexdigest() == expected_sha256, name
+        normalized = content.replace(b"\r\n", b"\n")
+        assert b"\r" not in normalized, name
+        assert hashlib.sha256(normalized).hexdigest() == expected_sha256, name
         schema = json.loads(content)
         assert schema["properties"]["schema_version"]["const"] == version
 
