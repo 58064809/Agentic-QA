@@ -805,17 +805,18 @@ def _tree_sha256(path: Path) -> str:
 
 
 def _failed_report_result(
-    workspace_root: Path,
+    _workspace_root: Path,
     workspace_id: str,
     execution_id: str,
-    results_path: Path,
+    _results_path: Path,
     error: Exception,
 ) -> GenerateApiAllureReportResult:
     return GenerateApiAllureReportResult(
         workspace_id=workspace_id,
         execution_id=execution_id,
         status="failed",
-        allure_results_path=_existing_relative(results_path, workspace_root, directory=True),
+        allure_results_path=None,
+        allure_report_path=None,
         message="reporting failed without changing execution truth",
         error_kind=type(error).__name__,
     )
