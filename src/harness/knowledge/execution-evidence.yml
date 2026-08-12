@@ -1,6 +1,6 @@
 schema_version: agentic-qa.harness.knowledge-spec.v1
 name: execution-evidence
-version: 1.0.0
+version: 2.0.0
 purpose: 根据操作与断言证据区分测试执行状态。
 applies_to: [failure-triage, test-execution]
 inputs:
@@ -23,5 +23,5 @@ uncertainty_policy:
 prohibited_actions:
   - 不把 error、blocked 或无断言响应归类为产品失败。
 deterministic_checks:
-  - schema:execution-evidence-v1
+  - schema:execution-evidence-v2
   - validator:execution-status

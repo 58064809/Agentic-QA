@@ -116,6 +116,7 @@ api:
             POST /orders:
               classification: mutation_idempotent
               idempotency_header: Idempotency-Key
+          correlation_response_headers: [X-Business-Flow]
           timeout_seconds: 30
           auth:
             login:

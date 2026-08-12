@@ -216,6 +216,7 @@ class LocalApiEnvironment(StrictModel):
     cleanup_exempt_operations: list[str] = Field(default_factory=list)
     isolation: ApiIsolationPolicy = Field(default_factory=ApiIsolationPolicy)
     operation_policies: dict[str, ApiOperationPolicy] = Field(default_factory=dict)
+    correlation_response_headers: list[str] = Field(default_factory=list)
     auth: LocalApiAuthentication
 
     @model_validator(mode="after")
@@ -250,6 +251,33 @@ class LocalApiEnvironment(StrictModel):
         if not methods:
             raise ValueError("allowed_http_methods cannot be empty")
         return methods
+
+    @field_validator("correlation_response_headers")
+    @classmethod
+    def normalize_correlation_headers(cls, value: list[str]) -> list[str]:
+        from harness.domain.security import HTTP_HEADER_NAME, SECRET_KEY
+
+        builtin = {
+            "traceparent",
+            "x-trace-id",
+            "x-request-id",
+            "request-id",
+            "x-correlation-id",
+            "x-tid",
+            "tid",
+        }
+        normalized = list(dict.fromkeys(item.strip().casefold() for item in value if item.strip()))
+        invalid = [
+            item
+            for item in normalized
+            if not HTTP_HEADER_NAME.fullmatch(item) or SECRET_KEY.search(item) or item in builtin
+        ]
+        if invalid:
+            raise ValueError(
+                "custom correlation response headers must be safe non-builtin HTTP names: "
+                + ", ".join(invalid)
+            )
+        return normalized
 
     @field_validator("trusted_origins")
     @classmethod

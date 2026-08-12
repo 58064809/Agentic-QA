@@ -117,6 +117,38 @@ def test_environment_secret_provider_keeps_values_out_of_config(
     assert "api-secret" not in serialized
 
 
+def test_custom_correlation_headers_are_safe_and_affect_policy_hash(tmp_path: Path) -> None:
+    loader = _write_legacy(tmp_path)
+    loader.migrate_inline_secrets()
+    config = loader.load_required()
+    original = loader.resolve_api_project(config, "orders", "qa")
+    payload = yaml.safe_load(loader.path.read_text(encoding="utf-8"))
+    environment = payload["api"]["services"]["orders"]["environments"]["qa"]
+    environment["correlation_response_headers"] = ["X-Business-Flow"]
+    atomic_private_text(loader.path, yaml.safe_dump(payload, sort_keys=False))
+
+    updated = loader.resolve_api_project(loader.load_required(), "orders", "qa")
+
+    assert updated.correlation_response_headers == ("x-business-flow",)
+    assert updated.structural_sha256 != original.structural_sha256
+    assert updated.policy_sha256 != original.policy_sha256
+
+
+def test_sensitive_custom_correlation_header_is_rejected(tmp_path: Path) -> None:
+    loader = _write_legacy(tmp_path)
+    loader.migrate_inline_secrets()
+    payload = yaml.safe_load(loader.path.read_text(encoding="utf-8"))
+    payload["api"]["services"]["orders"]["environments"]["qa"]["correlation_response_headers"] = [
+        "X-Access-Token"
+    ]
+    atomic_private_text(loader.path, yaml.safe_dump(payload, sort_keys=False))
+
+    result = loader.check()
+
+    assert result.ready is False
+    assert any("correlation" in item.message for item in result.issues)
+
+
 def test_secret_provider_is_required_and_references_are_location_scoped(
     tmp_path: Path,
     monkeypatch,

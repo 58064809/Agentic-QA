@@ -57,6 +57,7 @@ class ApiExecutionPreflight:
     trusted_origins: list[str]
     isolation: ApiIsolationPolicy
     operation_policies: dict[str, ApiOperationPolicy]
+    correlation_response_headers: tuple[str, ...]
 
 
 class FilesystemApiAutomationService:
@@ -171,6 +172,7 @@ class FilesystemApiAutomationService:
             isolation=project.policy.isolation,
             operation_policies=project.policy.operation_policies,
             execution_identity=execution_id,
+            correlation_response_headers=project.correlation_response_headers,
         )
         return evidence.cases[0]
 
@@ -280,6 +282,7 @@ class FilesystemApiAutomationService:
             isolation=project.policy.isolation,
             operation_policies=project.policy.operation_policies,
             event_callback=event_callback,
+            correlation_response_headers=project.correlation_response_headers,
         )
 
     def execute_preflight(
@@ -301,6 +304,7 @@ class FilesystemApiAutomationService:
             trusted_origins=preflight.trusted_origins,
             isolation=preflight.isolation,
             operation_policies=preflight.operation_policies,
+            correlation_response_headers=preflight.correlation_response_headers,
             event_callback=event_callback,
             source_cases_schema_version=preflight.source_cases_schema_version,
         )
@@ -346,6 +350,7 @@ class FilesystemApiAutomationService:
             trusted_origins=list(policy.trusted_origins) if policy is not None else [],
             isolation=project.policy.isolation,
             operation_policies=dict(project.policy.operation_policies),
+            correlation_response_headers=project.correlation_response_headers,
         )
 
     def export_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:

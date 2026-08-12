@@ -27,7 +27,7 @@ SCHEMAS = {
     "agent-request.v1.schema.json": AgentRequest,
     "agent-request-result.v1.schema.json": AgentRequestResult,
     "api-cases.v1.2.schema.json": ApiTestCasesDraft,
-    "execution-evidence.v1.schema.json": ExecutionEvidence,
+    "execution-evidence.v2.schema.json": ExecutionEvidence,
     "failure-triage.v1.schema.json": FailureTriage,
 }
 CONSUMED_ENV = {

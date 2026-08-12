@@ -10,7 +10,7 @@ from harness.domain.schemas.api_test_cases import (
     load_api_test_cases,
     load_api_test_cases_report_projection,
 )
-from harness.domain.schemas.execution_evidence import ExecutionEvidence
+from harness.domain.schemas.execution_evidence import ExecutionEvidence, load_execution_evidence
 from harness.infrastructure.workflow.engine import default_recorded_api_test_cases
 
 UTC = timezone.utc
@@ -131,7 +131,7 @@ def test_execution_summary_must_match_case_evidence() -> None:
     with pytest.raises(ValidationError, match="does not match cases"):
         ExecutionEvidence.model_validate(
             {
-                "schema_version": "agentic-qa.execution-evidence.v1",
+                "schema_version": "agentic-qa.execution-evidence.v2",
                 "run_id": "run-1",
                 "source_cases_path": "cases.yml",
                 "source_cases_schema_version": "agentic-qa.api-cases.v1.2",
@@ -167,3 +167,49 @@ def test_execution_summary_must_match_case_evidence() -> None:
                 ],
             }
         )
+
+
+def test_execution_evidence_v1_projects_to_v2_without_inventing_dispatch() -> None:
+    now = datetime.now(tz=UTC)
+    evidence = load_execution_evidence(
+        {
+            "schema_version": "agentic-qa.execution-evidence.v1",
+            "run_id": "legacy-run",
+            "source_cases_path": "cases.yml",
+            "source_cases_schema_version": "agentic-qa.api-cases.v1.1",
+            "started_at": now,
+            "completed_at": now,
+            "environment": {
+                "name": "qa",
+                "base_url_env": "BASE_URL",
+                "base_url_configured": True,
+                "allowed_methods": ["GET"],
+                "request_timeout_seconds": 10,
+            },
+            "summary": {
+                "total": 1,
+                "executed": 1,
+                "passed": 0,
+                "failed": 0,
+                "errors": 1,
+                "blocked": 0,
+            },
+            "cases": [
+                {
+                    "case_id": "case-1::dataset-a",
+                    "title": "legacy error",
+                    "method": "GET",
+                    "path": "/health",
+                    "status": "error",
+                    "started_at": now,
+                    "completed_at": now,
+                    "duration_ms": 1,
+                }
+            ],
+        }
+    )
+
+    assert evidence.schema_version == "agentic-qa.execution-evidence.v2"
+    assert evidence.cases[0].dataset_id == "dataset-a"
+    assert evidence.cases[0].request_dispatched is False
+    assert evidence.cases[0].correlation.diagnostics[0].code == ("legacy_request_dispatch_unknown")

@@ -15,6 +15,11 @@ API 试跑的审计事实保存在 workspace 的 `evidence.json`，执行过程�
 
 ## API 执行链路
 
+新执行写入 `agentic-qa.execution-evidence.v2`：每个 case/dataset 明确记录请求是否已发送，
+并从响应头提取受限 correlation context。`traceparent`、`x-trace-id`、request ID 和固定
+correlation header 按确定性优先级处理；额外 header 的启用条件是根配置 allowlist。v1 已冻结，
+只通过兼容投影供历史报告读取。
+
 ```text
 published YAML + reviewed policy + resolved Secret Provider
   → fail-closed preflight

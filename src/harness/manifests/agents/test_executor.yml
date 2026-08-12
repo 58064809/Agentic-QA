@@ -6,7 +6,7 @@ responsibilities:
   - id: agent.test-execution.evidence-status
     kind: contract
     text: passed、failed、error 和 blocked 与实际断言证据保持一致。
-    enforced_by: [schema:execution-evidence-v1, validator:execution-status]
+    enforced_by: [schema:execution-evidence-v2, validator:execution-status]
   - id: agent.test-execution.permission
     kind: safety
     text: 状态变更只通过 Agent 工具白名单和 ExecutionProfile 允许的操作发生。

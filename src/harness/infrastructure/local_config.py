@@ -62,6 +62,7 @@ class ResolvedApiProject:
     selected_authentication: str
     structural_sha256: str
     policy_sha256: str
+    correlation_response_headers: tuple[str, ...]
 
 
 def _issue(
@@ -727,17 +728,22 @@ class FilesystemLocalConfigLoader:
             "policy": policy.model_dump(mode="json", exclude_none=True),
             "base_url_sha256": hashlib.sha256(value.base_url.encode()).hexdigest(),
         }
+        if value.correlation_response_headers:
+            structural["correlation_response_headers"] = value.correlation_response_headers
         digest = hashlib.sha256(
             json.dumps(structural, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
+        policy_structure = {
+            "service": service_name,
+            "environment": environment,
+            "policy": policy.model_dump(mode="json", exclude_none=True),
+            "base_url_sha256": hashlib.sha256(value.base_url.encode()).hexdigest(),
+        }
+        if value.correlation_response_headers:
+            policy_structure["correlation_response_headers"] = value.correlation_response_headers
         policy_digest = hashlib.sha256(
             json.dumps(
-                {
-                    "service": service_name,
-                    "environment": environment,
-                    "policy": policy.model_dump(mode="json", exclude_none=True),
-                    "base_url_sha256": hashlib.sha256(value.base_url.encode()).hexdigest(),
-                },
+                policy_structure,
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode()
@@ -751,6 +757,7 @@ class FilesystemLocalConfigLoader:
             selected_authentication=selected,
             structural_sha256=f"sha256:{digest}",
             policy_sha256=f"sha256:{policy_digest}",
+            correlation_response_headers=tuple(value.correlation_response_headers),
         )
 
     @staticmethod

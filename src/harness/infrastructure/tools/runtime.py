@@ -15,7 +15,7 @@ from jsonschema import ValidationError, validate
 from harness.domain.budget import Budget
 from harness.domain.models import ExecutionProfile
 from harness.domain.schemas.api_test_cases import load_api_test_cases
-from harness.domain.schemas.execution_evidence import ExecutionEvidence
+from harness.domain.schemas.execution_evidence import load_execution_evidence
 from harness.domain.schemas.failure_triage import FailureTriage
 from harness.domain.schemas.local_config import (
     AgenticQaLocalConfig,
@@ -550,6 +550,7 @@ class ToolRuntime:
             env=project.runtime_values,
             authentication=policy.api_auth if policy is not None else None,
             trusted_origins=policy.trusted_origins if policy is not None else None,
+            correlation_response_headers=project.correlation_response_headers,
         )
         return evidence.model_dump(mode="json")
 
@@ -559,8 +560,11 @@ class ToolRuntime:
             raise ValueError("evidence path does not exist")
         payload = json.loads(target.read_text(encoding="utf-8"))
         schema = payload.get("schema_version") if isinstance(payload, dict) else None
-        if schema == "agentic-qa.execution-evidence.v1":
-            return ExecutionEvidence.model_validate(payload).model_dump(mode="json")
+        if schema in {
+            "agentic-qa.execution-evidence.v1",
+            "agentic-qa.execution-evidence.v2",
+        }:
+            return load_execution_evidence(payload).model_dump(mode="json")
         if schema == "agentic-qa.failure-triage.v1":
             return FailureTriage.model_validate(payload).model_dump(mode="json")
         raise ValueError(f"unsupported evidence schema: {schema}")

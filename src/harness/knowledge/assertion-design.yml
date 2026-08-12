@@ -24,4 +24,4 @@ prohibited_actions:
   - 不使用仅包含成功、正常或元素存在的空泛断言。
 deterministic_checks:
   - validator:observable-assertion
-  - schema:execution-evidence-v1
+  - schema:execution-evidence-v2

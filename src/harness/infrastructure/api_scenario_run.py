@@ -32,6 +32,7 @@ from harness.domain.schemas.execution_evidence import (
     ExecutionEnvironment,
     ExecutionEvidence,
     ExecutionSummary,
+    load_execution_evidence,
 )
 from harness.infrastructure.api_automation import FilesystemApiAutomationService
 from harness.infrastructure.api_cleanup_journal import EncryptedCleanupJournal
@@ -406,7 +407,7 @@ class FilesystemApiScenarioRunService:
         cases, snapshot = self._automation.published_report_source(
             command.workspace_id, command.execution_id
         )
-        evidence = ExecutionEvidence.model_validate_json(evidence_path.read_text(encoding="utf-8"))
+        evidence = load_execution_evidence(evidence_path.read_text(encoding="utf-8"))
         _validate_report_evidence(evidence, snapshot)
         cleanup_summary = _stored_cleanup_summary(execution_root, evidence)
         report_summary = build_report_summary(

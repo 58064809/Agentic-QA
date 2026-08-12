@@ -5,5 +5,5 @@ instructions:
   - id: skill.test-execution.status
     kind: contract
     text: 执行状态由操作结果和断言证据共同决定。
-    enforced_by: [schema:execution-evidence-v1, validator:execution-status]
+    enforced_by: [schema:execution-evidence-v2, validator:execution-status]
 knowledge_refs: [execution-evidence]

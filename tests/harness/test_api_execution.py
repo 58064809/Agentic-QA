@@ -29,7 +29,10 @@ from harness.domain.schemas.api_test_cases import (
 )
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.infrastructure.tools import api_execution as execution_module
-from harness.infrastructure.tools.api_execution import execute_api_cases
+from harness.infrastructure.tools.api_execution import (
+    execute_api_cases,
+    extract_correlation_context,
+)
 
 
 class FakeResponse:
@@ -733,7 +736,57 @@ def test_case_datasets_expand_requests_and_preserve_native_values() -> None:
         "API-DATASET::first",
         "API-DATASET::second",
     ]
+    assert [item.dataset_id for item in evidence.cases] == ["first", "second"]
+    assert all(item.request_dispatched for item in evidence.cases)
     assert evidence.summary.passed == 2
+
+
+def test_response_correlation_uses_deterministic_header_priority() -> None:
+    headers = {
+        "TraceParent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        "X-Trace-Id": "fallback-trace",
+        "Request-Id": "secondary-request",
+        "X-Request-ID": "primary-request",
+        "X-Correlation-ID": "correlation-42",
+        "X-Business-Flow": "flow-9",
+    }
+
+    evidence = execute_api_cases(
+        [_case("API-CORRELATION", "GET")],
+        run_id="run-correlation",
+        source_cases_path="published/api_test_draft/current.yml",
+        profile=ExecutionProfile(
+            environment="qa",
+            base_url_env="TEST_BASE_URL",
+            allowed_http_methods=["GET"],
+        ),
+        env={"TEST_BASE_URL": "https://example.test"},
+        request_func=lambda *_args, **_kwargs: FakeResponse(200, {"code": 0}, headers=headers),
+        correlation_response_headers=("x-business-flow",),
+    )
+
+    case = evidence.cases[0]
+    assert case.request_dispatched is True
+    assert case.correlation.trace_id == "4bf92f3577b34da6a3ce929d0e0e4736"
+    assert case.correlation.span_id == "00f067aa0ba902b7"
+    assert case.correlation.request_id == "primary-request"
+    assert case.correlation.custom_ids == {
+        "x-correlation-id": "correlation-42",
+        "x-business-flow": "flow-9",
+    }
+
+
+def test_malformed_traceparent_records_diagnostic_and_uses_fallback() -> None:
+    context = extract_correlation_context(
+        {
+            "traceparent": "00-00000000000000000000000000000000-0000000000000000-01",
+            "x-trace-id": "fallback-trace",
+        }
+    )
+
+    assert context.trace_id == "fallback-trace"
+    assert context.span_id is None
+    assert [item.code for item in context.diagnostics] == ["malformed_traceparent"]
 
 
 def test_invalid_runtime_variable_definition_blocks_before_authentication() -> None:

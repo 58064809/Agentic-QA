@@ -71,6 +71,9 @@ api:
           # Exact operation overrides. Use mutation_no_cleanup for a reviewed
           # mutation that has no cleanup; it is never treated as read-only.
           operation_policies: {}
+          # Additional safe response headers whose values are correlation IDs.
+          # Built-ins such as traceparent and x-request-id do not need listing.
+          correlation_response_headers: []
           timeout_seconds: 30
           auth:
             login:

@@ -24,7 +24,8 @@
 | `review_run` | `ReviewRunCommand` | `RunSnapshot` | run 可审核且人工决定有效 | 写 Review；approve 可发布 |
 
 所有 run 操作显式携带 `workspace_id + run_id`，不全局扫描 run ID。控制面 Schema 使用
-`agentic-qa.harness.*.v2`；API cases 独立保持 `agentic-qa.api-cases.v1.2`。
+`agentic-qa.harness.*.v2`；API cases 独立保持 `agentic-qa.api-cases.v1.2`。API 新执行返回
+`agentic-qa.execution-evidence.v2`；v1 wire schema 固定且仅作历史只读兼容。
 
 `RunApiScenarioResult` v4 中 `manifest_path`、`evidence_path` 和
 `cleanup_summary_path` 是已经提交的执行事实路径，始终必填。事件日志、Markdown、报告汇总、

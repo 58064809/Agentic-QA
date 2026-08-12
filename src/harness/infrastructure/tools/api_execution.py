@@ -38,11 +38,16 @@ from harness.domain.schemas.execution_evidence import (
     EXECUTION_EVIDENCE_SCHEMA_VERSION,
     AssertionEvidence,
     CaseExecutionEvidence,
+    CorrelationContext,
+    CorrelationDiagnostic,
+    CorrelationObservation,
     ExecutionEnvironment,
     ExecutionEvidence,
     ExecutionSummary,
 )
 from harness.domain.security import (
+    HTTP_HEADER_NAME,
+    SECRET_KEY,
     build_api_request_url,
     validate_api_base_url,
     validate_api_base_url_policy,
@@ -60,6 +65,10 @@ from harness.infrastructure.api_runtime_policy import (
 ENV_PLACEHOLDER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)}")
 FULL_VARIABLE_PLACEHOLDER_RE = re.compile(r"^\$\{\{([A-Za-z_][A-Za-z0-9_]*)}}$")
 URL_RE = re.compile(r"https?://[^\s]+", re.IGNORECASE)
+TRACEPARENT_RE = re.compile(
+    r"^(?P<version>[0-9a-fA-F]{2})-(?P<trace>[0-9a-fA-F]{32})-"
+    r"(?P<span>[0-9a-fA-F]{16})-(?P<flags>[0-9a-fA-F]{2})$"
+)
 UTC = timezone.utc
 ApiExecutionEventCallback = Callable[[str, dict[str, Any]], None]
 _CURRENT_EVENT_CALLBACK: ContextVar[ApiExecutionEventCallback | None] = ContextVar(
@@ -78,6 +87,98 @@ class _MissingRuntimeVariable(RuntimeError):
 
 class ApiAuthenticationError(RuntimeError):
     pass
+
+
+def extract_correlation_context(
+    headers: Mapping[str, Any],
+    *,
+    custom_headers: tuple[str, ...] = (),
+) -> CorrelationContext:
+    """Extract bounded correlation identifiers without persisting header values broadly."""
+    values: dict[str, str] = {}
+    diagnostics: list[CorrelationDiagnostic] = []
+    builtin_headers = {
+        "traceparent",
+        "x-trace-id",
+        "x-request-id",
+        "request-id",
+        "x-correlation-id",
+        "x-tid",
+        "tid",
+    }
+    allowed_custom = {
+        name.casefold()
+        for name in custom_headers
+        if HTTP_HEADER_NAME.fullmatch(name) and not SECRET_KEY.search(name)
+    }
+    allowed_headers = builtin_headers | allowed_custom
+    for raw_name, raw_value in headers.items():
+        name = str(raw_name).casefold()
+        if name not in allowed_headers:
+            continue
+        if not isinstance(raw_value, str) or not raw_value.strip():
+            continue
+        value = raw_value.strip()
+        if len(value) > 256 or "\r" in value or "\n" in value:
+            diagnostics.append(
+                CorrelationDiagnostic(code="invalid_correlation_value", header_name=name)
+            )
+            continue
+        previous = values.get(name)
+        if previous is not None and previous != value:
+            diagnostics.append(
+                CorrelationDiagnostic(code="conflicting_header_value", header_name=name)
+            )
+            continue
+        values[name] = value
+
+    trace_id: str | None = None
+    span_id: str | None = None
+    request_id: str | None = None
+    custom_ids: dict[str, str] = {}
+    observations: list[CorrelationObservation] = []
+    traceparent = values.get("traceparent")
+    if traceparent:
+        match = TRACEPARENT_RE.fullmatch(traceparent)
+        valid = bool(match)
+        if match:
+            version = match.group("version").casefold()
+            trace = match.group("trace").casefold()
+            span = match.group("span").casefold()
+            valid = version != "ff" and trace != "0" * 32 and span != "0" * 16
+        if valid and match:
+            trace_id = trace
+            span_id = span
+            observations.extend(
+                [
+                    CorrelationObservation(field="trace_id", header_name="traceparent"),
+                    CorrelationObservation(field="span_id", header_name="traceparent"),
+                ]
+            )
+        else:
+            diagnostics.append(
+                CorrelationDiagnostic(code="malformed_traceparent", header_name="traceparent")
+            )
+    if trace_id is None and values.get("x-trace-id"):
+        trace_id = values["x-trace-id"]
+        observations.append(CorrelationObservation(field="trace_id", header_name="x-trace-id"))
+    for name in ("x-request-id", "request-id"):
+        if values.get(name):
+            request_id = values[name]
+            observations.append(CorrelationObservation(field="request_id", header_name=name))
+            break
+    for name in ("x-correlation-id", "x-tid", "tid", *sorted(allowed_custom)):
+        if values.get(name) and name not in custom_ids:
+            custom_ids[name] = values[name]
+            observations.append(CorrelationObservation(field="custom_id", header_name=name))
+    return CorrelationContext(
+        trace_id=trace_id,
+        span_id=span_id,
+        request_id=request_id,
+        custom_ids=custom_ids,
+        observations=observations,
+        diagnostics=diagnostics,
+    )
 
 
 @dataclass(frozen=True)
@@ -511,6 +612,7 @@ def _extract_response_variables(
 def _execute_request(
     *,
     case_id: str,
+    dataset_id: str | None,
     title: str,
     request_definition: ApiRequest,
     assertions: list[ApiAssertion],
@@ -531,6 +633,7 @@ def _execute_request(
     cleanup_steps: list[ApiCleanupStep] | None = None,
     definition_error: str | None = None,
     event_callback: ApiExecutionEventCallback | None = None,
+    correlation_response_headers: tuple[str, ...] = (),
 ) -> _RequestOutcome:
     method = str(request_definition.method or "").upper()
     path = str(request_definition.path or "")
@@ -545,6 +648,7 @@ def _execute_request(
         return _RequestOutcome(
             evidence=CaseExecutionEvidence(
                 case_id=case_id,
+                dataset_id=dataset_id,
                 title=title,
                 method=method,
                 path=path,
@@ -561,6 +665,7 @@ def _execute_request(
         return _RequestOutcome(
             evidence=CaseExecutionEvidence(
                 case_id=case_id,
+                dataset_id=dataset_id,
                 title=title,
                 method=method,
                 path=path,
@@ -579,6 +684,7 @@ def _execute_request(
         return _RequestOutcome(
             evidence=CaseExecutionEvidence(
                 case_id=case_id,
+                dataset_id=dataset_id,
                 title=title,
                 method=method,
                 path=path,
@@ -598,6 +704,7 @@ def _execute_request(
         return _RequestOutcome(
             evidence=CaseExecutionEvidence(
                 case_id=case_id,
+                dataset_id=dataset_id,
                 title=title,
                 method=method,
                 path=path,
@@ -731,6 +838,10 @@ def _execute_request(
             allow_redirects=False,
         )
         validate_api_response_url(getattr(response, "url", None), requested_url=request_url)
+        correlation = extract_correlation_context(
+            getattr(response, "headers", {}) or {},
+            custom_headers=correlation_response_headers,
+        )
         response_duration_ms = max(0, int((perf_counter() - started_clock) * 1000))
         _emit_event(
             event_callback,
@@ -773,6 +884,7 @@ def _execute_request(
             return _RequestOutcome(
                 evidence=CaseExecutionEvidence(
                     case_id=case_id,
+                    dataset_id=dataset_id,
                     title=title,
                     method=method,
                     path=path,
@@ -786,6 +898,8 @@ def _execute_request(
                         "required response variable extraction failed: "
                         + ", ".join(missing_required)
                     ),
+                    request_dispatched=True,
+                    correlation=correlation,
                 ),
                 extracted=extracted,
                 request_sent=True,
@@ -794,6 +908,7 @@ def _execute_request(
             return _RequestOutcome(
                 evidence=CaseExecutionEvidence(
                     case_id=case_id,
+                    dataset_id=dataset_id,
                     title=title,
                     method=method,
                     path=path,
@@ -804,6 +919,8 @@ def _execute_request(
                     status_code=int(response.status_code),
                     assertions=evidence,
                     error="; ".join(assertion_errors),
+                    request_dispatched=True,
+                    correlation=correlation,
                 ),
                 extracted=extracted,
                 request_sent=True,
@@ -812,6 +929,7 @@ def _execute_request(
         return _RequestOutcome(
             evidence=CaseExecutionEvidence(
                 case_id=case_id,
+                dataset_id=dataset_id,
                 title=title,
                 method=method,
                 path=path,
@@ -822,6 +940,8 @@ def _execute_request(
                 status_code=int(response.status_code),
                 assertions=evidence,
                 error=None if status == "passed" else "one or more assertions failed",
+                request_dispatched=True,
+                correlation=correlation,
             ),
             extracted=extracted,
             request_sent=True,
@@ -830,6 +950,7 @@ def _execute_request(
         return _RequestOutcome(
             evidence=CaseExecutionEvidence(
                 case_id=case_id,
+                dataset_id=dataset_id,
                 title=title,
                 method=method,
                 path=path,
@@ -855,6 +976,7 @@ def _execute_request(
         return _RequestOutcome(
             evidence=CaseExecutionEvidence(
                 case_id=case_id,
+                dataset_id=dataset_id,
                 title=title,
                 method=method,
                 path=path,
@@ -863,6 +985,7 @@ def _execute_request(
                 completed_at=datetime.now(tz=UTC),
                 duration_ms=max(0, int((perf_counter() - started_clock) * 1000)),
                 error=_sanitize_error(exc, redactions),
+                request_dispatched=request_sent,
             ),
             extracted={},
             request_sent=request_sent,
@@ -884,6 +1007,7 @@ def execute_api_cases(
     execution_identity: str | None = None,
     event_callback: ApiExecutionEventCallback | None = None,
     source_cases_schema_version: str = API_CASES_SCHEMA_VERSION,
+    correlation_response_headers: tuple[str, ...] = (),
 ) -> ExecutionEvidence:
     isolation = isolation or ApiIsolationPolicy()
     operation_policies = operation_policies or {}
@@ -947,6 +1071,7 @@ def execute_api_cases(
         if definition_error is not None:
             outcome = _execute_request(
                 case_id=case.id,
+                dataset_id=None,
                 title=case.title,
                 request_definition=case.request,
                 assertions=case.assertions,
@@ -968,6 +1093,7 @@ def execute_api_cases(
                 namespace_value=namespace_value,
                 definition_error=definition_error,
                 event_callback=event_callback,
+                correlation_response_headers=correlation_response_headers,
             )
             results.append(outcome.evidence)
             _emit_event(
@@ -990,6 +1116,7 @@ def execute_api_cases(
             title = case.title if dataset is None else f"{case.title} [dataset:{dataset.id}]"
             outcome = _execute_request(
                 case_id=case_id,
+                dataset_id=None if dataset is None else dataset.id,
                 title=title,
                 request_definition=case.request,
                 assertions=case.assertions,
@@ -1011,6 +1138,7 @@ def execute_api_cases(
                 namespace_value=namespace_value,
                 cleanup_steps=cleanup_steps,
                 event_callback=event_callback,
+                correlation_response_headers=correlation_response_headers,
             )
             results.append(outcome.evidence)
             _emit_event(
@@ -1076,6 +1204,7 @@ def execute_api_cases(
         )
         outcome = _execute_request(
             case_id=f"{case_id}::cleanup::{step.id}",
+            dataset_id=case_id.split("::", 1)[1] if "::" in case_id else None,
             title=f"{title} / cleanup: {step.title}",
             request_definition=step.request,
             assertions=step.assertions,
@@ -1096,6 +1225,7 @@ def execute_api_cases(
             ),
             namespace_value=namespace_value,
             event_callback=event_callback,
+            correlation_response_headers=correlation_response_headers,
         )
         results.append(outcome.evidence)
         if journal is not None:
