@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from shutil import copytree
 
@@ -9,6 +10,7 @@ from harness.testing.golden import (
     _rule_aliases,
     evaluate_api_candidate_artifact,
     evaluate_api_golden_case,
+    evaluate_failure_triage_golden,
     evaluate_golden_case,
     run_golden_eval,
 )
@@ -21,6 +23,13 @@ def test_golden_eval_measures_artifact_quality() -> None:
     assert result["case_count"] == 6
     assert result["api_case_count"] == 1
     assert result["api_cases"][0]["metrics"]["coverage_rate"] == 1
+    assert result["failure_triage"]["case_count"] == 10
+    assert result["failure_triage"]["metrics"] == {
+        "secret_leakage_rate": 0.0,
+        "unsupported_high_confidence_claim_rate": 0.0,
+        "unresolved_reference_count": 0,
+        "category_service_miss_count": 0,
+    }
     assert all(case["score"] >= case["minimum_score"] for case in result["cases"])
     assert all(case["metrics"]["rule_recall"] == 1 for case in result["cases"])
     assert all(case["metrics"]["coverage_rate"] == 1 for case in result["cases"])
@@ -29,6 +38,22 @@ def test_golden_eval_measures_artifact_quality() -> None:
         case["candidate_artifacts"]["testcases"] == "candidate-testcases.md"
         for case in result["cases"]
     )
+
+
+def test_failure_triage_golden_blocks_unsupported_high_confidence_claim(
+    tmp_path: Path,
+) -> None:
+    source = Path("evals/failure-triage/golden.json")
+    payload = yaml.safe_load(source.read_text(encoding="utf-8"))
+    payload["cases"][0]["proposal"]["primary"]["service"] = "invented-service"
+    root = tmp_path / "failure-triage"
+    root.mkdir()
+    (root / "golden.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    result = evaluate_failure_triage_golden(root)
+
+    assert not result["passed"]
+    assert result["metrics"]["unsupported_high_confidence_claim_rate"] > 0
 
 
 def test_api_golden_eval_rejects_missing_data_flow_and_cleanup() -> None:

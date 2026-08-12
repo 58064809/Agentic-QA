@@ -1,0 +1,75 @@
+{
+  "schema_version": "agentic-qa.failure-triage-golden.v1",
+  "cases": [
+    {
+      "id": "G01",
+      "expected_category": "application",
+      "expected_service": "order-service",
+      "signal": {"service": "order-service", "exception_type": "NullPointerException", "evidence_refs": ["LOG-000001"], "raw_message": "trace-g01 NullPointerException Authorization: Bearer token-g01", "forbidden_values": ["token-g01"], "preserve": ["trace-g01"]},
+      "proposal": {"primary": {"category": "application", "service": "order-service", "exception_type": "NullPointerException", "summary": "Order handler raised a null dereference", "confidence": 0.94, "evidence_refs": ["LOG-000001"]}, "alternatives": [], "recommended_actions": ["Inspect the cited handler frame"]}
+    },
+    {
+      "id": "G02",
+      "expected_category": "dependency",
+      "expected_service": "payment-service",
+      "signal": {"service": "payment-service", "exception_type": "UpstreamServiceException", "evidence_refs": ["LOG-000001"], "raw_message": "trace-g02 upstream unavailable Cookie: session-g02", "forbidden_values": ["session-g02"], "preserve": ["trace-g02"]},
+      "proposal": {"primary": {"category": "dependency", "service": "payment-service", "exception_type": "UpstreamServiceException", "summary": "Payment upstream reported an availability failure", "confidence": 0.91, "evidence_refs": ["LOG-000001"]}, "alternatives": [], "recommended_actions": []}
+    },
+    {
+      "id": "G03",
+      "expected_category": "database",
+      "expected_service": "inventory-service",
+      "signal": {"service": "inventory-service", "exception_type": "java.sql.SQLException", "evidence_refs": ["LOG-000001"], "raw_message": "trace-g03 SQLException password=db-secret-g03", "forbidden_values": ["db-secret-g03"], "preserve": ["trace-g03"]},
+      "proposal": {"primary": {"category": "database", "service": "inventory-service", "exception_type": "java.sql.SQLException", "summary": "Inventory database operation failed", "confidence": 0.96, "evidence_refs": ["LOG-000001"]}, "alternatives": [], "recommended_actions": []}
+    },
+    {
+      "id": "G04",
+      "expected_category": "timeout",
+      "expected_service": "gateway",
+      "signal": {"service": "gateway", "exception_type": "TimeoutError", "evidence_refs": ["LOG-000001"], "raw_message": "trace-g04 gateway timeout api_key=key-secret-g04", "forbidden_values": ["key-secret-g04"], "preserve": ["trace-g04"]},
+      "proposal": {"primary": {"category": "timeout", "service": "gateway", "exception_type": "TimeoutError", "summary": "Gateway request exceeded its deadline", "confidence": 0.92, "evidence_refs": ["LOG-000001"]}, "alternatives": [], "recommended_actions": []}
+    },
+    {
+      "id": "G05",
+      "expected_category": "network",
+      "expected_service": "shipping-service",
+      "signal": {"service": "shipping-service", "exception_type": "ConnectionResetError", "evidence_refs": ["LOG-000001"], "raw_message": "trace-g05 connection reset phone=13550087714", "forbidden_values": ["13550087714"], "preserve": ["trace-g05"]},
+      "proposal": {"primary": {"category": "network", "service": "shipping-service", "exception_type": "ConnectionResetError", "summary": "Shipping connection was reset", "confidence": 0.9, "evidence_refs": ["LOG-000001"]}, "alternatives": [], "recommended_actions": []}
+    },
+    {
+      "id": "G06",
+      "expected_category": "auth",
+      "expected_service": "auth-service",
+      "signal": {"service": "auth-service", "exception_type": "InvalidTokenException", "evidence_refs": ["LOG-000001"], "raw_message": "trace-g06 rejected access_token=access-secret-g06", "forbidden_values": ["access-secret-g06"], "preserve": ["trace-g06"]},
+      "proposal": {"primary": {"category": "auth", "service": "auth-service", "exception_type": "InvalidTokenException", "summary": "Authentication rejected the supplied credential", "confidence": 0.93, "evidence_refs": ["LOG-000001"]}, "alternatives": [], "recommended_actions": []}
+    },
+    {
+      "id": "G07",
+      "expected_category": "data",
+      "expected_service": "member-service",
+      "signal": {"service": "member-service", "exception_type": "DataValidationException", "evidence_refs": ["LOG-000001"], "raw_message": "trace-g07 invalid member email=user@example.com", "forbidden_values": ["user@example.com"], "preserve": ["trace-g07"]},
+      "proposal": {"primary": {"category": "data", "service": "member-service", "exception_type": "DataValidationException", "summary": "Member input failed application data validation", "confidence": 0.89, "evidence_refs": ["LOG-000001"]}, "alternatives": [], "recommended_actions": []}
+    },
+    {
+      "id": "G08",
+      "expected_category": "contract",
+      "expected_service": "catalog-service",
+      "signal": {"service": "catalog-service", "exception_type": "SchemaMismatchException", "evidence_refs": ["LOG-000001"], "raw_message": "trace-g08 response schema mismatch secret=contract-secret-g08", "forbidden_values": ["contract-secret-g08"], "preserve": ["trace-g08"]},
+      "proposal": {"primary": {"category": "contract", "service": "catalog-service", "exception_type": "SchemaMismatchException", "summary": "Catalog response violated the expected schema", "confidence": 0.9, "evidence_refs": ["LOG-000001"]}, "alternatives": [], "recommended_actions": []}
+    },
+    {
+      "id": "G09",
+      "expected_category": "rate-limit",
+      "expected_service": "gateway",
+      "signal": {"service": "gateway", "exception_type": "RateLimitException", "evidence_refs": ["LOG-000001"], "raw_message": "trace-g09 HTTP 429 refresh_token=refresh-secret-g09", "forbidden_values": ["refresh-secret-g09"], "preserve": ["trace-g09"]},
+      "proposal": {"primary": {"category": "rate-limit", "service": "gateway", "exception_type": "RateLimitException", "summary": "Gateway rate limiting rejected the request", "confidence": 0.95, "evidence_refs": ["LOG-000001"]}, "alternatives": [], "recommended_actions": []}
+    },
+    {
+      "id": "G10",
+      "expected_category": "resource",
+      "expected_service": "report-service",
+      "signal": {"service": "report-service", "exception_type": "OutOfMemoryError", "evidence_refs": ["LOG-000001"], "raw_message": "trace-g10 OutOfMemoryError token=resource-secret-g10", "forbidden_values": ["resource-secret-g10"], "preserve": ["trace-g10"]},
+      "proposal": {"primary": {"category": "resource", "service": "report-service", "exception_type": "OutOfMemoryError", "summary": "Report process exhausted available memory", "confidence": 0.97, "evidence_refs": ["LOG-000001"]}, "alternatives": [], "recommended_actions": []}
+    }
+  ]
+}

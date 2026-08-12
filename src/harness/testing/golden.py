@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any, Literal
@@ -22,12 +23,14 @@ from harness.domain.schemas.api_test_cases import (
     validate_api_case_runtime_definitions,
     variable_references,
 )
+from harness.domain.schemas.failure_triage import FailureTriageProposal
 from harness.domain.schemas.qa_design import (
     RequirementCatalog,
     RequirementRule,
     TestCaseSet,
     validate_testcase_set,
 )
+from harness.infrastructure.log_sanitization import sanitize_log_text
 from harness.infrastructure.tools.openapi import inspect_openapi
 
 
@@ -45,6 +48,23 @@ class ApiGoldenExpectation(StrictModel):
     )
     must_cover_points: list[str] = Field(min_length=1)
     minimum_score: float = Field(ge=0, le=1)
+
+
+class FailureTriageGoldenSignal(StrictModel):
+    service: str
+    exception_type: str | None = None
+    evidence_refs: list[str] = Field(min_length=1)
+    raw_message: str
+    forbidden_values: list[str] = Field(default_factory=list)
+    preserve: list[str] = Field(default_factory=list)
+
+
+class FailureTriageGoldenCase(StrictModel):
+    id: str = Field(pattern=r"^G(?:0[1-9]|10)$")
+    expected_category: str
+    expected_service: str
+    signal: FailureTriageGoldenSignal
+    proposal: FailureTriageProposal
 
 
 def evaluate_golden_case(case_root: Path) -> dict[str, Any]:
@@ -177,17 +197,96 @@ def run_golden_eval(root: Path | None = None) -> dict[str, Any]:
         if api_cases_root.is_dir()
         else []
     )
+    triage_root = cases_root.parent / "failure-triage"
+    triage_result = evaluate_failure_triage_golden(triage_root)
     return {
-        "schema_version": "agentic-qa.harness.golden-eval-result.v1",
+        "schema_version": "agentic-qa.harness.golden-eval-result.v2",
         "passed": (
             bool(case_results)
             and bool(api_case_results)
             and all(result["passed"] for result in [*case_results, *api_case_results])
+            and triage_result["passed"]
         ),
         "case_count": len(case_results),
         "cases": case_results,
         "api_case_count": len(api_case_results),
         "api_cases": api_case_results,
+        "failure_triage": triage_result,
+    }
+
+
+def evaluate_failure_triage_golden(case_root: Path) -> dict[str, Any]:
+    payload = json.loads((case_root / "golden.json").read_text(encoding="utf-8"))
+    cases = [FailureTriageGoldenCase.model_validate(item) for item in payload["cases"]]
+    results: list[dict[str, Any]] = []
+    total_secrets = 0
+    leaked_secrets = 0
+    unsupported_high_confidence = 0
+    unresolved_references = 0
+    expectation_misses = 0
+    for item in cases:
+        signal = item.signal
+        sanitized, _ = sanitize_log_text(signal.raw_message, preserve=set(signal.preserve))
+        leaks = [value for value in signal.forbidden_values if value and value in sanitized]
+        total_secrets += len(signal.forbidden_values)
+        leaked_secrets += len(leaks)
+        allowed_refs = set(signal.evidence_refs) | {"EXEC-0001"}
+        supported_services = {signal.service}
+        supported_exceptions = {signal.exception_type} if signal.exception_type else set()
+        hypotheses = [item.proposal.primary, *item.proposal.alternatives]
+        invalid_claims: list[str] = []
+        bad_refs: list[str] = []
+        for hypothesis in hypotheses:
+            unresolved = sorted(set(hypothesis.evidence_refs) - allowed_refs)
+            bad_refs.extend(unresolved)
+            unsupported = (
+                (hypothesis.service is not None and hypothesis.service not in supported_services)
+                or (
+                    hypothesis.exception_type is not None
+                    and hypothesis.exception_type not in supported_exceptions
+                )
+                or not hypothesis.evidence_refs
+                or bool(unresolved)
+            )
+            if hypothesis.confidence >= 0.7 and unsupported:
+                invalid_claims.append(hypothesis.summary)
+        expected = (
+            item.proposal.primary.category == item.expected_category
+            and item.proposal.primary.service == item.expected_service
+        )
+        unsupported_high_confidence += len(invalid_claims)
+        unresolved_references += len(bad_refs)
+        expectation_misses += int(not expected)
+        results.append(
+            {
+                "case": item.id,
+                "passed": not leaks and not invalid_claims and not bad_refs and expected,
+                "category": item.proposal.primary.category,
+                "service": item.proposal.primary.service,
+                "secret_leaks": len(leaks),
+                "unsupported_high_confidence_claims": len(invalid_claims),
+                "unresolved_references": sorted(set(bad_refs)),
+            }
+        )
+    expected_ids = {f"G{index:02d}" for index in range(1, 11)}
+    complete = len(cases) == 10 and {item.id for item in cases} == expected_ids
+    metrics = {
+        "secret_leakage_rate": leaked_secrets / max(total_secrets, 1),
+        "unsupported_high_confidence_claim_rate": unsupported_high_confidence / max(len(cases), 1),
+        "unresolved_reference_count": unresolved_references,
+        "category_service_miss_count": expectation_misses,
+    }
+    return {
+        "schema_version": "agentic-qa.failure-triage-golden-result.v1",
+        "passed": complete
+        and all(item["passed"] for item in results)
+        and metrics["secret_leakage_rate"] == 0
+        and metrics["unsupported_high_confidence_claim_rate"] == 0
+        and metrics["unresolved_reference_count"] == 0
+        and metrics["category_service_miss_count"] == 0,
+        "case_count": len(cases),
+        "metrics": metrics,
+        "cases": results,
     }
 
 

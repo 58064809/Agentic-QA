@@ -16,15 +16,22 @@ from harness.infrastructure.quality.generic import GenericArtifactStrategy
 from harness.infrastructure.quality.normalization import SafeMarkdownNormalizer
 
 
-def _triage_payload(category: str = "database", confidence: float = 0.9) -> dict:
+def _triage_payload(
+    category: str = "database",
+    confidence: float = 0.9,
+    *,
+    execution_sha: str = "a" * 64,
+    logs_sha: str = "b" * 64,
+    analysis_sha: str = "c" * 64,
+) -> dict:
     payload = {
         "schema_version": "agentic-qa.failure-triage.v2",
         "collection_id": "collection-a",
         "execution_id": "execution-1",
         "case_id": "CASE-1",
-        "execution_evidence_sha256": "a" * 64,
-        "log_evidence_sha256": "b" * 64,
-        "log_analysis_sha256": "c" * 64,
+        "execution_evidence_sha256": execution_sha,
+        "log_evidence_sha256": logs_sha,
+        "log_analysis_sha256": analysis_sha,
         "triage_status": "success",
         "likelihood": "highly_likely" if confidence >= 0.9 else "probable",
         "primary": {
@@ -58,14 +65,25 @@ def _service(tmp_path: Path, category: str = "database"):
     execution = workspace / "executions" / "execution-1"
     collection = execution / "triage" / "collections" / "collection-a"
     collection.mkdir(parents=True)
-    for name, payload in {
+    sources = {
         "evidence.json": {"schema_version": "agentic-qa.execution-evidence.v2"},
         "log-evidence.json": {"schema_version": "agentic-qa.log-evidence.v1"},
         "log-analysis.json": {"schema_version": "agentic-qa.log-analysis.v1"},
-        "failure-triage.json": _triage_payload(category),
-    }.items():
+    }
+    paths = {}
+    for name, payload in sources.items():
         target = execution / name if name == "evidence.json" else collection / name
         create_only_json(target, payload)
+        paths[name] = target
+    create_only_json(
+        collection / "failure-triage.json",
+        _triage_payload(
+            category,
+            execution_sha=hashlib.sha256(paths["evidence.json"].read_bytes()).hexdigest(),
+            logs_sha=hashlib.sha256(paths["log-evidence.json"].read_bytes()).hexdigest(),
+            analysis_sha=hashlib.sha256(paths["log-analysis.json"].read_bytes()).hexdigest(),
+        ),
+    )
     registry = QualityStrategyRegistry()
     registry.register(GenericArtifactStrategy())
     registry.register_normalizer(SafeMarkdownNormalizer())
@@ -118,3 +136,16 @@ def test_failure_report_gate_omits_bug_for_test_script(tmp_path: Path) -> None:
     snapshot = store.load_snapshot_read_only("workspace-1", report.run_id)
     assert [item.artifact for item in snapshot.candidates] == ["failure_analysis"]
     assert not (collection / "bug-draft.json").exists()
+
+
+def test_failure_report_rejects_tampered_source_before_candidate(tmp_path: Path) -> None:
+    store, _workspace, collection, service = _service(tmp_path)
+    (collection / "log-analysis.json").write_text('{"tampered":true}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="source hash"):
+        service.prepare(
+            PrepareFailureReportCommand(workspace_id="workspace-1", execution_id="execution-1")
+        )
+
+    runs = tmp_path / "workspaces" / "workspace-1" / "runs"
+    assert not list(runs.iterdir())

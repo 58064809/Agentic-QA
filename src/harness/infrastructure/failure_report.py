@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from harness.application.quality import QualityContext
@@ -32,12 +33,14 @@ class FilesystemFailureReportService:
         root = workspace_root / "executions" / command.execution_id / "triage" / "collections"
         if not root.is_dir():
             raise ValueError("failure triage collections do not exist")
-        collections = []
+        collections: list[tuple[Path, FailureTriageV2]] = []
         for item in sorted(root.iterdir()):
             triage_path = item / "failure-triage.json"
             if not triage_path.is_file():
                 continue
             triage = FailureTriageV2.model_validate_json(triage_path.read_text(encoding="utf-8"))
+            if triage.triage_status == "failed":
+                continue
             if command.collection_id and triage.collection_id != command.collection_id:
                 continue
             if command.case_id and triage.case_id != command.case_id:
@@ -45,6 +48,16 @@ class FilesystemFailureReportService:
             collections.append((item, triage))
         if not collections:
             raise ValueError("no matching validated failure triage")
+        if command.collection_id is None:
+            latest: dict[tuple[str, str | None], tuple[int, Path, FailureTriageV2]] = {}
+            for item, triage in collections:
+                key = (triage.case_id, triage.dataset_id)
+                stamp = (item / "failure-triage.json").stat().st_mtime_ns
+                if key not in latest or stamp > latest[key][0]:
+                    latest[key] = (stamp, item, triage)
+            collections = [(value[1], value[2]) for _, value in sorted(latest.items())]
+        for item, triage in collections:
+            self._validate_sources(item, triage, workspace_root, command.execution_id)
         reports = [
             self._prepare_one(command, collection_root, triage, workspace_root)
             for collection_root, triage in collections
@@ -54,6 +67,30 @@ class FilesystemFailureReportService:
             execution_id=command.execution_id,
             reports=reports,
         )
+
+    @staticmethod
+    def _validate_sources(
+        collection_root: Path,
+        triage: FailureTriageV2,
+        workspace_root: Path,
+        execution_id: str,
+    ) -> None:
+        expected = {
+            workspace_root / "executions" / execution_id / "evidence.json": (
+                triage.execution_evidence_sha256
+            ),
+            collection_root / "log-evidence.json": triage.log_evidence_sha256,
+            collection_root / "log-analysis.json": triage.log_analysis_sha256,
+        }
+        if triage.execution_id != execution_id or triage.collection_id != collection_root.name:
+            raise ValueError("failure triage identity differs from requested collection")
+        for path, digest in expected.items():
+            try:
+                actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            except OSError as exc:
+                raise ValueError("failure triage source is unavailable") from exc
+            if actual != digest:
+                raise ValueError("failure triage source hash does not match")
 
     def _prepare_one(
         self,
