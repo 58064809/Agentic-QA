@@ -229,3 +229,28 @@ def test_cleanup_exemption_is_a_non_blocking_deprecation_warning(
         project.policy.operation_policies["POST /notifications"].classification
         == "mutation_no_cleanup"
     )
+
+
+def test_loki_token_is_resolved_only_through_secret_provider(tmp_path: Path) -> None:
+    loader = _write_legacy(tmp_path)
+    payload = _legacy_payload()
+    payload["logs"] = {
+        "provider": "loki",
+        "allowed_environments": ["qa"],
+        "api_service_scopes": {"orders": ["order-service"]},
+        "loki": {
+            "base_url": "https://logs.qa.example.test",
+            "trusted_origins": ["https://logs.qa.example.test"],
+            "token": "loki-secret",
+        },
+    }
+    atomic_private_text(loader.path, yaml.safe_dump(payload, sort_keys=False))
+
+    loader.migrate_inline_secrets()
+
+    persisted = yaml.safe_load(loader.path.read_text(encoding="utf-8"))
+    assert persisted["logs"]["loki"]["token"] == "secret://logs.loki.token"
+    assert persisted["secrets"]["values"]["logs.loki.token"] == "loki-secret"
+    loki = loader.load_required().logs.loki
+    assert loki is not None
+    assert loki.token == "loki-secret"

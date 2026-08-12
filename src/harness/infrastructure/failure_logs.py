@@ -6,7 +6,9 @@ import re
 import stat
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
+
+import requests
 
 from harness.domain.schemas.api_execution_reporting import parse_api_execution_plan_json
 from harness.domain.schemas.execution_evidence import load_execution_evidence
@@ -22,6 +24,7 @@ from harness.domain.schemas.log_evidence import (
     NormalizedLogEntry,
     ProviderDiagnostic,
 )
+from harness.domain.security import build_api_request_url, validate_api_response_url
 from harness.infrastructure.api_execution_snapshot import ExecutionSourceSnapshotResolver
 from harness.infrastructure.api_published_source import PublishedApiSourceResolver
 from harness.infrastructure.failure_analysis import FilesystemFailureAnalysisService
@@ -40,6 +43,11 @@ TEXT_LOG = re.compile(
 )
 PRODUCTION_LIKE = {"pro", "prod", "production", "live"}
 REPARSE_POINT = 0x400
+LOKI_VALUE = re.compile(r"^[0-9]{1,20}$")
+
+
+class LogProvider(Protocol):
+    def query(self, request: LogQueryRequest) -> tuple[LogQueryResult, int]: ...
 
 
 class LocalFileLogProvider:
@@ -225,6 +233,205 @@ class LocalFileLogProvider:
         return timestamp is not None and request.started_at <= timestamp <= request.completed_at
 
 
+class LokiLogProvider:
+    def __init__(
+        self,
+        config: LocalLogsConfig,
+        *,
+        request_func: Any = requests.get,
+    ) -> None:
+        if config.loki is None:
+            raise ValueError("loki provider configuration is missing")
+        self._logs = config
+        self._config = config.loki
+        self._request = request_func
+
+    def query(self, request: LogQueryRequest) -> tuple[LogQueryResult, int]:
+        if request.completed_at - request.started_at > timedelta(
+            seconds=self._logs.query.max_window_seconds
+        ):
+            raise ValueError("Loki query exceeds configured time window")
+        url = build_api_request_url(self._config.base_url, "/loki/api/v1/query_range")
+        query = self._build_logql(request)
+        try:
+            response = self._request(
+                url,
+                params={
+                    "query": query,
+                    "start": str(int(request.started_at.timestamp() * 1_000_000_000)),
+                    "end": str(int(request.completed_at.timestamp() * 1_000_000_000)),
+                    "limit": str(request.max_entries),
+                    "direction": "forward",
+                },
+                headers={"Authorization": f"Bearer {self._config.token}"},
+                timeout=self._config.timeout_seconds,
+                allow_redirects=False,
+                stream=True,
+            )
+            validate_api_response_url(getattr(response, "url", None), requested_url=url)
+            status_code = int(response.status_code)
+            if 300 <= status_code < 400:
+                return self._failed("LOKI_REDIRECT_REJECTED", "Loki redirect was rejected")
+            if status_code != 200:
+                return self._failed("LOKI_HTTP_ERROR", f"Loki returned HTTP status {status_code}")
+            body = self._bounded_body(response)
+            payload = json.loads(body.decode("utf-8"))
+        except (
+            requests.RequestException,
+            OSError,
+            UnicodeError,
+            ValueError,
+            json.JSONDecodeError,
+        ) as exc:
+            return self._failed("LOKI_QUERY_FAILED", f"Loki query failed with {type(exc).__name__}")
+        if not isinstance(payload, dict) or payload.get("status") != "success":
+            return self._failed("LOKI_RESPONSE_INVALID", "Loki response is not successful")
+        data = payload.get("data")
+        streams = data.get("result") if isinstance(data, dict) else None
+        if not isinstance(streams, list):
+            return self._failed("LOKI_RESPONSE_INVALID", "Loki streams are missing")
+        return self._normalize_streams(streams, request, len(body))
+
+    def _bounded_body(self, response: Any) -> bytes:
+        limit = self._logs.query.max_response_bytes
+        header = response.headers.get("Content-Length") if hasattr(response, "headers") else None
+        if header:
+            try:
+                if int(header) > limit:
+                    raise ValueError("Loki response exceeds configured byte limit")
+            except ValueError as exc:
+                raise OSError("invalid or excessive Loki Content-Length") from exc
+        chunks: list[bytes] = []
+        size = 0
+        for chunk in response.iter_content(chunk_size=65_536):
+            if not chunk:
+                continue
+            size += len(chunk)
+            if size > limit:
+                raise OSError("Loki response exceeds configured byte limit")
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+    def _normalize_streams(
+        self,
+        streams: list[Any],
+        request: LogQueryRequest,
+        bytes_read: int,
+    ) -> tuple[LogQueryResult, int]:
+        entries: list[NormalizedLogEntry] = []
+        diagnostics: list[ProviderDiagnostic] = []
+        redactions = 0
+        allowed = set(request.services)
+        preserve = {
+            value
+            for value in (request.trace_id, request.request_id, *request.custom_ids.values())
+            if value
+        }
+        for stream_index, item in enumerate(streams):
+            if not isinstance(item, dict):
+                continue
+            labels = item.get("stream")
+            values = item.get("values")
+            service = labels.get(self._config.service_label) if isinstance(labels, dict) else None
+            stream_environment = (
+                labels.get(self._config.environment_label) if isinstance(labels, dict) else None
+            )
+            if service not in allowed or stream_environment != request.environment:
+                diagnostics.append(
+                    ProviderDiagnostic(
+                        code="LOKI_STREAM_OUT_OF_SCOPE",
+                        detail="Loki returned a stream outside the configured scope",
+                    )
+                )
+                continue
+            if not isinstance(values, list):
+                continue
+            for value_index, value in enumerate(values):
+                if (
+                    not isinstance(value, list)
+                    or len(value) != 2
+                    or not isinstance(value[0], str)
+                    or not LOKI_VALUE.fullmatch(value[0])
+                    or not isinstance(value[1], str)
+                ):
+                    continue
+                timestamp = datetime.fromtimestamp(int(value[0]) / 1_000_000_000, tz=UTC)
+                raw = LocalFileLogProvider._parse_line(value[1], service)
+                if raw is None:
+                    continue
+                raw["timestamp"] = raw.get("timestamp") or timestamp
+                if not LocalFileLogProvider._matches(raw, request):
+                    continue
+                message, count = sanitize_log_text(raw["message"], preserve=preserve)
+                exception, exception_count = sanitize_log_text(
+                    raw.get("exception_type") or "", preserve=preserve
+                )
+                redactions += count + exception_count
+                entries.append(
+                    NormalizedLogEntry(
+                        entry_id=f"LOG-{len(entries) + 1:06d}",
+                        timestamp=raw["timestamp"],
+                        service=service,
+                        level=raw["level"],
+                        message=message,
+                        trace_id=(
+                            request.trace_id
+                            if request.trace_id and raw.get("trace_id") == request.trace_id
+                            else None
+                        ),
+                        request_id=(
+                            request.request_id
+                            if request.request_id and raw.get("request_id") == request.request_id
+                            else None
+                        ),
+                        exception_type=exception or None,
+                        source_ref=f"loki:{service}:{stream_index}:{value_index}",
+                    )
+                )
+                if len(entries) >= request.max_entries:
+                    break
+            if len(entries) >= request.max_entries:
+                break
+        return (
+            LogQueryResult(
+                status="success" if entries else "empty",
+                entries=entries,
+                diagnostics=diagnostics,
+                bytes_read=bytes_read,
+            ),
+            redactions,
+        )
+
+    def _build_logql(self, request: LogQueryRequest) -> str:
+        services = "|".join(re.escape(item) for item in sorted(set(request.services)))
+        selectors = [
+            f'{self._config.environment_label}="{_logql_string(request.environment)}"',
+            f'{self._config.service_label}=~"{_logql_string(services)}"',
+        ]
+        query = "{" + ",".join(selectors) + "}"
+        identifiers = sorted(
+            {
+                item
+                for item in (request.trace_id, request.request_id, *request.custom_ids.values())
+                if item
+            }
+        )
+        if identifiers:
+            correlation = "|".join(re.escape(item) for item in identifiers)
+            query += f' |~ "{_logql_string(correlation)}"'
+        return query
+
+    @staticmethod
+    def _failed(code: str, detail: str) -> tuple[LogQueryResult, int]:
+        return (
+            LogQueryResult(
+                status="failed",
+                diagnostics=[ProviderDiagnostic(code=code, detail=detail)],
+            ),
+            0,
+        )
+
+
 class FilesystemFailureLogService:
     def __init__(
         self,
@@ -242,8 +449,8 @@ class FilesystemFailureLogService:
     def collect(self, command: CollectFailureLogsCommand) -> CollectFailureLogsResult:
         snapshot = self._snapshots.resolve(command.workspace_id, command.execution_id)
         logs = self._config.logs
-        if logs.provider != "local-file":
-            raise ValueError("failure log collection requires logs.provider: local-file")
+        if logs.provider not in {"local-file", "loki"}:
+            raise ValueError("failure log collection requires a configured log provider")
         environment = snapshot.environment.casefold()
         if environment in PRODUCTION_LIKE or environment not in logs.allowed_environments:
             raise PermissionError("failure log collection is not allowed for this environment")
@@ -285,11 +492,16 @@ class FilesystemFailureLogService:
             "api_service": snapshot.service,
             "services": services,
             "local_file": logs.local_file.model_dump(mode="json") if logs.local_file else None,
+            "loki": (logs.loki.model_dump(mode="json", exclude={"token"}) if logs.loki else None),
         }
         provider_sha = hashlib.sha256(
             json.dumps(provider_structure, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        provider = LocalFileLogProvider(self._store.repo_root, logs)
+        provider: LogProvider
+        if logs.provider == "local-file":
+            provider = LocalFileLogProvider(self._store.repo_root, logs)
+        else:
+            provider = LokiLogProvider(logs)
         collections = [
             self._collect_case(
                 command,
@@ -323,7 +535,7 @@ class FilesystemFailureLogService:
         services: list[str],
         evidence_sha: str,
         provider_sha: str,
-        provider: LocalFileLogProvider,
+        provider: LogProvider,
         workspace_root: Path,
         execution_root: Path,
     ) -> FailureLogCollection:
@@ -379,13 +591,13 @@ class FilesystemFailureLogService:
             )
         try:
             result, redaction_count = provider.query(query)
-        except (OSError, UnicodeError) as exc:
+        except (OSError, UnicodeError, ValueError) as exc:
             result = LogQueryResult(
                 status="failed",
                 diagnostics=[
                     ProviderDiagnostic(
-                        code="LOCAL_LOG_READ_FAILED",
-                        detail=f"local log provider failed with {type(exc).__name__}",
+                        code="LOG_PROVIDER_FAILED",
+                        detail=f"log provider failed with {type(exc).__name__}",
                     )
                 ],
             )
@@ -407,7 +619,7 @@ class FilesystemFailureLogService:
             "case_id": case.case_id,
             "dataset_id": case.dataset_id,
             "execution_evidence_sha256": evidence_sha,
-            "provider": "local-file",
+            "provider": self._config.logs.provider,
             "provider_structure_sha256": provider_sha,
             "query": query.model_dump(mode="json"),
             "status": result.status,
@@ -468,3 +680,7 @@ def _first(payload: dict[str, Any], *names: str) -> str | None:
         if value is not None and str(value).strip():
             return str(value).strip()
     return None
+
+
+def _logql_string(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')

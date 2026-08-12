@@ -116,6 +116,9 @@ def _secret_locations(payload: dict[str, object]) -> list[tuple[tuple[str, ...],
             )
         elif provider == "qase":
             locations.append((("test_management", "api_token"), "test_management.api_token"))
+    logs = payload.get("logs")
+    if isinstance(logs, dict) and logs.get("provider") == "loki":
+        locations.append((("logs", "loki", "token"), "logs.loki.token"))
     api = payload.get("api")
     services = api.get("services") if isinstance(api, dict) else None
     if not isinstance(services, dict):

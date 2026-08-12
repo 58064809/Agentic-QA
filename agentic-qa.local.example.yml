@@ -11,6 +11,7 @@ secrets:
     api.member-service.dev.auth.login.sms_code: "000000"
     api.member-service.dev.auth.login.encryption.key: ""
     api.member-service.dev.auth.fallback_token: ""
+    logs.loki.token: ""
 
 # The actual model key is the only model value kept in an environment variable.
 model:
@@ -113,3 +114,12 @@ logs:
   #   services:
   #     member-service:
   #       files: [local-logs/member-service/*.log]
+  # To use Loki instead, set provider: loki and configure this block. The token
+  # remains a SecretProvider reference and raw LogQL is never accepted.
+  # loki:
+  #   base_url: https://logs.qa.example.com
+  #   trusted_origins: [https://logs.qa.example.com]
+  #   token: secret://logs.loki.token
+  #   service_label: app
+  #   environment_label: environment
+  #   timeout_seconds: 15

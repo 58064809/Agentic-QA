@@ -13,7 +13,7 @@ from harness.domain.models import (
     ApiTokenInjection,
     StrictModel,
 )
-from harness.domain.security import validate_api_trusted_origin
+from harness.domain.security import validate_api_base_url_policy, validate_api_trusted_origin
 
 ENV_NAME_PATTERN = r"^[A-Z_][A-Z0-9_]*$"
 
@@ -186,6 +186,37 @@ class LocalFileLogProvider(StrictModel):
     max_file_bytes: int = Field(default=4_194_304, ge=1024, le=16_777_216)
 
 
+class LocalLokiLogProvider(StrictModel):
+    base_url: str
+    trusted_origins: list[str] = Field(min_length=1)
+    token: str
+    service_label: str = "app"
+    environment_label: str = "environment"
+    timeout_seconds: int = Field(default=15, ge=1, le=60)
+
+    @field_validator("trusted_origins")
+    @classmethod
+    def normalize_trusted_origins(cls, value: list[str]) -> list[str]:
+        origins = list(dict.fromkeys(validate_api_trusted_origin(item) for item in value))
+        if len(origins) != len(value):
+            raise ValueError("logs.loki.trusted_origins must be unique HTTPS origins")
+        return origins
+
+    @field_validator("service_label", "environment_label")
+    @classmethod
+    def validate_label_name(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
+            raise ValueError("Loki label names must be identifiers")
+        return value
+
+    @model_validator(mode="after")
+    def validate_connection(self) -> LocalLokiLogProvider:
+        validate_api_base_url_policy(self.base_url, trusted_origins=self.trusted_origins)
+        if not self.token.strip():
+            raise ValueError("logs.loki.token cannot be empty")
+        return self
+
+
 class LocalLogsConfig(StrictModel):
     provider: Literal["none", "local-file", "loki"] = "none"
     allowed_environments: list[str] = Field(
@@ -194,6 +225,7 @@ class LocalLogsConfig(StrictModel):
     query: LocalLogQueryLimits = Field(default_factory=LocalLogQueryLimits)
     api_service_scopes: dict[str, list[str]] = Field(default_factory=dict)
     local_file: LocalFileLogProvider | None = None
+    loki: LocalLokiLogProvider | None = None
 
     @field_validator("allowed_environments")
     @classmethod
@@ -219,6 +251,8 @@ class LocalLogsConfig(StrictModel):
     def validate_provider(self) -> LocalLogsConfig:
         if self.provider == "local-file" and self.local_file is None:
             raise ValueError("logs.provider local-file requires logs.local_file")
+        if self.provider == "loki" and self.loki is None:
+            raise ValueError("logs.provider loki requires logs.loki")
         return self
 
 

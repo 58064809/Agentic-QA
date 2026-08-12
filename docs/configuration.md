@@ -185,6 +185,32 @@ logs:
         files: [local-logs/order-service/*.log]
 ```
 
+Loki 使用相同的环境和服务 scope，不接受用户或模型提供的原始 LogQL。Harness 只根据 execution
+plan、有限时间窗、允许服务和 correlation ID 构造查询；网络边界会校验 HTTPS、trusted Origin、
+关闭重定向、超时、条数与响应字节上限。Token 字段使用 SecretProvider 引用：
+
+```yaml
+secrets:
+  provider: local
+  values:
+    logs.loki.token: "replace-me"
+
+logs:
+  provider: loki
+  allowed_environments: [dev, test, qa, staging]
+  api_service_scopes:
+    order-api: [gateway, order-service]
+  loki:
+    base_url: https://logs.qa.example.com
+    trusted_origins: [https://logs.qa.example.com]
+    token: secret://logs.loki.token
+    service_label: app
+    environment_label: environment
+    timeout_seconds: 15
+```
+
+Loki 原始响应和 Token 不落盘；只有经过脱敏、范围验证和条数限制的标准化条目进入 Log Evidence。
+
 workspace 只保存服务名、环境、非敏感执行策略与结构 SHA-256。手机号、密码、验证码、AES Key、
 Token、数据库密码和连接器凭据每次运行都通过 Secret Provider 重新解析。凭据值变化沿用已有 Review；Base URL、
 trusted Origin、方法 allowlist、登录路径、算法或 Token 注入规则变化会阻止请求，并进入新的 prepare 和

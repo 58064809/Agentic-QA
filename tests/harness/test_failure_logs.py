@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import pytest
 
 from harness.domain.schemas.api_execution_reporting import (
     ApiExecutionPlan,
@@ -20,7 +22,11 @@ from harness.domain.schemas.execution_evidence import (
 from harness.domain.schemas.local_config import AgenticQaLocalConfig, LocalLogsConfig
 from harness.domain.schemas.log_evidence import CollectFailureLogsCommand, LogQueryRequest
 from harness.infrastructure.api_execution_snapshot import ExecutionSourceSnapshot
-from harness.infrastructure.failure_logs import FilesystemFailureLogService, LocalFileLogProvider
+from harness.infrastructure.failure_logs import (
+    FilesystemFailureLogService,
+    LocalFileLogProvider,
+    LokiLogProvider,
+)
 from harness.infrastructure.log_sanitization import sanitize_log_text
 from harness.infrastructure.persistence.common import atomic_json
 from harness.infrastructure.persistence.filesystem import FilesystemStore
@@ -312,3 +318,144 @@ class _SnapshotStub:
 
     def resolve(self, _workspace: str, _execution_id: str) -> ExecutionSourceSnapshot:
         return self._snapshot
+
+
+class _LokiResponse:
+    def __init__(
+        self,
+        payload: object,
+        *,
+        status_code: int = 200,
+        url: str = "https://logs.qa.example.com/loki/api/v1/query_range",
+    ) -> None:
+        self.status_code = status_code
+        self.url = url
+        self.headers: dict[str, str] = {}
+        self._body = json.dumps(payload).encode()
+
+    def iter_content(self, chunk_size: int):
+        del chunk_size
+        yield self._body
+
+
+def _loki_config() -> LocalLogsConfig:
+    return LocalLogsConfig.model_validate(
+        {
+            "provider": "loki",
+            "allowed_environments": ["qa"],
+            "api_service_scopes": {"order-api": ["gateway", "order-service"]},
+            "loki": {
+                "base_url": "https://logs.qa.example.com",
+                "trusted_origins": ["https://logs.qa.example.com"],
+                "token": "provider-resolved-token",
+                "service_label": "app",
+                "environment_label": "environment",
+                "timeout_seconds": 15,
+            },
+        }
+    )
+
+
+def test_loki_provider_builds_bounded_query_and_redacts_response() -> None:
+    now = datetime.now(tz=UTC).replace(microsecond=0)
+    captured: dict[str, object] = {}
+    response = _LokiResponse(
+        {
+            "status": "success",
+            "data": {
+                "resultType": "streams",
+                "result": [
+                    {
+                        "stream": {"app": "order-service", "environment": "qa"},
+                        "values": [
+                            [
+                                str(int(now.timestamp() * 1_000_000_000)),
+                                "ERROR trace-42 timeout Authorization: Bearer leaked-token",
+                            ]
+                        ],
+                    }
+                ],
+            },
+        }
+    )
+
+    def request(url: str, **kwargs: object) -> _LokiResponse:
+        captured.update({"url": url, **kwargs})
+        return response
+
+    result, redactions = LokiLogProvider(_loki_config(), request_func=request).query(_query(now))
+
+    assert result.status == "success"
+    assert result.entries[0].service == "order-service"
+    assert "leaked-token" not in result.model_dump_json()
+    assert redactions >= 1
+    assert captured["allow_redirects"] is False
+    assert captured["timeout"] == 15
+    assert captured["stream"] is True
+    assert captured["headers"] == {"Authorization": "Bearer provider-resolved-token"}
+    params = captured["params"]
+    assert isinstance(params, dict)
+    query = str(params["query"])
+    assert 'environment="qa"' in query
+    assert 'app=~"order\\\\-service"' in query
+    assert "trace\\\\-42" in query
+    assert "provider-resolved-token" not in query
+
+
+def test_loki_provider_rejects_redirect_and_out_of_scope_stream() -> None:
+    now = datetime.now(tz=UTC).replace(microsecond=0)
+    redirect = LokiLogProvider(
+        _loki_config(),
+        request_func=lambda *_args, **_kwargs: _LokiResponse({}, status_code=302),
+    ).query(_query(now))[0]
+    outside = LokiLogProvider(
+        _loki_config(),
+        request_func=lambda *_args, **_kwargs: _LokiResponse(
+            {
+                "status": "success",
+                "data": {
+                    "result": [
+                        {
+                            "stream": {"app": "billing-service", "environment": "qa"},
+                            "values": [
+                                [str(int(now.timestamp() * 1_000_000_000)), "trace-42 error"]
+                            ],
+                        }
+                    ]
+                },
+            }
+        ),
+    ).query(_query(now))[0]
+
+    assert redirect.status == "failed"
+    assert redirect.diagnostics[0].code == "LOKI_REDIRECT_REJECTED"
+    assert outside.status == "empty"
+    assert outside.diagnostics[0].code == "LOKI_STREAM_OUT_OF_SCOPE"
+
+
+def test_loki_provider_enforces_response_byte_limit() -> None:
+    now = datetime.now(tz=UTC)
+    response = _LokiResponse({"status": "success", "data": {"result": []}})
+    response.headers["Content-Length"] = "99999999"
+    result, _ = LokiLogProvider(
+        _loki_config(), request_func=lambda *_args, **_kwargs: response
+    ).query(_query(now))
+
+    assert result.status == "failed"
+    assert result.diagnostics[0].code == "LOKI_QUERY_FAILED"
+
+
+def test_loki_provider_rejects_excessive_time_window_before_network() -> None:
+    now = datetime.now(tz=UTC)
+    called = False
+
+    def request(*_args: object, **_kwargs: object) -> _LokiResponse:
+        nonlocal called
+        called = True
+        return _LokiResponse({})
+
+    query = _query(now).model_copy(update={"completed_at": now + timedelta(seconds=301)})
+    with pytest.raises(ValueError, match="time window"):
+        LokiLogProvider(_loki_config(), request_func=request).query(query)
+
+    assert called is False
