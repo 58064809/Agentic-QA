@@ -33,6 +33,7 @@ CORE_FILES = (
     "docs/schemas/execution-evidence.v1.schema.json",
     "docs/schemas/execution-evidence.v2.schema.json",
     "docs/schemas/failure-triage.v1.schema.json",
+    "docs/schemas/failure-triage.v2.schema.json",
     "docs/schemas/log-evidence.v1.schema.json",
     "docs/schemas/log-analysis.v1.schema.json",
     "docs/schemas/agent-request.v1.schema.json",
@@ -77,6 +78,10 @@ RELEASED_EVIDENCE_SCHEMAS = {
     "execution-evidence.v1.schema.json": (
         "agentic-qa.execution-evidence.v1",
         "832149a41a84576a3db3ea2981064ec9540c0ca41ec78e0095ce9e1e14379271",
+    ),
+    "failure-triage.v1.schema.json": (
+        "agentic-qa.failure-triage.v1",
+        "6decc7f6bc6aa9b365177a0f2ac723633af2a58cfb367c6165c9a6fe63c072ff",
     ),
 }
 

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 FAILURE_TRIAGE_SCHEMA_VERSION = "agentic-qa.failure-triage.v1"
+FAILURE_TRIAGE_V2_SCHEMA_VERSION = "agentic-qa.failure-triage.v2"
 
 
 class StrictModel(BaseModel):
@@ -78,4 +81,81 @@ class FailureTriage(StrictModel):
             item.evidence_status != "failed" and item.bug_candidate_id for item in self.observations
         ):
             raise ValueError("error or blocked evidence cannot create bug candidates")
+        return self
+
+
+FailureCategory = Literal[
+    "application",
+    "dependency",
+    "database",
+    "timeout",
+    "network",
+    "auth",
+    "data",
+    "contract",
+    "environment",
+    "rate-limit",
+    "resource",
+    "test-script",
+    "test-data",
+    "unknown",
+]
+
+
+class FailureHypothesis(StrictModel):
+    category: FailureCategory
+    service: str | None = None
+    exception_type: str | None = None
+    summary: str = Field(min_length=1, max_length=2000)
+    confidence: float = Field(ge=0, le=1)
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class FailureTriageProposal(StrictModel):
+    primary: FailureHypothesis
+    alternatives: list[FailureHypothesis] = Field(default_factory=list, max_length=3)
+    recommended_actions: list[str] = Field(default_factory=list, max_length=10)
+
+
+class FailureTriageV2(StrictModel):
+    schema_version: Literal["agentic-qa.failure-triage.v2"] = "agentic-qa.failure-triage.v2"
+    collection_id: str
+    execution_id: str
+    case_id: str
+    dataset_id: str | None = None
+    execution_evidence_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    log_evidence_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    log_analysis_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    triage_status: Literal["success", "insufficient_evidence", "failed"]
+    likelihood: Literal["highly_likely", "probable", "insufficient_evidence"]
+    primary: FailureHypothesis | None = None
+    alternatives: list[FailureHypothesis] = Field(default_factory=list, max_length=3)
+    recommended_actions: list[str] = Field(default_factory=list, max_length=10)
+    available_evidence_refs: list[str]
+    content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def validate_semantics(self) -> FailureTriageV2:
+        allowed = set(self.available_evidence_refs)
+        hypotheses = [item for item in [self.primary, *self.alternatives] if item]
+        if any(not set(item.evidence_refs) <= allowed for item in hypotheses):
+            raise ValueError("failure triage contains unresolved evidence references")
+        if self.triage_status != "failed" and self.primary is None:
+            raise ValueError("completed failure triage requires a primary hypothesis")
+        if self.primary:
+            expected = (
+                "highly_likely"
+                if self.primary.confidence >= 0.9 and self.primary.evidence_refs
+                else "probable"
+                if self.primary.confidence >= 0.7 and self.primary.evidence_refs
+                else "insufficient_evidence"
+            )
+            if self.likelihood != expected:
+                raise ValueError("triage likelihood does not match confidence and citations")
+        payload = self.model_dump(mode="json", exclude={"content_sha256"})
+        expected_hash = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        if self.content_sha256 != expected_hash:
+            raise ValueError("failure triage content hash does not match")
         return self

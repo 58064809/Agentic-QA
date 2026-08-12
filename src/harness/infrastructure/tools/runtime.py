@@ -567,6 +567,10 @@ class ToolRuntime:
             return load_execution_evidence(payload).model_dump(mode="json")
         if schema == "agentic-qa.failure-triage.v1":
             return FailureTriage.model_validate(payload).model_dump(mode="json")
+        if schema == "agentic-qa.failure-triage.v2":
+            from harness.domain.schemas.failure_triage import FailureTriageV2
+
+            return FailureTriageV2.model_validate(payload).model_dump(mode="json")
         raise ValueError(f"unsupported evidence schema: {schema}")
 
     def _artifact_diff(self, workspace: str, arguments: dict[str, Any]) -> dict[str, Any]:

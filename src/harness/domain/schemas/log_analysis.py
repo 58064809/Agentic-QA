@@ -72,6 +72,10 @@ class FailureAnalysisItem(StrictModel):
     dataset_id: str | None = None
     analysis_status: Literal["success", "empty", "failed"]
     log_analysis_path: str
+    triage_status: Literal["not_started", "success", "insufficient_evidence", "failed"] = (
+        "not_started"
+    )
+    failure_triage_path: str | None = None
 
 
 class AnalyzeFailureResult(StrictModel):

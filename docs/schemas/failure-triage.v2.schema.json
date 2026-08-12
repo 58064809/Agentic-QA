@@ -1,0 +1,198 @@
+{
+  "$defs": {
+    "FailureHypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "enum": [
+            "application",
+            "dependency",
+            "database",
+            "timeout",
+            "network",
+            "auth",
+            "data",
+            "contract",
+            "environment",
+            "rate-limit",
+            "resource",
+            "test-script",
+            "test-data",
+            "unknown"
+          ],
+          "title": "Category",
+          "type": "string"
+        },
+        "service": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service"
+        },
+        "exception_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exception Type"
+        },
+        "summary": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "category",
+        "summary",
+        "confidence"
+      ],
+      "title": "FailureHypothesis",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.failure-triage.v2",
+      "default": "agentic-qa.failure-triage.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "collection_id": {
+      "title": "Collection Id",
+      "type": "string"
+    },
+    "execution_id": {
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "case_id": {
+      "title": "Case Id",
+      "type": "string"
+    },
+    "dataset_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset Id"
+    },
+    "execution_evidence_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Execution Evidence Sha256",
+      "type": "string"
+    },
+    "log_evidence_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Log Evidence Sha256",
+      "type": "string"
+    },
+    "log_analysis_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Log Analysis Sha256",
+      "type": "string"
+    },
+    "triage_status": {
+      "enum": [
+        "success",
+        "insufficient_evidence",
+        "failed"
+      ],
+      "title": "Triage Status",
+      "type": "string"
+    },
+    "likelihood": {
+      "enum": [
+        "highly_likely",
+        "probable",
+        "insufficient_evidence"
+      ],
+      "title": "Likelihood",
+      "type": "string"
+    },
+    "primary": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FailureHypothesis"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "alternatives": {
+      "items": {
+        "$ref": "#/$defs/FailureHypothesis"
+      },
+      "maxItems": 3,
+      "title": "Alternatives",
+      "type": "array"
+    },
+    "recommended_actions": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 10,
+      "title": "Recommended Actions",
+      "type": "array"
+    },
+    "available_evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Available Evidence Refs",
+      "type": "array"
+    },
+    "content_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "collection_id",
+    "execution_id",
+    "case_id",
+    "execution_evidence_sha256",
+    "log_evidence_sha256",
+    "log_analysis_sha256",
+    "triage_status",
+    "likelihood",
+    "available_evidence_refs",
+    "content_sha256"
+  ],
+  "title": "FailureTriageV2",
+  "type": "object"
+}
