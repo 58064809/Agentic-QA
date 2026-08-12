@@ -21,6 +21,7 @@
 | `resume_api_cleanup` | `ResumeApiCleanupCommand` | `ResumeApiCleanupResult` | 加密 journal、环境、published hash 和策略 hash 一致 | 只发送 pending cleanup；不重放业务请求或不确定 cleanup |
 | `collect_failure_logs` | `CollectFailureLogsCommand` | `CollectFailureLogsResult` | immutable execution plan、Evidence hash 与根日志配置一致 | 显式读取受限日志范围并写 create-only 脱敏 Log Evidence；不修改 API execution |
 | `analyze_failure` | `AnalyzeFailureCommand` | `AnalyzeFailureResult` | create-only Log Evidence 与 collection manifest hash 一致 | 确定性聚合异常、依赖信号、fingerprint 与可引用 timeline；不调用模型 |
+| `prepare_failure_report` | `PrepareFailureReportCommand` | `PrepareFailureReportResult` | validated FailureTriage v2 及全部 attachment hash 一致 | 创建独立 triage run 与 `failure_analysis`/可选 `bug_draft` Candidate，停在现有 Review Gate |
 | `export_api_pytest` | `ExportApiPytestCommand` | `ApiPytestExportResult` | 来源是 published API YAML，目标位于 workspace `exports/` | 确定性写入 pytest adapter；默认 create-only |
 | `resume_run` | `ResumeRunCommand` | `RunSnapshot` | planning/running/recoverable | 从同一 PostgreSQL thread 恢复 |
 | `review_run` | `ReviewRunCommand` | `RunSnapshot` | run 可审核且人工决定有效 | 写 Review；approve 可发布 |

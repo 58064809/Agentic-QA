@@ -23,6 +23,7 @@ from harness import (
     GenerateApiAllureReportCommand,
     GetArtifactDiffQuery,
     Harness,
+    PrepareFailureReportCommand,
     ResumeApiCleanupCommand,
     ResumeRunCommand,
     ReviewDecision,
@@ -184,6 +185,11 @@ def _parser() -> argparse.ArgumentParser:
     failure_analyze.add_argument("execution_id")
     failure_analyze.add_argument("--case-id")
     failure_analyze.add_argument("--collection-id")
+    failure_report = failure_commands.add_parser("report")
+    failure_report.add_argument("workspace_id")
+    failure_report.add_argument("execution_id")
+    failure_report.add_argument("--case-id")
+    failure_report.add_argument("--collection-id")
     return parser
 
 
@@ -352,6 +358,17 @@ def main(argv: list[str] | None = None) -> int:
             )
             _print(result)
             return 0 if all(item.analysis_status != "failed" for item in result.analyses) else 1
+        if args.command == "failure" and args.failure_command == "report":
+            result = harness.prepare_failure_report(
+                PrepareFailureReportCommand(
+                    workspace_id=args.workspace_id,
+                    execution_id=args.execution_id,
+                    case_id=args.case_id,
+                    collection_id=args.collection_id,
+                )
+            )
+            _print(result)
+            return 0
         if args.command == "api" and args.api_command == "run":
             result = harness.run_api_scenario(
                 RunApiScenarioCommand(

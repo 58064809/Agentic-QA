@@ -147,5 +147,6 @@ def build_application(
             store,
             selected_model,
             local_config,
+            policies,
         ),
     )

@@ -159,3 +159,17 @@ class FailureTriageV2(StrictModel):
         if self.content_sha256 != expected_hash:
             raise ValueError("failure triage content hash does not match")
         return self
+
+
+class BugDraft(StrictModel):
+    schema_version: Literal["agentic-qa.bug-draft.v1"] = "agentic-qa.bug-draft.v1"
+    collection_id: str
+    execution_id: str
+    case_id: str
+    dataset_id: str | None = None
+    title: str = Field(min_length=1, max_length=300)
+    category: FailureCategory
+    likelihood: Literal["highly_likely", "probable"]
+    summary: str = Field(min_length=1, max_length=4000)
+    evidence_refs: list[str] = Field(min_length=1)
+    recommended_actions: list[str] = Field(default_factory=list)

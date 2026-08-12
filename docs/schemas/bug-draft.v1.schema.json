@@ -1,0 +1,102 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.bug-draft.v1",
+      "default": "agentic-qa.bug-draft.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "collection_id": {
+      "title": "Collection Id",
+      "type": "string"
+    },
+    "execution_id": {
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "case_id": {
+      "title": "Case Id",
+      "type": "string"
+    },
+    "dataset_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset Id"
+    },
+    "title": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "category": {
+      "enum": [
+        "application",
+        "dependency",
+        "database",
+        "timeout",
+        "network",
+        "auth",
+        "data",
+        "contract",
+        "environment",
+        "rate-limit",
+        "resource",
+        "test-script",
+        "test-data",
+        "unknown"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "likelihood": {
+      "enum": [
+        "highly_likely",
+        "probable"
+      ],
+      "title": "Likelihood",
+      "type": "string"
+    },
+    "summary": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "recommended_actions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Recommended Actions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "collection_id",
+    "execution_id",
+    "case_id",
+    "title",
+    "category",
+    "likelihood",
+    "summary",
+    "evidence_refs"
+  ],
+  "title": "BugDraft",
+  "type": "object"
+}

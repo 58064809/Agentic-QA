@@ -34,6 +34,7 @@ CORE_FILES = (
     "docs/schemas/execution-evidence.v2.schema.json",
     "docs/schemas/failure-triage.v1.schema.json",
     "docs/schemas/failure-triage.v2.schema.json",
+    "docs/schemas/bug-draft.v1.schema.json",
     "docs/schemas/log-evidence.v1.schema.json",
     "docs/schemas/log-analysis.v1.schema.json",
     "docs/schemas/agent-request.v1.schema.json",

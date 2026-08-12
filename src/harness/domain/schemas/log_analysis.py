@@ -85,3 +85,32 @@ class AnalyzeFailureResult(StrictModel):
     workspace_id: str
     execution_id: str
     analyses: list[FailureAnalysisItem]
+
+
+class PrepareFailureReportCommand(StrictModel):
+    workspace_id: str
+    execution_id: str
+    case_id: str | None = None
+    collection_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_workspace(self) -> PrepareFailureReportCommand:
+        normalize_workspace_id(self.workspace_id)
+        return self
+
+
+class PreparedFailureReport(StrictModel):
+    collection_id: str
+    run_id: str
+    candidate_artifacts: list[Literal["failure_analysis", "bug_draft"]]
+    human_review_required: Literal[True] = True
+
+
+class PrepareFailureReportResult(StrictModel):
+    schema_version: Literal["agentic-qa.harness.prepare-failure-report-result.v1"] = (
+        "agentic-qa.harness.prepare-failure-report-result.v1"
+    )
+    workspace_id: str
+    execution_id: str
+    reports: list[PreparedFailureReport]
+    human_review_required: Literal[True] = True

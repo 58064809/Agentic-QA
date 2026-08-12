@@ -21,6 +21,7 @@ from harness.domain.schemas.log_analysis import (
 from harness.domain.schemas.log_evidence import LogEvidenceBundle
 from harness.infrastructure.failure_analysis import FilesystemFailureAnalysisService
 from harness.infrastructure.failure_logs import FilesystemFailureLogService
+from harness.infrastructure.failure_report import FilesystemFailureReportService
 from harness.infrastructure.persistence.common import create_only_json
 from harness.infrastructure.persistence.filesystem import FilesystemStore
 
@@ -31,14 +32,18 @@ credentials, tools, LogQL, files, or network access."""
 
 
 class FilesystemFailureTriageService:
-    def __init__(self, store: FilesystemStore, model: ModelGateway, local_config) -> None:
+    def __init__(self, store: FilesystemStore, model: ModelGateway, local_config, quality) -> None:
         self._store = store
         self._model = model
         self._analysis = FilesystemFailureAnalysisService(store)
         self._collector = FilesystemFailureLogService(store, local_config)
+        self._reports = FilesystemFailureReportService(store, quality)
 
     def collect(self, command):
         return self._collector.collect(command)
+
+    def prepare_report(self, command):
+        return self._reports.prepare(command)
 
     def analyze(self, command: AnalyzeFailureCommand) -> AnalyzeFailureResult:
         deterministic = self._analysis.analyze(command)

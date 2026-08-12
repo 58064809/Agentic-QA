@@ -13,7 +13,7 @@ from harness.application.agent_request import AgentRequest, AgentRequestResult
 from harness.domain.schemas.api_discovery import ApiDiscoveryCatalog, ApiDiscoveryExport
 from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
-from harness.domain.schemas.failure_triage import FailureTriage, FailureTriageV2
+from harness.domain.schemas.failure_triage import BugDraft, FailureTriage, FailureTriageV2
 from harness.domain.schemas.log_analysis import LogAnalysis
 from harness.domain.schemas.log_evidence import LogEvidenceBundle
 from harness.infrastructure.manifests.registry import KnowledgeRegistry, SkillRegistry
@@ -32,6 +32,7 @@ SCHEMAS = {
     "execution-evidence.v2.schema.json": ExecutionEvidence,
     "failure-triage.v1.schema.json": FailureTriage,
     "failure-triage.v2.schema.json": FailureTriageV2,
+    "bug-draft.v1.schema.json": BugDraft,
     "log-evidence.v1.schema.json": LogEvidenceBundle,
     "log-analysis.v1.schema.json": LogAnalysis,
 }

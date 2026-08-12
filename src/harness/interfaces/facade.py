@@ -37,7 +37,12 @@ from harness.domain.schemas.api_project import ApiProjectCheckCommand, ApiProjec
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.local_config import LocalConfigCheckResult
-from harness.domain.schemas.log_analysis import AnalyzeFailureCommand, AnalyzeFailureResult
+from harness.domain.schemas.log_analysis import (
+    AnalyzeFailureCommand,
+    AnalyzeFailureResult,
+    PrepareFailureReportCommand,
+    PrepareFailureReportResult,
+)
 from harness.domain.schemas.log_evidence import CollectFailureLogsCommand, CollectFailureLogsResult
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.quality import QualityStrategyRegistry
@@ -120,6 +125,11 @@ class Harness:
 
     def analyze_failure(self, command: AnalyzeFailureCommand) -> AnalyzeFailureResult:
         return self._application.analyze_failure(command)
+
+    def prepare_failure_report(
+        self, command: PrepareFailureReportCommand
+    ) -> PrepareFailureReportResult:
+        return self._application.prepare_failure_report(command)
 
     def export_api_pytest(self, command: ExportApiPytestCommand) -> ApiPytestExportResult:
         return self._application.export_api_pytest(command)

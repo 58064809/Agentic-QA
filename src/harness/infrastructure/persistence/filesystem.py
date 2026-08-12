@@ -94,6 +94,9 @@ class FilesystemStore:
     def create_run(self, snapshot: RunSnapshot) -> None:
         self.runs.create_run(snapshot)
 
+    def create_derived_source_bundle(self, workspace: str, run_id: str, documents: dict[str, str]):
+        return self.sources.create_derived_source_bundle(workspace, run_id, documents)
+
     def save_snapshot(self, snapshot: RunSnapshot) -> None:
         self.runs.save_snapshot(snapshot)
 

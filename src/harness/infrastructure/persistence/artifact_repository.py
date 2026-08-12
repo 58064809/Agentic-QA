@@ -4,6 +4,7 @@ import difflib
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 from datetime import datetime, timezone
@@ -84,6 +85,7 @@ class ArtifactReviewFilesystemRepository:
         partial: bool = False,
         evidence: list[str] | None = None,
         api_discovery_export: ApiDiscoveryExport | None = None,
+        attachments: dict[str, tuple[bytes, str]] | None = None,
     ) -> tuple[ArtifactCandidate, bool]:
         workspace_root = self.workspaces.require_workspace(workspace)
         run_root = workspace_root / "candidates" / run_id
@@ -126,6 +128,12 @@ class ArtifactReviewFilesystemRepository:
                     files["discovery-catalog.json"] = _json_bytes(
                         api_discovery_export.model_dump(mode="json")
                     )
+                attachment_manifest: dict[str, dict[str, str]] = {}
+                for name, (content, media_type) in sorted((attachments or {}).items()):
+                    if name in files or not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,127}", name):
+                        raise ValueError(f"invalid or duplicate candidate attachment: {name}")
+                    files[name] = content
+                    attachment_manifest[name] = {"media_type": media_type}
                 hashes: dict[str, str] = {}
                 for name, content in files.items():
                     _write_fsynced(staging / name, content)
@@ -144,6 +152,7 @@ class ArtifactReviewFilesystemRepository:
                     "policy_versions": assessment.report.policy_versions,
                     "created_at": datetime.now(tz=UTC).isoformat(),
                     "files": hashes,
+                    "attachments": attachment_manifest,
                 }
                 _write_fsynced(staging / "manifest.json", _json_bytes(manifest))
                 self._sync_directory(staging)
@@ -355,6 +364,28 @@ class ArtifactReviewFilesystemRepository:
                 "content_sha256": catalog_hash,
                 "media_type": "application/json",
             }
+        candidate = self._candidate(source.parent, version.artifact)
+        for attachment in candidate.attachments:
+            if attachment.name == "discovery-catalog.json":
+                continue
+            attachment_source = (self.repo_root / attachment.path).resolve()
+            if attachment_source.parent != source.parent.resolve():
+                raise ValueError("candidate attachment path is outside candidate bundle")
+            history_attachment = history / f"{snapshot.run_id}.{attachment.name}"
+            current_attachment = published / f"current.{attachment.name}"
+            if history_attachment.is_file():
+                if _sha256_bytes(history_attachment.read_bytes()) != attachment.content_sha256:
+                    raise ValueError("published attachment history hash mismatch")
+            else:
+                shutil.copyfile(attachment_source, history_attachment)
+            temporary_attachment = published / f".current.{snapshot.run_id}.{attachment.name}.tmp"
+            shutil.copyfile(attachment_source, temporary_attachment)
+            os.replace(temporary_attachment, current_attachment)
+            attachments[attachment.name] = {
+                "path": history_attachment.relative_to(workspace).as_posix(),
+                "content_sha256": attachment.content_sha256,
+                "media_type": attachment.media_type,
+            }
         index_path = history / "index.yml"
         index: dict[str, Any] = {
             "schema_version": "agentic-qa.harness.history.v2",
@@ -551,6 +582,18 @@ class ArtifactReviewFilesystemRepository:
                     content_sha256=manifest["files"][catalog_path.name],
                 )
             )
+        for name, metadata in sorted((manifest.get("attachments") or {}).items()):
+            path = final / name
+            if not isinstance(metadata, dict) or not path.is_file():
+                raise ValueError("candidate attachment manifest is invalid")
+            attachments.append(
+                ArtifactAttachment(
+                    name=name,
+                    path=path.relative_to(self.repo_root).as_posix(),
+                    media_type=str(metadata.get("media_type") or "application/octet-stream"),
+                    content_sha256=manifest["files"][name],
+                )
+            )
         extension = ARTIFACT_EXTENSIONS[artifact]
         versions = [
             ArtifactVersion(
@@ -674,6 +717,10 @@ class ArtifactReviewFilesystemRepository:
         }
         if artifact == "api_discovery_report":
             allowed_files.add("discovery-catalog.json")
+        attachment_metadata = manifest.get("attachments") or {}
+        if not isinstance(attachment_metadata, dict):
+            raise ValueError("candidate manifest attachments are invalid")
+        allowed_files.update(attachment_metadata)
         unsupported = sorted(set(files) - allowed_files)
         if unsupported:
             raise ValueError(f"candidate manifest 包含不受支持的文件: {unsupported}")

@@ -79,6 +79,8 @@ from harness.domain.schemas.log_analysis import (
     AnalyzeFailureResult,
     LogAnalysis,
     LogSignal,
+    PrepareFailureReportCommand,
+    PrepareFailureReportResult,
 )
 from harness.domain.schemas.log_evidence import (
     CollectFailureLogsCommand,
@@ -161,6 +163,8 @@ __all__ = [
     "LogQueryRequest",
     "LogQueryResult",
     "LogSignal",
+    "PrepareFailureReportCommand",
+    "PrepareFailureReportResult",
     "NormalizedLogEntry",
     "LocalConfigCheckResult",
     "StaticTokenApiAuthentication",

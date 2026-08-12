@@ -189,6 +189,43 @@ class SourceBundleFilesystemRepository:
                 return self.load_source_bundle(workspace, run_id)
             return self._create_source_bundle(workspace, run_id, run_root, manifest_path)
 
+    def create_derived_source_bundle(
+        self, workspace: str, run_id: str, documents: dict[str, str]
+    ) -> SourceBundle:
+        run_root = self.workspaces.require_workspace(workspace) / "runs" / run_id
+        manifest_path = run_root / "source-bundle.json"
+        with exclusive_file_lock(run_root / ".source-bundle.lock"):
+            if manifest_path.exists():
+                return self.load_source_bundle(workspace, run_id)
+            source_documents = [
+                SourceDocument(
+                    path=path,
+                    raw_sha256=_sha256(text.encode()),
+                    parsed_sha256=_sha256(text.encode()),
+                    byte_size=len(text.encode()),
+                    text=text,
+                    completeness=SourceCompleteness.COMPLETE,
+                )
+                for path, text in sorted(documents.items())
+            ]
+            completeness = SourceCompleteness.COMPLETE
+            payload = self._hash_payload(source_documents, [], completeness, self.limits)
+            bundle = SourceBundle(
+                parser_version=PARSER_VERSION,
+                limits=self.limits,
+                documents=tuple(source_documents),
+                completeness=completeness,
+                bundle_hash=_canonical_hash(payload),
+            )
+            persisted = bundle.model_copy(
+                update={
+                    "documents": tuple(
+                        document.model_copy(update={"text": None}) for document in bundle.documents
+                    )
+                }
+            )
+            return self._commit_source_bundle(run_root, manifest_path, bundle, persisted)
+
     def _create_source_bundle(
         self,
         workspace: str,

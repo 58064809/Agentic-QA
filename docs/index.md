@@ -47,6 +47,7 @@ Agentic-QA 生成 create-only 候选产物，并以人工 Review Gate 隔离 Age
 | Log analysis v1 | [JSON Schema](schemas/log-analysis.v1.schema.json) |
 | Failure triage v1（只读兼容、已冻结） | [JSON Schema](schemas/failure-triage.v1.schema.json) |
 | Failure triage v2 | [JSON Schema](schemas/failure-triage.v2.schema.json) |
+| Bug draft v1 | [JSON Schema](schemas/bug-draft.v1.schema.json) |
 | Failure triage v1 | [JSON Schema](schemas/failure-triage.v1.schema.json) |
 | AgentRequest v1 | [JSON Schema](schemas/agent-request.v1.schema.json) |
 | AgentRequestResult v1 | [JSON Schema](schemas/agent-request-result.v1.schema.json) |

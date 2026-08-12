@@ -34,6 +34,7 @@
 ```powershell
 python -m harness failure collect <workspace> <execution-id> [--case-id <case/dataset-id>]
 python -m harness failure analyze <workspace> <execution-id> [--case-id <case/dataset-id>] [--collection-id <id>]
+python -m harness failure report <workspace> <execution-id> [--case-id <case/dataset-id>] [--collection-id <id>]
 ```
 
 `failure collect` 是显式触发的只读日志采集。默认选择 ExecutionEvidence 中全部 `failed`，以及
@@ -42,6 +43,9 @@ python -m harness failure analyze <workspace> <execution-id> [--case-id <case/da
 的 create-only `triage/collections/<collection-id>/`，重复相同输入复用原 collection。
 `failure analyze` 从已验证的 Log Evidence 生成确定性 `log-analysis.json`，其中 fingerprint、
 occurrence、时间线和 `LOG-*` 引用均可复算；该命令不调用模型。
+`failure report` 为每个 collection 创建独立 triage run。`failure_analysis` 始终进入 Candidate；
+只有产品、依赖、数据库等具有有效引用且至少 probable 的结果才增加 `bug_draft`。后续继续使用
+`run diff` 与 `run review`，命令本身不批准、不发布，也不创建外部 Issue。
 
 | 命令 | 关键参数 |
 |---|---|
