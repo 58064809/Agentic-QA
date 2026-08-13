@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -44,6 +44,8 @@ from harness.domain.schemas.trace_evidence import (
 from harness.infrastructure.failure_trace_analysis import derive_trace_analysis
 from harness.infrastructure.log_sanitization import sanitize_log_text
 from harness.infrastructure.tools.openapi import inspect_openapi
+
+UTC = timezone.utc
 
 
 class GoldenExpectation(StrictModel):

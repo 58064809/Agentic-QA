@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from harness.domain.schemas.log_analysis import LogAnalysis, LogSignal
 from harness.domain.schemas.log_evidence import (
@@ -13,6 +13,8 @@ from harness.domain.schemas.log_evidence import (
 )
 from harness.domain.schemas.trace_evidence import NormalizedTraceSpan
 from harness.infrastructure.root_cause_graph import build_root_cause_graph
+
+UTC = timezone.utc
 
 
 def _hashed(model, values):

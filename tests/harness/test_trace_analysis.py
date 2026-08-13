@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from harness.domain.schemas.trace_evidence import (
     NormalizedTraceSpan,
@@ -10,6 +10,8 @@ from harness.domain.schemas.trace_evidence import (
     TraceQueryRequest,
 )
 from harness.infrastructure.failure_trace_analysis import derive_trace_analysis
+
+UTC = timezone.utc
 
 
 def _bundle(specs: list[dict]) -> TraceEvidenceBundle:

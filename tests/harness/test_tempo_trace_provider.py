@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from harness.domain.schemas.local_config import LocalTracesConfig
 from harness.domain.schemas.trace_evidence import TraceQueryRequest
 from harness.infrastructure.failure_traces import TempoTraceProvider
+
+UTC = timezone.utc
 
 TRACE_BYTES = bytes.fromhex("4bf92f3577b34da6a3ce929d0e0e4736")
 SPAN_BYTES = bytes.fromhex("00f067aa0ba902b7")

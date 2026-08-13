@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -12,6 +12,8 @@ from harness.domain.schemas.trace_evidence import (
     TraceEvidenceBundle,
     TraceQueryRequest,
 )
+
+UTC = timezone.utc
 
 
 def _digest(payload: dict) -> str:

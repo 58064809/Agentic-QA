@@ -6,7 +6,7 @@ import json
 import os
 import re
 import stat
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -22,6 +22,8 @@ from harness.domain.schemas.trace_evidence import (
     TraceQueryResult,
 )
 from harness.domain.security import build_api_request_url, validate_api_response_url
+
+UTC = timezone.utc
 
 REPARSE_POINT = 0x400
 SAFE_TRACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,255}$")
