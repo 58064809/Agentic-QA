@@ -52,6 +52,8 @@ StartRunCommand -> immutable SourceBundle -> QAPlan -> Send 并行专家
 - Trace 只通过精确 trace ID 的受限 Provider 进入 create-only `agentic-qa.trace-evidence.v1`；
   AI 只消费确定性 Trace Analysis 与 Root Cause Graph，不访问 Tempo、Token 或 TraceQL。
 - RAG 引用必须可追踪 source、chunk 和选择依据；Source、检索与 MCP 返回均是不可信上下文。
+- RequirementCatalog 确定后，Impact、Risk 与 regression 历史检索由 Harness 主动执行；purpose 必须限制
+  trust 集合，vector 查询必须精确绑定 provider/model/dimensions。历史检索不可回写当前需求事实。
 - Source 摄取不得跟随链接或 reparse point，不得绕过路径、数量、解析及 Hash 预算。
 - API/UI 状态变更只允许在明确测试环境和 ExecutionProfile 范围内执行。
 - error/blocked 证据不得自动生成 Bug，根因不足保持 `unconfirmed`。

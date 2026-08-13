@@ -26,6 +26,13 @@
           "minLength": 1,
           "title": "Rationale",
           "type": "string"
+        },
+        "retrieval_evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Retrieval Evidence Refs",
+          "type": "array"
         }
       },
       "required": [
@@ -80,6 +87,46 @@
             "type": "string"
           },
           "title": "Pending Items",
+          "type": "array"
+        },
+        "decision_table_combinations": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Decision Table Combinations",
+          "type": "array"
+        },
+        "pairwise_combinations": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Pairwise Combinations",
+          "type": "array"
+        },
+        "cause_effect_paths": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Cause Effect Paths",
+          "type": "array"
+        },
+        "role_state_config_combinations": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Role State Config Combinations",
           "type": "array"
         }
       },

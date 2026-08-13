@@ -34,6 +34,7 @@
 | Hybrid Retrieval 与完整 provenance | 已实现 | FTS + cosine + RRF k=60、受限 filters、可插拔 model reranker |
 | Requirement Delta / Impact / Risk v2 | 已实现 | 五类 Delta、evidence trust cap、四因子确定性评分 |
 | Advanced Test Design Plan | 已实现 | 决策表、pairwise、cause-effect、role-state-config、negative/error/regression 适用性 |
+| Historical intelligence vertical loop | 已实现 | 主动 impact/risk/regression retrieval、失败 fingerprint 聚合、历史用例决策、plan-before-generation |
 
 ## 计划中
 

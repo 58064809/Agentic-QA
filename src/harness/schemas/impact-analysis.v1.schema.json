@@ -89,6 +89,13 @@
       },
       "title": "Claims",
       "type": "array"
+    },
+    "retrieval_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Retrieval Ids",
+      "type": "array"
     }
   },
   "required": [

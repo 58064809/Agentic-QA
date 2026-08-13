@@ -48,6 +48,10 @@ intentionally_distinct` 复核决策，不自动复制或删除。
 渲染后，`generic-artifact-contracts` 会重新解析 Markdown，复验 11 列、用例引用、覆盖矩阵、占位
 映射、原子性和来源未支持的实现细节。此门负责确定性审核，人工 Review Gate 仍负责批准决定。
 
+TestDesignPlan 在首个 Test Designer model call 前完成。decision table、pairwise、cause-effect 与
+role × state × config 不只记录方法名：Plan 保存有界组合/关系，TestCase 用对应 `covered_*` 字段声明
+实际覆盖，Harness 在 Candidate 前逐项比对；组合预算超限进入 pending item，不静默省略。
+
 ## 覆盖矩阵
 
 | 要求 | 验证 |

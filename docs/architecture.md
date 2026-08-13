@@ -98,6 +98,11 @@ StartRunCommand
 需求目录只生产一次。给用户看的 `requirement_analysis.md` 和 Risk/Test Designer 使用的规则来自同一个
 `RequirementCatalog`，因此不存在两份分析事实源。
 
+历史 Impact、Risk 与 Regression 证据由 Harness 在 Catalog 确定后主动检索。审核契约可形成 potential
+API 影响，审核缺陷、FailureTriage 和完整 Execution Evidence 可形成结构化失败 fingerprint，审核
+TestCase 可形成 `covered | regression_gap | intentionally_distinct` 决策；它们不改变当前规则事实。
+TestDesignPlan 在任何 Test Designer 调用前构建，并作为每个 bounded rule batch 的强类型输入。
+
 ## 结构化设计契约
 
 | 模型 | 作用 | 关键约束 |

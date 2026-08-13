@@ -50,6 +50,19 @@ superseded/deprecated；Repository 查询均包含 workspace，current source �
 审计记录 query、purpose、filters、各阶段 rank/score、selected chunks、source Hash、index version 与
 reranker 状态；最终 provenance 使用 retrieval ID + chunk ID。
 
+## Requirement Intelligence 主动检索策略
+
+Harness 在当前 RequirementCatalog 已冻结之后，按规则主动执行 `impact`、`risk` 与 `regression`
+检索；这些检索不依赖 Agent 是否主动调用工具。`requirement` 只接受 current source、reviewed
+requirement 与 reviewed contract，`impact` 可读取审核需求、契约、测试资产、缺陷和完整执行证据，
+`risk` 只读取审核缺陷、执行证据与审核测试资产，`regression` 只读取审核测试、需求、缺陷与执行证据。
+历史证据不回写 RequirementCatalog，也不升级为 confirmed requirement。
+
+每个 vector 查询都精确匹配 `provider + model + dimensions` 的 embedding association。同一稳定
+chunk 可同时关联多个 embedding space；切换模型会补建新 association，旧向量不会冒充当前索引。
+Retrieval provenance 记录 `provider:model:dimensions:chunker-version`，离线 gate 要求 embedding space、
+workspace、freshness 与 trust leakage 全部为 0。
+
 ## Provider
 
 默认 embedding profile 使用固定 1536 维确定性本地 adapter；`openai-compatible` 的 Base URL、

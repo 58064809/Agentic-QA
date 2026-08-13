@@ -85,6 +85,9 @@
       "enum": [
         "current_source",
         "reviewed_requirement",
+        "reviewed_contract",
+        "reviewed_test_asset",
+        "reviewed_bug",
         "reviewed_asset",
         "execution_evidence",
         "reference_only"
@@ -278,6 +281,11 @@
           "title": "Index Version",
           "type": "string"
         },
+        "embedding_index_identity": {
+          "minLength": 1,
+          "title": "Embedding Index Identity",
+          "type": "string"
+        },
         "candidate_count": {
           "minimum": 0,
           "title": "Candidate Count",
@@ -308,6 +316,7 @@
         "retrieval_id",
         "strategy",
         "index_version",
+        "embedding_index_identity",
         "candidate_count",
         "selected_chunk_ids",
         "reranker",

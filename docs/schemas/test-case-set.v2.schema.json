@@ -162,6 +162,46 @@
           },
           "title": "Covered Transitions",
           "type": "array"
+        },
+        "covered_decision_combinations": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Covered Decision Combinations",
+          "type": "array"
+        },
+        "covered_pairwise_combinations": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Covered Pairwise Combinations",
+          "type": "array"
+        },
+        "covered_cause_effects": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Covered Cause Effects",
+          "type": "array"
+        },
+        "covered_role_state_config": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Covered Role State Config",
+          "type": "array"
         }
       },
       "required": [
