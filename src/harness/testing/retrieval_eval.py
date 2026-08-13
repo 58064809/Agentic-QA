@@ -28,6 +28,9 @@ def score_retrieval_golden(records: Iterable[dict[str, Any]]) -> RetrievalEvalMe
     returned = 0
     superseded = 0
     cross_workspace = 0
+    embedding_mismatch = 0
+    wrong_trust = 0
+    superseded_current_fact = 0
     for record in records:
         expected_chunks = set(record.get("expected_chunk_ids") or [])
         expected_sources = set(record.get("expected_sources") or [])
@@ -48,6 +51,20 @@ def score_retrieval_golden(records: Iterable[dict[str, Any]]) -> RetrievalEvalMe
         returned += len(results)
         superseded += sum(item.get("freshness") in {"superseded", "deprecated"} for item in results)
         cross_workspace += sum(item.get("workspace_id") != workspace_id for item in results)
+        expected_embedding = record.get("expected_embedding_index_identity")
+        allowed_trust = set(record.get("allowed_trust") or [])
+        embedding_mismatch += sum(
+            bool(expected_embedding) and item.get("embedding_index_identity") != expected_embedding
+            for item in results
+        )
+        wrong_trust += sum(
+            bool(allowed_trust) and item.get("trust") not in allowed_trust for item in results
+        )
+        superseded_current_fact += sum(
+            record.get("fact_scope") == "current"
+            and item.get("freshness") in {"superseded", "deprecated"}
+            for item in results
+        )
     count = len(records)
     recall = sum(recalls) / count
     mrr = sum(reciprocal_ranks) / count
@@ -60,6 +77,9 @@ def score_retrieval_golden(records: Iterable[dict[str, Any]]) -> RetrievalEvalMe
         and wrong_rate <= 0.05
         and superseded == 0
         and cross_workspace == 0
+        and embedding_mismatch == 0
+        and wrong_trust == 0
+        and superseded_current_fact == 0
     )
     return RetrievalEvalMetrics(
         query_count=count,
@@ -69,6 +89,9 @@ def score_retrieval_golden(records: Iterable[dict[str, Any]]) -> RetrievalEvalMe
         wrong_source_rate=wrong_rate,
         superseded_leakage=superseded,
         cross_workspace_leakage=cross_workspace,
+        embedding_space_mismatch_leakage=embedding_mismatch,
+        wrong_trust_promotion=wrong_trust,
+        superseded_current_fact_leakage=superseded_current_fact,
         passed=passed,
     )
 

@@ -5,7 +5,11 @@ import hashlib
 import pytest
 
 from harness.application.requirement_intelligence import (
+    augment_impact_analysis,
     build_test_design_plan,
+    derive_historical_risk_signals,
+    derive_historical_test_context,
+    derive_impact_analysis,
     derive_requirement_delta,
     generate_pairwise,
     match_semantic_continuations,
@@ -13,7 +17,15 @@ from harness.application.requirement_intelligence import (
     validate_historical_test_decisions,
     validate_impact_analysis,
 )
-from harness.domain.schemas.knowledge import KnowledgeTrust
+from harness.domain.schemas.knowledge import (
+    KnowledgeFreshness,
+    KnowledgeMetadata,
+    KnowledgeTrust,
+    RetrievalCandidate,
+    RetrievalProvenance,
+    RetrievalQuery,
+    RetrievalResult,
+)
 from harness.domain.schemas.qa_design import (
     BoundaryRequirement,
     EvidenceLevel,
@@ -31,6 +43,8 @@ from harness.domain.schemas.requirement_intelligence import (
     HistoricalTestDecision,
     ImpactAnalysis,
     ImpactClaim,
+    RequirementDelta,
+    RequirementDeltaItem,
     SemanticContinuationMatch,
     SemanticContinuationProposal,
 )
@@ -244,3 +258,116 @@ def test_risk_v2_priority_is_derived_from_four_factors() -> None:
 def test_semantic_contract_fixture_hash_is_stable() -> None:
     plan = build_test_design_plan(RequirementCatalog(rules=[_rule("PAY-001")]))
     assert len(hashlib.sha256(plan.model_dump_json().encode()).hexdigest()) == 64
+
+
+def _retrieval(content: str, trust: KnowledgeTrust, source: str = "published/asset.json"):
+    query = RetrievalQuery(
+        workspace_id="demo", run_id="run", query="payment approval", purpose="reference"
+    )
+    metadata = KnowledgeMetadata(
+        workspace_id="demo",
+        project_key="demo",
+        document_type="asset",
+        freshness=KnowledgeFreshness.HISTORICAL,
+        trust=trust,
+        run_id="old-run",
+    )
+    chunk = RetrievalCandidate(
+        chunk_id="CHUNK-1",
+        document_id="DOC-1",
+        source_identity=source,
+        chunk_ordinal=0,
+        source_sha256="sha256:" + "1" * 64,
+        content=content,
+        fused_score=1.0,
+        metadata=metadata,
+    )
+    return RetrievalResult.model_construct(
+        query=query,
+        chunks=[chunk],
+        provenance=RetrievalProvenance(
+            retrieval_id="RET-1",
+            strategy="postgres-hybrid-rrf",
+            index_version="v3",
+            embedding_index_identity="provider:model:1536:chunker",
+            candidate_count=1,
+            selected_chunk_ids=["CHUNK-1"],
+            reranker="none",
+            filters_sha256="sha256:" + "2" * 64,
+        ),
+        content_sha256="sha256:" + "3" * 64,
+    )
+
+
+def test_historical_contract_and_bug_enrich_impact_without_changing_catalog() -> None:
+    catalog = RequirementCatalog(rules=[_rule("PAY-001")])
+    original = catalog.model_dump_json()
+    impact = augment_impact_analysis(
+        derive_impact_analysis(workspace_id="demo", run_id="run", catalog=catalog),
+        catalog=catalog,
+        retrievals=[
+            _retrieval(
+                '{"note":"PAY-001 payment approval","paths":{"/payments":{"post":{}}}}',
+                KnowledgeTrust.REVIEWED_CONTRACT,
+                "published/openapi.json",
+            )
+        ],
+    )
+    assert any(item.kind == "api" and item.relation == "potential" for item in impact.claims)
+    assert impact.retrieval_ids == ["RET-1"]
+    assert catalog.model_dump_json() == original
+
+
+def test_historical_failure_fingerprints_aggregate_and_ignore_unrelated() -> None:
+    content = (
+        '{"category":"timeout","stable_case_identity":"PAY-001",'
+        '"service":"payment","dependency":"ledger","failure_type":"deadline",'
+        '"occurrence_count":2,"note":"payment approval PAY-001"}'
+    )
+    signals = derive_historical_risk_signals(
+        RequirementCatalog(rules=[_rule("PAY-001")]),
+        [
+            _retrieval(content, KnowledgeTrust.REVIEWED_BUG),
+            _retrieval(content, KnowledgeTrust.REVIEWED_BUG),
+            _retrieval(
+                '{"category":"crash","stable_case_identity":"SEARCH-999"}',
+                KnowledgeTrust.REVIEWED_BUG,
+            ),
+        ],
+    )
+    assert len(signals) == 1
+    assert signals[0].occurrence_count == 4
+    assert signals[0].rule_ids == ["PAY-001"]
+
+
+def test_reviewed_historical_case_drives_regression_gap_before_generation() -> None:
+    historical = _case("TC-PAY-001", "approve payment")
+    delta = RequirementDelta(
+        workspace_id="demo",
+        baseline_run_id="old",
+        current_run_id="run",
+        items=[
+            RequirementDeltaItem(
+                delta_id="DELTA-001",
+                kind="MODIFIED",
+                old_rule_id="PAY-001",
+                new_rule_id="PAY-001",
+                reason="boundary changed",
+                evidence_refs=["OLD:PAY-001", "NEW:PAY-001"],
+            )
+        ],
+    )
+    historical_cases, decisions = derive_historical_test_context(
+        RequirementCatalog(rules=[_rule("PAY-001")]),
+        delta=delta,
+        retrievals=[_retrieval(historical.model_dump_json(), KnowledgeTrust.REVIEWED_TEST_ASSET)],
+    )
+    assert historical_cases
+    assert decisions[0].decision == "regression_gap"
+    plan = build_test_design_plan(
+        RequirementCatalog(rules=[_rule("PAY-001")]),
+        delta=delta,
+        historical_tests=decisions,
+        retrieval_ids=["RET-1"],
+    )
+    assert plan.historical_tests[0].retrieval_evidence_refs
