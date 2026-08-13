@@ -47,6 +47,47 @@
           "default": null,
           "title": "Exception Type"
         },
+        "dependency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dependency"
+        },
+        "failure_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Type"
+        },
+        "evidence_strength": {
+          "anyOf": [
+            {
+              "enum": [
+                "strong",
+                "medium",
+                "weak"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Strength"
+        },
         "summary": {
           "maxLength": 2000,
           "minLength": 1,
@@ -114,14 +155,69 @@
       "type": "string"
     },
     "log_evidence_sha256": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Log Evidence Sha256",
-      "type": "string"
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Log Evidence Sha256"
     },
     "log_analysis_sha256": {
-      "pattern": "^[a-f0-9]{64}$",
-      "title": "Log Analysis Sha256",
-      "type": "string"
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Log Analysis Sha256"
+    },
+    "trace_evidence_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Trace Evidence Sha256"
+    },
+    "trace_analysis_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Trace Analysis Sha256"
+    },
+    "root_cause_graph_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Root Cause Graph Sha256"
     },
     "triage_status": {
       "enum": [
@@ -186,8 +282,6 @@
     "execution_id",
     "case_id",
     "execution_evidence_sha256",
-    "log_evidence_sha256",
-    "log_analysis_sha256",
     "triage_status",
     "likelihood",
     "available_evidence_refs",

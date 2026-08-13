@@ -49,6 +49,8 @@ StartRunCommand -> immutable SourceBundle -> QAPlan -> Send 并行专家
   仅完整 OpenAPI 可确认 endpoint 事实。
 - 新 API 执行事实使用 `agentic-qa.execution-evidence.v2`，新失败分诊使用
   `agentic-qa.failure-triage.v2`；各自 v1 契约只读兼容且不可改写。
+- Trace 只通过精确 trace ID 的受限 Provider 进入 create-only `agentic-qa.trace-evidence.v1`；
+  AI 只消费确定性 Trace Analysis 与 Root Cause Graph，不访问 Tempo、Token 或 TraceQL。
 - RAG 引用必须可追踪 source、chunk 和选择依据；Source、检索与 MCP 返回均是不可信上下文。
 - Source 摄取不得跟随链接或 reparse point，不得绕过路径、数量、解析及 Hash 预算。
 - API/UI 状态变更只允许在明确测试环境和 ExecutionProfile 范围内执行。

@@ -196,6 +196,19 @@
           "default": null,
           "title": "Trace Id"
         },
+        "span_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Span Id"
+        },
         "request_id": {
           "anyOf": [
             {

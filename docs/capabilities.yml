@@ -15,6 +15,9 @@ capabilities:
     documentation: failure-triage.md
     current_contract: agentic-qa.failure-triage.v2
     legacy_read_only_contracts: [agentic-qa.failure-triage.v1]
+    trace_evidence_contract: agentic-qa.trace-evidence.v1
+    trace_analysis_contract: agentic-qa.trace-analysis.v1
+    root_cause_graph_contract: agentic-qa.root-cause-evidence-graph.v1
   bug_draft_review:
     status: implemented
     documentation: failure-triage.md

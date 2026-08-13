@@ -210,6 +210,27 @@ logs:
 
 Loki 原始响应和 Token 不落盘；只有经过脱敏、范围验证和条数限制的标准化条目进入 Log Evidence。
 
+`traces` 默认 `provider: none`。Local fixture 固定在 `local-traces/`，Tempo 使用精确 trace ID 的 v2
+读取接口；production-like 环境在两类 Provider 中均被拒绝，并有 span/字节上限：
+
+```yaml
+traces:
+  provider: tempo
+  allowed_environments: [dev, test, qa, staging]
+  query:
+    default_max_spans: 1000
+    hard_max_spans: 5000
+    max_response_bytes: 2097152
+  tempo:
+    base_url: https://tempo.qa.example.com
+    trusted_origins: [https://tempo.qa.example.com]
+    token: secret://traces.tempo.token
+    timeout_seconds: 15
+```
+
+Tempo token 由现有 Secret Provider 解析。Provider 关闭重定向，只接受 HTTPS trusted origin，并且
+不会向 AI 暴露 backend URL 凭据、Token 或 TraceQL。
+
 workspace 只保存服务名、环境、非敏感执行策略与结构 SHA-256。手机号、密码、验证码、AES Key、
 Token、数据库密码和连接器凭据每次运行都通过 Secret Provider 重新解析。凭据值变化沿用已有 Review；Base URL、
 trusted Origin、方法 allowlist、登录路径、算法或 Token 注入规则变化会阻止请求，并进入新的 prepare 和

@@ -41,6 +41,9 @@ workspaces/<workspace_id>/
         ├── collection-manifest.json
         ├── log-evidence.json
         ├── log-analysis.json
+        ├── trace-evidence.json       # source 包含 traces 且产生审计结果时存在
+        ├── trace-analysis.json       # Trace Evidence 存在时产生
+        ├── root-cause-graph.json
         ├── failure-triage.json
         └── bug-draft.json         # Bug Gate 通过时存在
 ```
@@ -64,7 +67,7 @@ workspaces/<workspace_id>/
 | execution plan | published 与执行策略的脱敏冻结快照 | create-only | 请求前冻结；cleanup resume 和历史报告从这里解析原发布版本 |
 | cleanup journal | AES-256-GCM 加密的 armed/pending/running 状态 | 原子替换 | armed 供人工核对；仅恢复从未发送的 pending cleanup |
 | Allure results/history/report | Evidence 的展示投影 | 可重新生成 | 状态浏览、趋势与回归 |
-| Failure collection 产物 | 脱敏日志、确定性分析、引用式分诊和可选 Bug Draft | collection 内 create-only | 显式失败分诊；不修改原 execution |
+| Failure collection 产物 | 脱敏日志/调用链、确定性分析与证据图、引用式分诊和可选 Bug Draft | staging 后原子提交；collection 内 create-only | 显式失败分诊；不修改原 execution |
 
 历史 Allure 重建以 execution 目录中的 immutable Execution Plan 为入口，再精确解析 published
 history；workspace 当前服务绑定、current YAML、认证和安全策略不参与历史结果解释。Plan、manifest、

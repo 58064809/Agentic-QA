@@ -1,0 +1,438 @@
+{
+  "$defs": {
+    "NormalizedTraceSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "trace_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Trace Id",
+          "type": "string"
+        },
+        "span_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Span Id",
+          "type": "string"
+        },
+        "parent_span_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Span Id"
+        },
+        "service": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Service",
+          "type": "string"
+        },
+        "operation": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Operation",
+          "type": "string"
+        },
+        "span_kind": {
+          "enum": [
+            "server",
+            "client",
+            "producer",
+            "consumer",
+            "internal",
+            "unknown"
+          ],
+          "title": "Span Kind",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "ended_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ended At"
+        },
+        "status": {
+          "default": "unset",
+          "enum": [
+            "ok",
+            "error",
+            "unset"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "error_type": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Type"
+        },
+        "error_message_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Message Digest"
+        },
+        "http_method": {
+          "anyOf": [
+            {
+              "maxLength": 16,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Http Method"
+        },
+        "http_status_code": {
+          "anyOf": [
+            {
+              "maximum": 599,
+              "minimum": 100,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Http Status Code"
+        },
+        "rpc_system": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rpc System"
+        },
+        "db_system": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Db System"
+        },
+        "peer_service": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Peer Service"
+        },
+        "evidence_ref": {
+          "pattern": "^TRACE-[0-9]{6}$",
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "duration_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration Ms"
+        }
+      },
+      "required": [
+        "trace_id",
+        "span_id",
+        "service",
+        "operation",
+        "span_kind",
+        "started_at",
+        "evidence_ref"
+      ],
+      "title": "NormalizedTraceSpan",
+      "type": "object"
+    },
+    "ProviderDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "service": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service"
+        },
+        "detail": {
+          "minLength": 1,
+          "title": "Detail",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "detail"
+      ],
+      "title": "ProviderDiagnostic",
+      "type": "object"
+    },
+    "TraceQueryRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "workspace_id": {
+          "title": "Workspace Id",
+          "type": "string"
+        },
+        "execution_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Execution Id",
+          "type": "string"
+        },
+        "case_id": {
+          "minLength": 1,
+          "title": "Case Id",
+          "type": "string"
+        },
+        "dataset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dataset Id"
+        },
+        "environment": {
+          "minLength": 1,
+          "title": "Environment",
+          "type": "string"
+        },
+        "trace_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Trace Id",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "completed_at": {
+          "format": "date-time",
+          "title": "Completed At",
+          "type": "string"
+        },
+        "max_spans": {
+          "default": 1000,
+          "maximum": 5000,
+          "minimum": 1,
+          "title": "Max Spans",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "workspace_id",
+        "execution_id",
+        "case_id",
+        "environment",
+        "trace_id",
+        "started_at",
+        "completed_at"
+      ],
+      "title": "TraceQueryRequest",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.trace-evidence.v1",
+      "default": "agentic-qa.trace-evidence.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "collection_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Collection Id",
+      "type": "string"
+    },
+    "execution_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "case_id": {
+      "minLength": 1,
+      "title": "Case Id",
+      "type": "string"
+    },
+    "dataset_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset Id"
+    },
+    "trace_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "title": "Trace Id",
+      "type": "string"
+    },
+    "execution_evidence_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Execution Evidence Sha256",
+      "type": "string"
+    },
+    "provider": {
+      "enum": [
+        "local-file",
+        "tempo"
+      ],
+      "title": "Provider",
+      "type": "string"
+    },
+    "provider_structure_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Provider Structure Sha256",
+      "type": "string"
+    },
+    "query": {
+      "$ref": "#/$defs/TraceQueryRequest"
+    },
+    "status": {
+      "enum": [
+        "success",
+        "not_found",
+        "failed"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "spans": {
+      "items": {
+        "$ref": "#/$defs/NormalizedTraceSpan"
+      },
+      "maxItems": 5000,
+      "title": "Spans",
+      "type": "array"
+    },
+    "root_span_ref": {
+      "anyOf": [
+        {
+          "pattern": "^TRACE-[0-9]{6}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Root Span Ref"
+    },
+    "diagnostics": {
+      "items": {
+        "$ref": "#/$defs/ProviderDiagnostic"
+      },
+      "title": "Diagnostics",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "content_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "collection_id",
+    "execution_id",
+    "case_id",
+    "trace_id",
+    "execution_evidence_sha256",
+    "provider",
+    "provider_structure_sha256",
+    "query",
+    "status",
+    "created_at",
+    "content_sha256"
+  ],
+  "title": "TraceEvidenceBundle",
+  "type": "object"
+}

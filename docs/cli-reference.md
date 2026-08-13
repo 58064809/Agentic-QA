@@ -32,18 +32,19 @@
 ### Failure Triage
 
 ```powershell
-python -m harness failure collect <workspace> <execution-id> [--case-id <case/dataset-id>]
+python -m harness failure collect <workspace> <execution-id> [--case-id <case/dataset-id>] [--source logs|traces|all]
 python -m harness failure analyze <workspace> <execution-id> [--case-id <case/dataset-id>] [--collection-id <id>]
 python -m harness failure report <workspace> <execution-id> [--case-id <case/dataset-id>] [--collection-id <id>]
 ```
 
-`failure collect` 是显式触发的只读日志采集。默认选择 ExecutionEvidence 中全部 `failed`，以及
-已经发送请求的 `error` 实例；blocked 和未发送请求的 error 不查询日志。成功或有效空结果返回
+`failure collect` 是显式触发的只读 evidence 采集，`--source` 默认是 `logs`，也可选择 `traces`
+或 `all`。默认选择 ExecutionEvidence 中全部 `failed`，以及已经发送请求的 `error` 实例；blocked
+和未发送请求的 error 不查询 Provider。成功或有效空结果返回
 0，部分 provider 失败返回 1，配置、身份、生产环境或 hash 错误返回 2。产物写入对应 execution
 的 create-only `triage/collections/<collection-id>/`，重复相同输入复用原 collection。
-`failure analyze` 从已验证的 Log Evidence 生成确定性 `log-analysis.json`，其中 fingerprint、
-occurrence、时间线和 `LOG-*` 引用均可复算；随后调用受限 `failure_triager` 模型，只向模型提供
-脱敏执行事实、聚合分析和允许引用表，并写入 `failure-triage.json`。模型或结构化校验失败时
+`failure analyze` 从存在的 Evidence 生成确定性 `log-analysis.json`、`trace-analysis.json` 和
+`root-cause-graph.json`；随后调用受限 `failure_triager` 模型，Runtime/Live Eval 共用同一 Engine，且只提供脱敏派生
+事实及 `EXEC-*`/`LOG-*`/`TRACE-*` 允许引用表，并写入 `failure-triage.json`。模型或校验失败时
 `triage_status=failed`，命令返回 1；有效的 `insufficient_evidence` 返回 0。
 同一 case/dataset 存在多个 collection 且未指定 `--collection-id` 时，`analyze/report` fail closed，
 避免用文件时间推测用户意图。
@@ -70,7 +71,7 @@ python -m harness eval failure-triage-live
 
 Live Eval 的 case 和输出目录是一次性 CLI 选择，不再读取 `AGENTIC_QA_LIVE_EVAL_CASE` 或
 `AGENTIC_QA_LIVE_EVAL_OUTPUT`。
-`eval run` 包含离线 Failure Triage 契约/安全 Golden；`failure-triage-live` 使用当前模型路由和当前
+`eval run` 包含离线 Failure Triage 契约/安全与 Trace root-cause Golden；`failure-triage-live` 使用当前模型路由和当前
 分诊 Prompt，属于独立 Nightly Live Eval。
 
 ## Agent Request 与 MCP

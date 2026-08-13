@@ -27,6 +27,7 @@
 | TestRail 只读测试资产连接器 | 已实现 | 固定查询 allowlist、Secret Provider 凭据、分页与响应预算、run 工具记录 |
 | Qase 只读测试资产连接器 | 已实现 | 独立强类型配置、固定 GET 端点、Secret Provider Token、分页与响应预算 |
 | Failure Triage LocalFile/Loki 日志采集 | 已实现 | 显式触发、非生产环境、服务与时间窗有界、落盘前脱敏 |
+| Trace-assisted Failure Triage | 已实现 | Local/Tempo exact trace、immutable Trace Evidence、确定性分析与 Log/Trace 证据图 |
 | 引用式 FailureTriage v2 与 Bug Draft Candidate | 已实现 | 当前模型 Prompt 仅消费脱敏事实；Bug Gate 后仍停在既有 Review Gate |
 | Failure Triage 离线契约 Golden 与 Nightly Live Eval | 已实现 | 离线安全/契约门与真实模型 Prompt/路由分开评测 |
 

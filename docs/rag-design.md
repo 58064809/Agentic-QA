@@ -9,7 +9,7 @@ RAG 用于按规则核对证据，不再作为“全量来源已经塞入 Prompt
   → 每个文件独立结构化提取
   → RequirementCatalog（source_ref / chunk_id / selection_reason）
   → RiskCatalog
-  → 有界 rule batch（当前每批 6 条）
+  → 有界 rule batch
   → 每批独立生成并确定性合并 TestCaseSet
   → 需要核证时按 rule_id/source_ref 调用 rag.retrieve
 ```

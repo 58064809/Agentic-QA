@@ -15,6 +15,22 @@ API 试跑的审计事实保存在 workspace 的 `evidence.json`，执行过程�
 
 ## API 执行链路
 
+Trace-assisted Failure Triage 作为 execution 之后的独立 projection：
+
+```text
+Execution Evidence + correlation
+  → bounded LogProvider / TraceProvider
+  → immutable Log/Trace Evidence
+  → deterministic Log/Trace Analysis
+  → Root Cause Evidence Graph
+  → shared FailureTriageEngine
+  → FailureTriage v2 / Bug Draft Candidate
+  → Human Review Gate
+```
+
+Provider 失败不修改 execution、test、cleanup 或 report truth。Tempo 只按精确 trace ID 读取，不向
+Agent、MCP 或模型提供 TraceQL、凭据或任意后端搜索能力。
+
 新执行写入 `agentic-qa.execution-evidence.v2`：每个 case/dataset 明确记录请求是否已发送，
 并从响应头提取受限 correlation context。`traceparent`、`x-trace-id`、request ID 和固定
 correlation header 按确定性优先级处理；额外 header 的启用条件是根配置 allowlist。v1 已冻结，
@@ -56,7 +72,7 @@ StartRunCommand
   → 冲突保留并合并为唯一 RequirementCatalog
   → 确定性渲染 requirement_analysis.md
   → RiskCatalog（只消费 RequirementCatalog）
-  → 当前每批 6 条规则的独立 Test Designer 调用
+  → 有界 rule batch 的独立 Test Designer 调用
   → 批次 TestCaseSet 强类型校验与确定性合并
   → 跨目录确定性校验
   → 确定性渲染 testcases.md
