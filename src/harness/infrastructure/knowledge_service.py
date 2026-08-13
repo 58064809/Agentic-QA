@@ -152,7 +152,8 @@ class KnowledgeService:
                 source,
                 max_chunk_characters=self.config.rag.retrieval.max_chunk_characters,
                 embedding_provider=self.embedding_provider,
-                trust=KnowledgeTrust.REVIEWED_REQUIREMENT,
+                trust=KnowledgeTrust.REFERENCE_ONLY,
+                trust_resolver=_source_trust,
                 freshness=KnowledgeFreshness.HISTORICAL,
             ),
         )
@@ -169,11 +170,7 @@ class KnowledgeService:
                 (Path(item.path), item.content_sha256) for item in candidate.attachments
             ]
             bundle = _asset_bundle(self.files.repo_root, version.artifact, paths)
-            trust = (
-                KnowledgeTrust.REVIEWED_REQUIREMENT
-                if version.artifact == "requirement_analysis"
-                else KnowledgeTrust.REVIEWED_ASSET
-            )
+            trust = _artifact_trust(version.artifact)
             self._add(
                 totals,
                 self.database.index_source_bundle(
@@ -301,3 +298,24 @@ def _asset_bundle(
         completeness=SourceCompleteness.COMPLETE,
         bundle_hash="sha256:" + hashlib.sha256(identity).hexdigest(),
     )
+
+
+def _source_trust(document: SourceDocument) -> KnowledgeTrust:
+    path = document.path.casefold()
+    if "openapi" in path or "swagger" in path:
+        return KnowledgeTrust.REVIEWED_CONTRACT
+    if "testcase" in path or "test-case" in path or "/tests/" in path:
+        return KnowledgeTrust.REVIEWED_TEST_ASSET
+    if "bug" in path or "failure-triage" in path:
+        return KnowledgeTrust.REVIEWED_BUG
+    return KnowledgeTrust.REFERENCE_ONLY
+
+
+def _artifact_trust(artifact: str) -> KnowledgeTrust:
+    if artifact == "requirement_analysis":
+        return KnowledgeTrust.REVIEWED_REQUIREMENT
+    if artifact in {"testcases", "api_test_draft"}:
+        return KnowledgeTrust.REVIEWED_TEST_ASSET
+    if artifact in {"bug_draft", "failure_triage"}:
+        return KnowledgeTrust.REVIEWED_BUG
+    return KnowledgeTrust.REVIEWED_ASSET
