@@ -96,6 +96,8 @@ from harness.domain.schemas.trace_analysis import (
     TraceAnalysis,
 )
 from harness.domain.schemas.trace_evidence import (
+    CollectFailureEvidenceCommand,
+    CollectFailureEvidenceResult,
     NormalizedTraceSpan,
     ProviderTraceSpan,
     TraceEvidenceBundle,
@@ -184,6 +186,8 @@ __all__ = [
     "SourceImportSummary",
     "ToolManifest",
     "DependencyFailure",
+    "CollectFailureEvidenceCommand",
+    "CollectFailureEvidenceResult",
     "NormalizedTraceSpan",
     "ProviderTraceSpan",
     "RootCauseEvidenceGraph",

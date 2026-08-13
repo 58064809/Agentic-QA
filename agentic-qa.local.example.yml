@@ -114,6 +114,14 @@ logs:
   #   services:
   #     member-service:
   #       files: [local-logs/member-service/*.log]
+
+traces:
+  provider: none
+  allowed_environments: [dev, test, qa, staging]
+  query:
+    default_max_spans: 1000
+    hard_max_spans: 5000
+    max_response_bytes: 2097152
   # To use Loki instead, set provider: loki and configure this block. The token
   # remains a SecretProvider reference and raw LogQL is never accepted.
   # loki:

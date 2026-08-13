@@ -20,7 +20,7 @@ from harness.domain.schemas.log_analysis import (
 )
 from harness.domain.schemas.log_evidence import LogEvidenceBundle
 from harness.infrastructure.failure_analysis import FilesystemFailureAnalysisService
-from harness.infrastructure.failure_logs import FilesystemFailureLogService
+from harness.infrastructure.failure_collection import FilesystemFailureEvidenceCollector
 from harness.infrastructure.failure_report import FilesystemFailureReportService
 from harness.infrastructure.persistence.common import create_only_json
 from harness.infrastructure.persistence.filesystem import FilesystemStore
@@ -36,10 +36,13 @@ class FilesystemFailureTriageService:
         self._store = store
         self._model = model
         self._analysis = FilesystemFailureAnalysisService(store)
-        self._collector = FilesystemFailureLogService(store, local_config)
+        self._collector = FilesystemFailureEvidenceCollector(store, local_config)
         self._reports = FilesystemFailureReportService(store, quality)
 
     def collect(self, command):
+        return self._collector.collect_logs(command)
+
+    def collect_evidence(self, command):
         return self._collector.collect(command)
 
     def prepare_report(self, command):

@@ -48,6 +48,10 @@ from harness.domain.schemas.log_analysis import (
     PrepareFailureReportResult,
 )
 from harness.domain.schemas.log_evidence import CollectFailureLogsCommand, CollectFailureLogsResult
+from harness.domain.schemas.trace_evidence import (
+    CollectFailureEvidenceCommand,
+    CollectFailureEvidenceResult,
+)
 
 
 class WorkspaceRepository(Protocol):
@@ -78,6 +82,10 @@ class ApiScenarioRunner(Protocol):
 
 class FailureLogService(Protocol):
     def collect(self, command: CollectFailureLogsCommand) -> CollectFailureLogsResult: ...
+
+    def collect_evidence(
+        self, command: CollectFailureEvidenceCommand
+    ) -> CollectFailureEvidenceResult: ...
 
     def analyze(self, command: AnalyzeFailureCommand) -> AnalyzeFailureResult: ...
 

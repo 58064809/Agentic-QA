@@ -15,7 +15,7 @@ from harness import (
     ArtifactDiffEndpoint,
     ArtifactVariant,
     ArtifactVersionRef,
-    CollectFailureLogsCommand,
+    CollectFailureEvidenceCommand,
     CreateWorkspaceCommand,
     ExecuteApiCasesCommand,
     ExecutionProfile,
@@ -181,6 +181,7 @@ def _parser() -> argparse.ArgumentParser:
     failure_collect.add_argument("workspace_id")
     failure_collect.add_argument("execution_id")
     failure_collect.add_argument("--case-id")
+    failure_collect.add_argument("--source", choices=["logs", "traces", "all"], default="logs")
     failure_analyze = failure_commands.add_parser("analyze")
     failure_analyze.add_argument("workspace_id")
     failure_analyze.add_argument("execution_id")
@@ -339,11 +340,12 @@ def main(argv: list[str] | None = None) -> int:
 
         harness = Harness(repo_root)
         if args.command == "failure" and args.failure_command == "collect":
-            result = harness.collect_failure_logs(
-                CollectFailureLogsCommand(
+            result = harness.collect_failure_evidence(
+                CollectFailureEvidenceCommand(
                     workspace_id=args.workspace_id,
                     execution_id=args.execution_id,
                     case_id=args.case_id,
+                    source=args.source,
                 )
             )
             _print(result)

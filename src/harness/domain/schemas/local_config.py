@@ -256,6 +256,71 @@ class LocalLogsConfig(StrictModel):
         return self
 
 
+class LocalTraceQueryLimits(StrictModel):
+    default_max_spans: int = Field(default=1000, ge=1, le=5000)
+    hard_max_spans: int = Field(default=5000, ge=1, le=5000)
+    max_response_bytes: int = Field(default=2_097_152, ge=1024, le=16_777_216)
+
+    @model_validator(mode="after")
+    def validate_defaults(self) -> LocalTraceQueryLimits:
+        if self.default_max_spans > self.hard_max_spans:
+            raise ValueError("traces default span count exceeds hard span count")
+        return self
+
+
+class LocalFileTraceProvider(StrictModel):
+    root: Literal["local-traces"] = "local-traces"
+    max_file_bytes: int = Field(default=2_097_152, ge=1024, le=16_777_216)
+
+
+class LocalTempoTraceProvider(StrictModel):
+    base_url: str
+    trusted_origins: list[str] = Field(min_length=1)
+    token: str
+    timeout_seconds: int = Field(default=15, ge=1, le=60)
+
+    @field_validator("trusted_origins")
+    @classmethod
+    def normalize_trusted_origins(cls, value: list[str]) -> list[str]:
+        origins = list(dict.fromkeys(validate_api_trusted_origin(item) for item in value))
+        if len(origins) != len(value):
+            raise ValueError("traces.tempo.trusted_origins must be unique HTTPS origins")
+        return origins
+
+    @model_validator(mode="after")
+    def validate_connection(self) -> LocalTempoTraceProvider:
+        validate_api_base_url_policy(self.base_url, trusted_origins=self.trusted_origins)
+        if not self.token.strip():
+            raise ValueError("traces.tempo.token cannot be empty")
+        return self
+
+
+class LocalTracesConfig(StrictModel):
+    provider: Literal["none", "local-file", "tempo"] = "none"
+    allowed_environments: list[str] = Field(
+        default_factory=lambda: ["dev", "test", "qa", "staging"]
+    )
+    query: LocalTraceQueryLimits = Field(default_factory=LocalTraceQueryLimits)
+    local_file: LocalFileTraceProvider | None = None
+    tempo: LocalTempoTraceProvider | None = None
+
+    @field_validator("allowed_environments")
+    @classmethod
+    def normalize_environments(cls, value: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(item.strip().casefold() for item in value if item.strip()))
+        if len(normalized) != len(value):
+            raise ValueError("traces.allowed_environments must be unique non-empty names")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_provider(self) -> LocalTracesConfig:
+        if self.provider == "local-file" and self.local_file is None:
+            raise ValueError("traces.provider local-file requires traces.local_file")
+        if self.provider == "tempo" and self.tempo is None:
+            raise ValueError("traces.provider tempo requires traces.tempo")
+        return self
+
+
 class LocalApiEncryption(StrictModel):
     algorithm: Literal["aes-128-cbc-pkcs7-base64-iv-prefix"]
     key: str
@@ -419,6 +484,7 @@ class AgenticQaLocalConfig(StrictModel):
     runtime: LocalRuntimeConfig = Field(default_factory=LocalRuntimeConfig)
     api: LocalApiConfig = Field(default_factory=LocalApiConfig)
     logs: LocalLogsConfig = Field(default_factory=LocalLogsConfig)
+    traces: LocalTracesConfig = Field(default_factory=LocalTracesConfig)
 
 
 class LocalConfigIssue(StrictModel):

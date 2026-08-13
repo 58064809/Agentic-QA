@@ -100,3 +100,41 @@ class TraceEvidenceBundle(StrictModel):
         if self.content_sha256 != expected:
             raise ValueError("trace evidence content hash does not match")
         return self
+
+
+class FailureEvidenceCollection(StrictModel):
+    collection_id: str
+    case_id: str
+    dataset_id: str | None = None
+    sources: list[Literal["logs", "traces"]]
+    log_collection_status: Literal["success", "empty", "failed", "unavailable"] = "unavailable"
+    trace_collection_status: Literal["success", "not_found", "failed", "unavailable"] = (
+        "unavailable"
+    )
+    collection_path: str
+    log_evidence_path: str | None = None
+    trace_evidence_path: str | None = None
+
+
+class CollectFailureEvidenceCommand(StrictModel):
+    workspace_id: str
+    execution_id: str = Field(min_length=1, max_length=128)
+    case_id: str | None = None
+    source: Literal["logs", "traces", "all"] = "logs"
+
+    @model_validator(mode="after")
+    def validate_workspace(self) -> CollectFailureEvidenceCommand:
+        normalize_workspace_id(self.workspace_id)
+        return self
+
+
+class CollectFailureEvidenceResult(StrictModel):
+    schema_version: Literal["agentic-qa.harness.collect-failure-evidence-result.v1"] = (
+        "agentic-qa.harness.collect-failure-evidence-result.v1"
+    )
+    workspace_id: str
+    execution_id: str
+    collections: list[FailureEvidenceCollection]
+    succeeded: int = Field(ge=0)
+    empty: int = Field(ge=0)
+    failed: int = Field(ge=0)

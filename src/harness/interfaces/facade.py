@@ -44,6 +44,10 @@ from harness.domain.schemas.log_analysis import (
     PrepareFailureReportResult,
 )
 from harness.domain.schemas.log_evidence import CollectFailureLogsCommand, CollectFailureLogsResult
+from harness.domain.schemas.trace_evidence import (
+    CollectFailureEvidenceCommand,
+    CollectFailureEvidenceResult,
+)
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.quality import QualityStrategyRegistry
 
@@ -122,6 +126,11 @@ class Harness:
 
     def collect_failure_logs(self, command: CollectFailureLogsCommand) -> CollectFailureLogsResult:
         return self._application.collect_failure_logs(command)
+
+    def collect_failure_evidence(
+        self, command: CollectFailureEvidenceCommand
+    ) -> CollectFailureEvidenceResult:
+        return self._application.collect_failure_evidence(command)
 
     def analyze_failure(self, command: AnalyzeFailureCommand) -> AnalyzeFailureResult:
         return self._application.analyze_failure(command)

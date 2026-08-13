@@ -52,6 +52,10 @@ from harness.domain.schemas.log_analysis import (
     PrepareFailureReportResult,
 )
 from harness.domain.schemas.log_evidence import CollectFailureLogsCommand, CollectFailureLogsResult
+from harness.domain.schemas.trace_evidence import (
+    CollectFailureEvidenceCommand,
+    CollectFailureEvidenceResult,
+)
 
 
 class HarnessApplication:
@@ -158,6 +162,13 @@ class HarnessApplication:
         if self._failure_logs is None:
             raise RuntimeError("failure log collection is not configured")
         return self._failure_logs.collect(command)
+
+    def collect_failure_evidence(
+        self, command: CollectFailureEvidenceCommand
+    ) -> CollectFailureEvidenceResult:
+        if self._failure_logs is None:
+            raise RuntimeError("failure evidence collection is not configured")
+        return self._failure_logs.collect_evidence(command)
 
     def analyze_failure(self, command: AnalyzeFailureCommand) -> AnalyzeFailureResult:
         if self._failure_logs is None:
