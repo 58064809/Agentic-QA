@@ -33,6 +33,7 @@ trusted_input_fields:
   - rule_batch
   - requirement_catalog
   - risk_catalog
+  - test_design_plan
   - allowed_artifacts
   - validation_feedback
 untrusted_input_fields: [goal, tool_results]

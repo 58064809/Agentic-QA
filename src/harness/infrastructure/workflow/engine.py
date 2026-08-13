@@ -1466,6 +1466,9 @@ class HarnessEngine:
                         if set(risk.rule_ids) & set(batch["rule_ids"])
                     ]
                 )
+                batch_design_plan = _plan_for_rule_ids(
+                    precomputed_design_plan, set(batch["rule_ids"])
+                )
                 budget.consume_model()
                 route = self.model_policy.for_task(task)
                 route_record = self.model.describe_route(route)
@@ -1491,10 +1494,7 @@ class HarnessEngine:
                                     "rule_batch": batch,
                                     "requirement_catalog": batch_catalog.model_dump(mode="json"),
                                     "risk_catalog": batch_risks.model_dump(mode="json"),
-                                    "test_design_plan": _plan_for_rule_ids(
-                                        precomputed_design_plan,
-                                        set(batch["rule_ids"]),
-                                    ).model_dump(mode="json"),
+                                    "test_design_plan": batch_design_plan.model_dump(mode="json"),
                                     "allowed_artifacts": [],
                                 },
                                 untrusted_context={
@@ -1551,6 +1551,7 @@ class HarnessEngine:
                         run_id=run_id,
                         available_tool_names=available_tool_names,
                         event=event,
+                        design_plan=batch_design_plan,
                     )
                     testcase_fragments.append(repaired)
                     generation_calls.extend(retry_calls)
@@ -1614,6 +1615,7 @@ class HarnessEngine:
                         available_tool_names=available_tool_names,
                         event=event,
                         initial_tool_results=batch_tool_results,
+                        design_plan=batch_design_plan,
                     )
                     testcase_fragments.append(repaired)
                     generation_calls.extend(retry_calls)
@@ -1659,6 +1661,7 @@ class HarnessEngine:
                         run_id=run_id,
                         available_tool_names=available_tool_names,
                         event=event,
+                        design_plan=batch_design_plan,
                     )
                     testcase_fragments.append(repaired)
                     generation_calls.extend(retry_calls)
@@ -1667,13 +1670,20 @@ class HarnessEngine:
                     update={"requirement_catalog_hash": catalog_hash(batch_catalog)}
                 )
                 batch_issues = validate_testcase_set(batch_catalog, batch_set)
-                if batch_issues:
+                plan_error: str | None = None
+                if not batch_issues:
+                    try:
+                        _validate_test_design_plan_cases(batch_design_plan, batch_set)
+                    except ValueError as exc:
+                        plan_error = str(exc)
+                if batch_issues or plan_error:
                     error = (
                         f"{batch['batch_id']} failed validation: "
                         + json.dumps(
                             [item.model_dump(mode="json") for item in batch_issues],
                             ensure_ascii=False,
                         )[:8000]
+                        + (f"; {plan_error}" if plan_error else "")
                     )
                     generation_calls.append(
                         {
@@ -1711,6 +1721,7 @@ class HarnessEngine:
                         run_id=run_id,
                         available_tool_names=available_tool_names,
                         event=event,
+                        design_plan=batch_design_plan,
                     )
                     testcase_fragments.append(repaired)
                     generation_calls.extend(retry_calls)
@@ -2442,6 +2453,7 @@ class HarnessEngine:
         run_id: str,
         available_tool_names: set[str],
         event: Any,
+        design_plan: TestDesignPlan,
         initial_tool_results: list[dict[str, Any]] | None = None,
     ) -> tuple[TestCaseSet, list[dict[str, Any]]]:
         if self.model is None:
@@ -2482,6 +2494,7 @@ class HarnessEngine:
                                 "rule_batch": batch,
                                 "requirement_catalog": catalog.model_dump(mode="json"),
                                 "risk_catalog": risks.model_dump(mode="json"),
+                                "test_design_plan": design_plan.model_dump(mode="json"),
                                 "allowed_artifacts": [],
                                 "validation_feedback": [
                                     {
@@ -2521,7 +2534,9 @@ class HarnessEngine:
                     }
                 )
                 if repair_attempt == MAX_TESTCASE_BATCH_ATTEMPTS:
-                    fallback = _deterministic_testcase_batch_fallback(catalog, risks)
+                    fallback = _deterministic_testcase_batch_fallback(
+                        catalog, risks, design_plan=design_plan
+                    )
                     event(
                         "testcase_batch_fallback_applied",
                         task_id=task.id,
@@ -2588,6 +2603,11 @@ class HarnessEngine:
                         [item.model_dump(mode="json") for item in issues],
                         ensure_ascii=False,
                     )[:8000]
+                else:
+                    try:
+                        _validate_test_design_plan_cases(design_plan, candidate)
+                    except ValueError as exc:
+                        error = str(exc)
             calls.append(
                 {
                     "call_index": first_call_index + len(calls),
@@ -2606,7 +2626,7 @@ class HarnessEngine:
             if error is None:
                 return candidate, calls
             feedback = error
-        fallback = _deterministic_testcase_batch_fallback(catalog, risks)
+        fallback = _deterministic_testcase_batch_fallback(catalog, risks, design_plan=design_plan)
         event(
             "testcase_batch_fallback_applied",
             task_id=task.id,
@@ -3470,6 +3490,8 @@ def _merge_testcase_batches(
 def _deterministic_testcase_batch_fallback(
     catalog: RequirementCatalog,
     risks: RiskCatalog,
+    *,
+    design_plan: TestDesignPlan,
 ) -> TestCaseSet:
     priority_order = {
         RiskLevel.P0: 0,
@@ -3480,6 +3502,7 @@ def _deterministic_testcase_batch_fallback(
     cases: list[TestCase] = []
     coverage: list[CoverageMapping] = []
     for rule in catalog.rules:
+        decision = next(item for item in design_plan.decisions if item.rule_id == rule.rule_id)
         matching_priorities = [
             risk.priority for risk in risks.risks if rule.rule_id in risk.rule_ids
         ]
@@ -3497,7 +3520,9 @@ def _deterministic_testcase_batch_fallback(
                 case_id=case_id,
                 rule_ids=[rule.rule_id],
                 title=f"验证：{rule.title}",
-                test_type="规则验证",
+                test_type=(
+                    decision.required_test_types[0] if decision.required_test_types else "规则验证"
+                ),
                 priority=priority,
                 preconditions=[rule.condition],
                 test_data=["满足规则条件的最小测试数据，具体取值待人工确认"],
@@ -3513,12 +3538,27 @@ def _deterministic_testcase_batch_fallback(
                     value for boundary in rule.boundaries for value in boundary.values
                 ],
                 covered_transitions=rule.state_transitions,
+                covered_decision_combinations=decision.decision_table_combinations,
+                covered_pairwise_combinations=decision.pairwise_combinations,
+                covered_cause_effects=decision.cause_effect_paths,
+                covered_role_state_config=decision.role_state_config_combinations,
             )
         )
+        for index, test_type in enumerate(decision.required_test_types[1:], start=2):
+            cases.append(
+                cases[-1].model_copy(
+                    update={
+                        "case_id": f"TC-{rule.rule_id}-{index:03d}",
+                        "title": f"{rule.title} - {test_type}",
+                        "test_type": test_type,
+                    }
+                )
+            )
+        rule_case_ids = [case.case_id for case in cases if rule.rule_id in case.rule_ids]
         coverage.append(
             CoverageMapping(
                 rule_id=rule.rule_id,
-                case_ids=[case_id],
+                case_ids=rule_case_ids,
                 rationale="规则驱动的确定性基础覆盖；数据和执行细节等待人工 Review。",
             )
         )
