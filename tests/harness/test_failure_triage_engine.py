@@ -21,6 +21,8 @@ class _Model:
 
 def test_engine_system_prompt_declares_json_output_protocol() -> None:
     assert "json" in SYSTEM.casefold()
+    assert '"primary"' in SYSTEM
+    assert '"evidence_refs"' in SYSTEM
 
 
 def _proposal(**updates):

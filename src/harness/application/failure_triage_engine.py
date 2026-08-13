@@ -12,9 +12,15 @@ from harness.domain.models import StrictModel
 from harness.domain.schemas.failure_triage import FailureHypothesis, FailureTriageProposal
 
 SYSTEM = """You are the failure_triager. Analyze only the supplied redacted facts.
-Return one JSON structured hypothesis with citations. Never claim a service, dependency, exception,
-or fact not present in the indexed context. Automated analysis is never confirmed. Do not request
-logs, traces, credentials, tools, LogQL, TraceQL, files, or network access."""
+Return exactly one JSON object with these top-level keys and no others:
+{"primary":{"category":"unknown","service":null,"exception_type":null,"dependency":null,
+"failure_type":null,"summary":"...","confidence":0.0,"evidence_refs":["EXEC-0001"]},
+"alternatives":[],"recommended_actions":[]}.
+Use a supported category from the supplied facts, cite only allowed evidence_refs, and preserve the
+field names exactly. Never claim a service, dependency, exception, or fact not present in the
+indexed context. Automated analysis is never confirmed. Do not request logs, traces, credentials,
+tools,
+LogQL, TraceQL, files, or network access."""
 EXCEPTION_CLAIM = re.compile(r"\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:Exception|Error)\b")
 CONFIDENCE_CAP = {"strong": 1.0, "medium": 0.94, "weak": 0.89}
 
