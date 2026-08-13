@@ -22,8 +22,12 @@ def _triage_payload(
     confidence: float = 0.9,
     *,
     execution_sha: str = "a" * 64,
-    logs_sha: str = "b" * 64,
-    analysis_sha: str = "c" * 64,
+    logs_sha: str | None = "b" * 64,
+    analysis_sha: str | None = "c" * 64,
+    trace_sha: str | None = None,
+    trace_analysis_sha: str | None = None,
+    graph_sha: str | None = None,
+    evidence_ref: str = "LOG-000001",
 ) -> dict:
     payload = {
         "schema_version": "agentic-qa.failure-triage.v2",
@@ -33,6 +37,9 @@ def _triage_payload(
         "execution_evidence_sha256": execution_sha,
         "log_evidence_sha256": logs_sha,
         "log_analysis_sha256": analysis_sha,
+        "trace_evidence_sha256": trace_sha,
+        "trace_analysis_sha256": trace_analysis_sha,
+        "root_cause_graph_sha256": graph_sha,
         "triage_status": "success",
         "likelihood": "highly_likely" if confidence >= 0.9 else "probable",
         "primary": {
@@ -40,11 +47,11 @@ def _triage_payload(
             "service": "order-service",
             "summary": "database is unavailable",
             "confidence": confidence,
-            "evidence_refs": ["LOG-000001"],
+            "evidence_refs": [evidence_ref],
         },
         "alternatives": [],
         "recommended_actions": ["Inspect database availability"],
-        "available_evidence_refs": ["EXEC-0001", "LOG-000001"],
+        "available_evidence_refs": ["EXEC-0001", evidence_ref],
     }
     draft = FailureTriageV2.model_construct(
         **{
@@ -84,6 +91,20 @@ def _service(tmp_path: Path, category: str = "database"):
             logs_sha=hashlib.sha256(paths["log-evidence.json"].read_bytes()).hexdigest(),
             analysis_sha=hashlib.sha256(paths["log-analysis.json"].read_bytes()).hexdigest(),
         ),
+    )
+    create_only_json(
+        collection / "collection-manifest.json",
+        {
+            "schema_version": "agentic-qa.failure-log-collection-manifest.v1",
+            "collection_id": "collection-a",
+            "input_sha256": "d" * 64,
+            "log_collection_status": "success",
+            "log_evidence_sha256": hashlib.sha256(
+                paths["log-evidence.json"].read_bytes()
+            ).hexdigest(),
+            "analysis_status": "success",
+            "triage_status": "success",
+        },
     )
     registry = QualityStrategyRegistry()
     registry.register(GenericArtifactStrategy())
@@ -150,6 +171,67 @@ def test_failure_report_rejects_tampered_source_before_candidate(tmp_path: Path)
 
     runs = tmp_path / "workspaces" / "workspace-1" / "runs"
     assert not list(runs.iterdir())
+
+
+def test_failure_report_supports_trace_only_sources_and_attachments(tmp_path: Path) -> None:
+    store, _workspace, collection, service = _service(tmp_path)
+    (collection / "failure-triage.json").unlink()
+    (collection / "collection-manifest.json").unlink()
+    (collection / "log-evidence.json").unlink()
+    (collection / "log-analysis.json").unlink()
+    trace_paths = {}
+    for name, payload in {
+        "trace-evidence.json": {"schema_version": "agentic-qa.trace-evidence.v1"},
+        "trace-analysis.json": {"schema_version": "agentic-qa.trace-analysis.v1"},
+        "root-cause-graph.json": {"schema_version": "agentic-qa.root-cause-evidence-graph.v1"},
+    }.items():
+        target = collection / name
+        create_only_json(target, payload)
+        trace_paths[name] = target
+    trace_sha = hashlib.sha256(trace_paths["trace-evidence.json"].read_bytes()).hexdigest()
+    create_only_json(
+        collection / "collection-manifest.json",
+        {
+            "schema_version": "agentic-qa.failure-evidence-collection-manifest.v1",
+            "collection_id": "collection-a",
+            "input_sha256": "d" * 64,
+            "sources": ["traces"],
+            "trace_collection_status": "success",
+            "trace_evidence_sha256": trace_sha,
+        },
+    )
+    execution_path = collection.parents[2] / "evidence.json"
+    create_only_json(
+        collection / "failure-triage.json",
+        _triage_payload(
+            execution_sha=hashlib.sha256(execution_path.read_bytes()).hexdigest(),
+            logs_sha=None,
+            analysis_sha=None,
+            trace_sha=trace_sha,
+            trace_analysis_sha=hashlib.sha256(
+                trace_paths["trace-analysis.json"].read_bytes()
+            ).hexdigest(),
+            graph_sha=hashlib.sha256(trace_paths["root-cause-graph.json"].read_bytes()).hexdigest(),
+            evidence_ref="TRACE-000001",
+        ),
+    )
+
+    result = service.prepare(
+        PrepareFailureReportCommand(workspace_id="workspace-1", execution_id="execution-1")
+    )
+
+    snapshot = store.load_snapshot_read_only("workspace-1", result.reports[0].run_id)
+    for candidate in snapshot.candidates:
+        names = {item.name for item in candidate.attachments}
+        assert {
+            "failure-triage.json",
+            "collection-manifest.json",
+            "trace-evidence.json",
+            "trace-analysis.json",
+            "root-cause-graph.json",
+        } <= names
+        assert "log-evidence.json" not in names
+        assert "log-analysis.json" not in names
 
 
 def test_failure_report_resumes_incomplete_run_after_candidate_crash(
