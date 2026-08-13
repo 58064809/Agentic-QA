@@ -13,7 +13,11 @@ from harness.application.source import (
     SourceIngestionLimits,
 )
 from harness.domain.schemas.knowledge import RetrievalQuery
-from harness.infrastructure.knowledge_store import KNOWLEDGE_SCHEMA, PostgresKnowledgeStore
+from harness.infrastructure.knowledge_store import (
+    KNOWLEDGE_SCHEMA,
+    DeterministicEmbeddingProvider,
+    PostgresKnowledgeStore,
+)
 from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 from harness.infrastructure.rag.provider import PostgresHybridRetriever
 
@@ -71,6 +75,28 @@ def test_pgvector_incremental_index_hybrid_retrieval_and_workspace_isolation() -
         assert result.chunks
         assert all(item.metadata.workspace_id == workspace_id for item in result.chunks)
         assert result.chunks[0].source_identity == "sources/login.md"
+
+        second_space = _SecondEmbeddingSpace()
+        reindexed = store.index_source_bundle(
+            workspace_id,
+            run_id,
+            bundle,
+            embedding_provider=second_space,
+        )
+        assert reindexed["chunks"] == 0
+        assert reindexed["embedded"] == 1
+        second_result = PostgresHybridRetriever(store, embedding_provider=second_space).retrieve(
+            RetrievalQuery(
+                workspace_id=workspace_id,
+                run_id=run_id,
+                query="login locked five failures",
+                purpose="requirement",
+            )
+        )
+        assert second_result.chunks
+        assert second_result.provenance.embedding_index_identity.startswith(
+            "integration-second-space:token-hash-v2:1536:"
+        )
     finally:
         if migrated:
             _purge_test_workspaces(store, [workspace_id, other_workspace])
@@ -97,7 +123,12 @@ def _purge_test_workspaces(store: PostgresKnowledgeStore, workspace_ids: list[st
             )
         cursor.execute(
             f"""DELETE FROM {KNOWLEDGE_SCHEMA}.embedding_cache e WHERE NOT EXISTS
-            (SELECT 1 FROM {KNOWLEDGE_SCHEMA}.chunk c
-             WHERE c.content_sha256=e.chunk_sha256 AND c.embedding_provider=e.provider
-               AND c.embedding_model=e.model AND c.embedding_dimensions=e.dimensions)"""
+            (SELECT 1 FROM {KNOWLEDGE_SCHEMA}.chunk_embedding ce
+             WHERE ce.chunk_sha256=e.chunk_sha256 AND ce.provider=e.provider
+               AND ce.model=e.model AND ce.dimensions=e.dimensions)"""
         )
+
+
+class _SecondEmbeddingSpace(DeterministicEmbeddingProvider):
+    provider = "integration-second-space"
+    model = "token-hash-v2"

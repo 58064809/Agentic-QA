@@ -24,7 +24,15 @@ input_schema:
         trust:
           type: array
           items:
-            enum: [current_source, reviewed_requirement, reviewed_asset, execution_evidence, reference_only]
+            enum:
+              - current_source
+              - reviewed_requirement
+              - reviewed_contract
+              - reviewed_test_asset
+              - reviewed_bug
+              - reviewed_asset
+              - execution_evidence
+              - reference_only
           uniqueItems: true
       additionalProperties: false
   additionalProperties: false

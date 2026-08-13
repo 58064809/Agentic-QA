@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from harness.domain.schemas.knowledge import (
@@ -61,3 +63,28 @@ def test_model_reranker_cannot_add_knowledge() -> None:
         ModelReranker(_InvalidRerankerModel()).rerank(
             "query", [{"chunk_id": "CHUNK-1", "content": "untrusted"}]
         )
+
+
+def test_retrieval_purpose_rejects_trust_escalation() -> None:
+    with pytest.raises(ValueError, match="forbids trust"):
+        RetrievalQuery(
+            workspace_id="demo",
+            run_id="run-1",
+            query="coupon rule",
+            purpose="requirement",
+            filters=RetrievalFilters(trust=[KnowledgeTrust.REVIEWED_BUG]),
+        )
+    query = RetrievalQuery(
+        workspace_id="demo",
+        run_id="run-1",
+        query="coupon rule",
+        purpose="risk",
+    )
+    assert KnowledgeTrust.REVIEWED_BUG in query.filters.trust
+    assert KnowledgeTrust.REVIEWED_REQUIREMENT not in query.filters.trust
+
+
+def test_vector_query_isolated_to_current_embedding_identity() -> None:
+    source = Path("src/harness/infrastructure/rag/provider.py").read_text(encoding="utf-8")
+    assert "ce.provider=%s AND ce.model=%s AND ce.dimensions=%s" in source
+    assert "embedding_index_identity" in source

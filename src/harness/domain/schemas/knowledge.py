@@ -22,6 +22,9 @@ class KnowledgeFreshness(str, Enum):
 class KnowledgeTrust(str, Enum):
     CURRENT_SOURCE = "current_source"
     REVIEWED_REQUIREMENT = "reviewed_requirement"
+    REVIEWED_CONTRACT = "reviewed_contract"
+    REVIEWED_TEST_ASSET = "reviewed_test_asset"
+    REVIEWED_BUG = "reviewed_bug"
     REVIEWED_ASSET = "reviewed_asset"
     EXECUTION_EVIDENCE = "execution_evidence"
     REFERENCE_ONLY = "reference_only"
@@ -105,6 +108,19 @@ class RetrievalQuery(StrictModel):
     filters: RetrievalFilters = Field(default_factory=RetrievalFilters)
     max_chunks: int = Field(default=10, ge=1, le=20)
 
+    @model_validator(mode="after")
+    def enforce_purpose_trust_policy(self) -> RetrievalQuery:
+        allowed = PURPOSE_TRUST_POLICY[self.purpose]
+        requested = set(self.filters.trust)
+        if requested and not requested <= allowed:
+            raise ValueError(
+                f"retrieval purpose {self.purpose} forbids trust: "
+                f"{sorted(item.value for item in requested - allowed)}"
+            )
+        if not requested:
+            self.filters = self.filters.model_copy(update={"trust": sorted(allowed, key=str)})
+        return self
+
 
 class RetrievalCandidate(StrictModel):
     chunk_id: str
@@ -126,6 +142,7 @@ class RetrievalProvenance(StrictModel):
     retrieval_id: str = Field(min_length=1)
     strategy: Literal["postgres-hybrid-rrf", "run-local-hybrid-rrf"]
     index_version: str = Field(min_length=1)
+    embedding_index_identity: str = Field(min_length=1)
     candidate_count: int = Field(ge=0)
     selected_chunk_ids: list[str]
     reranker: Literal["none", "model"]
@@ -237,4 +254,36 @@ class RetrievalEvalMetrics(StrictModel):
     wrong_source_rate: float = Field(ge=0, le=1)
     superseded_leakage: int = Field(ge=0)
     cross_workspace_leakage: int = Field(ge=0)
+    embedding_space_mismatch_leakage: int = Field(default=0, ge=0)
+    wrong_trust_promotion: int = Field(default=0, ge=0)
+    superseded_current_fact_leakage: int = Field(default=0, ge=0)
     passed: bool
+
+
+PURPOSE_TRUST_POLICY: dict[str, set[KnowledgeTrust]] = {
+    "requirement": {
+        KnowledgeTrust.CURRENT_SOURCE,
+        KnowledgeTrust.REVIEWED_REQUIREMENT,
+        KnowledgeTrust.REVIEWED_CONTRACT,
+    },
+    "impact": {
+        KnowledgeTrust.REVIEWED_REQUIREMENT,
+        KnowledgeTrust.REVIEWED_CONTRACT,
+        KnowledgeTrust.REVIEWED_TEST_ASSET,
+        KnowledgeTrust.REVIEWED_BUG,
+        KnowledgeTrust.REVIEWED_ASSET,
+        KnowledgeTrust.EXECUTION_EVIDENCE,
+    },
+    "risk": {
+        KnowledgeTrust.REVIEWED_BUG,
+        KnowledgeTrust.EXECUTION_EVIDENCE,
+        KnowledgeTrust.REVIEWED_TEST_ASSET,
+    },
+    "regression": {
+        KnowledgeTrust.REVIEWED_TEST_ASSET,
+        KnowledgeTrust.REVIEWED_REQUIREMENT,
+        KnowledgeTrust.REVIEWED_BUG,
+        KnowledgeTrust.EXECUTION_EVIDENCE,
+    },
+    "reference": set(KnowledgeTrust),
+}

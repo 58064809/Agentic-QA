@@ -186,11 +186,13 @@ class PostgresHybridRetriever:
             FROM {KNOWLEDGE_SCHEMA}.chunk c
             JOIN {KNOWLEDGE_SCHEMA}.document d ON d.document_id=c.document_id
             JOIN {KNOWLEDGE_SCHEMA}.document_version v ON v.version_id=c.version_id
+            JOIN {KNOWLEDGE_SCHEMA}.chunk_embedding ce ON ce.chunk_id=c.chunk_id
             JOIN {KNOWLEDGE_SCHEMA}.embedding_cache e
-              ON e.chunk_sha256=c.content_sha256 AND e.provider=c.embedding_provider
-              AND e.model=c.embedding_model AND e.dimensions=c.embedding_dimensions
+              ON e.chunk_sha256=ce.chunk_sha256 AND e.provider=ce.provider
+              AND e.model=ce.model AND e.dimensions=ce.dimensions
             WHERE c.workspace_id=%s AND d.deleted_at IS NULL
             AND (v.trust <> 'current_source' OR v.run_id=%s)
+            AND ce.provider=%s AND ce.model=%s AND ce.dimensions=%s
             {filter_sql}
             ORDER BY e.embedding <=> %s::vector,d.source_identity,c.ordinal LIMIT %s"""
         with self.store._connection() as connection, connection.cursor() as cursor:
@@ -200,6 +202,9 @@ class PostgresHybridRetriever:
                     terms,
                     query.workspace_id,
                     query.run_id,
+                    self.embedding_provider.provider,
+                    self.embedding_provider.model,
+                    self.embedding_provider.dimensions,
                     *filter_params,
                     terms,
                     self.candidate_pool,
@@ -253,7 +258,11 @@ class PostgresHybridRetriever:
         provenance = RetrievalProvenance(
             retrieval_id=retrieval_id,
             strategy="postgres-hybrid-rrf",
-            index_version="knowledge-schema-v2/source-aware-v1/rrf-k60",
+            index_version="knowledge-schema-v3/source-aware-v1/rrf-k60",
+            embedding_index_identity=(
+                f"{self.embedding_provider.provider}:{self.embedding_provider.model}:"
+                f"{self.embedding_provider.dimensions}:source-aware-v1"
+            ),
             candidate_count=total,
             selected_chunk_ids=[item.chunk_id for item in selected],
             reranker=reranker_name,
@@ -365,7 +374,8 @@ class PostgresHybridRetriever:
             cursor.execute(
                 f"""INSERT INTO {KNOWLEDGE_SCHEMA}.retrieval_audit
                 (retrieval_id,workspace_id,run_id,query,purpose,filters,strategy,index_version,
-                 candidate_count,selected_chunk_ids) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                 embedding_index_identity,candidate_count,selected_chunk_ids)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (retrieval_id) DO NOTHING""",
                 (
                     value.retrieval_id,
@@ -376,6 +386,7 @@ class PostgresHybridRetriever:
                     json.dumps(result.query.filters.model_dump(mode="json")),
                     value.strategy,
                     value.index_version,
+                    value.embedding_index_identity,
                     value.candidate_count,
                     json.dumps(value.selected_chunk_ids),
                 ),

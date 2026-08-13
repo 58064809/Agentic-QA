@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -19,7 +19,7 @@ from harness.domain.schemas.knowledge import (
 from harness.domain.schemas.local_config import LocalEmbeddingConfig, LocalSystemDatabaseConfig
 from harness.domain.security import contains_likely_secret
 
-KNOWLEDGE_SCHEMA_VERSION = 2
+KNOWLEDGE_SCHEMA_VERSION = 3
 KNOWLEDGE_SCHEMA = "agentic_qa_knowledge"
 CHUNKER_VERSION = "source-aware-v1"
 ADVISORY_LOCK_KEY = 0x4151414B
@@ -252,6 +252,7 @@ class PostgresKnowledgeStore:
         max_chunk_characters: int = 4000,
         embedding_provider: Any | None = None,
         trust: KnowledgeTrust = KnowledgeTrust.CURRENT_SOURCE,
+        trust_resolver: Callable[[Any], KnowledgeTrust] | None = None,
         freshness: KnowledgeFreshness = KnowledgeFreshness.CURRENT,
     ) -> dict[str, int]:
         provider = embedding_provider or DeterministicEmbeddingProvider()
@@ -261,6 +262,7 @@ class PostgresKnowledgeStore:
         self.migrate()
         with self._connection() as connection, connection.cursor() as cursor:
             for document in bundle.readable_documents:
+                document_trust = trust_resolver(document) if trust_resolver else trust
                 source_hash = document.raw_sha256 or document.parsed_sha256
                 if not source_hash:
                     continue
@@ -271,7 +273,7 @@ class PostgresKnowledgeStore:
                     project_key=workspace_id,
                     document_type=_document_type(document.path),
                     freshness=freshness,
-                    trust=trust,
+                    trust=document_trust,
                     run_id=run_id,
                 )
                 cursor.execute(
@@ -372,6 +374,18 @@ class PostgresKnowledgeStore:
                         ),
                     )
                     indexed += cursor.rowcount
+                    cursor.execute(
+                        f"""INSERT INTO {KNOWLEDGE_SCHEMA}.chunk_embedding
+                        (chunk_id,provider,model,dimensions,chunk_sha256)
+                        VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                        (
+                            chunk_id,
+                            provider.provider,
+                            provider.model,
+                            provider.dimensions,
+                            draft.content_sha256,
+                        ),
+                    )
                 if inserted_version and freshness == KnowledgeFreshness.HISTORICAL:
                     cursor.execute(
                         f"""UPDATE {KNOWLEDGE_SCHEMA}.document_version
@@ -430,11 +444,11 @@ class PostgresKnowledgeStore:
             cursor.execute(
                 f"""DELETE FROM {KNOWLEDGE_SCHEMA}.embedding_cache cache
                 WHERE NOT EXISTS (
-                    SELECT 1 FROM {KNOWLEDGE_SCHEMA}.chunk chunk
-                    WHERE chunk.content_sha256=cache.chunk_sha256
-                    AND chunk.embedding_provider=cache.provider
-                    AND chunk.embedding_model=cache.model
-                    AND chunk.embedding_dimensions=cache.dimensions)"""
+                    SELECT 1 FROM {KNOWLEDGE_SCHEMA}.chunk_embedding association
+                    WHERE association.chunk_sha256=cache.chunk_sha256
+                    AND association.provider=cache.provider
+                    AND association.model=cache.model
+                    AND association.dimensions=cache.dimensions)"""
             )
 
     def enqueue_publication(self, publication_id: str, workspace_id: str, run_id: str) -> None:
@@ -501,7 +515,8 @@ def _migration_statements() -> list[str]:
         freshness text NOT NULL
             CHECK(freshness IN ('current','historical','superseded','deprecated')),
         trust text NOT NULL
-            CHECK(trust IN ('current_source','reviewed_requirement','reviewed_asset',
+            CHECK(trust IN ('current_source','reviewed_requirement','reviewed_contract',
+                            'reviewed_test_asset','reviewed_bug','reviewed_asset',
                             'execution_evidence','reference_only')),
         created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(document_id,source_sha256,run_id))""",
         f"""CREATE TABLE IF NOT EXISTS {prefix}.embedding_cache (
@@ -520,13 +535,22 @@ def _migration_statements() -> list[str]:
         embedding_provider text NOT NULL,
         embedding_model text NOT NULL, embedding_dimensions integer NOT NULL,
         UNIQUE(version_id,ordinal))""",
+        f"""CREATE TABLE IF NOT EXISTS {prefix}.chunk_embedding (
+        chunk_id text NOT NULL REFERENCES {prefix}.chunk(chunk_id) ON DELETE CASCADE,
+        provider text NOT NULL, model text NOT NULL, dimensions integer NOT NULL,
+        chunk_sha256 text NOT NULL,
+        PRIMARY KEY(chunk_id,provider,model,dimensions))""",
         f"""CREATE INDEX IF NOT EXISTS chunk_workspace_idx
         ON {prefix}.chunk(workspace_id,document_id)""",
         f"CREATE INDEX IF NOT EXISTS chunk_fts_idx ON {prefix}.chunk USING gin(search)",
+        f"""INSERT INTO {prefix}.chunk_embedding
+        (chunk_id,provider,model,dimensions,chunk_sha256)
+        SELECT chunk_id,embedding_provider,embedding_model,embedding_dimensions,content_sha256
+        FROM {prefix}.chunk ON CONFLICT DO NOTHING""",
         f"""CREATE TABLE IF NOT EXISTS {prefix}.retrieval_audit (
         retrieval_id text PRIMARY KEY, workspace_id text NOT NULL, run_id text, query text NOT NULL,
         purpose text NOT NULL, filters jsonb NOT NULL, strategy text NOT NULL,
-        index_version text NOT NULL,
+        index_version text NOT NULL, embedding_index_identity text NOT NULL,
         candidate_count integer NOT NULL, selected_chunk_ids jsonb NOT NULL,
         created_at timestamptz NOT NULL DEFAULT now())""",
         f"""CREATE TABLE IF NOT EXISTS {prefix}.retrieval_item (
@@ -545,6 +569,26 @@ def _migration_statements() -> list[str]:
         f"ALTER TABLE {prefix}.document ADD COLUMN IF NOT EXISTS environment text",
         f"""ALTER TABLE {prefix}.document_version
         ADD COLUMN IF NOT EXISTS version_number integer NOT NULL DEFAULT 1""",
+        f"""DO $$ DECLARE constraint_name text; BEGIN
+        SELECT c.conname INTO constraint_name FROM pg_constraint c
+        JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace
+        WHERE n.nspname='{prefix}' AND t.relname='document_version'
+          AND c.contype='c' AND pg_get_constraintdef(c.oid) LIKE '%trust%';
+        IF constraint_name IS NOT NULL THEN
+            EXECUTE format('ALTER TABLE {prefix}.document_version DROP CONSTRAINT %I',
+                           constraint_name);
+        END IF;
+        ALTER TABLE {prefix}.document_version ADD CONSTRAINT document_version_trust_check
+          CHECK(trust IN ('current_source','reviewed_requirement','reviewed_contract',
+                          'reviewed_test_asset','reviewed_bug','reviewed_asset',
+                          'execution_evidence','reference_only'));
+        END $$""",
+        f"""ALTER TABLE {prefix}.retrieval_audit
+        ADD COLUMN IF NOT EXISTS embedding_index_identity text""",
+        f"""UPDATE {prefix}.retrieval_audit SET embedding_index_identity=index_version
+        WHERE embedding_index_identity IS NULL""",
+        f"""ALTER TABLE {prefix}.retrieval_audit
+        ALTER COLUMN embedding_index_identity SET NOT NULL""",
         f"ALTER TABLE {prefix}.chunk ADD COLUMN IF NOT EXISTS search_content text",
         f"UPDATE {prefix}.chunk SET search_content=content WHERE search_content IS NULL",
         f"ALTER TABLE {prefix}.chunk ALTER COLUMN search_content SET NOT NULL",
