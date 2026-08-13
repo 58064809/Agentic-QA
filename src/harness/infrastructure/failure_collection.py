@@ -34,6 +34,7 @@ from harness.infrastructure.failure_logs import (
 )
 from harness.infrastructure.failure_traces import (
     LocalTraceProvider,
+    TempoTraceProvider,
     build_trace_evidence,
 )
 from harness.infrastructure.persistence.common import create_only_json
@@ -308,8 +309,8 @@ class FilesystemFailureEvidenceCollector:
             completed_at=case.completed_at,
             max_spans=traces.query.default_max_spans,
         )
-        if traces.provider != "local-file":
-            return query, self._structure_sha(structure), None
+        if traces.provider == "tempo":
+            return query, self._structure_sha(structure), TempoTraceProvider(traces)
         return (
             query,
             self._structure_sha(structure),
