@@ -24,6 +24,8 @@ from harness.domain.schemas.qa_design import (
     apply_testcase_patch,
     validate_testcase_set,
 )
+from harness.domain.schemas.trace_analysis import RootCauseEvidenceGraph, TraceAnalysis
+from harness.domain.schemas.trace_evidence import TraceEvidenceBundle
 
 __all__ = [
     "ApiDiscoveryCatalog",
@@ -37,6 +39,9 @@ __all__ = [
     "ExecutionEvidence",
     "ExecutionProfile",
     "FailureTriage",
+    "RootCauseEvidenceGraph",
+    "TraceAnalysis",
+    "TraceEvidenceBundle",
     "OpenApiInspection",
     "RequirementCatalog",
     "RequirementRule",

@@ -90,6 +90,18 @@ from harness.domain.schemas.log_evidence import (
     LogQueryResult,
     NormalizedLogEntry,
 )
+from harness.domain.schemas.trace_analysis import (
+    DependencyFailure,
+    RootCauseEvidenceGraph,
+    TraceAnalysis,
+)
+from harness.domain.schemas.trace_evidence import (
+    NormalizedTraceSpan,
+    ProviderTraceSpan,
+    TraceEvidenceBundle,
+    TraceQueryRequest,
+    TraceQueryResult,
+)
 
 __all__ = [
     "AgentCandidateSummary",
@@ -171,4 +183,12 @@ __all__ = [
     "StartRunCommand",
     "SourceImportSummary",
     "ToolManifest",
+    "DependencyFailure",
+    "NormalizedTraceSpan",
+    "ProviderTraceSpan",
+    "RootCauseEvidenceGraph",
+    "TraceAnalysis",
+    "TraceEvidenceBundle",
+    "TraceQueryRequest",
+    "TraceQueryResult",
 ]
