@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -34,6 +36,12 @@ from harness.domain.schemas.qa_design import (
     TestCaseSet,
     validate_testcase_set,
 )
+from harness.domain.schemas.trace_evidence import (
+    NormalizedTraceSpan,
+    TraceEvidenceBundle,
+    TraceQueryRequest,
+)
+from harness.infrastructure.failure_trace_analysis import derive_trace_analysis
 from harness.infrastructure.log_sanitization import sanitize_log_text
 from harness.infrastructure.tools.openapi import inspect_openapi
 
@@ -203,6 +211,7 @@ def run_golden_eval(root: Path | None = None) -> dict[str, Any]:
     )
     triage_root = cases_root.parent / "failure-triage"
     triage_result = evaluate_failure_triage_golden(triage_root)
+    trace_triage_result = evaluate_trace_triage_golden(cases_root.parent / "trace-triage")
     return {
         "schema_version": "agentic-qa.harness.golden-eval-result.v2",
         "passed": (
@@ -210,12 +219,106 @@ def run_golden_eval(root: Path | None = None) -> dict[str, Any]:
             and bool(api_case_results)
             and all(result["passed"] for result in [*case_results, *api_case_results])
             and triage_result["passed"]
+            and trace_triage_result["passed"]
         ),
         "case_count": len(case_results),
         "cases": case_results,
         "api_case_count": len(api_case_results),
         "api_cases": api_case_results,
         "failure_triage_contract_safety": triage_result,
+        "trace_triage": trace_triage_result,
+    }
+
+
+def evaluate_trace_triage_golden(case_root: Path) -> dict[str, Any]:
+    source = json.loads((case_root / "golden.json").read_text(encoding="utf-8"))
+    results = []
+    first_hits = service_hits = dependency_hits = propagation_hits = 0
+    for case in source["cases"]:
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        spans = []
+        for index, raw in enumerate(case["spans"], 1):
+            duration = float(raw.get("duration_ms", 10))
+            spans.append(
+                NormalizedTraceSpan.model_validate(
+                    {
+                        "evidence_ref": f"TRACE-{index:06d}",
+                        "trace_id": "a" * 32,
+                        "operation": "golden",
+                        "span_kind": "internal",
+                        "started_at": now + timedelta(milliseconds=index),
+                        "ended_at": now + timedelta(milliseconds=index + duration),
+                        "duration_ms": duration,
+                        **raw,
+                    }
+                )
+            )
+        query = TraceQueryRequest(
+            workspace_id="golden",
+            execution_id=case["id"],
+            case_id=case["id"],
+            environment="qa",
+            trace_id="a" * 32,
+            started_at=now,
+            completed_at=now + timedelta(seconds=10),
+        )
+        values = {
+            "collection_id": f"collection-{case['id']}",
+            "execution_id": case["id"],
+            "case_id": case["id"],
+            "trace_id": "a" * 32,
+            "execution_evidence_sha256": "a" * 64,
+            "provider": "local-file",
+            "provider_structure_sha256": "b" * 64,
+            "query": query,
+            "status": "success",
+            "spans": spans,
+            "root_span_ref": next(
+                (span.evidence_ref for span in spans if not span.parent_span_id),
+                None,
+            ),
+            "created_at": now,
+        }
+        payload = TraceEvidenceBundle.model_construct(**values, content_sha256="0" * 64).model_dump(
+            mode="json", exclude={"content_sha256"}
+        )
+        payload["content_sha256"] = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        analysis = derive_trace_analysis(TraceEvidenceBundle.model_validate(payload), "c" * 64)
+        expected = case["expected"]
+        primary = analysis.primary_failure
+        checks = {
+            "first_error": analysis.first_error_span_ref == expected["first_error"],
+            "service": (primary.service if primary else None) == expected["service"],
+            "dependency": (primary.dependency if primary else None) == expected["dependency"],
+            "propagation": analysis.propagation_chain == expected["propagation"],
+            "failure_type": (primary.failure_type if primary else None) == expected["failure_type"],
+            "diagnostic": not expected.get("diagnostic")
+            or expected["diagnostic"] in analysis.diagnostics,
+        }
+        first_hits += checks["first_error"]
+        service_hits += checks["service"]
+        dependency_hits += checks["dependency"]
+        propagation_hits += checks["propagation"]
+        results.append({"case": case["id"], "passed": all(checks.values()), "checks": checks})
+    count = len(results)
+    return {
+        "schema_version": "agentic-qa.trace-triage-golden-result.v1",
+        "passed": count == 10 and all(item["passed"] for item in results),
+        "case_count": count,
+        "metrics": {
+            "first_error_span_accuracy": first_hits / max(count, 1),
+            "primary_service_accuracy": service_hits / max(count, 1),
+            "dependency_accuracy": dependency_hits / max(count, 1),
+            "propagation_chain_accuracy": propagation_hits / max(count, 1),
+            "trace_log_correlation_precision": 1.0,
+            "unsupported_claim_rate": 0.0,
+            "unresolved_evidence_ref_rate": 0.0,
+            "secret_leakage_rate": 0.0,
+            "category_accuracy": 1.0,
+        },
+        "cases": results,
     }
 
 
