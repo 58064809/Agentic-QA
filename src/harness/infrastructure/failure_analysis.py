@@ -19,6 +19,7 @@ from harness.domain.schemas.trace_evidence import TraceEvidenceBundle
 from harness.infrastructure.failure_trace_analysis import derive_trace_analysis
 from harness.infrastructure.persistence.common import create_only_json
 from harness.infrastructure.persistence.filesystem import FilesystemStore
+from harness.infrastructure.root_cause_graph import build_root_cause_graph
 
 SIGNALS = (
     ("database", re.compile(r"(?i)sql|database|deadlock|jdbc|psycopg|mysql|postgres")),
@@ -89,6 +90,9 @@ class FilesystemFailureAnalysisService:
         return [values[0] for _, values in sorted(candidates.items())]
 
     def _analyze_one(self, root: Path, workspace_root: Path) -> FailureAnalysisItem:
+        trace_bundle = None
+        trace_analysis = None
+        trace_analysis_sha = None
         trace_path = root / "trace-evidence.json"
         if trace_path.is_file():
             manifest = json.loads((root / "collection-manifest.json").read_text(encoding="utf-8"))
@@ -100,14 +104,31 @@ class FilesystemFailureAnalysisService:
             if target.exists():
                 from harness.domain.schemas.trace_analysis import TraceAnalysis
 
-                TraceAnalysis.model_validate_json(target.read_text(encoding="utf-8"))
+                trace_analysis = TraceAnalysis.model_validate_json(
+                    target.read_text(encoding="utf-8")
+                )
             else:
                 trace_analysis = derive_trace_analysis(
                     trace_bundle, hashlib.sha256(trace_raw).hexdigest()
                 )
                 create_only_json(target, trace_analysis.model_dump(mode="json"))
+            trace_analysis_sha = hashlib.sha256(target.read_bytes()).hexdigest()
         evidence_path = root / "log-evidence.json"
         if not evidence_path.is_file():
+            graph = build_root_cause_graph(
+                collection_id=trace_bundle.collection_id,
+                execution_id=trace_bundle.execution_id,
+                case_id=trace_bundle.case_id,
+                dataset_id=trace_bundle.dataset_id,
+                execution_sha=trace_bundle.execution_evidence_sha256,
+                logs=None,
+                log_analysis=None,
+                log_analysis_sha=None,
+                traces=trace_bundle,
+                trace_analysis=trace_analysis,
+                trace_analysis_sha=trace_analysis_sha,
+            )
+            create_only_json(root / "root-cause-graph.json", graph.model_dump(mode="json"))
             return FailureAnalysisItem(
                 collection_id=trace_bundle.collection_id,
                 case_id=trace_bundle.case_id,
@@ -132,6 +153,22 @@ class FilesystemFailureAnalysisService:
         else:
             analysis = self._derive(bundle, hashlib.sha256(raw).hexdigest())
             create_only_json(target, analysis.model_dump(mode="json"))
+        graph_path = root / "root-cause-graph.json"
+        if not graph_path.exists():
+            graph = build_root_cause_graph(
+                collection_id=bundle.collection_id,
+                execution_id=bundle.execution_id,
+                case_id=bundle.case_id,
+                dataset_id=bundle.dataset_id,
+                execution_sha=bundle.execution_evidence_sha256,
+                logs=bundle,
+                log_analysis=analysis,
+                log_analysis_sha=hashlib.sha256(target.read_bytes()).hexdigest(),
+                traces=trace_bundle,
+                trace_analysis=trace_analysis,
+                trace_analysis_sha=trace_analysis_sha,
+            )
+            create_only_json(graph_path, graph.model_dump(mode="json"))
         return FailureAnalysisItem(
             collection_id=bundle.collection_id,
             case_id=bundle.case_id,

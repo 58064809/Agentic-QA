@@ -127,6 +127,7 @@ class LocalFileLogProvider:
                             if request.trace_id and raw.get("trace_id") == request.trace_id
                             else None
                         ),
+                        span_id=raw.get("span_id"),
                         request_id=(
                             request.request_id
                             if request.request_id and raw.get("request_id") == request.request_id
@@ -210,6 +211,7 @@ class LocalFileLogProvider:
             "level": str(payload.get("level") or payload.get("severity") or "UNKNOWN").upper(),
             "message": str(message),
             "trace_id": _first(payload, "trace_id", "traceId", "trace", "x-trace-id"),
+            "span_id": _first(payload, "span_id", "spanId", "span"),
             "request_id": _first(payload, "request_id", "requestId", "x-request-id"),
             "exception_type": str(exception_type) if exception_type else None,
             "service": service,
@@ -379,6 +381,7 @@ class LokiLogProvider:
                             if request.trace_id and raw.get("trace_id") == request.trace_id
                             else None
                         ),
+                        span_id=raw.get("span_id"),
                         request_id=(
                             request.request_id
                             if request.request_id and raw.get("request_id") == request.request_id
