@@ -769,6 +769,8 @@ def test_response_correlation_uses_deterministic_header_priority() -> None:
     assert case.request_dispatched is True
     assert case.correlation.trace_id == "4bf92f3577b34da6a3ce929d0e0e4736"
     assert case.correlation.span_id == "00f067aa0ba902b7"
+    assert case.correlation.trace_flags == "01"
+    assert case.correlation.trace_source == "traceparent"
     assert case.correlation.request_id == "primary-request"
     assert case.correlation.custom_ids == {
         "x-correlation-id": "correlation-42",
@@ -786,6 +788,8 @@ def test_malformed_traceparent_records_diagnostic_and_uses_fallback() -> None:
 
     assert context.trace_id == "fallback-trace"
     assert context.span_id is None
+    assert context.trace_flags is None
+    assert context.trace_source == "response_header"
     assert [item.code for item in context.diagnostics] == ["malformed_traceparent"]
 
 

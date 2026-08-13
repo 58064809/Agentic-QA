@@ -41,6 +41,10 @@ class CorrelationObservation(StrictModel):
 class CorrelationContext(StrictModel):
     trace_id: str | None = None
     span_id: str | None = None
+    trace_flags: str | None = Field(default=None, pattern=r"^[a-f0-9]{2}$")
+    trace_source: Literal["traceparent", "response_header", "request_header", "runtime"] | None = (
+        None
+    )
     request_id: str | None = None
     custom_ids: dict[str, str] = Field(default_factory=dict)
     observations: list[CorrelationObservation] = Field(default_factory=list)
