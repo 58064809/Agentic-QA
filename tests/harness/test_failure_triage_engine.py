@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from harness.application.failure_triage_engine import FailureTriageContext, FailureTriageEngine
+from harness.application.failure_triage_engine import (
+    SYSTEM,
+    FailureTriageContext,
+    FailureTriageEngine,
+)
 from harness.domain.schemas.failure_triage import FailureTriageProposal
 
 
@@ -13,6 +17,10 @@ class _Model:
         value = self.proposals[self.calls]
         self.calls += 1
         return FailureTriageProposal.model_validate(value)
+
+
+def test_engine_system_prompt_declares_json_output_protocol() -> None:
+    assert "json" in SYSTEM.casefold()
 
 
 def _proposal(**updates):

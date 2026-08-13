@@ -12,7 +12,7 @@ from harness.domain.models import StrictModel
 from harness.domain.schemas.failure_triage import FailureHypothesis, FailureTriageProposal
 
 SYSTEM = """You are the failure_triager. Analyze only the supplied redacted facts.
-Return one structured hypothesis with citations. Never claim a service, dependency, exception,
+Return one JSON structured hypothesis with citations. Never claim a service, dependency, exception,
 or fact not present in the indexed context. Automated analysis is never confirmed. Do not request
 logs, traces, credentials, tools, LogQL, TraceQL, files, or network access."""
 EXCEPTION_CLAIM = re.compile(r"\b[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:Exception|Error)\b")
