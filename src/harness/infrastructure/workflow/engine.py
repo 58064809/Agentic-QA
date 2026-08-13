@@ -30,11 +30,15 @@ from harness.application.quality import (
     QualityContext,
 )
 from harness.application.requirement_intelligence import (
+    augment_impact_analysis,
     build_test_design_plan,
+    derive_historical_risk_signals,
+    derive_historical_test_context,
     derive_impact_analysis,
     derive_requirement_delta,
     match_semantic_continuations,
     upgrade_risk_catalog,
+    validate_historical_test_decisions,
 )
 from harness.application.review_service import apply_review
 from harness.application.source import SourceBundle
@@ -60,6 +64,7 @@ from harness.domain.schemas.api_test_cases import (
 from harness.domain.schemas.api_test_cases import (
     SourceRef as ApiSourceRef,
 )
+from harness.domain.schemas.knowledge import RetrievalResult
 from harness.domain.schemas.local_config import AgenticQaLocalConfig
 from harness.domain.schemas.openapi import OpenApiInspection
 from harness.domain.schemas.qa_design import (
@@ -651,6 +656,8 @@ class HarnessEngine:
             event("budget_exceeded", error=str(exc))
             return snapshot
         except Exception as exc:
+            if runtime.local_config.rag.reranker.provider == "model":
+                raise
             if isinstance(graph_input, Command) and snapshot.status == "needs_human_review":
                 event(
                     "review_rejected",
@@ -1212,6 +1219,9 @@ class HarnessEngine:
         batched_seed: AgentOutput | None = None
         api_discovery_export: ApiDiscoveryExport | None = None
         generated_attachments: dict[str, dict[str, tuple[bytes, str]]] = {}
+        active_retrievals: dict[str, list[RetrievalResult]] = {}
+        historical_testcases: dict[str, TestCase] = {}
+        precomputed_design_plan: TestDesignPlan | None = None
         expert_prompt = self.prompt_compiler.compile(
             phase="expert",
             agent=manifest.name,
@@ -1242,6 +1252,19 @@ class HarnessEngine:
                     ),
                 )
                 tool_results.append({"tool": "workspace.read", "result": value})
+        if manifest.name == "risk_strategist" and requirement_catalog is not None:
+            active_retrievals["risk"] = _active_intelligence_retrieval(
+                runtime=runtime,
+                workspace_id=request.workspace_id,
+                run_id=run_id,
+                agent=manifest.name,
+                task_id=task.id,
+                purpose="risk",
+                catalog=requirement_catalog,
+                profile=request.execution_profile,
+                tool_results=tool_results,
+                event=event,
+            )
         if manifest.name == "requirement_analyst":
             fragment_prompt = self.prompt_compiler.compile(
                 phase="requirement-fragment",
@@ -1392,6 +1415,37 @@ class HarnessEngine:
                 raise ValueError("test_designer has no RequirementCatalog dependency")
             if risk_catalog is None:
                 raise ValueError("test_designer has no RiskCatalog dependency")
+            active_retrievals["regression"] = _active_intelligence_retrieval(
+                runtime=runtime,
+                workspace_id=request.workspace_id,
+                run_id=run_id,
+                agent=manifest.name,
+                task_id=task.id,
+                purpose="regression",
+                catalog=requirement_catalog,
+                profile=request.execution_profile,
+                tool_results=tool_results,
+                event=event,
+            )
+            delta_context = _delta_from_dependencies(dependencies)
+            historical_testcases, historical_test_decisions = derive_historical_test_context(
+                requirement_catalog,
+                delta=delta_context,
+                retrievals=active_retrievals["regression"],
+            )
+            historical_signals = derive_historical_risk_signals(
+                requirement_catalog,
+                active_retrievals["regression"],
+            )
+            precomputed_design_plan = build_test_design_plan(
+                requirement_catalog,
+                delta=delta_context,
+                historical_signals=historical_signals,
+                historical_tests=historical_test_decisions,
+                retrieval_ids=[
+                    item.provenance.retrieval_id for item in active_retrievals["regression"]
+                ],
+            )
             batch_prompt = self.prompt_compiler.compile(
                 phase="testcase-rule-batch",
                 agent=manifest.name,
@@ -1437,6 +1491,10 @@ class HarnessEngine:
                                     "rule_batch": batch,
                                     "requirement_catalog": batch_catalog.model_dump(mode="json"),
                                     "risk_catalog": batch_risks.model_dump(mode="json"),
+                                    "test_design_plan": _plan_for_rule_ids(
+                                        precomputed_design_plan,
+                                        set(batch["rule_ids"]),
+                                    ).model_dump(mode="json"),
                                     "allowed_artifacts": [],
                                 },
                                 untrusted_context={
@@ -1761,6 +1819,11 @@ class HarnessEngine:
                                     if prompt_testcase_set is not None
                                     else None
                                 ),
+                                "test_design_plan": (
+                                    precomputed_design_plan.model_dump(mode="json")
+                                    if precomputed_design_plan is not None
+                                    else None
+                                ),
                                 "source_fragments": [
                                     fragment.model_dump(mode="json")
                                     for fragment in source_fragments
@@ -1891,6 +1954,23 @@ class HarnessEngine:
                         run_id=run_id,
                         catalog=requirement_catalog,
                     )
+                    impact_retrievals = _active_intelligence_retrieval(
+                        runtime=runtime,
+                        workspace_id=request.workspace_id,
+                        run_id=run_id,
+                        agent=manifest.name,
+                        task_id=task.id,
+                        purpose="impact",
+                        catalog=requirement_catalog,
+                        profile=request.execution_profile,
+                        tool_results=tool_results,
+                        event=event,
+                    )
+                    impact = augment_impact_analysis(
+                        impact,
+                        catalog=requirement_catalog,
+                        retrievals=impact_retrievals,
+                    )
                     baseline = _load_requirement_baseline(
                         self.store,
                         request.workspace_id,
@@ -1978,6 +2058,10 @@ class HarnessEngine:
                         result.risk_catalog,
                         requirement_catalog,
                         impact=impact_context,
+                        historical_signals=derive_historical_risk_signals(
+                            requirement_catalog,
+                            active_retrievals.get("risk", []),
+                        ),
                     )
                     result = result.model_copy(update={"risk_catalog": risk_catalog})
                     known_rules = {rule.rule_id for rule in requirement_catalog.rules}
@@ -2028,10 +2112,13 @@ class HarnessEngine:
                     retrieval_ids = [
                         str(item["provenance"]["retrieval_id"]) for item in retrieval_records
                     ]
-                    design_plan = build_test_design_plan(
-                        requirement_catalog,
-                        delta=_delta_from_dependencies(dependencies),
-                        retrieval_ids=retrieval_ids,
+                    if precomputed_design_plan is None:
+                        raise RuntimeError("test designer plan was not computed before generation")
+                    design_plan = precomputed_design_plan
+                    validate_historical_test_decisions(
+                        current_testcase_set.cases,
+                        historical_testcases,
+                        design_plan.historical_tests,
                     )
                     _validate_test_design_plan_cases(design_plan, current_testcase_set)
                     risk_hash = _model_hash(risk_catalog)
@@ -2694,6 +2781,96 @@ def _retrieval_records(tool_results: list[dict[str, Any]]) -> list[dict[str, Any
     return sorted(records, key=lambda item: str(item["provenance"]["retrieval_id"]))
 
 
+def _active_intelligence_retrieval(
+    *,
+    runtime: ToolRuntime,
+    workspace_id: str,
+    run_id: str,
+    agent: str,
+    task_id: str,
+    purpose: str,
+    catalog: RequirementCatalog,
+    profile: Any,
+    tool_results: list[dict[str, Any]],
+    event: Any,
+) -> list[RetrievalResult]:
+    results: list[RetrievalResult] = []
+    for index, rule in enumerate(catalog.rules):
+        arguments = {
+            "query": " ".join(
+                value for value in (rule.rule_id, rule.title, rule.condition, rule.outcome) if value
+            ),
+            "purpose": purpose,
+            "max_chunks": 10,
+        }
+        try:
+            value = runtime.call(
+                workspace=workspace_id,
+                run_id=run_id,
+                agent=agent,
+                tool="rag.retrieve",
+                arguments=arguments,
+                profile=profile,
+                idempotency_key=_tool_key(
+                    run_id,
+                    task_id,
+                    -(index + 100),
+                    "rag.retrieve",
+                    arguments,
+                ),
+            )
+        except Exception as exc:
+            event(
+                "intelligence_retrieval_unavailable",
+                task_id=task_id,
+                agent=agent,
+                purpose=purpose,
+                rule_id=rule.rule_id,
+                error_kind=type(exc).__name__,
+            )
+            continue
+        try:
+            result = RetrievalResult.model_validate(value)
+        except ValueError as exc:
+            event(
+                "intelligence_retrieval_unavailable",
+                task_id=task_id,
+                agent=agent,
+                purpose=purpose,
+                rule_id=rule.rule_id,
+                error_kind=type(exc).__name__,
+            )
+            continue
+        results.append(result)
+        tool_results.append(
+            {
+                "tool": "rag.retrieve",
+                "initiator": "harness",
+                "purpose": purpose,
+                "result": value,
+            }
+        )
+        event(
+            "intelligence_retrieval_completed",
+            task_id=task_id,
+            agent=agent,
+            purpose=purpose,
+            rule_id=rule.rule_id,
+            retrieval_id=result.provenance.retrieval_id,
+            selected_chunks=len(result.chunks),
+        )
+    return results
+
+
+def _plan_for_rule_ids(plan: TestDesignPlan, rule_ids: set[str]) -> TestDesignPlan:
+    return plan.model_copy(
+        update={
+            "decisions": [item for item in plan.decisions if item.rule_id in rule_ids],
+            "historical_tests": plan.historical_tests,
+        }
+    )
+
+
 def _validate_test_design_plan_cases(
     plan: TestDesignPlan,
     testcase_set: TestCaseSet,
@@ -2712,6 +2889,45 @@ def _validate_test_design_plan_cases(
                 f"rule {decision.rule_id} is missing required test types from TestDesignPlan: "
                 f"{missing}"
             )
+        cases = [case for case in testcase_set.cases if decision.rule_id in case.rule_ids]
+        _require_combination_coverage(
+            decision.rule_id,
+            "decision table",
+            decision.decision_table_combinations,
+            [item for case in cases for item in case.covered_decision_combinations],
+        )
+        _require_combination_coverage(
+            decision.rule_id,
+            "pairwise",
+            decision.pairwise_combinations,
+            [item for case in cases for item in case.covered_pairwise_combinations],
+        )
+        _require_combination_coverage(
+            decision.rule_id,
+            "cause-effect",
+            decision.cause_effect_paths,
+            [item for case in cases for item in case.covered_cause_effects],
+        )
+        _require_combination_coverage(
+            decision.rule_id,
+            "role-state-config",
+            decision.role_state_config_combinations,
+            [item for case in cases for item in case.covered_role_state_config],
+        )
+
+
+def _require_combination_coverage(
+    rule_id: str,
+    method: str,
+    required: list[dict[str, str]],
+    observed: list[dict[str, str]],
+) -> None:
+    observed_keys = {json.dumps(item, sort_keys=True) for item in observed}
+    missing = [item for item in required if json.dumps(item, sort_keys=True) not in observed_keys]
+    if missing:
+        raise ValueError(
+            f"rule {rule_id} is missing {method} combinations from TestDesignPlan: {missing[:5]}"
+        )
 
 
 def _model_hash(value: BaseModel) -> str:

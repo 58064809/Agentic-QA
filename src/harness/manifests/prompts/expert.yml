@@ -30,6 +30,7 @@ trusted_input_fields:
   - risk_catalog
   - rule_batches
   - current_testcase_set
+  - test_design_plan
   - source_fragments
   - allowed_artifacts
   - validation_feedback
