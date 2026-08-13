@@ -240,6 +240,10 @@ class TestCase(StrictModel):
             "Every declared transition must appear in at least one case that references its rule."
         ),
     )
+    covered_decision_combinations: list[dict[str, str]] = Field(default_factory=list)
+    covered_pairwise_combinations: list[dict[str, str]] = Field(default_factory=list)
+    covered_cause_effects: list[dict[str, str]] = Field(default_factory=list)
+    covered_role_state_config: list[dict[str, str]] = Field(default_factory=list)
 
     @field_validator(
         "rule_ids",

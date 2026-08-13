@@ -74,6 +74,7 @@ class ImpactAnalysis(StrictModel):
     workspace_id: str
     run_id: str
     claims: list[ImpactClaim]
+    retrieval_ids: list[str] = Field(default_factory=list)
 
 
 class HistoricalRiskSignal(StrictModel):
@@ -88,6 +89,7 @@ class HistoricalRiskSignal(StrictModel):
     fingerprint: str = Field(min_length=1)
     occurrence_count: int = Field(ge=1)
     evidence_refs: list[str] = Field(min_length=1)
+    rule_ids: list[str] = Field(min_length=1)
 
 
 class RiskFactors(StrictModel):
@@ -138,6 +140,10 @@ class TestDesignDecision(StrictModel):
     evidence_refs: list[str] = Field(min_length=1)
     required_test_types: list[str] = Field(default_factory=list)
     pending_items: list[str] = Field(default_factory=list)
+    decision_table_combinations: list[dict[str, str]] = Field(default_factory=list)
+    pairwise_combinations: list[dict[str, str]] = Field(default_factory=list)
+    cause_effect_paths: list[dict[str, str]] = Field(default_factory=list)
+    role_state_config_combinations: list[dict[str, str]] = Field(default_factory=list)
 
 
 class HistoricalTestDecision(StrictModel):
@@ -145,6 +151,7 @@ class HistoricalTestDecision(StrictModel):
     similarity: float = Field(ge=0, le=1)
     decision: Literal["covered", "regression_gap", "intentionally_distinct"]
     rationale: str = Field(min_length=1)
+    retrieval_evidence_refs: list[str] = Field(default_factory=list)
 
 
 class TestDesignPlan(StrictModel):
