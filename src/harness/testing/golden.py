@@ -9,7 +9,10 @@ import yaml
 from pydantic import Field, ValidationError
 
 from harness.application.api_contract_validation import validate_api_contracts
-from harness.application.model_port import ModelRoute
+from harness.application.failure_triage_engine import (
+    FailureTriageContext,
+    FailureTriageEngine,
+)
 from harness.application.qa_design import (
     parse_requirement_markdown,
     parse_testcase_markdown,
@@ -31,7 +34,6 @@ from harness.domain.schemas.qa_design import (
     TestCaseSet,
     validate_testcase_set,
 )
-from harness.infrastructure.failure_triage_service import SYSTEM
 from harness.infrastructure.log_sanitization import sanitize_log_text
 from harness.infrastructure.tools.openapi import inspect_openapi
 
@@ -304,12 +306,7 @@ def run_failure_triage_live_eval(
     unresolved_refs = 0
     secret_leaks = 0
     expectation_misses = 0
-    route = ModelRoute(
-        tier="pro",
-        thinking="enabled",
-        reasoning_effort="high",
-        purpose="expert:failure_triager",
-    )
+    engine = FailureTriageEngine(model_gateway)
     for item in cases:
         signal = item.signal
         sanitized, _ = sanitize_log_text(signal.raw_message, preserve=set(signal.preserve))
@@ -341,13 +338,20 @@ def run_failure_triage_live_eval(
             ],
             "allowed_evidence_refs": allowed_refs,
         }
-        proposal = model_gateway.structured(
-            system=SYSTEM,
-            prompt=json.dumps(prompt_payload, ensure_ascii=False, sort_keys=True),
-            response_model=FailureTriageProposal,
-            tools=[],
-            route=route,
+        engine_result = engine.triage(
+            FailureTriageContext(
+                prompt_payload=prompt_payload,
+                allowed_evidence_refs=allowed_refs,
+                log_services={signal.service},
+                log_exceptions={signal.exception_type} if signal.exception_type else set(),
+                evidence_strength={ref: "weak" for ref in signal.evidence_refs},
+            )
         )
+        proposal = engine_result.proposal
+        if proposal is None:
+            unsupported_claims += 1
+            results.append({"case": item.id, "passed": False, "issues": engine_result.issues})
+            continue
         hypotheses = [proposal.primary, *proposal.alternatives]
         bad_refs = sorted(
             {

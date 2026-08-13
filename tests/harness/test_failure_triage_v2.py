@@ -200,7 +200,10 @@ def test_triage_revises_unsupported_service_once(tmp_path) -> None:
 
     assert calls == 2
     assert result.analyses[0].triage_status == "success"
-    assert triage.likelihood == "highly_likely"
+    assert triage.likelihood == "probable"
+    assert triage.primary is not None
+    assert triage.primary.confidence == 0.89
+    assert triage.primary.evidence_strength == "weak"
     assert triage.primary and triage.primary.service == "order-service"
 
 
