@@ -54,7 +54,7 @@ def _create(harness: Harness, workspace_id: str = "demo") -> Path:
 
 def _write_live_discovery_local_config(repo_root: Path) -> None:
     payload = {
-        "schema_version": "agentic-qa.local-config.v1",
+        "schema_version": "agentic-qa.local-config.v2",
         "model": {
             "provider": "recorded",
             "api_key_env": "UNIT_MODEL_KEY",
@@ -62,8 +62,8 @@ def _write_live_discovery_local_config(repo_root: Path) -> None:
             "pro_model": "recorded-pro",
             "base_url": "https://model.example.test",
         },
-        "rag": {"provider": "local-lexical"},
-        "postgres": {
+        "rag": {},
+        "system_database": {
             "host": "localhost",
             "port": 5432,
             "database": "postgres",
@@ -1153,7 +1153,11 @@ def test_testcase_rule_batch_can_retrieve_source_evidence_on_demand(
                 "tool_requests": [
                     {
                         "tool": "rag.retrieve",
-                        "arguments": {"query": "login lock threshold", "max_chunks": 2},
+                        "arguments": {
+                            "query": "login lock threshold",
+                            "purpose": "regression",
+                            "max_chunks": 2,
+                        },
                     }
                 ],
             }
@@ -1166,7 +1170,24 @@ def test_testcase_rule_batch_can_retrieve_source_evidence_on_demand(
             **kwargs,
         )
 
-    harness = Harness(tmp_path, model_gateway=CallableModelGateway(respond))
+    harness = Harness(
+        tmp_path,
+        model_gateway=CallableModelGateway(respond),
+        tool_handlers={
+            "rag.retrieve": lambda _arguments: {
+                "query": "login lock threshold",
+                "provider": "test-hybrid",
+                "chunks": [
+                    {
+                        "source": "sources/login.md",
+                        "chunk_id": "CHUNK-TEST-001",
+                        "selection_reason": "hybrid_rrf",
+                        "content": "Lock the account after five consecutive failures.",
+                    }
+                ],
+            }
+        },
+    )
     workspace = _create(harness)
     (workspace / "sources/login.md").write_text(
         "# Login\n\nLock the account after five consecutive failures.",

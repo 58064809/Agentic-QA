@@ -1,11 +1,11 @@
-schema_version: agentic-qa.local-config.v1
+schema_version: agentic-qa.local-config.v2
 
 # Secret-bearing values have one provider boundary. `config init` keeps the
 # local provider for a single-machine project; CI can switch to `environment`.
 secrets:
   provider: local
   values:
-    postgres.password: ""
+    system_database.password: ""
     runtime.cleanup_journal_key: ""
     api.member-service.dev.auth.login.phone: ""
     api.member-service.dev.auth.login.sms_code: "000000"
@@ -25,22 +25,34 @@ model:
 
 # local-lexical does not require RAG_API_KEY. openai-compatible does.
 rag:
-  provider: local-lexical
-  api_key_env: RAG_API_KEY
-  base_url: null
-  model: text-embedding-3-small
-  chunk_size: 1200
-  chunk_overlap: 400
+  embedding:
+    provider: none
+    api_key_env: RAG_API_KEY
+    base_url: null
+    model: text-embedding-3-small
+    dimensions: 1536
+  retrieval:
+    candidate_pool: 50
+    default_max_chunks: 10
+    hard_max_chunks: 20
+    max_chunk_characters: 4000
+  fusion:
+    strategy: rrf
+    rrf_k: 60
+  reranker:
+    provider: none
 
-postgres:
+system_database:
   host: localhost
   port: 5432
   database: postgres
   user: postgres
-  password: secret://postgres.password
+  password: secret://system_database.password
   connect_timeout_seconds: 5
-  statement_timeout_ms: 10000
-  max_rows: 200
+
+# External test databases are explicit, read-only and allowlisted. There is no
+# implicit default datasource and the system database is never exposed as one.
+data_sources: {}
 
 # Change provider to testrail or qase and put its direct connection values here.
 test_management:

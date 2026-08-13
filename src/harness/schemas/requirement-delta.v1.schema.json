@@ -1,0 +1,123 @@
+{
+  "$defs": {
+    "DeltaKind": {
+      "enum": [
+        "ADDED",
+        "REMOVED",
+        "MODIFIED",
+        "UNCHANGED",
+        "CONFLICT"
+      ],
+      "title": "DeltaKind",
+      "type": "string"
+    },
+    "RequirementDeltaItem": {
+      "additionalProperties": false,
+      "properties": {
+        "delta_id": {
+          "pattern": "^DELTA-\\d{3,}$",
+          "title": "Delta Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/DeltaKind"
+        },
+        "old_rule_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Old Rule Id"
+        },
+        "new_rule_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "New Rule Id"
+        },
+        "changed_fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Changed Fields",
+          "type": "array"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "regression_impact": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Regression Impact",
+          "type": "array"
+        }
+      },
+      "required": [
+        "delta_id",
+        "kind",
+        "reason",
+        "evidence_refs"
+      ],
+      "title": "RequirementDeltaItem",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.requirement-delta.v1",
+      "default": "agentic-qa.requirement-delta.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "workspace_id": {
+      "title": "Workspace Id",
+      "type": "string"
+    },
+    "baseline_run_id": {
+      "title": "Baseline Run Id",
+      "type": "string"
+    },
+    "current_run_id": {
+      "title": "Current Run Id",
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/RequirementDeltaItem"
+      },
+      "title": "Items",
+      "type": "array"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "baseline_run_id",
+    "current_run_id",
+    "items"
+  ],
+  "title": "RequirementDelta",
+  "type": "object"
+}

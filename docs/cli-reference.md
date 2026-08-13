@@ -9,8 +9,24 @@
 |---|---|---|
 | `config init` | 无 | 从 example create-only 创建本地配置；不覆盖 |
 | `config doctor` | 无 | 检查完整 Schema、路径、模型/RAG Key、数据库、连接器与全部 API 环境 |
+| `config migrate` | `--output PATH` | create-only 将 v1 拆分为 v2；不推断外部 datasource |
 | `config runtime-key init` | 无 | 仅在缺失时生成 cleanup journal 加密 Key，不覆盖现有 Key |
 | `config secrets migrate` | 无 | 将旧版内联敏感值一次性迁移到 local Secret Provider；已有 provider 时拒绝覆盖 |
+
+## Knowledge 管理
+
+| 命令 | 参数 | 行为 |
+|---|---|---|
+| `knowledge migrate` | 无 | 在 system database 上用 advisory lock 执行前向迁移 |
+| `knowledge status WORKSPACE` | workspace | 返回文档/chunk 数和 publication outbox 状态 |
+| `knowledge index-run WORKSPACE RUN` | workspace、run | 对已人工审核并发布的 run 做幂等补偿索引 |
+| `knowledge reindex WORKSPACE --published` | `--published` | 重新验证并重建已发布历史；不扫描 Candidate |
+| `knowledge delete WORKSPACE --document-id ID` | workspace、document ID | 清除内容并保留 tombstone |
+
+这些管理写操作不在 AgentRequest、MCP 或 Agent tool allowlist 中。
+
+离线质量门使用 `python -m harness eval retrieval` 单独运行 Retrieval Golden；
+`python -m harness eval run` 也包含相同的 Recall@10、MRR、source hit 与隔离泄漏门。
 
 ## API 垂直链路
 
@@ -55,7 +71,7 @@ python -m harness failure report <workspace> <execution-id> [--case-id <case/dat
 | 命令 | 关键参数 |
 |---|---|
 | `workspace create WORKSPACE` | 可重复 `--quality-policy` |
-| `run start WORKSPACE GOAL` | 可重复 `--artifact`；API 产物由 `api prepare` 生成 |
+| `run start WORKSPACE GOAL` | 可重复 `--artifact`；`--requirement-baseline-run-id` 选择已发布 Delta baseline；API 产物由 `api prepare` 生成 |
 | `run get WORKSPACE RUN` | 读取快照 |
 | `run resume WORKSPACE RUN` | 只恢复可恢复执行，不代替 Review |
 | `run diff WORKSPACE RUN ARTIFACT` | `--before`、`--after` |

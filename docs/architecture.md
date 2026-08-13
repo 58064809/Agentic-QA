@@ -9,6 +9,11 @@ API 试跑的审计事实保存在 workspace 的 `evidence.json`，执行过程�
 负责 LangGraph checkpoint。只有出现集中检索、多节点执行或本地/CI 保留不足时，才考虑外部日志或
 报告存储。
 
+同一 `system_database` 承载 LangGraph checkpoint 与隔离 schema 中的 Knowledge Store；外部被测
+PostgreSQL 由显式 `data_sources.<id>` 表达。知识表和 Repository API 均带 workspace_id，首期
+project_key 等于 workspace_id。Promote 文件事务先完成，随后 publication journal/outbox 驱动幂等
+索引；索引失败显示 pending/failed，不撤销 published truth。
+
 实现遵循 [Allure 文件型结果与报告模型](https://allurereport.org/docs/how-it-works/)；workspace 的
 `allure-history.jsonl` 使用 [Allure 3 History](https://allurereport.org/docs/history-and-retries/)
 保存跨 execution 趋势，不启用会导致 API 重放的 retry 机制。
@@ -70,6 +75,9 @@ StartRunCommand
   → immutable SourceBundle
   → 每个 source 独立提取 RequirementCatalog fragment
   → 冲突保留并合并为唯一 RequirementCatalog
+  → Requirement Delta + Impact Analysis
+  → RiskCatalog v2（requirement + impact + historical defect + critical flow）
+  → TestDesignPlan（适用性判定与组合预算）
   → 确定性渲染 requirement_analysis.md
   → RiskCatalog（只消费 RequirementCatalog）
   → 有界 rule batch 的独立 Test Designer 调用
@@ -95,7 +103,10 @@ StartRunCommand
 | 模型 | 作用 | 关键约束 |
 |---|---|---|
 | `RequirementCatalog` | 原子规则与证据目录 | confirmed 规则带有 source ref；规则 ID 在目录内唯一 |
+| `RequirementDelta` | 新旧已审核规则差异 | 五种状态；语义延续采用一对一关系并引用双边证据 |
+| `ImpactAnalysis` | direct/potential 影响 claim | 校验 evidence trust/freshness/version 与独立信心上限 |
 | `RiskCatalog` | 规则到风险和覆盖意图 | 未知规则引用会在校验阶段返回错误 |
+| `TestDesignPlan` | 高级设计方法的证据化选择 | boundary/state/decision/pairwise 等按结构适用性启用 |
 | `TestCaseSet` | 用例与覆盖映射 | 用例/映射引用有效；confirmed、边界、状态迁移完整 |
 | `TestCasePatch` | 局部质量修订 | 仅替换失败用例或映射，保留未受影响内容 |
 

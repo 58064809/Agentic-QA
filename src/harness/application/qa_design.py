@@ -14,6 +14,7 @@ from harness.domain.schemas.qa_design import (
     TestCase,
     TestCaseSet,
 )
+from harness.domain.schemas.requirement_intelligence import ImpactAnalysis, RequirementDelta
 
 TESTCASE_HEADERS = (
     "用例ID",
@@ -190,6 +191,69 @@ def render_risk_catalog(catalog: RiskCatalog) -> str:
                     ", ".join(risk.rule_ids),
                     _escape_cell(f"{risk.title}：{risk.rationale}"),
                     "<br>".join(_escape_cell(item) for item in risk.coverage_intent),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def render_requirement_delta(delta: RequirementDelta) -> str:
+    lines = [
+        "---",
+        "schema_version: agentic-qa.harness.artifact.v2",
+        "artifact_type: requirement_delta",
+        "status: needs_human_review",
+        "---",
+        "",
+        "# Requirement Delta Candidate",
+        "",
+        "| Delta | Status | Old Rule | New Rule | Changed Fields | Evidence |",
+        "|---|---|---|---|---|---|",
+    ]
+    for item in delta.items:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    item.delta_id,
+                    item.kind.value,
+                    item.old_rule_id or "-",
+                    item.new_rule_id or "-",
+                    ", ".join(item.changed_fields) or "-",
+                    "<br>".join(item.evidence_refs),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def render_impact_analysis(analysis: ImpactAnalysis) -> str:
+    lines = [
+        "---",
+        "schema_version: agentic-qa.harness.artifact.v2",
+        "artifact_type: impact_analysis",
+        "status: needs_human_review",
+        "---",
+        "",
+        "# Impact Analysis Candidate",
+        "",
+        "| Impact | Relation | Kind | Target | Confidence | Evidence | Reason |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for claim in analysis.claims:
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    claim.impact_id,
+                    claim.relation,
+                    claim.kind,
+                    _escape_cell(claim.target),
+                    f"{claim.confidence:.2f}",
+                    "<br>".join(claim.evidence_refs),
+                    _escape_cell(claim.reason),
                 ]
             )
             + " |"

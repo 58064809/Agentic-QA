@@ -18,7 +18,9 @@ from harness.application.model_port import ModelGateway, ModelPolicy
 from harness.application.ports import CheckpointProvider
 from harness.application.qa_design import (
     catalog_hash,
+    render_impact_analysis,
     render_requirement_catalog,
+    render_requirement_delta,
     render_testcase_set,
 )
 from harness.application.quality import (
@@ -26,6 +28,13 @@ from harness.application.quality import (
     GenerationModelCall,
     GenerationProvenance,
     QualityContext,
+)
+from harness.application.requirement_intelligence import (
+    build_test_design_plan,
+    derive_impact_analysis,
+    derive_requirement_delta,
+    match_semantic_continuations,
+    upgrade_risk_catalog,
 )
 from harness.application.review_service import apply_review
 from harness.application.source import SourceBundle
@@ -66,6 +75,11 @@ from harness.domain.schemas.qa_design import (
     TestCaseSet,
     apply_testcase_patch,
     validate_testcase_set,
+)
+from harness.domain.schemas.requirement_intelligence import (
+    ImpactAnalysis,
+    RequirementDelta,
+    TestDesignPlan,
 )
 from harness.domain.security import sanitize_untrusted
 from harness.infrastructure.api_scenario_sources import (
@@ -142,6 +156,9 @@ class AgentOutput(BaseModel):
     risk_catalog: RiskCatalog | None = None
     testcase_set: TestCaseSet | None = None
     testcase_patch: TestCasePatch | None = None
+    requirement_delta: RequirementDelta | None = None
+    impact_analysis: ImpactAnalysis | None = None
+    test_design_plan: TestDesignPlan | None = None
     api_test_cases: ApiTestCasesDraft | None = None
     evidence: list[str] = Field(default_factory=list)
     pending: list[str] = Field(default_factory=list)
@@ -155,10 +172,13 @@ class _TaskExecution(BaseModel):
     assessments: dict[str, CandidateAssessment] = Field(default_factory=dict)
     quality_exhausted_artifacts: set[str] = Field(default_factory=set)
     api_discovery_export: ApiDiscoveryExport | None = None
+    attachments: dict[str, dict[str, tuple[bytes, str]]] = Field(default_factory=dict)
 
 
 ARTIFACT_AGENT = {
     "requirement_analysis": "requirement_analyst",
+    "requirement_delta": "requirement_analyst",
+    "impact_analysis": "requirement_analyst",
     "testcases": "test_designer",
     "api_test_draft": "api_test_engineer",
     "ui_test_draft": "ui_test_engineer",
@@ -176,7 +196,7 @@ MAX_TESTCASE_BATCH_ATTEMPTS = 3
 MAX_QUALITY_REVISIONS = 5
 MAX_PLAN_REPAIRS = 3
 SOURCE_PREFETCH_AGENTS: frozenset[str] = frozenset()
-TESTCASE_RULE_BATCH_SIZE = 6
+TESTCASE_RULE_BATCH_SIZE = 6  # bounded by prompt and artifact budgets; not a public batch guarantee
 
 
 class _ModelUsageTracker:
@@ -211,11 +231,15 @@ def build_default_plan(request: StartRunCommand) -> QAPlan:
     tasks: list[PlanTask] = []
     expected = set(request.expected_artifacts)
     design_artifacts = expected & DESIGN_ARTIFACTS
-    needs_catalog = bool(design_artifacts or "requirement_analysis" in expected)
+    intelligence_artifacts = expected & {
+        "requirement_analysis",
+        "requirement_delta",
+        "impact_analysis",
+    }
+    needs_catalog = bool(design_artifacts or intelligence_artifacts)
     if needs_catalog:
         analysis_outputs = ["analysis_context"]
-        if "requirement_analysis" in expected:
-            analysis_outputs.append("requirement_analysis")
+        analysis_outputs.extend(sorted(intelligence_artifacts))
         tasks.append(
             PlanTask(
                 id="analyze_requirements",
@@ -242,7 +266,7 @@ def build_default_plan(request: StartRunCommand) -> QAPlan:
             )
         )
     for artifact in request.expected_artifacts:
-        if artifact == "requirement_analysis":
+        if artifact in {"requirement_analysis", "requirement_delta", "impact_analysis"}:
             continue
         dependencies = (
             ["analyze_requirements", "analyze_risks"] if artifact in design_artifacts else []
@@ -350,6 +374,16 @@ def default_recorded_artifact(artifact: str, goal: str) -> str:
         return _testcase_template(goal)
     if artifact == "requirement_analysis":
         return render_requirement_catalog(default_recorded_requirement_catalog(goal))
+    if artifact == "impact_analysis":
+        return render_impact_analysis(
+            derive_impact_analysis(
+                workspace_id="recorded",
+                run_id="recorded",
+                catalog=default_recorded_requirement_catalog(goal),
+            )
+        )
+    if artifact == "requirement_delta":
+        raise ValueError("requirement_delta cannot be fabricated without a published baseline")
     if artifact == "api_test_draft":
         return _render_api_test_cases(default_recorded_api_test_cases(goal))
     title = artifact.replace("_", " ").title()
@@ -582,6 +616,7 @@ class HarnessEngine:
                 status=payload.get("status"),
             ),
             local_config=self.local_config,
+            model_gateway=self.model,
         )
         source_bundle = self.store.load_source_bundle(snapshot.workspace_id, snapshot.run_id)
         nodes = self._nodes(snapshot, budget, runtime, model_usage, event, source_bundle)
@@ -799,6 +834,13 @@ class HarnessEngine:
                         if execution.api_discovery_export is not None
                         else None
                     ),
+                    "attachments": {
+                        artifact: {
+                            name: {"content": content.decode("utf-8"), "media_type": media_type}
+                            for name, (content, media_type) in files.items()
+                        }
+                        for artifact, files in execution.attachments.items()
+                    },
                 }
                 event("agent_completed", task_id=task.id, agent=task.agent)
             except BudgetExceeded:
@@ -842,6 +884,13 @@ class HarnessEngine:
                         if result.get("api_discovery_export") is not None
                         else None
                     )
+                    attachments = {
+                        artifact: {
+                            name: (value["content"].encode("utf-8"), value["media_type"])
+                            for name, value in files.items()
+                        }
+                        for artifact, files in result.get("attachments", {}).items()
+                    }
                     outputs[task_id] = output.model_dump(mode="json")
                     if task_id in pending:
                         pending.remove(task_id)
@@ -880,6 +929,7 @@ class HarnessEngine:
                                     if artifact == "api_discovery_report"
                                     else None
                                 ),
+                                attachments=attachments.get(artifact),
                             )
                         if artifact not in {item["artifact"] for item in candidates}:
                             candidates.append(candidate.model_dump(mode="json"))
@@ -1161,6 +1211,7 @@ class HarnessEngine:
         source_fragments: list[RequirementCatalog] = []
         batched_seed: AgentOutput | None = None
         api_discovery_export: ApiDiscoveryExport | None = None
+        generated_attachments: dict[str, dict[str, tuple[bytes, str]]] = {}
         expert_prompt = self.prompt_compiler.compile(
             phase="expert",
             agent=manifest.name,
@@ -1835,12 +1886,81 @@ class HarnessEngine:
                     _validate_catalog_sources(result.requirement_catalog, source_bundle)
                     _validate_catalog_merge(source_fragments, result.requirement_catalog)
                     requirement_catalog = result.requirement_catalog
+                    impact = derive_impact_analysis(
+                        workspace_id=request.workspace_id,
+                        run_id=run_id,
+                        catalog=requirement_catalog,
+                    )
+                    baseline = _load_requirement_baseline(
+                        self.store,
+                        request.workspace_id,
+                        request.requirement_baseline_run_id,
+                        current_catalog=requirement_catalog,
+                        exclude_run_id=run_id,
+                    )
                     rendered = {}
                     if "requirement_analysis" in task.expected_outputs:
                         rendered["requirement_analysis"] = render_requirement_catalog(
                             requirement_catalog
                         )
-                    result = result.model_copy(update={"artifacts": rendered})
+                        generated_attachments["requirement_analysis"] = {
+                            "requirement-catalog.json": (
+                                _json_attachment(requirement_catalog),
+                                "application/json",
+                            )
+                        }
+                    if "impact_analysis" in task.expected_outputs:
+                        rendered["impact_analysis"] = render_impact_analysis(impact)
+                        generated_attachments["impact_analysis"] = {
+                            "impact-analysis.json": (
+                                _json_attachment(impact),
+                                "application/json",
+                            )
+                        }
+                    delta = None
+                    if baseline is not None:
+                        baseline_run_id, baseline_catalog = baseline
+                        try:
+                            semantic_matches = match_semantic_continuations(
+                                self.model,
+                                baseline=baseline_catalog,
+                                current=requirement_catalog,
+                            )
+                        except Exception as exc:
+                            semantic_matches = []
+                            event(
+                                "requirement_delta_semantic_match_failed",
+                                task_id=task.id,
+                                agent=manifest.name,
+                                error_kind=type(exc).__name__,
+                            )
+                        delta = derive_requirement_delta(
+                            workspace_id=request.workspace_id,
+                            baseline_run_id=baseline_run_id,
+                            current_run_id=run_id,
+                            baseline=baseline_catalog,
+                            current=requirement_catalog,
+                            semantic_matches=semantic_matches,
+                        )
+                    if "requirement_delta" in task.expected_outputs:
+                        if delta is None:
+                            raise ValueError(
+                                "requirement_delta requires a reviewed published baseline"
+                            )
+                        rendered["requirement_delta"] = render_requirement_delta(delta)
+                        generated_attachments["requirement_delta"] = {
+                            "requirement-delta.json": (
+                                _json_attachment(delta),
+                                "application/json",
+                            )
+                        }
+                    result = result.model_copy(
+                        update={
+                            "artifacts": rendered,
+                            "impact_analysis": impact,
+                            "requirement_delta": delta,
+                        }
+                    )
                 elif manifest.name == "risk_strategist":
                     if requirement_catalog is None:
                         raise ValueError("risk_strategist has no RequirementCatalog dependency")
@@ -1853,11 +1973,17 @@ class HarnessEngine:
                             agent=manifest.name,
                             artifacts=sorted(result.artifacts),
                         )
-                    risk_catalog = result.risk_catalog
+                    impact_context = _impact_from_dependencies(dependencies)
+                    risk_catalog = upgrade_risk_catalog(
+                        result.risk_catalog,
+                        requirement_catalog,
+                        impact=impact_context,
+                    )
+                    result = result.model_copy(update={"risk_catalog": risk_catalog})
                     known_rules = {rule.rule_id for rule in requirement_catalog.rules}
                     unknown_rules = {
                         rule_id
-                        for risk in result.risk_catalog.risks
+                        for risk in risk_catalog.risks
                         for rule_id in risk.rule_ids
                         if rule_id not in known_rules
                     }
@@ -1898,8 +2024,26 @@ class HarnessEngine:
                         current_testcase_set = result.testcase_set
                     else:
                         raise ValueError("test_designer omitted testcase_set/testcase_patch")
+                    retrieval_records = _retrieval_records(tool_results)
+                    retrieval_ids = [
+                        str(item["provenance"]["retrieval_id"]) for item in retrieval_records
+                    ]
+                    design_plan = build_test_design_plan(
+                        requirement_catalog,
+                        delta=_delta_from_dependencies(dependencies),
+                        retrieval_ids=retrieval_ids,
+                    )
+                    _validate_test_design_plan_cases(design_plan, current_testcase_set)
+                    risk_hash = _model_hash(risk_catalog)
+                    design_hash = _model_hash(design_plan)
                     current_testcase_set = current_testcase_set.model_copy(
-                        update={"requirement_catalog_hash": catalog_hash(requirement_catalog)}
+                        update={
+                            "schema_version": "agentic-qa.test-case-set.v2",
+                            "requirement_catalog_hash": catalog_hash(requirement_catalog),
+                            "risk_catalog_hash": risk_hash,
+                            "test_design_plan_hash": design_hash,
+                            "retrieval_ids": retrieval_ids,
+                        }
                     )
                     design_issues = validate_testcase_set(requirement_catalog, current_testcase_set)
                     if design_issues:
@@ -1913,9 +2057,30 @@ class HarnessEngine:
                         update={
                             "testcase_set": current_testcase_set,
                             "testcase_patch": None,
+                            "test_design_plan": design_plan,
                             "artifacts": {"testcases": render_testcase_set(current_testcase_set)},
                         }
                     )
+                    generated_attachments["testcases"] = {
+                        "risk-catalog.json": (_json_attachment(risk_catalog), "application/json"),
+                        "test-design-plan.json": (
+                            _json_attachment(design_plan),
+                            "application/json",
+                        ),
+                        "test-case-set.json": (
+                            _json_attachment(current_testcase_set),
+                            "application/json",
+                        ),
+                        "retrieval-provenance.json": (
+                            _json_bytes(
+                                {
+                                    "retrieval_ids": current_testcase_set.retrieval_ids,
+                                    "retrievals": retrieval_records,
+                                }
+                            ),
+                            "application/json",
+                        ),
+                    }
                 elif (
                     manifest.name == "api_test_engineer"
                     and "api_test_draft" in task.expected_outputs
@@ -2165,6 +2330,7 @@ class HarnessEngine:
                 assessments=assessments,
                 quality_exhausted_artifacts={item["artifact"] for item in blockers},
                 api_discovery_export=api_discovery_export,
+                attachments=generated_attachments,
             )
         raise RuntimeError(f"agent step limit exceeded: {manifest.name}")
 
@@ -2489,6 +2655,146 @@ def _is_invalid_structured_output(exc: RuntimeError) -> bool:
 
 def _artifact_media_type(artifact: str) -> str:
     return "application/yaml" if artifact == "api_test_draft" else "text/markdown"
+
+
+def _json_attachment(value: BaseModel) -> bytes:
+    return (json.dumps(value.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n").encode(
+        "utf-8"
+    )
+
+
+def _json_bytes(value: dict[str, Any]) -> bytes:
+    return (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+
+
+def _retrieval_records(tool_results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for item in tool_results:
+        if item.get("tool") != "rag.retrieve" or not isinstance(item.get("result"), dict):
+            continue
+        result = item["result"]
+        provenance = result.get("provenance")
+        if not isinstance(provenance, dict) or not provenance.get("retrieval_id"):
+            continue
+        records.append(
+            {
+                "query": result.get("query"),
+                "provenance": provenance,
+                "chunks": [
+                    {
+                        "chunk_id": chunk.get("chunk_id"),
+                        "source_identity": chunk.get("source_identity"),
+                        "source_sha256": chunk.get("source_sha256"),
+                    }
+                    for chunk in result.get("chunks", [])
+                    if isinstance(chunk, dict)
+                ],
+            }
+        )
+    return sorted(records, key=lambda item: str(item["provenance"]["retrieval_id"]))
+
+
+def _validate_test_design_plan_cases(
+    plan: TestDesignPlan,
+    testcase_set: TestCaseSet,
+) -> None:
+    for decision in plan.decisions:
+        available = {
+            case.test_type.casefold()
+            for case in testcase_set.cases
+            if decision.rule_id in case.rule_ids
+        }
+        missing = [
+            value for value in decision.required_test_types if value.casefold() not in available
+        ]
+        if missing:
+            raise ValueError(
+                f"rule {decision.rule_id} is missing required test types from TestDesignPlan: "
+                f"{missing}"
+            )
+
+
+def _model_hash(value: BaseModel) -> str:
+    payload = value.model_dump_json(exclude_none=True)
+    return "sha256:" + hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _load_requirement_baseline(
+    store: FilesystemStore,
+    workspace_id: str,
+    requested_run_id: str | None,
+    *,
+    current_catalog: RequirementCatalog,
+    exclude_run_id: str,
+) -> tuple[str, RequirementCatalog] | None:
+    history = (
+        store.require_workspace(workspace_id) / "published" / "requirement_analysis" / "history"
+    )
+    index_path = history / "index.yml"
+    if not index_path.is_file():
+        return None
+    payload = yaml.safe_load(index_path.read_text(encoding="utf-8")) or {}
+    versions = [
+        item
+        for item in payload.get("versions", [])
+        if isinstance(item, dict) and item.get("run_id") != exclude_run_id
+    ]
+    if requested_run_id:
+        versions = [item for item in versions if item.get("run_id") == requested_run_id]
+        if not versions:
+            raise ValueError("requested requirement baseline is not reviewed and published")
+    if not versions:
+        return None
+    current_sources = {item.source.casefold() for item in current_catalog.sources}
+    for selected in reversed(versions):
+        run_id = str(selected["run_id"])
+        catalog_entry = (selected.get("attachments") or {}).get("requirement-catalog.json")
+        if not isinstance(catalog_entry, dict):
+            raise ValueError("published baseline is missing requirement catalog attachment")
+        relative = catalog_entry.get("path")
+        expected_hash = catalog_entry.get("content_sha256")
+        path = store.require_workspace(workspace_id) / str(relative)
+        content = path.read_bytes()
+        actual = "sha256:" + hashlib.sha256(content).hexdigest()
+        if actual != expected_hash:
+            raise ValueError("published requirement baseline attachment hash changed")
+        catalog = RequirementCatalog.model_validate_json(content)
+        candidate_sources = {item.source.casefold() for item in catalog.sources}
+        if requested_run_id or candidate_sources == current_sources:
+            return run_id, catalog
+    return None
+
+
+def _impact_from_dependencies(
+    dependencies: dict[str, dict[str, Any]],
+) -> ImpactAnalysis | None:
+    values = [
+        AgentOutput.model_validate(value).impact_analysis
+        for value in dependencies.values()
+        if AgentOutput.model_validate(value).impact_analysis is not None
+    ]
+    if not values:
+        return None
+    identities = {item.model_dump_json() for item in values}
+    if len(identities) != 1:
+        raise ValueError("dependencies contain conflicting ImpactAnalysis values")
+    return values[0]
+
+
+def _delta_from_dependencies(
+    dependencies: dict[str, dict[str, Any]],
+) -> RequirementDelta | None:
+    values = [
+        AgentOutput.model_validate(value).requirement_delta
+        for value in dependencies.values()
+        if AgentOutput.model_validate(value).requirement_delta is not None
+    ]
+    if not values:
+        return None
+    identities = {item.model_dump_json() for item in values}
+    if len(identities) != 1:
+        raise ValueError("dependencies contain conflicting RequirementDelta values")
+    return values[0]
 
 
 def _render_api_test_cases(cases: ApiTestCasesDraft) -> str:
@@ -3200,12 +3506,12 @@ def _generation_source_selection(
             for chunk in result.get("chunks") or []:
                 if not isinstance(chunk, dict):
                     continue
-                source = str(chunk.get("source") or "")
+                source = str(chunk.get("source") or chunk.get("source_identity") or "")
                 chunk_id = str(chunk.get("chunk_id") or "") or None
                 if source:
                     selected[(source, chunk_id)] = {
                         "source": source,
-                        "raw_sha256": hashes.get(source),
+                        "raw_sha256": hashes.get(source) or chunk.get("source_sha256"),
                         "chunk_id": chunk_id,
                         "selection_reason": str(chunk.get("selection_reason") or "rag.retrieve"),
                     }

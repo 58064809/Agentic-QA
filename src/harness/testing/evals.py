@@ -363,10 +363,10 @@ def run_offline_eval() -> dict[str, Any]:
         (temporary_root / "agentic-qa.local.yml").write_text(
             yaml.safe_dump(
                 {
-                    "schema_version": "agentic-qa.local-config.v1",
+                    "schema_version": "agentic-qa.local-config.v2",
                     "model": project_config.model.model_dump(mode="json"),
-                    "rag": {"provider": "local-lexical"},
-                    "postgres": {
+                    "rag": {},
+                    "system_database": {
                         "host": "localhost",
                         "port": 5432,
                         "database": "postgres",
@@ -533,7 +533,9 @@ execution:
             encoding="utf-8",
         )
         workflow_artifacts = [
-            artifact for artifact in ARTIFACT_TYPES if artifact != "api_test_draft"
+            artifact
+            for artifact in ARTIFACT_TYPES
+            if artifact not in {"api_test_draft", "requirement_delta"}
         ]
         snapshot = harness.start_run(
             StartRunCommand(
@@ -642,14 +644,17 @@ execution:
 
 def run_eval() -> dict[str, Any]:
     from harness.testing.golden import run_golden_eval
+    from harness.testing.retrieval_eval import run_retrieval_golden
 
     workflow = run_offline_eval()
     golden = run_golden_eval()
+    retrieval = run_retrieval_golden()
     return {
         "schema_version": "agentic-qa.harness.eval-suite-result.v1",
-        "passed": workflow["passed"] and golden["passed"],
+        "passed": workflow["passed"] and golden["passed"] and retrieval["passed"],
         "workflow": workflow,
         "golden": golden,
+        "retrieval": retrieval,
     }
 
 
@@ -702,10 +707,10 @@ def run_live_eval(
         if is_api_case:
             copytree(case_root, eval_source, ignore=ignore_patterns("api-test.yml"))
         local_payload: dict[str, Any] = {
-            "schema_version": "agentic-qa.local-config.v1",
+            "schema_version": "agentic-qa.local-config.v2",
             "model": project_config.model.model_dump(mode="json"),
-            "rag": {"provider": "local-lexical"},
-            "postgres": {
+            "rag": {},
+            "system_database": {
                 "host": "localhost",
                 "port": 5432,
                 "database": "postgres",

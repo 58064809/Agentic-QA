@@ -55,6 +55,11 @@ StartRunCommand -> immutable SourceBundle -> QAPlan -> Send 并行专家
 - Source 摄取不得跟随链接或 reparse point，不得绕过路径、数量、解析及 Hash 预算。
 - API/UI 状态变更只允许在明确测试环境和 ExecutionProfile 范围内执行。
 - error/blocked 证据不得自动生成 Bug，根因不足保持 `unconfirmed`。
+- 新 Risk/TestCase 写入使用 `agentic-qa.risk-catalog.v2` 与
+  `agentic-qa.test-case-set.v2`；各自 v1 仅用于历史导入。Requirement Delta 与 Impact Analysis 可以独立
+  Candidate 审核；历史测试、缺陷和执行证据不能升级为 confirmed requirement。
+- Knowledge Store 强制 workspace 隔离；Candidate、remediation patch、失败模型输出和未审核 Bug Draft
+  不得进入长期索引。publication 索引失败不得回滚或篡改已发布事实。
 
 ## 工作区
 

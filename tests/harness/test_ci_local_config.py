@@ -31,9 +31,9 @@ def test_ci_bootstrap_only_populates_secret_provider_storage(tmp_path: Path) -> 
     )
 
     raw = yaml.safe_load(loader.path.read_text(encoding="utf-8"))
-    assert raw["postgres"]["password"] == "secret://postgres.password"
+    assert raw["system_database"]["password"] == "secret://system_database.password"
     assert raw["runtime"]["cleanup_journal_key"] == ("secret://runtime.cleanup_journal_key")
-    assert raw["secrets"]["values"]["postgres.password"] == "postgres"
+    assert raw["secrets"]["values"]["system_database.password"] == "postgres"
     assert (tmp_path / "local-sources" / "api" / "member-service").is_dir()
     assert loader.check().ready is True
 

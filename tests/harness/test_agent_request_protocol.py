@@ -158,7 +158,7 @@ def test_mcp_stdio_server_lists_restricted_tools(tmp_path: Path) -> None:
     (repo / "agentic-qa.local.yml").write_text(
         yaml.safe_dump(
             {
-                "schema_version": "agentic-qa.local-config.v1",
+                "schema_version": "agentic-qa.local-config.v2",
                 "model": {
                     "provider": "recorded",
                     "api_key_env": "UNIT_MODEL_KEY",
@@ -166,8 +166,8 @@ def test_mcp_stdio_server_lists_restricted_tools(tmp_path: Path) -> None:
                     "pro_model": "recorded-pro",
                     "base_url": "https://model.example.test",
                 },
-                "rag": {"provider": "local-lexical"},
-                "postgres": {
+                "rag": {},
+                "system_database": {
                     "host": "localhost",
                     "port": 5432,
                     "database": "postgres",

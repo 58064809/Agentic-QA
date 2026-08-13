@@ -59,7 +59,7 @@ def _logs_config() -> LocalLogsConfig:
 def _local_config(logs: LocalLogsConfig) -> AgenticQaLocalConfig:
     return AgenticQaLocalConfig.model_validate(
         {
-            "schema_version": "agentic-qa.local-config.v1",
+            "schema_version": "agentic-qa.local-config.v2",
             "secrets": {"provider": "local"},
             "model": {
                 "provider": "recorded",
@@ -67,8 +67,8 @@ def _local_config(logs: LocalLogsConfig) -> AgenticQaLocalConfig:
                 "flash_model": "recorded-flash",
                 "pro_model": "recorded-pro",
             },
-            "rag": {"provider": "local-lexical"},
-            "postgres": {
+            "rag": {},
+            "system_database": {
                 "host": "localhost",
                 "database": "postgres",
                 "user": "postgres",

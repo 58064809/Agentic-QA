@@ -20,9 +20,9 @@ class CounterState(TypedDict):
 
 
 def _postgres_config() -> CheckpointPostgresConfig:
-    value = FilesystemLocalConfigLoader(Path.cwd()).load_required().postgres
+    value = FilesystemLocalConfigLoader(Path.cwd()).load_required().system_database
     if value.password == "local-validation-only":
-        pytest.skip("postgres.password is still the local placeholder")
+        pytest.skip("system_database.password is still the local placeholder")
     return CheckpointPostgresConfig(
         host=value.host,
         port=value.port,

@@ -51,6 +51,12 @@ Agentic-QA 生成 create-only 候选产物，并以人工 Review Gate 隔离 Age
 | Trace evidence v1 | [JSON Schema](schemas/trace-evidence.v1.schema.json) |
 | Trace analysis v1 | [JSON Schema](schemas/trace-analysis.v1.schema.json) |
 | Root cause evidence graph v1 | [JSON Schema](schemas/root-cause-evidence-graph.v1.schema.json) |
+| Retrieval result v1 | [JSON Schema](schemas/retrieval-result.v1.schema.json) |
+| Requirement delta v1 | [JSON Schema](schemas/requirement-delta.v1.schema.json) |
+| Impact analysis v1 | [JSON Schema](schemas/impact-analysis.v1.schema.json) |
+| Risk catalog v2 | [JSON Schema](schemas/risk-catalog.v2.schema.json) |
+| Test design plan v1 | [JSON Schema](schemas/test-design-plan.v1.schema.json) |
+| Test case set v2 | [JSON Schema](schemas/test-case-set.v2.schema.json) |
 | Bug draft v1 | [JSON Schema](schemas/bug-draft.v1.schema.json) |
 | AgentRequest v1 | [JSON Schema](schemas/agent-request.v1.schema.json) |
 | AgentRequestResult v1 | [JSON Schema](schemas/agent-request-result.v1.schema.json) |

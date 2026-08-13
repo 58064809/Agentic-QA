@@ -1,0 +1,101 @@
+{
+  "$defs": {
+    "ImpactClaim": {
+      "additionalProperties": false,
+      "properties": {
+        "impact_id": {
+          "pattern": "^IMPACT-\\d{3,}$",
+          "title": "Impact Id",
+          "type": "string"
+        },
+        "relation": {
+          "enum": [
+            "direct",
+            "potential"
+          ],
+          "title": "Relation",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "module",
+            "rule",
+            "testcase",
+            "api",
+            "role",
+            "state",
+            "historical_bug"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "target": {
+          "minLength": 1,
+          "title": "Target",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        }
+      },
+      "required": [
+        "impact_id",
+        "relation",
+        "kind",
+        "target",
+        "reason",
+        "evidence_refs",
+        "confidence"
+      ],
+      "title": "ImpactClaim",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.impact-analysis.v1",
+      "default": "agentic-qa.impact-analysis.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "workspace_id": {
+      "title": "Workspace Id",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/ImpactClaim"
+      },
+      "title": "Claims",
+      "type": "array"
+    }
+  },
+  "required": [
+    "workspace_id",
+    "run_id",
+    "claims"
+  ],
+  "title": "ImpactAnalysis",
+  "type": "object"
+}

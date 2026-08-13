@@ -36,6 +36,16 @@ from harness.domain.schemas.api_execution_reporting import (
 from harness.domain.schemas.api_project import ApiProjectCheckCommand, ApiProjectCheckResult
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
+from harness.domain.schemas.knowledge import (
+    KnowledgeDeleteCommand,
+    KnowledgeDeleteResult,
+    KnowledgeIndexResult,
+    KnowledgeIndexRunCommand,
+    KnowledgeMigrateResult,
+    KnowledgeReindexCommand,
+    KnowledgeReindexResult,
+    KnowledgeStatus,
+)
 from harness.domain.schemas.local_config import LocalConfigCheckResult
 from harness.domain.schemas.log_analysis import (
     AnalyzeFailureCommand,
@@ -88,6 +98,21 @@ class Harness:
 
     def check_local_config(self) -> LocalConfigCheckResult:
         return self._application.check_local_config()
+
+    def knowledge_migrate(self) -> KnowledgeMigrateResult:
+        return self._application.knowledge_migrate()
+
+    def knowledge_status(self, workspace_id: str) -> KnowledgeStatus:
+        return self._application.knowledge_status(workspace_id)
+
+    def knowledge_index_run(self, command: KnowledgeIndexRunCommand) -> KnowledgeIndexResult:
+        return self._application.knowledge_index_run(command)
+
+    def knowledge_reindex(self, command: KnowledgeReindexCommand) -> KnowledgeReindexResult:
+        return self._application.knowledge_reindex(command)
+
+    def knowledge_delete(self, command: KnowledgeDeleteCommand) -> KnowledgeDeleteResult:
+        return self._application.knowledge_delete(command)
 
     def prepare_api_scenario(self, command: ApiScenarioPrepareCommand) -> ApiScenarioPrepareResult:
         return self._application.prepare_api_scenario(command)

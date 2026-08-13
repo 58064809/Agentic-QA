@@ -101,9 +101,15 @@ def _variable(service: str, environment: str, name: str) -> str:
 
 def _secret_locations(payload: dict[str, object]) -> list[tuple[tuple[str, ...], str]]:
     locations: list[tuple[tuple[str, ...], str]] = [
-        (("postgres", "password"), "postgres.password"),
+        (("system_database", "password"), "system_database.password"),
         (("runtime", "cleanup_journal_key"), "runtime.cleanup_journal_key"),
     ]
+    data_sources = payload.get("data_sources")
+    if isinstance(data_sources, dict):
+        for name in data_sources:
+            locations.append(
+                (("data_sources", str(name), "password"), f"data_sources.{name}.password")
+            )
     test_management = payload.get("test_management")
     if isinstance(test_management, dict):
         provider = test_management.get("provider")
@@ -244,6 +250,53 @@ class FilesystemLocalConfigLoader:
         create_only_private_text(self.path, rendered)
         return self.path
 
+    def migrate_v1(self, output: Path) -> Path:
+        if output.exists():
+            raise FileExistsError(f"migration output already exists: {output}")
+        payload = yaml.safe_load(self.path.read_text(encoding="utf-8-sig"))
+        if not isinstance(payload, dict) or payload.get("schema_version") != (
+            "agentic-qa.local-config.v1"
+        ):
+            raise ValueError("config migrate requires agentic-qa.local-config.v1 input")
+        postgres = payload.pop("postgres", None)
+        if not isinstance(postgres, dict):
+            raise ValueError("v1 config is missing postgres")
+        postgres.pop("statement_timeout_ms", None)
+        postgres.pop("max_rows", None)
+        payload["schema_version"] = "agentic-qa.local-config.v2"
+        payload["system_database"] = postgres
+        if payload["system_database"].get("password") == "secret://postgres.password":
+            payload["system_database"]["password"] = "secret://system_database.password"
+        payload["data_sources"] = {}
+        old_rag = payload.get("rag") if isinstance(payload.get("rag"), dict) else {}
+        provider = str(old_rag.get("provider") or "local-lexical")
+        payload["rag"] = {
+            "embedding": {
+                "provider": "openai-compatible" if provider == "openai-compatible" else "none",
+                "api_key_env": old_rag.get("api_key_env", "RAG_API_KEY"),
+                "base_url": old_rag.get("base_url"),
+                "model": old_rag.get("model", "text-embedding-3-small"),
+                "dimensions": 1536,
+            },
+            "retrieval": {
+                "candidate_pool": 50,
+                "default_max_chunks": 10,
+                "hard_max_chunks": 20,
+                "max_chunk_characters": 4000,
+            },
+            "fusion": {"strategy": "rrf", "rrf_k": 60},
+            "reranker": {"provider": "none"},
+        }
+        secrets = payload.get("secrets")
+        if isinstance(secrets, dict) and isinstance(secrets.get("values"), dict):
+            values = secrets["values"]
+            if "postgres.password" in values:
+                values["system_database.password"] = values.pop("postgres.password")
+        create_only_private_text(
+            output, yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
+        )
+        return output
+
     @staticmethod
     def _new_cleanup_journal_key() -> str:
         return base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
@@ -370,7 +423,7 @@ class FilesystemLocalConfigLoader:
                     "LOCAL_CONFIG_INVALID",
                     str(self.path),
                     f"local configuration is invalid: {exc}",
-                    "Fix the reported field so the file conforms to agentic-qa.local-config.v1",
+                    "Fix the reported field so the file conforms to agentic-qa.local-config.v2",
                 )
             ]
         if not isinstance(payload, dict):
@@ -380,6 +433,15 @@ class FilesystemLocalConfigLoader:
                     str(self.path),
                     "local configuration must contain an object",
                     "Fix agentic-qa.local.yml",
+                )
+            ]
+        if payload.get("schema_version") == "agentic-qa.local-config.v1":
+            return None, [
+                _issue(
+                    "LOCAL_CONFIG_MIGRATION_REQUIRED",
+                    "schema_version",
+                    "agentic-qa.local-config.v1 is read-only migration input",
+                    "Run `python -m harness config migrate --output agentic-qa.local.v2.yml`",
                 )
             ]
         try:
@@ -455,24 +517,24 @@ class FilesystemLocalConfigLoader:
                 )
             )
         if (
-            config.rag.provider == "openai-compatible"
-            and not os.environ.get(config.rag.api_key_env, "").strip()
+            config.rag.embedding.provider == "openai-compatible"
+            and not os.environ.get(config.rag.embedding.api_key_env, "").strip()
         ):
             issues.append(
                 _issue(
                     "RAG_API_KEY_MISSING",
-                    "rag.api_key_env",
-                    f"RAG key environment variable is empty: {config.rag.api_key_env}",
-                    f"Set only the actual RAG key in {config.rag.api_key_env}",
+                    "rag.embedding.api_key_env",
+                    "RAG embedding key environment variable is empty",
+                    f"Set only the actual RAG key in {config.rag.embedding.api_key_env}",
                 )
             )
-        if not config.postgres.password:
+        if not config.system_database.password:
             issues.append(
                 _issue(
                     "POSTGRES_PASSWORD_MISSING",
-                    "postgres.password",
-                    "PostgreSQL password is empty",
-                    "Set postgres.password in agentic-qa.local.yml",
+                    "system_database.password",
+                    "system database password is empty",
+                    "Set system_database.password in agentic-qa.local.yml",
                 )
             )
         issues.extend(self._connection_url_issues(config))
@@ -535,8 +597,8 @@ class FilesystemLocalConfigLoader:
     @staticmethod
     def _connection_url_issues(config: AgenticQaLocalConfig) -> list[LocalConfigIssue]:
         values: list[tuple[str, str | None]] = [("model.base_url", config.model.base_url)]
-        if config.rag.provider == "openai-compatible":
-            values.append(("rag.base_url", config.rag.base_url))
+        if config.rag.embedding.provider == "openai-compatible":
+            values.append(("rag.embedding.base_url", config.rag.embedding.base_url))
         provider = config.test_management
         if hasattr(provider, "base_url"):
             values.append(("test_management.base_url", provider.base_url))

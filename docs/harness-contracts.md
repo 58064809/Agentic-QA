@@ -7,6 +7,11 @@
 | 方法 | 输入 | 输出 | 前置条件 | 写入/副作用 |
 |---|---|---|---|---|
 | `check_local_config` | 无 | `LocalConfigCheckResult` | 仓库根目录可读 | 只读检查根配置，不创建 workspace/run |
+| `knowledge_migrate` | 无 | `KnowledgeMigrateResult` | system database 可用且已安装 pgvector | 在 advisory lock 下前向迁移 Knowledge Store |
+| `knowledge_status` | `workspace_id` | `KnowledgeStatus` | workspace 存在 | 只读返回文档、chunk 与 publication outbox 状态 |
+| `knowledge_index_run` | `KnowledgeIndexRunCommand` | `KnowledgeIndexResult` | run 已通过人工 Review 并 published | 校验 publication journal、Candidate、Review 与文件 Hash 后幂等索引 |
+| `knowledge_reindex` | `KnowledgeReindexCommand` | `KnowledgeReindexResult` | 显式 `published=true` | 仅重建已发布历史，不扫描 Candidate |
+| `knowledge_delete` | `KnowledgeDeleteCommand` | `KnowledgeDeleteResult` | 文档属于指定 workspace | 删除内容并保留无内容 tombstone |
 | `api_execution_profile` | `workspace, environment` | `ExecutionProfile` | workspace 已绑定 API 服务 | 只读派生执行配置，不返回凭据值 |
 | `create_workspace` | `CreateWorkspaceCommand` | `Path` | workspace ID 安全且不存在 | 创建 v2 workspace |
 | `check_api_project` | `ApiProjectCheckCommand` | `ApiProjectCheckResult` | 根配置与来源目录可读 | 只读检查根配置、运行环境和 API 来源，不创建 workspace/run |

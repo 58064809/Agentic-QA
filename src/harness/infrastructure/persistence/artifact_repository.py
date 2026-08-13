@@ -44,6 +44,8 @@ from harness.infrastructure.persistence.workspace_repository import WorkspaceFil
 UTC = timezone.utc
 ARTIFACT_EXTENSIONS = {
     "requirement_analysis": ".md",
+    "requirement_delta": ".md",
+    "impact_analysis": ".md",
     "testcases": ".md",
     "api_test_draft": ".yml",
     "ui_test_draft": ".md",

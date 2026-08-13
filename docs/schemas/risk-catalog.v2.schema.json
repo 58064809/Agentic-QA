@@ -1,0 +1,157 @@
+{
+  "$defs": {
+    "RiskItem": {
+      "additionalProperties": false,
+      "properties": {
+        "risk_id": {
+          "pattern": "^RISK-\\d{3,}$",
+          "title": "Risk Id",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "rule_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Rule Ids",
+          "type": "array"
+        },
+        "priority": {
+          "$ref": "#/$defs/RiskLevel"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "coverage_intent": {
+          "description": "Array of separate test coverage intents; never return one prose string.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Coverage Intent",
+          "type": "array"
+        },
+        "requirement_risk": {
+          "anyOf": [
+            {
+              "maximum": 3,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requirement Risk"
+        },
+        "impact_radius": {
+          "anyOf": [
+            {
+              "maximum": 3,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Impact Radius"
+        },
+        "historical_defect": {
+          "anyOf": [
+            {
+              "maximum": 2,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Historical Defect"
+        },
+        "critical_business_flow": {
+          "anyOf": [
+            {
+              "maximum": 2,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Critical Business Flow"
+        },
+        "factor_evidence": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "propertyNames": {
+            "enum": [
+              "requirement_risk",
+              "impact_radius",
+              "historical_defect",
+              "critical_business_flow"
+            ]
+          },
+          "title": "Factor Evidence",
+          "type": "object"
+        }
+      },
+      "required": [
+        "risk_id",
+        "title",
+        "rule_ids",
+        "priority",
+        "rationale",
+        "coverage_intent"
+      ],
+      "title": "RiskItem",
+      "type": "object"
+    },
+    "RiskLevel": {
+      "enum": [
+        "P0",
+        "P1",
+        "P2",
+        "P3"
+      ],
+      "title": "RiskLevel",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Current write contract; RiskCatalog remains the strict legacy/current reader.",
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.risk-catalog.v2",
+      "default": "agentic-qa.risk-catalog.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "risks": {
+      "items": {
+        "$ref": "#/$defs/RiskItem"
+      },
+      "title": "Risks",
+      "type": "array"
+    }
+  },
+  "title": "RiskCatalogV2",
+  "type": "object"
+}

@@ -40,6 +40,18 @@ from harness.domain.schemas.api_execution_reporting import (
 from harness.domain.schemas.api_project import ApiProjectCheckCommand, ApiProjectCheckResult
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
+from harness.domain.schemas.knowledge import (
+    KnowledgeDeleteCommand,
+    KnowledgeDeleteResult,
+    KnowledgeIndexResult,
+    KnowledgeIndexRunCommand,
+    KnowledgeMigrateResult,
+    KnowledgeReindexCommand,
+    KnowledgeReindexResult,
+    KnowledgeStatus,
+    RetrievalQuery,
+    RetrievalResult,
+)
 from harness.domain.schemas.local_config import LocalConfigCheckResult
 from harness.domain.schemas.log_analysis import (
     AnalyzeFailureCommand,
@@ -102,6 +114,18 @@ class LocalConfigChecker(Protocol):
     def check(self) -> LocalConfigCheckResult: ...
 
 
+class KnowledgeLifecycle(Protocol):
+    def migrate(self) -> KnowledgeMigrateResult: ...
+
+    def status(self, workspace_id: str) -> KnowledgeStatus: ...
+
+    def index_run(self, command: KnowledgeIndexRunCommand) -> KnowledgeIndexResult: ...
+
+    def reindex(self, command: KnowledgeReindexCommand) -> KnowledgeReindexResult: ...
+
+    def delete(self, command: KnowledgeDeleteCommand) -> KnowledgeDeleteResult: ...
+
+
 class ManagedAgentWorkspaceProvisioner(Protocol):
     def prepare(
         self,
@@ -145,6 +169,26 @@ class ArtifactReviewRepository(Protocol):
 
 class CheckpointProvider(Protocol):
     def open(self) -> AbstractContextManager[Any]: ...
+
+
+class EmbeddingProvider(Protocol):
+    provider: str
+    model: str
+    dimensions: int
+
+    def embed(self, texts: list[str]) -> list[list[float]]: ...
+
+
+class VectorStore(Protocol):
+    def retrieve(self, query: RetrievalQuery) -> RetrievalResult: ...
+
+
+class Retriever(Protocol):
+    def retrieve(self, query: RetrievalQuery) -> RetrievalResult: ...
+
+
+class Reranker(Protocol):
+    def rerank(self, query: str, candidates: list[dict[str, Any]]) -> list[str]: ...
 
 
 ToolHandler = Callable[[dict[str, Any]], Any]

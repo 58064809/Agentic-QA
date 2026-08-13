@@ -10,6 +10,7 @@ from harness.budget import Budget
 from harness.contracts import ExecutionProfile
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
 from harness.infrastructure.persistence.filesystem import FilesystemStore
+from harness.infrastructure.rag.provider import RagProviderConfig, RagRetriever
 from harness.infrastructure.tools.runtime import ToolRuntime
 from harness.testing.evals import recorded_model_gateway
 
@@ -71,6 +72,12 @@ def _runtime(tmp_path: Path):
         agents=agents,
         tools=tools,
         budget=Budget(),
+        handlers={
+            "rag.retrieve": lambda _arguments: RagRetriever(
+                store,
+                RagProviderConfig(provider="local-lexical"),
+            ).retrieve("demo", snapshot.run_id, "登录失败锁定", 10)
+        },
     )
     return harness, workspace, snapshot, runtime
 
@@ -85,7 +92,7 @@ def test_rag_uses_frozen_source_bundle(tmp_path: Path) -> None:
         run_id=snapshot.run_id,
         agent="requirement_analyst",
         tool="rag.retrieve",
-        arguments={"query": "登录失败锁定"},
+        arguments={"query": "登录失败锁定", "purpose": "requirement"},
         profile=ExecutionProfile(),
     )
     assert result["chunks"][0]["source"] == "sources/requirement.md"

@@ -4,10 +4,29 @@ provider: builtin
 description: 返回带 source、chunk 和选择依据的检索结果
 input_schema:
   type: object
-  required: [query]
+  required: [query, purpose]
   properties:
     query: {type: string, minLength: 1}
+    purpose:
+      enum: [requirement, impact, risk, regression, reference]
     max_chunks: {type: integer, minimum: 1, maximum: 20}
+    filters:
+      type: object
+      properties:
+        source_types: {type: array, items: {type: string}, uniqueItems: true}
+        document_versions: {type: array, items: {type: integer, minimum: 1}, uniqueItems: true}
+        business_modules: {type: array, items: {type: string}, uniqueItems: true}
+        environments: {type: array, items: {type: string}, uniqueItems: true}
+        freshness:
+          type: array
+          items: {enum: [current, historical, superseded, deprecated]}
+          uniqueItems: true
+        trust:
+          type: array
+          items:
+            enum: [current_source, reviewed_requirement, reviewed_asset, execution_evidence, reference_only]
+          uniqueItems: true
+      additionalProperties: false
   additionalProperties: false
 output_schema: {type: object}
 risk: read_only

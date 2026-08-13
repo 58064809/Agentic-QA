@@ -10,6 +10,7 @@ from harness.application.ports import (
     ApiScenarioRunner,
     ArtifactReviewRepository,
     FailureLogService,
+    KnowledgeLifecycle,
     LocalConfigChecker,
     QualityStrategyCatalog,
     RunEventRepository,
@@ -44,6 +45,16 @@ from harness.domain.schemas.api_execution_reporting import (
 from harness.domain.schemas.api_project import ApiProjectCheckCommand, ApiProjectCheckResult
 from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
+from harness.domain.schemas.knowledge import (
+    KnowledgeDeleteCommand,
+    KnowledgeDeleteResult,
+    KnowledgeIndexResult,
+    KnowledgeIndexRunCommand,
+    KnowledgeMigrateResult,
+    KnowledgeReindexCommand,
+    KnowledgeReindexResult,
+    KnowledgeStatus,
+)
 from harness.domain.schemas.local_config import AgenticQaLocalConfig, LocalConfigCheckResult
 from harness.domain.schemas.log_analysis import (
     AnalyzeFailureCommand,
@@ -74,6 +85,7 @@ class HarnessApplication:
         local_config_checker: LocalConfigChecker | None = None,
         local_config: AgenticQaLocalConfig | None = None,
         failure_logs: FailureLogService | None = None,
+        knowledge: KnowledgeLifecycle | None = None,
     ) -> None:
         self._workspaces = workspaces
         self._runs = runs
@@ -87,6 +99,32 @@ class HarnessApplication:
         self._local_config_checker = local_config_checker
         self._local_config = local_config
         self._failure_logs = failure_logs
+        self._knowledge = knowledge
+
+    def knowledge_migrate(self) -> KnowledgeMigrateResult:
+        if self._knowledge is None:
+            raise RuntimeError("knowledge lifecycle is not configured")
+        return self._knowledge.migrate()
+
+    def knowledge_status(self, workspace_id: str) -> KnowledgeStatus:
+        if self._knowledge is None:
+            raise RuntimeError("knowledge lifecycle is not configured")
+        return self._knowledge.status(workspace_id)
+
+    def knowledge_index_run(self, command: KnowledgeIndexRunCommand) -> KnowledgeIndexResult:
+        if self._knowledge is None:
+            raise RuntimeError("knowledge lifecycle is not configured")
+        return self._knowledge.index_run(command)
+
+    def knowledge_reindex(self, command: KnowledgeReindexCommand) -> KnowledgeReindexResult:
+        if self._knowledge is None:
+            raise RuntimeError("knowledge lifecycle is not configured")
+        return self._knowledge.reindex(command)
+
+    def knowledge_delete(self, command: KnowledgeDeleteCommand) -> KnowledgeDeleteResult:
+        if self._knowledge is None:
+            raise RuntimeError("knowledge lifecycle is not configured")
+        return self._knowledge.delete(command)
 
     def check_local_config(self) -> LocalConfigCheckResult:
         if self._local_config_checker is None:

@@ -55,32 +55,77 @@ class LocalModelConfig(StrictModel):
     max_output_tokens: int = Field(default=16384, ge=256, le=131072)
 
 
-class LocalRagConfig(StrictModel):
-    provider: Literal["local-lexical", "openai-compatible"] = "local-lexical"
+class LocalEmbeddingConfig(StrictModel):
+    provider: Literal["none", "openai-compatible"] = "none"
     api_key_env: str = Field(default="RAG_API_KEY", pattern=ENV_NAME_PATTERN)
     base_url: str | None = None
     model: str = Field(default="text-embedding-3-small", min_length=1)
-    chunk_size: int = Field(default=1200, ge=200, le=4000)
-    chunk_overlap: int = Field(default=400, ge=0, le=1000)
+    dimensions: Literal[1536] = 1536
 
     @model_validator(mode="after")
-    def validate_overlap(self) -> LocalRagConfig:
-        if self.chunk_overlap >= self.chunk_size:
-            raise ValueError("rag.chunk_overlap must be smaller than rag.chunk_size")
+    def validate_provider(self) -> LocalEmbeddingConfig:
         if self.provider == "openai-compatible" and not self.base_url:
-            raise ValueError("openai-compatible RAG requires rag.base_url")
+            raise ValueError("openai-compatible embedding requires rag.embedding.base_url")
         return self
 
 
-class LocalPostgresConfig(StrictModel):
+class LocalRetrievalConfig(StrictModel):
+    candidate_pool: int = Field(default=50, ge=10, le=200)
+    default_max_chunks: int = Field(default=10, ge=1, le=20)
+    hard_max_chunks: int = Field(default=20, ge=1, le=20)
+    max_chunk_characters: int = Field(default=4000, ge=500, le=16000)
+
+    @model_validator(mode="after")
+    def validate_limits(self) -> LocalRetrievalConfig:
+        if self.default_max_chunks > self.hard_max_chunks:
+            raise ValueError("rag default chunks exceed hard max chunks")
+        return self
+
+
+class LocalFusionConfig(StrictModel):
+    strategy: Literal["rrf"] = "rrf"
+    rrf_k: Literal[60] = 60
+
+
+class LocalRerankerConfig(StrictModel):
+    provider: Literal["none", "model"] = "none"
+
+
+class LocalRagConfig(StrictModel):
+    embedding: LocalEmbeddingConfig = Field(default_factory=LocalEmbeddingConfig)
+    retrieval: LocalRetrievalConfig = Field(default_factory=LocalRetrievalConfig)
+    fusion: LocalFusionConfig = Field(default_factory=LocalFusionConfig)
+    reranker: LocalRerankerConfig = Field(default_factory=LocalRerankerConfig)
+
+
+class LocalSystemDatabaseConfig(StrictModel):
     host: str = Field(min_length=1)
     port: int = Field(default=5432, ge=1, le=65535)
     database: str = Field(min_length=1)
     user: str = Field(min_length=1)
     password: str
     connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
+
+
+class LocalDataSourceConfig(StrictModel):
+    host: str = Field(min_length=1)
+    port: int = Field(default=5432, ge=1, le=65535)
+    database: str = Field(min_length=1)
+    user: str = Field(min_length=1)
+    password: str
+    allowed_workspaces: list[str] = Field(min_length=1)
+    allowed_environments: list[str] = Field(min_length=1)
+    connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
     statement_timeout_ms: int = Field(default=10000, ge=100, le=60000)
     max_rows: int = Field(default=200, ge=1, le=1000)
+
+    @field_validator("allowed_workspaces", "allowed_environments")
+    @classmethod
+    def normalize_allowlists(cls, values: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(item.strip().casefold() for item in values if item.strip()))
+        if not normalized or len(normalized) != len(values):
+            raise ValueError("datasource allowlists require unique non-empty values")
+        return normalized
 
 
 class NoTestManagementConfig(StrictModel):
@@ -474,11 +519,12 @@ class LocalApiConfig(StrictModel):
 
 
 class AgenticQaLocalConfig(StrictModel):
-    schema_version: Literal["agentic-qa.local-config.v1"] = "agentic-qa.local-config.v1"
+    schema_version: Literal["agentic-qa.local-config.v2"] = "agentic-qa.local-config.v2"
     secrets: SecretProviderDescriptor
     model: LocalModelConfig
     rag: LocalRagConfig
-    postgres: LocalPostgresConfig
+    system_database: LocalSystemDatabaseConfig
+    data_sources: dict[str, LocalDataSourceConfig] = Field(default_factory=dict)
     test_management: LocalTestManagementConfig
     workspace_defaults: LocalWorkspaceDefaults = Field(default_factory=LocalWorkspaceDefaults)
     runtime: LocalRuntimeConfig = Field(default_factory=LocalRuntimeConfig)

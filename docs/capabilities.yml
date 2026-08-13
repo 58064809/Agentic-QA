@@ -27,3 +27,19 @@ capabilities:
     status: implemented
     documentation: failure-triage.md
     command: python -m harness eval failure-triage-live
+  knowledge_store:
+    status: implemented
+    documentation: rag-design.md
+    backend: PostgreSQL 16 + pgvector
+    cross_workspace_retrieval: false
+  requirement_intelligence:
+    status: implemented
+    documentation: architecture.md
+    delta_contract: agentic-qa.requirement-delta.v1
+    impact_contract: agentic-qa.impact-analysis.v1
+    risk_contract: agentic-qa.risk-catalog.v2
+  advanced_test_design:
+    status: implemented
+    documentation: testcase-standards.md
+    plan_contract: agentic-qa.test-design-plan.v1
+    testcase_contract: agentic-qa.test-case-set.v2

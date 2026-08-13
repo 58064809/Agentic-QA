@@ -21,7 +21,7 @@ def _publish_cases(repo_root: Path, workspace: str) -> Path:
     source = repo_root / "local-sources" / "api" / "demo"
     source.mkdir(parents=True, exist_ok=True)
     local = {
-        "schema_version": "agentic-qa.local-config.v1",
+        "schema_version": "agentic-qa.local-config.v2",
         "model": {
             "provider": "recorded",
             "api_key_env": "UNIT_MODEL_KEY",
@@ -29,8 +29,8 @@ def _publish_cases(repo_root: Path, workspace: str) -> Path:
             "pro_model": "recorded-pro",
             "base_url": "https://model.example.test",
         },
-        "rag": {"provider": "local-lexical"},
-        "postgres": {
+        "rag": {},
+        "system_database": {
             "host": "localhost",
             "port": 5432,
             "database": "postgres",

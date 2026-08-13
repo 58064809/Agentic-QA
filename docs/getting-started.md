@@ -15,7 +15,7 @@ Base URL、手机号/账号、验证码、AES Key、Token、PostgreSQL、TestRai
 至少完成以下检查：
 
 1. `model.api_key_env` 指向当前 PowerShell 已设置的模型 Key。
-2. `postgres.password` 不为空。
+2. `system_database.password` 的 Secret Provider 引用可解析。
 3. `api.services.<服务>.source_directory` 指向真实来源目录。
 4. 目标环境的 `base_url`、`trusted_origins`、允许方法和认证完整。
 5. 使用登录时填完所有字段；暂不登录时清空所有登录值并填写 `fallback_token`。

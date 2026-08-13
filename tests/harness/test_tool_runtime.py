@@ -207,8 +207,8 @@ def test_live_capture_facade_hides_raw_network_tools_and_enforces_origin(
                 "pro_model": "recorded-pro",
                 "base_url": "https://model.example.test",
             },
-            "rag": {"provider": "local-lexical"},
-            "postgres": {
+            "rag": {},
+            "system_database": {
                 "host": "localhost",
                 "port": 5432,
                 "database": "postgres",
