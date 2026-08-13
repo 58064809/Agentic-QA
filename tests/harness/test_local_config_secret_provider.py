@@ -59,25 +59,33 @@ def _write_legacy(repo: Path) -> FilesystemLocalConfigLoader:
     return FilesystemLocalConfigLoader(repo)
 
 
+def _write_v2(repo: Path) -> FilesystemLocalConfigLoader:
+    legacy = _write_legacy(repo)
+    migrated = repo / "agentic-qa.local.v2.yml"
+    legacy.migrate_v1(migrated)
+    migrated.replace(legacy.path)
+    return legacy
+
+
 def test_inline_secret_migration_replaces_fields_and_resolves_values(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("UNIT_MODEL_KEY", "model-key")
-    loader = _write_legacy(tmp_path)
+    loader = _write_v2(tmp_path)
 
     loader.migrate_inline_secrets()
 
     persisted = yaml.safe_load(loader.path.read_text(encoding="utf-8"))
     assert list(persisted)[:2] == ["schema_version", "secrets"]
-    assert persisted["postgres"]["password"] == "secret://postgres.password"
+    assert persisted["system_database"]["password"] == ("secret://system_database.password")
     assert (
         persisted["api"]["services"]["orders"]["environments"]["qa"]["auth"]["fallback_token"]
         == "secret://api.orders.qa.auth.fallback_token"
     )
     assert persisted["runtime"]["cleanup_journal_key"] == ("secret://runtime.cleanup_journal_key")
     loaded = loader.load_required()
-    assert loaded.postgres.password == "database-secret"
+    assert loaded.system_database.password == "database-secret"
     assert loaded.runtime.cleanup_journal_key
     assert loaded.api.services["orders"].environments["qa"].auth.fallback_token == ("api-secret")
     with pytest.raises(FileExistsError, match="already declares"):
@@ -89,7 +97,7 @@ def test_environment_secret_provider_keeps_values_out_of_config(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("UNIT_MODEL_KEY", "model-key")
-    loader = _write_legacy(tmp_path)
+    loader = _write_v2(tmp_path)
     loader.migrate_inline_secrets()
     payload = yaml.safe_load(loader.path.read_text(encoding="utf-8"))
     references = list(payload["secrets"]["values"])
@@ -101,7 +109,7 @@ def test_environment_secret_provider_keeps_values_out_of_config(
     }
     for index, reference in enumerate(references):
         value = {
-            "postgres.password": "database-secret",
+            "system_database.password": "database-secret",
             "runtime.cleanup_journal_key": base64.urlsafe_b64encode(b"y" * 32).decode("ascii"),
             "api.orders.qa.auth.fallback_token": "api-secret",
         }[reference]
@@ -111,14 +119,14 @@ def test_environment_secret_provider_keeps_values_out_of_config(
     loaded = loader.load_required()
 
     assert loaded.secrets.provider == "environment"
-    assert loaded.postgres.password == "database-secret"
+    assert loaded.system_database.password == "database-secret"
     serialized = loader.path.read_text(encoding="utf-8")
     assert "database-secret" not in serialized
     assert "api-secret" not in serialized
 
 
 def test_custom_correlation_headers_are_safe_and_affect_policy_hash(tmp_path: Path) -> None:
-    loader = _write_legacy(tmp_path)
+    loader = _write_v2(tmp_path)
     loader.migrate_inline_secrets()
     config = loader.load_required()
     original = loader.resolve_api_project(config, "orders", "qa")
@@ -135,7 +143,7 @@ def test_custom_correlation_headers_are_safe_and_affect_policy_hash(tmp_path: Pa
 
 
 def test_sensitive_custom_correlation_header_is_rejected(tmp_path: Path) -> None:
-    loader = _write_legacy(tmp_path)
+    loader = _write_v2(tmp_path)
     loader.migrate_inline_secrets()
     payload = yaml.safe_load(loader.path.read_text(encoding="utf-8"))
     payload["api"]["services"]["orders"]["environments"]["qa"]["correlation_response_headers"] = [
@@ -154,14 +162,14 @@ def test_secret_provider_is_required_and_references_are_location_scoped(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("UNIT_MODEL_KEY", "model-key")
-    loader = _write_legacy(tmp_path)
+    loader = _write_v2(tmp_path)
     missing_provider = loader.check()
     assert missing_provider.ready is False
     assert {issue.code for issue in missing_provider.issues} == {"LOCAL_SECRET_PROVIDER_INVALID"}
 
     loader.migrate_inline_secrets()
     payload = yaml.safe_load(loader.path.read_text(encoding="utf-8"))
-    payload["model"]["flash_model"] = "secret://postgres.password"
+    payload["model"]["flash_model"] = "secret://system_database.password"
     atomic_private_text(loader.path, yaml.safe_dump(payload, sort_keys=False))
 
     unexpected_reference = loader.check()
@@ -194,7 +202,7 @@ def test_config_init_generates_runtime_key_in_local_provider(tmp_path: Path) -> 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permission contract")
 def test_config_doctor_rejects_group_or_other_permissions(tmp_path: Path) -> None:
-    loader = _write_legacy(tmp_path)
+    loader = _write_v2(tmp_path)
     loader.migrate_inline_secrets()
     os.chmod(loader.path, 0o644)
 
@@ -209,7 +217,7 @@ def test_cleanup_exemption_is_a_non_blocking_deprecation_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("UNIT_MODEL_KEY", "model-key")
-    loader = _write_legacy(tmp_path)
+    loader = _write_v2(tmp_path)
     payload = yaml.safe_load(loader.path.read_text(encoding="utf-8"))
     payload["api"]["services"]["orders"]["environments"]["qa"]["cleanup_exempt_operations"] = [
         "POST /notifications"
@@ -232,8 +240,9 @@ def test_cleanup_exemption_is_a_non_blocking_deprecation_warning(
 
 
 def test_loki_token_is_resolved_only_through_secret_provider(tmp_path: Path) -> None:
-    loader = _write_legacy(tmp_path)
-    payload = _legacy_payload()
+    loader = _write_v2(tmp_path)
+    payload = yaml.safe_load(loader.path.read_text(encoding="utf-8"))
+    payload.pop("secrets", None)
     payload["logs"] = {
         "provider": "loki",
         "allowed_environments": ["qa"],

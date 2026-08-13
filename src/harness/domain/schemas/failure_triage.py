@@ -106,6 +106,9 @@ class FailureHypothesis(StrictModel):
     category: FailureCategory
     service: str | None = None
     exception_type: str | None = None
+    dependency: str | None = None
+    failure_type: str | None = None
+    evidence_strength: Literal["strong", "medium", "weak"] | None = None
     summary: str = Field(min_length=1, max_length=2000)
     confidence: float = Field(ge=0, le=1)
     evidence_refs: list[str] = Field(default_factory=list)
@@ -124,8 +127,11 @@ class FailureTriageV2(StrictModel):
     case_id: str
     dataset_id: str | None = None
     execution_evidence_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    log_evidence_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    log_analysis_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    log_evidence_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    log_analysis_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    trace_evidence_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    trace_analysis_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    root_cause_graph_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     triage_status: Literal["success", "insufficient_evidence", "failed"]
     likelihood: Literal["highly_likely", "probable", "insufficient_evidence"]
     primary: FailureHypothesis | None = None

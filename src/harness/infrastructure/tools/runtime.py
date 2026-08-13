@@ -3,6 +3,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import re
 import unicodedata
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
@@ -17,16 +18,21 @@ from harness.domain.models import ExecutionProfile
 from harness.domain.schemas.api_test_cases import load_api_test_cases
 from harness.domain.schemas.execution_evidence import load_execution_evidence
 from harness.domain.schemas.failure_triage import FailureTriage
+from harness.domain.schemas.knowledge import RetrievalFilters, RetrievalQuery
 from harness.domain.schemas.local_config import (
     AgenticQaLocalConfig,
     LocalQaseConfig,
     LocalTestRailConfig,
 )
 from harness.domain.security import sanitize_untrusted, validate_api_base_url_policy
+from harness.infrastructure.knowledge_store import (
+    PostgresKnowledgeStore,
+    embedding_provider_from_config,
+)
 from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 from harness.infrastructure.manifests.registry import AgentRegistry, ToolRegistry
 from harness.infrastructure.persistence.filesystem import FilesystemStore
-from harness.infrastructure.rag.provider import RagProviderConfig, RagRetriever
+from harness.infrastructure.rag.provider import ModelReranker, PostgresHybridRetriever
 from harness.infrastructure.tools.api_execution import execute_api_cases
 from harness.infrastructure.tools.network_capture import inspect_network_capture
 from harness.infrastructure.tools.openapi import inspect_openapi
@@ -58,6 +64,7 @@ class ToolRuntime:
         handlers: dict[str, Callable[[dict[str, Any]], Any]] | None = None,
         on_call: Callable[[dict[str, Any]], None] | None = None,
         local_config: AgenticQaLocalConfig | None = None,
+        model_gateway: Any | None = None,
     ) -> None:
         self.store = store
         self.agents = agents
@@ -65,6 +72,7 @@ class ToolRuntime:
         self.budget = budget
         self.handlers = handlers or {}
         self.on_call = on_call
+        self.model_gateway = model_gateway
         self.local_config = (
             local_config or FilesystemLocalConfigLoader(store.repo_root).load_required()
         )
@@ -242,7 +250,23 @@ class ToolRuntime:
     ) -> dict[str, Any]:
         if profile.environment == "analysis-only":
             raise PermissionError("PostgreSQL access requires an explicit test environment")
-        value = self.local_config.postgres
+        environment = profile.environment.casefold()
+        if any(
+            segment in {"pro", "prod", "production", "live"}
+            for segment in re.split(r"[^a-z0-9]+", environment)
+            if segment
+        ):
+            raise PermissionError("PostgreSQL access is forbidden in production-like environments")
+        name = str(arguments.get("data_source") or "").strip()
+        if not name:
+            raise ValueError("postgres.query requires data_source")
+        value = self.local_config.data_sources.get(name)
+        if value is None:
+            raise PermissionError("PostgreSQL datasource is not configured")
+        if workspace.casefold() not in value.allowed_workspaces:
+            raise PermissionError("PostgreSQL datasource is not allowed for this workspace")
+        if profile.environment.casefold() not in value.allowed_environments:
+            raise PermissionError("PostgreSQL datasource is not allowed for this environment")
         config = PostgresSourceConfig(
             host=value.host,
             port=value.port,
@@ -350,21 +374,37 @@ class ToolRuntime:
         self, workspace: str, run_id: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
         value = self.local_config.rag
-        config = RagProviderConfig(
-            provider=value.provider,
-            api_key_env=value.api_key_env,
-            base_url=value.base_url,
-            model=value.model,
-            chunk_size=value.chunk_size,
-            chunk_overlap=value.chunk_overlap,
+        max_chunks = min(
+            max(int(arguments.get("max_chunks") or value.retrieval.default_max_chunks), 1),
+            value.retrieval.hard_max_chunks,
         )
-        max_chunks = min(max(int(arguments.get("max_chunks") or 8), 1), 20)
-        return RagRetriever(self.store, config).retrieve(
+        query = RetrievalQuery(
+            workspace_id=workspace,
+            run_id=run_id,
+            query=str(arguments.get("query") or ""),
+            purpose=arguments.get("purpose") or "reference",
+            filters=RetrievalFilters.model_validate(arguments.get("filters") or {}),
+            max_chunks=max_chunks,
+        )
+        database = PostgresKnowledgeStore(self.local_config.system_database)
+        database.index_source_bundle(
             workspace,
             run_id,
-            str(arguments.get("query") or ""),
-            max_chunks,
+            self.store.load_source_bundle(workspace, run_id),
+            max_chunk_characters=value.retrieval.max_chunk_characters,
+            embedding_provider=embedding_provider_from_config(value.embedding),
         )
+        if value.reranker.provider == "model" and self.model_gateway is None:
+            raise RuntimeError("model reranker is configured but no ModelGateway is available")
+        result = PostgresHybridRetriever(
+            database,
+            embedding_provider_from_config(value.embedding),
+            candidate_pool=value.retrieval.candidate_pool,
+            reranker=(
+                ModelReranker(self.model_gateway) if value.reranker.provider == "model" else None
+            ),
+        ).retrieve(query)
+        return result.model_dump(mode="json")
 
     def _openapi_inspect(
         self, workspace: str, run_id: str, arguments: dict[str, Any]

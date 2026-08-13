@@ -7,6 +7,11 @@
 | 方法 | 输入 | 输出 | 前置条件 | 写入/副作用 |
 |---|---|---|---|---|
 | `check_local_config` | 无 | `LocalConfigCheckResult` | 仓库根目录可读 | 只读检查根配置，不创建 workspace/run |
+| `knowledge_migrate` | 无 | `KnowledgeMigrateResult` | system database 可用且已安装 pgvector | 在 advisory lock 下前向迁移 Knowledge Store |
+| `knowledge_status` | `workspace_id` | `KnowledgeStatus` | workspace 存在 | 只读返回文档、chunk 与 publication outbox 状态 |
+| `knowledge_index_run` | `KnowledgeIndexRunCommand` | `KnowledgeIndexResult` | run 已通过人工 Review 并 published | 校验 publication journal、Candidate、Review 与文件 Hash 后幂等索引 |
+| `knowledge_reindex` | `KnowledgeReindexCommand` | `KnowledgeReindexResult` | 显式 `published=true` | 仅重建已发布历史，不扫描 Candidate |
+| `knowledge_delete` | `KnowledgeDeleteCommand` | `KnowledgeDeleteResult` | 文档属于指定 workspace | 删除内容并保留无内容 tombstone |
 | `api_execution_profile` | `workspace, environment` | `ExecutionProfile` | workspace 已绑定 API 服务 | 只读派生执行配置，不返回凭据值 |
 | `create_workspace` | `CreateWorkspaceCommand` | `Path` | workspace ID 安全且不存在 | 创建 v2 workspace |
 | `check_api_project` | `ApiProjectCheckCommand` | `ApiProjectCheckResult` | 根配置与来源目录可读 | 只读检查根配置、运行环境和 API 来源，不创建 workspace/run |
@@ -20,7 +25,8 @@
 | `generate_api_allure_report` | `GenerateApiAllureReportCommand` | `GenerateApiAllureReportResult` v2 | execution 已存在且 Execution Plan、历史发布与 Evidence 一致 | 从历史事实生成 Allure 产物；不发送 API 请求 |
 | `resume_api_cleanup` | `ResumeApiCleanupCommand` | `ResumeApiCleanupResult` | 加密 journal、环境、published hash 和策略 hash 一致 | 只发送 pending cleanup；不重放业务请求或不确定 cleanup |
 | `collect_failure_logs` | `CollectFailureLogsCommand` | `CollectFailureLogsResult` | immutable execution plan、Evidence hash 与根日志配置一致 | 显式读取受限日志范围并写 create-only 脱敏 Log Evidence；不修改 API execution |
-| `analyze_failure` | `AnalyzeFailureCommand` | `AnalyzeFailureResult` | create-only Log Evidence 与 collection manifest hash 一致 | 先确定性聚合异常、依赖信号与 timeline，再由受限模型生成带引用 FailureTriage v2 |
+| `collect_failure_evidence` | `CollectFailureEvidenceCommand` | `CollectFailureEvidenceResult` | immutable execution plan、Evidence hash 与所选 Provider 配置一致 | 按 `logs`、`traces` 或 `all` 原子提交 create-only failure collection；单源失败不修改 execution truth |
+| `analyze_failure` | `AnalyzeFailureCommand` | `AnalyzeFailureResult` | collection manifest 与存在的 Log/Trace Evidence hash 一致 | 确定性生成日志分析、调用链分析及证据图，再由共享 Engine 生成带引用 FailureTriage v2 |
 | `prepare_failure_report` | `PrepareFailureReportCommand` | `PrepareFailureReportResult` | validated FailureTriage v2 及全部 attachment hash 一致 | 创建独立 triage run 与 `failure_analysis`/可选 `bug_draft` Candidate，停在现有 Review Gate |
 | `export_api_pytest` | `ExportApiPytestCommand` | `ApiPytestExportResult` | 来源是 published API YAML，目标位于 workspace `exports/` | 确定性写入 pytest adapter；默认 create-only |
 | `resume_run` | `ResumeRunCommand` | `RunSnapshot` | planning/running/recoverable | 从同一 PostgreSQL thread 恢复 |

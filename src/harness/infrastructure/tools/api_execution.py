@@ -134,6 +134,8 @@ def extract_correlation_context(
 
     trace_id: str | None = None
     span_id: str | None = None
+    trace_flags: str | None = None
+    trace_source: str | None = None
     request_id: str | None = None
     custom_ids: dict[str, str] = {}
     observations: list[CorrelationObservation] = []
@@ -149,6 +151,8 @@ def extract_correlation_context(
         if valid and match:
             trace_id = trace
             span_id = span
+            trace_flags = match.group("flags").casefold()
+            trace_source = "traceparent"
             observations.extend(
                 [
                     CorrelationObservation(field="trace_id", header_name="traceparent"),
@@ -161,6 +165,7 @@ def extract_correlation_context(
             )
     if trace_id is None and values.get("x-trace-id"):
         trace_id = values["x-trace-id"]
+        trace_source = "response_header"
         observations.append(CorrelationObservation(field="trace_id", header_name="x-trace-id"))
     for name in ("x-request-id", "request-id"):
         if values.get(name):
@@ -174,6 +179,8 @@ def extract_correlation_context(
     return CorrelationContext(
         trace_id=trace_id,
         span_id=span_id,
+        trace_flags=trace_flags,
+        trace_source=trace_source,
         request_id=request_id,
         custom_ids=custom_ids,
         observations=observations,

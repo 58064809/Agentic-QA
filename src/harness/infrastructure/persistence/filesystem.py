@@ -6,7 +6,7 @@ import json
 import shutil
 import stat
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from harness.application.quality import QualityReport
 from harness.application.source import SourceBundle, SourceIngestionLimits
@@ -31,6 +31,10 @@ from harness.infrastructure.persistence.source_bundle_repository import (
 from harness.infrastructure.persistence.workspace_repository import WorkspaceFilesystemRepository
 
 
+class PublicationIndexer(Protocol):
+    def publication_committed(self, workspace_id: str, run_id: str) -> None: ...
+
+
 class FilesystemStore:
     """组合三个独立文件仓储，供基础设施工作流统一注入。"""
 
@@ -46,6 +50,10 @@ class FilesystemStore:
         self.sources = SourceBundleFilesystemRepository(self.workspaces, source_limits)
         self.repo_root = self.workspaces.repo_root
         self.root = self.workspaces.root
+        self._publication_indexer: PublicationIndexer | None = None
+
+    def set_publication_indexer(self, indexer: PublicationIndexer) -> None:
+        self._publication_indexer = indexer
 
     def workspace_path(self, workspace: str) -> Path:
         return self.workspaces.workspace_path(workspace)
@@ -230,7 +238,13 @@ class FilesystemStore:
                 ),
             )
         journal["status"] = "committed"
+        journal["knowledge_index_status"] = "pending"
         atomic_json(journal_path, journal)
+        if self._publication_indexer is not None:
+            self._publication_indexer.publication_committed(
+                snapshot.workspace_id,
+                snapshot.run_id,
+            )
 
     def _publication_paths(
         self,

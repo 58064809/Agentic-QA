@@ -20,7 +20,7 @@ python -m harness config init
 secrets:
   provider: local
   values:
-    postgres.password: "<本机密码>"
+    system_database.password: "<本机密码>"
     runtime.cleanup_journal_key: "<config init 自动生成>"
     api.member-service.dev.auth.login.phone: "<测试手机号>"
     api.member-service.dev.auth.login.sms_code: "000000"
@@ -34,7 +34,7 @@ CI 或团队环境可切换为 `provider: environment`，映射的是“引用�
 secrets:
   provider: environment
   variables:
-    postgres.password: AGENTIC_QA_SECRET_POSTGRES_PASSWORD
+    system_database.password: AGENTIC_QA_SECRET_SYSTEM_DATABASE_PASSWORD
     runtime.cleanup_journal_key: AGENTIC_QA_SECRET_CLEANUP_KEY
     api.member-service.dev.auth.fallback_token: AGENTIC_QA_SECRET_MEMBER_TOKEN
 ```
@@ -47,9 +47,10 @@ secrets:
 | 分区 | 在文件中直接填写 | 仍从环境变量读取 |
 |---|---|---|
 | `model` | Provider、模型名、Base URL、超时、输出上限 | `api_key_env` 指向的实际模型 Key |
-| `rag` | Provider、Base URL、模型、切块参数 | `api_key_env` 指向的实际 RAG Key；本地词法检索不需要 |
+| `rag` | embedding、retrieval、fusion、reranker 与 bounded limits | `embedding.api_key_env` 指向的实际 RAG Key |
 | `secrets` | local 值，或 CI 环境变量映射 | environment provider 声明的实际值 |
-| `postgres` | Host、端口、库、用户、`secret://` 密码引用、超时、最大行数 | 无 |
+| `system_database` | Harness checkpoint/knowledge PostgreSQL 的 Host、库、用户、`secret://` 密码与连接超时 | 无 |
+| `data_sources.<id>` | 外部只读 PostgreSQL、workspace/environment allowlist、查询超时与行上限 | 无 |
 | `test_management` | TestRail/Qase 地址及 `secret://` 凭据引用 | 无 |
 | `workspace_defaults` | 默认质量策略、额外来源根 | 无 |
 | `runtime` | cleanup journal Key 的 `secret://` 引用 | 无 |
@@ -68,9 +69,17 @@ $env:RAG_API_KEY = "<仅在使用远程 RAG 时填写>"
 
 ## 完整契约
 
-配置 Schema 是 `agentic-qa.local-config.v1`，未知字段会被拒绝。实际字段以根目录
+配置 Schema 是 `agentic-qa.local-config.v2`，未知字段会被拒绝。实际字段以根目录
 `agentic-qa.local.example.yml` 为准。模型和 RAG 分区保存 Key 的环境变量名称；填写 `api_key`、
 `token` 等直接 Key 字段会导致校验失败。
+
+v1 配置不会作为运行时兼容入口加载；`config doctor` 会给出迁移错误。命令
+`python -m harness config migrate --output agentic-qa.local.v2.yml` create-only 生成 v2：旧
+`postgres` 只迁移为 `system_database`，不会推断或创建任何外部 `data_sources`。
+
+embedding profile 固定为 1536 维；检索默认 candidate pool 50、返回 10、公开硬上限 20，RRF
+固定 `k=60`。`reranker.provider` 默认为 `none`；启用 `model` 后，模型的输出范围是已经给出的
+chunk ID，失败表现为检索失败。
 
 TestRail 配置示例：
 
@@ -209,6 +218,27 @@ logs:
 ```
 
 Loki 原始响应和 Token 不落盘；只有经过脱敏、范围验证和条数限制的标准化条目进入 Log Evidence。
+
+`traces` 默认 `provider: none`。Local fixture 固定在 `local-traces/`，Tempo 使用精确 trace ID 的 v2
+读取接口；production-like 环境在两类 Provider 中均被拒绝，并有 span/字节上限：
+
+```yaml
+traces:
+  provider: tempo
+  allowed_environments: [dev, test, qa, staging]
+  query:
+    default_max_spans: 1000
+    hard_max_spans: 5000
+    max_response_bytes: 2097152
+  tempo:
+    base_url: https://tempo.qa.example.com
+    trusted_origins: [https://tempo.qa.example.com]
+    token: secret://traces.tempo.token
+    timeout_seconds: 15
+```
+
+Tempo token 由现有 Secret Provider 解析。Provider 关闭重定向，只接受 HTTPS trusted origin，并且
+不会向 AI 暴露 backend URL 凭据、Token 或 TraceQL。
 
 workspace 只保存服务名、环境、非敏感执行策略与结构 SHA-256。手机号、密码、验证码、AES Key、
 Token、数据库密码和连接器凭据每次运行都通过 Secret Provider 重新解析。凭据值变化沿用已有 Review；Base URL、

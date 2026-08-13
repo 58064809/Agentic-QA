@@ -28,6 +28,9 @@ def test_golden_eval_measures_artifact_quality() -> None:
     assert result["api_case_count"] == 1
     assert result["api_cases"][0]["metrics"]["coverage_rate"] == 1
     assert result["failure_triage_contract_safety"]["case_count"] == 10
+    assert result["trace_triage"]["case_count"] == 10
+    assert result["trace_triage"]["metrics"]["first_error_span_accuracy"] == 1.0
+    assert result["trace_triage"]["metrics"]["secret_leakage_rate"] == 0.0
     assert result["failure_triage_contract_safety"]["metrics"] == {
         "secret_leakage_rate": 0.0,
         "unsupported_high_confidence_claim_rate": 0.0,

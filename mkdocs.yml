@@ -29,6 +29,13 @@ nav:
       - Review Gate: review-gate.md
       - 工作区与产物版本: artifact-versioning.md
       - RAG: rag-design.md
+      - Knowledge / Requirement Schemas:
+          - Retrieval Result v1: schemas/retrieval-result.v1.schema.json
+          - Requirement Delta v1: schemas/requirement-delta.v1.schema.json
+          - Impact Analysis v1: schemas/impact-analysis.v1.schema.json
+          - Risk Catalog v2: schemas/risk-catalog.v2.schema.json
+          - Test Design Plan v1: schemas/test-design-plan.v1.schema.json
+          - Test Case Set v2: schemas/test-case-set.v2.schema.json
   - 契约与标准:
       - Harness 契约: harness-contracts.md
       - 测试用例标准: testcase-standards.md

@@ -13,6 +13,8 @@ from harness.infrastructure.api_project import FilesystemApiProjectChecker
 from harness.infrastructure.api_scenario_run import FilesystemApiScenarioRunService
 from harness.infrastructure.api_scenario_sources import FilesystemApiScenarioSourceCatalog
 from harness.infrastructure.failure_triage_service import FilesystemFailureTriageService
+from harness.infrastructure.knowledge_service import KnowledgeService
+from harness.infrastructure.knowledge_store import PostgresKnowledgeStore
 from harness.infrastructure.llm.gateway import model_gateway_from_config
 from harness.infrastructure.local_config import FilesystemLocalConfigLoader
 from harness.infrastructure.manifests.registry import AgentRegistry, SkillRegistry, ToolRegistry
@@ -76,6 +78,12 @@ def build_application(
     local_config = local_loader.load_required()
     ensure_local_requirements_root(repo_root)
     store = FilesystemStore(repo_root)
+    knowledge = KnowledgeService(
+        store,
+        PostgresKnowledgeStore(local_config.system_database),
+        local_config,
+    )
+    store.set_publication_indexer(knowledge)
     tools = tool_registry or ToolRegistry.builtin()
     skills = skill_registry or SkillRegistry.builtin()
     agents = agent_registry or AgentRegistry.builtin(skills=skills, tools=tools)
@@ -100,12 +108,12 @@ def build_application(
         checkpoint_provider=checkpoint_provider
         or PostgresCheckpointProvider(
             CheckpointPostgresConfig(
-                host=local_config.postgres.host,
-                port=local_config.postgres.port,
-                database=local_config.postgres.database,
-                user=local_config.postgres.user,
-                password=local_config.postgres.password,
-                connect_timeout_seconds=local_config.postgres.connect_timeout_seconds,
+                host=local_config.system_database.host,
+                port=local_config.system_database.port,
+                database=local_config.system_database.database,
+                user=local_config.system_database.user,
+                password=local_config.system_database.password,
+                connect_timeout_seconds=local_config.system_database.connect_timeout_seconds,
             )
         ),
         model=selected_model,
@@ -149,4 +157,5 @@ def build_application(
             local_config,
             policies,
         ),
+        knowledge=knowledge,
     )

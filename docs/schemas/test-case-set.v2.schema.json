@@ -1,0 +1,261 @@
+{
+  "$defs": {
+    "CoverageMapping": {
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": {
+          "description": "One exact confirmed rule ID from the current bounded RequirementCatalog.",
+          "pattern": "^[A-Z][A-Z0-9_-]*-\\d{3,}$",
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "case_ids": {
+          "description": "IDs of real cases whose rule_ids include this exact rule_id.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Case Ids",
+          "type": "array"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id",
+        "case_ids",
+        "rationale"
+      ],
+      "title": "CoverageMapping",
+      "type": "object"
+    },
+    "RiskLevel": {
+      "enum": [
+        "P0",
+        "P1",
+        "P2",
+        "P3"
+      ],
+      "title": "RiskLevel",
+      "type": "string"
+    },
+    "StateTransition": {
+      "additionalProperties": false,
+      "properties": {
+        "from_state": {
+          "minLength": 1,
+          "title": "From State",
+          "type": "string"
+        },
+        "event": {
+          "minLength": 1,
+          "title": "Event",
+          "type": "string"
+        },
+        "to_state": {
+          "minLength": 1,
+          "title": "To State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_state",
+        "event",
+        "to_state"
+      ],
+      "title": "StateTransition",
+      "type": "object"
+    },
+    "TestCase": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "description": "Globally unique uppercase ID matching ^TC-[A-Z0-9_-]*\\d{3,}$; use numeric suffixes such as TC-RULE-001-001, never lowercase suffixes.",
+          "pattern": "^TC-[A-Z0-9_-]*\\d{3,}$",
+          "title": "Case Id",
+          "type": "string"
+        },
+        "rule_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Rule Ids",
+          "type": "array"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "test_type": {
+          "minLength": 1,
+          "title": "Test Type",
+          "type": "string"
+        },
+        "priority": {
+          "$ref": "#/$defs/RiskLevel"
+        },
+        "preconditions": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Preconditions",
+          "type": "array"
+        },
+        "test_data": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Test Data",
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        },
+        "expected_results": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Expected Results",
+          "type": "array"
+        },
+        "assertions": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Assertions",
+          "type": "array"
+        },
+        "pending_items": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Pending Items",
+          "type": "array"
+        },
+        "covered_boundary_values": {
+          "description": "Exact, unmodified values copied from boundaries of the referenced rules. Every boundary value must appear in at least one case that references its rule.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Covered Boundary Values",
+          "type": "array"
+        },
+        "covered_transitions": {
+          "description": "Exact StateTransition objects copied from the referenced rules. Every declared transition must appear in at least one case that references its rule.",
+          "items": {
+            "$ref": "#/$defs/StateTransition"
+          },
+          "title": "Covered Transitions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "case_id",
+        "rule_ids",
+        "title",
+        "test_type",
+        "priority",
+        "preconditions",
+        "test_data",
+        "steps",
+        "expected_results",
+        "assertions"
+      ],
+      "title": "TestCase",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Current write contract; TestCaseSet retains v1 read compatibility.",
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.test-case-set.v2",
+      "default": "agentic-qa.test-case-set.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "requirement_catalog_hash": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requirement Catalog Hash"
+    },
+    "risk_catalog_hash": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Risk Catalog Hash"
+    },
+    "test_design_plan_hash": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Test Design Plan Hash"
+    },
+    "retrieval_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Retrieval Ids",
+      "type": "array"
+    },
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/TestCase"
+      },
+      "minItems": 1,
+      "title": "Cases",
+      "type": "array"
+    },
+    "coverage": {
+      "items": {
+        "$ref": "#/$defs/CoverageMapping"
+      },
+      "minItems": 1,
+      "title": "Coverage",
+      "type": "array"
+    }
+  },
+  "required": [
+    "cases",
+    "coverage"
+  ],
+  "title": "TestCaseSetV2",
+  "type": "object"
+}

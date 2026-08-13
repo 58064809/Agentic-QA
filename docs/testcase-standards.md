@@ -24,6 +24,16 @@
 
 ## 强类型完整性门
 
+新写入使用 `TestCaseSet v2`。生成前先验证 `TestDesignPlan`，并绑定 RequirementCatalog、RiskCatalog v2
+和 plan 的内容 Hash；v1 仅用于历史导入。设计方法按证据启用：boundary/state 需要结构化声明，decision
+table 需要至少两个条件和多个结果，pairwise 需要至少三个多值独立因子，cause-effect 需要可引用关系，
+role × state × config 需要三维均有证据。error guessing 仅来自历史缺陷，regression 仅来自 Delta、Impact
+或历史覆盖，negative testing 用于约束、异常、权限与无效输入。
+
+组合预算为最多 8 因子、每因子 12 值、100 组合；超限形成 pending item，不静默丢失。新用例内部
+规范化 Hash 重复直接拒绝；历史相似度达到 0.90 只产生 `covered | regression_gap |
+intentionally_distinct` 复核决策，不自动复制或删除。
+
 生成阶段在渲染前验证：
 
 - 规则 ID、用例 ID 和覆盖映射均唯一；

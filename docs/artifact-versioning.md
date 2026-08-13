@@ -21,6 +21,13 @@ workspaces/<workspace_id>/
 │   ├── quality-report.json
 │   ├── generation-report.json     # 可选；模型调用与质量修订审计
 │   ├── discovery-catalog.json     # API Discovery 的脱敏机器目录
+│   ├── requirement-catalog.json   # requirement_analysis 的强类型附件
+│   ├── requirement-delta.json     # requirement_delta 的强类型附件
+│   ├── impact-analysis.json       # impact_analysis 的强类型附件
+│   ├── risk-catalog.json          # testcases 的 RiskCatalog v2
+│   ├── test-design-plan.json      # 方法适用性与组合预算
+│   ├── test-case-set.json         # TestCaseSet v2
+│   ├── retrieval-provenance.json  # retrieval ID/chunk 引用
 │   └── manifest.json
 ├── reviews/<run_id>/
 ├── published/<artifact>/
@@ -41,6 +48,9 @@ workspaces/<workspace_id>/
         ├── collection-manifest.json
         ├── log-evidence.json
         ├── log-analysis.json
+        ├── trace-evidence.json       # source 包含 traces 且产生审计结果时存在
+        ├── trace-analysis.json       # Trace Evidence 存在时产生
+        ├── root-cause-graph.json
         ├── failure-triage.json
         └── bug-draft.json         # Bug Gate 通过时存在
 ```
@@ -58,13 +68,14 @@ workspaces/<workspace_id>/
 | Review Record | 人工决定与批准版本 | 按 artifact 原子写 | 审计 |
 | published history | 已发布只增不改版本 | create-only | 历史追踪 |
 | published current | 当前版本指针内容 | 原子替换 | 使用者读取 |
+| Knowledge publication outbox | published 到持久知识的派生索引状态 | 幂等 pending/completed/failed | `knowledge status/index-run`；不改变 published truth |
 | API execution manifest | 防重放状态与产物索引投影 | 原子替换 | 执行、测试、cleanup、报告四状态 |
 | API Execution Evidence | 用例与断言审计事实 | create-only | 试跑结论；v2 为新执行，v1 只读投影 |
 | API execution events | 脱敏、追加式 SHA-256 哈希链 | append-only | 请求边界与崩溃定位 |
 | execution plan | published 与执行策略的脱敏冻结快照 | create-only | 请求前冻结；cleanup resume 和历史报告从这里解析原发布版本 |
 | cleanup journal | AES-256-GCM 加密的 armed/pending/running 状态 | 原子替换 | armed 供人工核对；仅恢复从未发送的 pending cleanup |
 | Allure results/history/report | Evidence 的展示投影 | 可重新生成 | 状态浏览、趋势与回归 |
-| Failure collection 产物 | 脱敏日志、确定性分析、引用式分诊和可选 Bug Draft | collection 内 create-only | 显式失败分诊；不修改原 execution |
+| Failure collection 产物 | 脱敏日志/调用链、确定性分析与证据图、引用式分诊和可选 Bug Draft | staging 后原子提交；collection 内 create-only | 显式失败分诊；不修改原 execution |
 
 历史 Allure 重建以 execution 目录中的 immutable Execution Plan 为入口，再精确解析 published
 history；workspace 当前服务绑定、current YAML、认证和安全策略不参与历史结果解释。Plan、manifest、

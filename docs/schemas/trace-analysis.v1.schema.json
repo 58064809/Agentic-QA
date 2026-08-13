@@ -1,0 +1,237 @@
+{
+  "$defs": {
+    "DependencyFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "caller_service": {
+          "title": "Caller Service",
+          "type": "string"
+        },
+        "dependency": {
+          "title": "Dependency",
+          "type": "string"
+        },
+        "span_ref": {
+          "pattern": "^TRACE-[0-9]{6}$",
+          "title": "Span Ref",
+          "type": "string"
+        },
+        "failure_type": {
+          "enum": [
+            "timeout",
+            "http_5xx",
+            "rpc",
+            "database",
+            "dependency_error"
+          ],
+          "title": "Failure Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "caller_service",
+        "dependency",
+        "span_ref",
+        "failure_type"
+      ],
+      "title": "DependencyFailure",
+      "type": "object"
+    },
+    "TracePrimaryFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "span_ref": {
+          "pattern": "^TRACE-[0-9]{6}$",
+          "title": "Span Ref",
+          "type": "string"
+        },
+        "service": {
+          "title": "Service",
+          "type": "string"
+        },
+        "dependency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dependency"
+        },
+        "failure_type": {
+          "enum": [
+            "timeout",
+            "http_5xx",
+            "rpc",
+            "database",
+            "dependency_error",
+            "span_error"
+          ],
+          "title": "Failure Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "span_ref",
+        "service",
+        "failure_type"
+      ],
+      "title": "TracePrimaryFailure",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.trace-analysis.v1",
+      "default": "agentic-qa.trace-analysis.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "collection_id": {
+      "title": "Collection Id",
+      "type": "string"
+    },
+    "execution_id": {
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "case_id": {
+      "title": "Case Id",
+      "type": "string"
+    },
+    "dataset_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset Id"
+    },
+    "trace_evidence_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Trace Evidence Sha256",
+      "type": "string"
+    },
+    "analysis_status": {
+      "enum": [
+        "success",
+        "empty",
+        "degraded",
+        "failed"
+      ],
+      "title": "Analysis Status",
+      "type": "string"
+    },
+    "root_span_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Root Span Ref"
+    },
+    "first_error_span_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "First Error Span Ref"
+    },
+    "primary_failure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TracePrimaryFailure"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "propagation_chain": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Propagation Chain",
+      "type": "array"
+    },
+    "critical_path": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Critical Path",
+      "type": "array"
+    },
+    "critical_path_duration_ms": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Critical Path Duration Ms"
+    },
+    "slowest_span_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Slowest Span Ref"
+    },
+    "dependency_failures": {
+      "items": {
+        "$ref": "#/$defs/DependencyFailure"
+      },
+      "title": "Dependency Failures",
+      "type": "array"
+    },
+    "diagnostics": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Diagnostics",
+      "type": "array"
+    },
+    "content_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "collection_id",
+    "execution_id",
+    "case_id",
+    "trace_evidence_sha256",
+    "analysis_status",
+    "content_sha256"
+  ],
+  "title": "TraceAnalysis",
+  "type": "object"
+}

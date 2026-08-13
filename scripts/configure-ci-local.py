@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 SECRET_REFERENCES = {
-    ("postgres", "password"): "secret://postgres.password",
+    ("system_database", "password"): "secret://system_database.password",
     ("runtime", "cleanup_journal_key"): "secret://runtime.cleanup_journal_key",
 }
 
@@ -64,7 +64,7 @@ def main() -> int:
     if not isinstance(values, dict):
         raise SystemExit("secrets.values must be a mapping")
 
-    values["postgres.password"] = "postgres" if args.profile == "ci" else "nightly-unused"
+    values["system_database.password"] = "postgres" if args.profile == "ci" else "nightly-unused"
     values["runtime.cleanup_journal_key"] = base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
     values["api.member-service.dev.auth.login.phone"] = "13500000000"
     values["api.member-service.dev.auth.login.sms_code"] = "000000"

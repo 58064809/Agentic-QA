@@ -5,6 +5,24 @@ from harness.domain.schemas.api_scenario import RunApiScenarioResult
 from harness.domain.schemas.api_test_cases import ApiTestCasesDraft
 from harness.domain.schemas.execution_evidence import ExecutionEvidence
 from harness.domain.schemas.failure_triage import FailureTriage
+from harness.domain.schemas.knowledge import (
+    KnowledgeChunk,
+    KnowledgeDeleteCommand,
+    KnowledgeDeleteResult,
+    KnowledgeDocument,
+    KnowledgeFreshness,
+    KnowledgeIndexResult,
+    KnowledgeIndexRunCommand,
+    KnowledgeMetadata,
+    KnowledgeMigrateResult,
+    KnowledgeReindexCommand,
+    KnowledgeReindexResult,
+    KnowledgeStatus,
+    KnowledgeTrust,
+    RetrievalFilters,
+    RetrievalQuery,
+    RetrievalResult,
+)
 from harness.domain.schemas.openapi import OpenApiInspection
 from harness.domain.schemas.qa_design import (
     BoundaryRequirement,
@@ -14,6 +32,7 @@ from harness.domain.schemas.qa_design import (
     RequirementCatalog,
     RequirementRule,
     RiskCatalog,
+    RiskCatalogV2,
     RiskItem,
     RiskLevel,
     SourceReference,
@@ -21,9 +40,21 @@ from harness.domain.schemas.qa_design import (
     TestCase,
     TestCasePatch,
     TestCaseSet,
+    TestCaseSetV2,
     apply_testcase_patch,
     validate_testcase_set,
 )
+from harness.domain.schemas.requirement_intelligence import (
+    DeltaKind,
+    HistoricalRiskSignal,
+    ImpactAnalysis,
+    RequirementDelta,
+    RiskFactors,
+    TestDesignMethod,
+    TestDesignPlan,
+)
+from harness.domain.schemas.trace_analysis import RootCauseEvidenceGraph, TraceAnalysis
+from harness.domain.schemas.trace_evidence import TraceEvidenceBundle
 
 __all__ = [
     "ApiDiscoveryCatalog",
@@ -37,10 +68,37 @@ __all__ = [
     "ExecutionEvidence",
     "ExecutionProfile",
     "FailureTriage",
+    "KnowledgeChunk",
+    "KnowledgeDocument",
+    "KnowledgeFreshness",
+    "KnowledgeDeleteCommand",
+    "KnowledgeDeleteResult",
+    "KnowledgeIndexResult",
+    "KnowledgeIndexRunCommand",
+    "KnowledgeMetadata",
+    "KnowledgeMigrateResult",
+    "KnowledgeReindexCommand",
+    "KnowledgeReindexResult",
+    "KnowledgeStatus",
+    "KnowledgeTrust",
+    "RetrievalFilters",
+    "RetrievalQuery",
+    "RetrievalResult",
+    "DeltaKind",
+    "HistoricalRiskSignal",
+    "ImpactAnalysis",
+    "RequirementDelta",
+    "RiskFactors",
+    "TestDesignMethod",
+    "TestDesignPlan",
+    "RootCauseEvidenceGraph",
+    "TraceAnalysis",
+    "TraceEvidenceBundle",
     "OpenApiInspection",
     "RequirementCatalog",
     "RequirementRule",
     "RiskCatalog",
+    "RiskCatalogV2",
     "RiskItem",
     "RiskLevel",
     "SourceReference",
@@ -48,6 +106,7 @@ __all__ = [
     "TestCase",
     "TestCasePatch",
     "TestCaseSet",
+    "TestCaseSetV2",
     "apply_testcase_patch",
     "validate_testcase_set",
 ]

@@ -4,8 +4,9 @@ provider: builtin
 description: 对 workspace 显式配置的 PostgreSQL 测试数据源执行单条只读查询
 input_schema:
   type: object
-  required: [query]
+  required: [data_source, query]
   properties:
+    data_source: {type: string, minLength: 1, maxLength: 64}
     query: {type: string, minLength: 1}
     parameters: {type: array}
   additionalProperties: false

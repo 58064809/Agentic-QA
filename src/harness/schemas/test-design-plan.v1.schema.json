@@ -1,0 +1,167 @@
+{
+  "$defs": {
+    "HistoricalTestDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "historical_case_ref": {
+          "title": "Historical Case Ref",
+          "type": "string"
+        },
+        "similarity": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Similarity",
+          "type": "number"
+        },
+        "decision": {
+          "enum": [
+            "covered",
+            "regression_gap",
+            "intentionally_distinct"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "historical_case_ref",
+        "similarity",
+        "decision",
+        "rationale"
+      ],
+      "title": "HistoricalTestDecision",
+      "type": "object"
+    },
+    "TestDesignDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "methods": {
+          "items": {
+            "$ref": "#/$defs/TestDesignMethod"
+          },
+          "minItems": 1,
+          "title": "Methods",
+          "type": "array"
+        },
+        "rationale": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Rationale",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "required_test_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Test Types",
+          "type": "array"
+        },
+        "pending_items": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Pending Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "rule_id",
+        "methods",
+        "rationale",
+        "evidence_refs"
+      ],
+      "title": "TestDesignDecision",
+      "type": "object"
+    },
+    "TestDesignMethod": {
+      "enum": [
+        "equivalence_partitioning",
+        "boundary_value",
+        "state_transition",
+        "decision_table",
+        "pairwise",
+        "cause_effect",
+        "role_state_config",
+        "negative_testing",
+        "error_guessing",
+        "regression_selection"
+      ],
+      "title": "TestDesignMethod",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.test-design-plan.v1",
+      "default": "agentic-qa.test-design-plan.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "requirement_catalog_hash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Requirement Catalog Hash",
+      "type": "string"
+    },
+    "decisions": {
+      "items": {
+        "$ref": "#/$defs/TestDesignDecision"
+      },
+      "title": "Decisions",
+      "type": "array"
+    },
+    "historical_tests": {
+      "items": {
+        "$ref": "#/$defs/HistoricalTestDecision"
+      },
+      "title": "Historical Tests",
+      "type": "array"
+    },
+    "max_factors": {
+      "default": 8,
+      "maximum": 8,
+      "minimum": 1,
+      "title": "Max Factors",
+      "type": "integer"
+    },
+    "max_values_per_factor": {
+      "default": 12,
+      "maximum": 12,
+      "minimum": 2,
+      "title": "Max Values Per Factor",
+      "type": "integer"
+    },
+    "max_combinations": {
+      "default": 100,
+      "maximum": 100,
+      "minimum": 1,
+      "title": "Max Combinations",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "requirement_catalog_hash",
+    "decisions"
+  ],
+  "title": "TestDesignPlan",
+  "type": "object"
+}

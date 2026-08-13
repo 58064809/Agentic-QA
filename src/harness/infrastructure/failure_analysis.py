@@ -15,8 +15,11 @@ from harness.domain.schemas.log_analysis import (
     LogSignal,
 )
 from harness.domain.schemas.log_evidence import LogEvidenceBundle
+from harness.domain.schemas.trace_evidence import TraceEvidenceBundle
+from harness.infrastructure.failure_trace_analysis import derive_trace_analysis
 from harness.infrastructure.persistence.common import create_only_json
 from harness.infrastructure.persistence.filesystem import FilesystemStore
+from harness.infrastructure.root_cause_graph import build_root_cause_graph
 
 SIGNALS = (
     ("database", re.compile(r"(?i)sql|database|deadlock|jdbc|psycopg|mysql|postgres")),
@@ -63,9 +66,14 @@ class FilesystemFailureAnalysisService:
         for path in paths:
             evidence_path = path / "log-evidence.json"
             try:
-                bundle = LogEvidenceBundle.model_validate_json(
-                    evidence_path.read_text(encoding="utf-8")
-                )
+                if evidence_path.is_file():
+                    bundle = LogEvidenceBundle.model_validate_json(
+                        evidence_path.read_text(encoding="utf-8")
+                    )
+                else:
+                    bundle = TraceEvidenceBundle.model_validate_json(
+                        (path / "trace-evidence.json").read_text(encoding="utf-8")
+                    )
             except (OSError, ValueError):
                 continue
             if command.case_id and bundle.case_id != command.case_id:
@@ -82,7 +90,58 @@ class FilesystemFailureAnalysisService:
         return [values[0] for _, values in sorted(candidates.items())]
 
     def _analyze_one(self, root: Path, workspace_root: Path) -> FailureAnalysisItem:
+        trace_bundle = None
+        trace_analysis = None
+        trace_analysis_sha = None
+        trace_path = root / "trace-evidence.json"
+        if trace_path.is_file():
+            manifest = json.loads((root / "collection-manifest.json").read_text(encoding="utf-8"))
+            trace_raw = trace_path.read_bytes()
+            if manifest.get("trace_evidence_sha256") != hashlib.sha256(trace_raw).hexdigest():
+                raise ValueError("trace evidence hash does not match collection manifest")
+            trace_bundle = TraceEvidenceBundle.model_validate_json(trace_raw)
+            target = root / "trace-analysis.json"
+            if target.exists():
+                from harness.domain.schemas.trace_analysis import TraceAnalysis
+
+                trace_analysis = TraceAnalysis.model_validate_json(
+                    target.read_text(encoding="utf-8")
+                )
+            else:
+                trace_analysis = derive_trace_analysis(
+                    trace_bundle, hashlib.sha256(trace_raw).hexdigest()
+                )
+                create_only_json(target, trace_analysis.model_dump(mode="json"))
+            trace_analysis_sha = hashlib.sha256(target.read_bytes()).hexdigest()
         evidence_path = root / "log-evidence.json"
+        if not evidence_path.is_file():
+            graph = build_root_cause_graph(
+                collection_id=trace_bundle.collection_id,
+                execution_id=trace_bundle.execution_id,
+                case_id=trace_bundle.case_id,
+                dataset_id=trace_bundle.dataset_id,
+                execution_sha=trace_bundle.execution_evidence_sha256,
+                logs=None,
+                log_analysis=None,
+                log_analysis_sha=None,
+                traces=trace_bundle,
+                trace_analysis=trace_analysis,
+                trace_analysis_sha=trace_analysis_sha,
+            )
+            create_only_json(root / "root-cause-graph.json", graph.model_dump(mode="json"))
+            return FailureAnalysisItem(
+                collection_id=trace_bundle.collection_id,
+                case_id=trace_bundle.case_id,
+                dataset_id=trace_bundle.dataset_id,
+                analysis_status=(
+                    "empty"
+                    if trace_bundle.status != "success" or not trace_bundle.spans
+                    else "success"
+                ),
+                log_analysis_path=(root / "trace-analysis.json")
+                .relative_to(workspace_root)
+                .as_posix(),
+            )
         manifest = json.loads((root / "collection-manifest.json").read_text(encoding="utf-8"))
         raw = evidence_path.read_bytes()
         if manifest.get("log_evidence_sha256") != hashlib.sha256(raw).hexdigest():
@@ -94,6 +153,22 @@ class FilesystemFailureAnalysisService:
         else:
             analysis = self._derive(bundle, hashlib.sha256(raw).hexdigest())
             create_only_json(target, analysis.model_dump(mode="json"))
+        graph_path = root / "root-cause-graph.json"
+        if not graph_path.exists():
+            graph = build_root_cause_graph(
+                collection_id=bundle.collection_id,
+                execution_id=bundle.execution_id,
+                case_id=bundle.case_id,
+                dataset_id=bundle.dataset_id,
+                execution_sha=bundle.execution_evidence_sha256,
+                logs=bundle,
+                log_analysis=analysis,
+                log_analysis_sha=hashlib.sha256(target.read_bytes()).hexdigest(),
+                traces=trace_bundle,
+                trace_analysis=trace_analysis,
+                trace_analysis_sha=trace_analysis_sha,
+            )
+            create_only_json(graph_path, graph.model_dump(mode="json"))
         return FailureAnalysisItem(
             collection_id=bundle.collection_id,
             case_id=bundle.case_id,

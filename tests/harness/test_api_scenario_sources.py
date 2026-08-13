@@ -338,7 +338,7 @@ def test_prepare_review_and_run_vertical_loop_uses_one_api_agent(
     (repo / "agentic-qa.local.yml").write_text(
         yaml.safe_dump(
             {
-                "schema_version": "agentic-qa.local-config.v1",
+                "schema_version": "agentic-qa.local-config.v2",
                 "model": {
                     "provider": "recorded",
                     "api_key_env": "UNIT_MODEL_KEY",
@@ -346,8 +346,8 @@ def test_prepare_review_and_run_vertical_loop_uses_one_api_agent(
                     "pro_model": "recorded-pro",
                     "base_url": "https://model.example.test",
                 },
-                "rag": {"provider": "local-lexical"},
-                "postgres": {
+                "rag": {},
+                "system_database": {
                     "host": "localhost",
                     "port": 5432,
                     "database": "postgres",

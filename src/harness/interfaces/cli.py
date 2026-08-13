@@ -15,7 +15,7 @@ from harness import (
     ArtifactDiffEndpoint,
     ArtifactVariant,
     ArtifactVersionRef,
-    CollectFailureLogsCommand,
+    CollectFailureEvidenceCommand,
     CreateWorkspaceCommand,
     ExecuteApiCasesCommand,
     ExecutionProfile,
@@ -23,6 +23,9 @@ from harness import (
     GenerateApiAllureReportCommand,
     GetArtifactDiffQuery,
     Harness,
+    KnowledgeDeleteCommand,
+    KnowledgeIndexRunCommand,
+    KnowledgeReindexCommand,
     PrepareFailureReportCommand,
     ResumeApiCleanupCommand,
     ResumeRunCommand,
@@ -46,6 +49,8 @@ def _parser() -> argparse.ArgumentParser:
     config_commands = config.add_subparsers(dest="config_command", required=True)
     config_commands.add_parser("init")
     config_commands.add_parser("doctor")
+    config_migrate = config_commands.add_parser("migrate")
+    config_migrate.add_argument("--output", required=True)
     runtime_key = config_commands.add_parser("runtime-key")
     runtime_key_commands = runtime_key.add_subparsers(dest="runtime_key_command", required=True)
     runtime_key_commands.add_parser("init")
@@ -70,6 +75,7 @@ def _parser() -> argparse.ArgumentParser:
     start.add_argument("--allow-http-method", action="append", dest="allowed_http_methods")
     start.add_argument("--allow-ui-mutations", action="store_true")
     start.add_argument("--request-timeout-seconds", type=int, default=10)
+    start.add_argument("--requirement-baseline-run-id")
 
     get = run_commands.add_parser("get")
     get.add_argument("workspace_id")
@@ -108,6 +114,7 @@ def _parser() -> argparse.ArgumentParser:
     evaluate = commands.add_parser("eval")
     eval_commands = evaluate.add_subparsers(dest="eval_command", required=True)
     eval_commands.add_parser("run")
+    eval_commands.add_parser("retrieval")
     eval_live = eval_commands.add_parser("live")
     eval_live.add_argument("--case", dest="case_name")
     eval_live.add_argument("--output-dir")
@@ -181,6 +188,7 @@ def _parser() -> argparse.ArgumentParser:
     failure_collect.add_argument("workspace_id")
     failure_collect.add_argument("execution_id")
     failure_collect.add_argument("--case-id")
+    failure_collect.add_argument("--source", choices=["logs", "traces", "all"], default="logs")
     failure_analyze = failure_commands.add_parser("analyze")
     failure_analyze.add_argument("workspace_id")
     failure_analyze.add_argument("execution_id")
@@ -191,6 +199,20 @@ def _parser() -> argparse.ArgumentParser:
     failure_report.add_argument("execution_id")
     failure_report.add_argument("--case-id")
     failure_report.add_argument("--collection-id")
+    knowledge = commands.add_parser("knowledge")
+    knowledge_commands = knowledge.add_subparsers(dest="knowledge_command", required=True)
+    knowledge_commands.add_parser("migrate")
+    knowledge_status = knowledge_commands.add_parser("status")
+    knowledge_status.add_argument("workspace_id")
+    knowledge_index = knowledge_commands.add_parser("index-run")
+    knowledge_index.add_argument("workspace_id")
+    knowledge_index.add_argument("run_id")
+    knowledge_reindex = knowledge_commands.add_parser("reindex")
+    knowledge_reindex.add_argument("workspace_id")
+    knowledge_reindex.add_argument("--published", action="store_true", required=True)
+    knowledge_delete = knowledge_commands.add_parser("delete")
+    knowledge_delete.add_argument("workspace_id")
+    knowledge_delete.add_argument("--document-id", required=True)
     return parser
 
 
@@ -281,6 +303,9 @@ def main(argv: list[str] | None = None) -> int:
             if args.config_command == "init":
                 print(loader.init())
                 return 0
+            if args.config_command == "migrate":
+                print(loader.migrate_v1((repo_root / args.output).resolve()))
+                return 0
             if args.config_command == "runtime-key":
                 print(loader.init_runtime_key())
                 return 0
@@ -338,12 +363,41 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         harness = Harness(repo_root)
+        if args.command == "knowledge":
+            if args.knowledge_command == "migrate":
+                result = harness.knowledge_migrate()
+            elif args.knowledge_command == "status":
+                result = harness.knowledge_status(args.workspace_id)
+            elif args.knowledge_command == "index-run":
+                result = harness.knowledge_index_run(
+                    KnowledgeIndexRunCommand(
+                        workspace_id=args.workspace_id,
+                        run_id=args.run_id,
+                    )
+                )
+            elif args.knowledge_command == "reindex":
+                result = harness.knowledge_reindex(
+                    KnowledgeReindexCommand(
+                        workspace_id=args.workspace_id,
+                        published=args.published,
+                    )
+                )
+            else:
+                result = harness.knowledge_delete(
+                    KnowledgeDeleteCommand(
+                        workspace_id=args.workspace_id,
+                        document_id=args.document_id,
+                    )
+                )
+            _print(result)
+            return 0
         if args.command == "failure" and args.failure_command == "collect":
-            result = harness.collect_failure_logs(
-                CollectFailureLogsCommand(
+            result = harness.collect_failure_evidence(
+                CollectFailureEvidenceCommand(
                     workspace_id=args.workspace_id,
                     execution_id=args.execution_id,
                     case_id=args.case_id,
+                    source=args.source,
                 )
             )
             _print(result)
@@ -446,6 +500,7 @@ def main(argv: list[str] | None = None) -> int:
                         goal=args.goal,
                         expected_artifacts=args.artifacts or ["testcases"],
                         execution_profile=_execution_profile(args),
+                        requirement_baseline_run_id=args.requirement_baseline_run_id,
                     )
                 )
             )
@@ -492,6 +547,7 @@ def main(argv: list[str] | None = None) -> int:
                 run_failure_triage_model_live_eval,
                 run_live_eval,
             )
+            from harness.testing.retrieval_eval import run_retrieval_golden
 
             if args.eval_command == "failure-triage-live":
                 result = run_failure_triage_model_live_eval()
@@ -500,6 +556,8 @@ def main(argv: list[str] | None = None) -> int:
                     args.case_name,
                     output_root=Path(args.output_dir).resolve() if args.output_dir else None,
                 )
+            elif args.eval_command == "retrieval":
+                result = run_retrieval_golden()
             else:
                 result = run_eval()
             _print(result)

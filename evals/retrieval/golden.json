@@ -1,0 +1,29 @@
+{
+    "schema_version": "agentic-qa.retrieval-golden.v1",
+    "cases": [
+        {
+            "query": "login failure lock threshold",
+            "workspace_id": "golden",
+            "expected_sources": [
+                "sources/login.md"
+            ],
+            "max_chunks": 1,
+            "documents": {
+                "sources/login.md": "Lock the account after five consecutive login failures.",
+                "sources/payment.md": "Payment approvals require an approver role."
+            }
+        },
+        {
+            "query": "payment approval transition",
+            "workspace_id": "golden",
+            "expected_sources": [
+                "sources/payment.md"
+            ],
+            "max_chunks": 1,
+            "documents": {
+                "sources/login.md": "Lock the account after five consecutive login failures.",
+                "sources/payment.md": "Payment approval changes pending to approved."
+            }
+        }
+    ]
+}

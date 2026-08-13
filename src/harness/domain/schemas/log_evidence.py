@@ -46,6 +46,7 @@ class NormalizedLogEntry(StrictModel):
     level: str = Field(min_length=1, max_length=32)
     message: str = Field(min_length=1, max_length=16_384)
     trace_id: str | None = Field(default=None, max_length=256)
+    span_id: str | None = Field(default=None, max_length=128)
     request_id: str | None = Field(default=None, max_length=256)
     exception_type: str | None = Field(default=None, max_length=256)
     source_ref: str = Field(min_length=1, max_length=512)

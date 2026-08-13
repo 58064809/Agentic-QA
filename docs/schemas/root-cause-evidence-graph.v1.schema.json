@@ -1,0 +1,193 @@
+{
+  "$defs": {
+    "RootCauseGraphEdge": {
+      "additionalProperties": false,
+      "properties": {
+        "from_ref": {
+          "title": "From Ref",
+          "type": "string"
+        },
+        "to_ref": {
+          "title": "To Ref",
+          "type": "string"
+        },
+        "edge_type": {
+          "enum": [
+            "EXECUTION_CONTAINS_SPAN",
+            "SPAN_PARENT_OF",
+            "SPAN_CORROBORATED_BY_LOG",
+            "ERROR_PROPAGATES_TO"
+          ],
+          "title": "Edge Type",
+          "type": "string"
+        },
+        "correlation_level": {
+          "anyOf": [
+            {
+              "enum": [
+                "strong",
+                "medium",
+                "possible"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Correlation Level"
+        }
+      },
+      "required": [
+        "from_ref",
+        "to_ref",
+        "edge_type"
+      ],
+      "title": "RootCauseGraphEdge",
+      "type": "object"
+    },
+    "RootCauseGraphNode": {
+      "additionalProperties": false,
+      "properties": {
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "node_type": {
+          "enum": [
+            "EXECUTION",
+            "SPAN",
+            "LOG_SIGNAL"
+          ],
+          "title": "Node Type",
+          "type": "string"
+        },
+        "service": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service"
+        },
+        "category": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category"
+        }
+      },
+      "required": [
+        "node_id",
+        "node_type"
+      ],
+      "title": "RootCauseGraphNode",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.root-cause-evidence-graph.v1",
+      "default": "agentic-qa.root-cause-evidence-graph.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "collection_id": {
+      "title": "Collection Id",
+      "type": "string"
+    },
+    "execution_id": {
+      "title": "Execution Id",
+      "type": "string"
+    },
+    "case_id": {
+      "title": "Case Id",
+      "type": "string"
+    },
+    "dataset_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset Id"
+    },
+    "execution_evidence_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Execution Evidence Sha256",
+      "type": "string"
+    },
+    "log_analysis_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Log Analysis Sha256"
+    },
+    "trace_analysis_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Trace Analysis Sha256"
+    },
+    "nodes": {
+      "items": {
+        "$ref": "#/$defs/RootCauseGraphNode"
+      },
+      "title": "Nodes",
+      "type": "array"
+    },
+    "edges": {
+      "items": {
+        "$ref": "#/$defs/RootCauseGraphEdge"
+      },
+      "title": "Edges",
+      "type": "array"
+    },
+    "content_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Content Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "collection_id",
+    "execution_id",
+    "case_id",
+    "execution_evidence_sha256",
+    "nodes",
+    "edges",
+    "content_sha256"
+  ],
+  "title": "RootCauseEvidenceGraph",
+  "type": "object"
+}

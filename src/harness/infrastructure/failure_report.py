@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 from harness.application.quality import QualityContext
@@ -85,16 +86,39 @@ class FilesystemFailureReportService:
             ),
             collection_root / "log-evidence.json": triage.log_evidence_sha256,
             collection_root / "log-analysis.json": triage.log_analysis_sha256,
+            collection_root / "trace-evidence.json": triage.trace_evidence_sha256,
+            collection_root / "trace-analysis.json": triage.trace_analysis_sha256,
+            collection_root / "root-cause-graph.json": triage.root_cause_graph_sha256,
         }
         if triage.execution_id != execution_id or triage.collection_id != collection_root.name:
             raise ValueError("failure triage identity differs from requested collection")
         for path, digest in expected.items():
+            if digest is None:
+                continue
             try:
                 actual = hashlib.sha256(path.read_bytes()).hexdigest()
             except OSError as exc:
                 raise ValueError("failure triage source is unavailable") from exc
             if actual != digest:
                 raise ValueError("failure triage source hash does not match")
+        try:
+            manifest = json.loads(
+                (collection_root / "collection-manifest.json").read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError) as exc:
+            raise ValueError("failure triage collection manifest is unavailable") from exc
+        if manifest.get("collection_id") != triage.collection_id:
+            raise ValueError("failure triage collection manifest identity does not match")
+        manifest_links = {
+            "log_evidence_sha256": triage.log_evidence_sha256,
+            "trace_evidence_sha256": triage.trace_evidence_sha256,
+        }
+        if any(
+            manifest.get(key) != digest
+            for key, digest in manifest_links.items()
+            if digest is not None or key in manifest
+        ):
+            raise ValueError("failure triage collection manifest hash does not match")
 
     def _prepare_one(
         self,
@@ -108,23 +132,29 @@ class FilesystemFailureReportService:
         bug = self._bug_draft(triage)
         if bug is not None:
             artifacts.append("bug_draft")
+        source_paths = {
+            "execution-evidence.json": workspace_root
+            / "executions"
+            / command.execution_id
+            / "evidence.json",
+            "collection-manifest.json": collection_root / "collection-manifest.json",
+            "log-evidence.json": collection_root / "log-evidence.json",
+            "log-analysis.json": collection_root / "log-analysis.json",
+            "trace-evidence.json": collection_root / "trace-evidence.json",
+            "trace-analysis.json": collection_root / "trace-analysis.json",
+            "root-cause-graph.json": collection_root / "root-cause-graph.json",
+            "failure-triage.json": collection_root / "failure-triage.json",
+        }
         source_documents = {
             f"derived/{name}": path.read_text(encoding="utf-8")
-            for name, path in {
-                "execution-evidence.json": workspace_root
-                / "executions"
-                / command.execution_id
-                / "evidence.json",
-                "log-evidence.json": collection_root / "log-evidence.json",
-                "log-analysis.json": collection_root / "log-analysis.json",
-                "failure-triage.json": collection_root / "failure-triage.json",
-            }.items()
+            for name, path in source_paths.items()
+            if path.is_file()
         }
         contents = {"failure_analysis": self._analysis_markdown(triage)}
         attachment_bytes = {
-            "failure-triage.json": (collection_root / "failure-triage.json").read_bytes(),
-            "log-analysis.json": (collection_root / "log-analysis.json").read_bytes(),
-            "log-evidence.json": (collection_root / "log-evidence.json").read_bytes(),
+            name: path.read_bytes()
+            for name, path in source_paths.items()
+            if name != "execution-evidence.json" and path.is_file()
         }
         if bug is not None:
             bug_path = collection_root / "bug-draft.json"

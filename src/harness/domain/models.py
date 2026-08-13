@@ -18,6 +18,8 @@ CONTRACT_PREFIX = "agentic-qa.harness"
 UTC = timezone.utc
 ARTIFACT_TYPES = (
     "requirement_analysis",
+    "requirement_delta",
+    "impact_analysis",
     "testcases",
     "api_test_draft",
     "ui_test_draft",
@@ -458,6 +460,7 @@ class StartRunCommand(StrictModel):
     expected_artifacts: list[str] = Field(default_factory=lambda: ["testcases"])
     execution_profile: ExecutionProfile = Field(default_factory=ExecutionProfile)
     generation_mode: Literal["standard", "api_fast"] = "standard"
+    requirement_baseline_run_id: str | None = Field(default=None, min_length=1)
 
     @field_validator("workspace_id")
     @classmethod

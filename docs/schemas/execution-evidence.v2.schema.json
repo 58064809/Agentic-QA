@@ -192,6 +192,37 @@
           "default": null,
           "title": "Span Id"
         },
+        "trace_flags": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Flags"
+        },
+        "trace_source": {
+          "anyOf": [
+            {
+              "enum": [
+                "traceparent",
+                "response_header",
+                "request_header",
+                "runtime"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trace Source"
+        },
         "request_id": {
           "anyOf": [
             {

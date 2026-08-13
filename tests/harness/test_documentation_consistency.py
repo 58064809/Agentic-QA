@@ -29,10 +29,25 @@ from harness.domain.schemas.failure_triage import (
     FailureTriage,
     FailureTriageV2,
 )
+from harness.domain.schemas.knowledge import RetrievalResult
 from harness.domain.schemas.log_analysis import LogAnalysis
 from harness.domain.schemas.log_evidence import LogEvidenceBundle
+from harness.domain.schemas.qa_design import (
+    RiskCatalogV2,
+)
+from harness.domain.schemas.qa_design import (
+    TestCaseSetV2 as QATestCaseSetV2Contract,
+)
+from harness.domain.schemas.requirement_intelligence import (
+    ImpactAnalysis,
+    RequirementDelta,
+)
+from harness.domain.schemas.requirement_intelligence import (
+    TestDesignPlan as DesignPlanContract,
+)
+from harness.domain.schemas.trace_analysis import RootCauseEvidenceGraph, TraceAnalysis
+from harness.domain.schemas.trace_evidence import TraceEvidenceBundle
 from harness.infrastructure.manifests.registry import KnowledgeRegistry, SkillRegistry
-from harness.infrastructure.workflow.engine import TESTCASE_RULE_BATCH_SIZE
 from harness.interfaces.cli import _parser
 from harness.interfaces.facade import Harness
 
@@ -52,6 +67,15 @@ SCHEMAS = {
     "bug-draft.v1.schema.json": BugDraft,
     "log-evidence.v1.schema.json": LogEvidenceBundle,
     "log-analysis.v1.schema.json": LogAnalysis,
+    "trace-evidence.v1.schema.json": TraceEvidenceBundle,
+    "trace-analysis.v1.schema.json": TraceAnalysis,
+    "root-cause-evidence-graph.v1.schema.json": RootCauseEvidenceGraph,
+    "retrieval-result.v1.schema.json": RetrievalResult,
+    "requirement-delta.v1.schema.json": RequirementDelta,
+    "impact-analysis.v1.schema.json": ImpactAnalysis,
+    "risk-catalog.v2.schema.json": RiskCatalogV2,
+    "test-design-plan.v1.schema.json": DesignPlanContract,
+    "test-case-set.v2.schema.json": QATestCaseSetV2Contract,
 }
 CONSUMED_ENV = {
     "DEEPSEEK_API_KEY",
@@ -133,7 +157,14 @@ def test_checked_in_json_schemas_match_pydantic_models() -> None:
     for name, model in SCHEMAS.items():
         actual = json.loads((DOCS / "schemas" / name).read_text(encoding="utf-8"))
         assert actual == model.model_json_schema(), name
-        if name.startswith("agent-request"):
+        if name.startswith("agent-request") or name in {
+            "retrieval-result.v1.schema.json",
+            "requirement-delta.v1.schema.json",
+            "impact-analysis.v1.schema.json",
+            "risk-catalog.v2.schema.json",
+            "test-design-plan.v1.schema.json",
+            "test-case-set.v2.schema.json",
+        }:
             packaged = json.loads(
                 (ROOT / "src" / "harness" / "schemas" / name).read_text(encoding="utf-8")
             )
@@ -314,8 +345,10 @@ def test_high_risk_documentation_semantics_follow_runtime_contracts() -> None:
     assert "cleanup_exempt_operations:" not in config
     rag = (DOCS / "rag-design.md").read_text(encoding="utf-8")
     architecture = (DOCS / "architecture.md").read_text(encoding="utf-8")
-    assert f"当前每批 {TESTCASE_RULE_BATCH_SIZE} 条" in rag
-    assert f"当前每批 {TESTCASE_RULE_BATCH_SIZE} 条" in architecture
+    assert "当前每批" not in rag
+    assert "当前每批" not in architecture
+    assert "有界 rule batch" in rag
+    assert "有界 rule batch" in architecture
 
 
 def test_canonical_local_config_keeps_secret_bearing_business_fields_as_references() -> None:
@@ -323,7 +356,7 @@ def test_canonical_local_config_keeps_secret_bearing_business_fields_as_referenc
     environment = payload["api"]["services"]["member-service"]["environments"]["dev"]
     login = environment["auth"]["login"]
     references = [
-        payload["postgres"]["password"],
+        payload["system_database"]["password"],
         payload["runtime"]["cleanup_journal_key"],
         login["phone"],
         login["sms_code"],

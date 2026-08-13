@@ -88,8 +88,8 @@ def _runtime_config(provider: str) -> AgenticQaLocalConfig:
                 "pro_model": "recorded-pro",
                 "base_url": "https://model.example.test",
             },
-            "rag": {"provider": "local-lexical"},
-            "postgres": {
+            "rag": {},
+            "system_database": {
                 "host": "localhost",
                 "port": 5432,
                 "database": "postgres",

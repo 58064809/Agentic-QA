@@ -1,0 +1,416 @@
+{
+  "$defs": {
+    "KnowledgeFreshness": {
+      "enum": [
+        "current",
+        "historical",
+        "superseded",
+        "deprecated"
+      ],
+      "title": "KnowledgeFreshness",
+      "type": "string"
+    },
+    "KnowledgeMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "workspace_id": {
+          "minLength": 1,
+          "title": "Workspace Id",
+          "type": "string"
+        },
+        "project_key": {
+          "minLength": 1,
+          "title": "Project Key",
+          "type": "string"
+        },
+        "document_type": {
+          "minLength": 1,
+          "title": "Document Type",
+          "type": "string"
+        },
+        "business_module": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Business Module"
+        },
+        "environment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Environment"
+        },
+        "freshness": {
+          "$ref": "#/$defs/KnowledgeFreshness"
+        },
+        "trust": {
+          "$ref": "#/$defs/KnowledgeTrust"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        }
+      },
+      "required": [
+        "workspace_id",
+        "project_key",
+        "document_type",
+        "freshness",
+        "trust"
+      ],
+      "title": "KnowledgeMetadata",
+      "type": "object"
+    },
+    "KnowledgeTrust": {
+      "enum": [
+        "current_source",
+        "reviewed_requirement",
+        "reviewed_asset",
+        "execution_evidence",
+        "reference_only"
+      ],
+      "title": "KnowledgeTrust",
+      "type": "string"
+    },
+    "RetrievalCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_id": {
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "source_identity": {
+          "title": "Source Identity",
+          "type": "string"
+        },
+        "chunk_ordinal": {
+          "minimum": 0,
+          "title": "Chunk Ordinal",
+          "type": "integer"
+        },
+        "source_sha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Source Sha256",
+          "type": "string"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "lexical_rank": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lexical Rank"
+        },
+        "lexical_score": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lexical Score"
+        },
+        "vector_rank": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vector Rank"
+        },
+        "vector_score": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": -1,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vector Score"
+        },
+        "fused_score": {
+          "minimum": 0,
+          "title": "Fused Score",
+          "type": "number"
+        },
+        "rerank_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rerank Score"
+        },
+        "metadata": {
+          "$ref": "#/$defs/KnowledgeMetadata"
+        }
+      },
+      "required": [
+        "chunk_id",
+        "document_id",
+        "source_identity",
+        "chunk_ordinal",
+        "source_sha256",
+        "content",
+        "fused_score",
+        "metadata"
+      ],
+      "title": "RetrievalCandidate",
+      "type": "object"
+    },
+    "RetrievalFilters": {
+      "additionalProperties": false,
+      "properties": {
+        "source_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Types",
+          "type": "array"
+        },
+        "document_versions": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Document Versions",
+          "type": "array"
+        },
+        "business_modules": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Business Modules",
+          "type": "array"
+        },
+        "environments": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Environments",
+          "type": "array"
+        },
+        "freshness": {
+          "items": {
+            "$ref": "#/$defs/KnowledgeFreshness"
+          },
+          "title": "Freshness",
+          "type": "array"
+        },
+        "trust": {
+          "items": {
+            "$ref": "#/$defs/KnowledgeTrust"
+          },
+          "title": "Trust",
+          "type": "array"
+        }
+      },
+      "title": "RetrievalFilters",
+      "type": "object"
+    },
+    "RetrievalProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "retrieval_id": {
+          "minLength": 1,
+          "title": "Retrieval Id",
+          "type": "string"
+        },
+        "strategy": {
+          "enum": [
+            "postgres-hybrid-rrf",
+            "run-local-hybrid-rrf"
+          ],
+          "title": "Strategy",
+          "type": "string"
+        },
+        "index_version": {
+          "minLength": 1,
+          "title": "Index Version",
+          "type": "string"
+        },
+        "candidate_count": {
+          "minimum": 0,
+          "title": "Candidate Count",
+          "type": "integer"
+        },
+        "selected_chunk_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Selected Chunk Ids",
+          "type": "array"
+        },
+        "reranker": {
+          "enum": [
+            "none",
+            "model"
+          ],
+          "title": "Reranker",
+          "type": "string"
+        },
+        "filters_sha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Filters Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "retrieval_id",
+        "strategy",
+        "index_version",
+        "candidate_count",
+        "selected_chunk_ids",
+        "reranker",
+        "filters_sha256"
+      ],
+      "title": "RetrievalProvenance",
+      "type": "object"
+    },
+    "RetrievalQuery": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "agentic-qa.retrieval-query.v1",
+          "default": "agentic-qa.retrieval-query.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "workspace_id": {
+          "minLength": 1,
+          "title": "Workspace Id",
+          "type": "string"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "query": {
+          "minLength": 1,
+          "title": "Query",
+          "type": "string"
+        },
+        "purpose": {
+          "enum": [
+            "requirement",
+            "impact",
+            "risk",
+            "regression",
+            "reference"
+          ],
+          "title": "Purpose",
+          "type": "string"
+        },
+        "filters": {
+          "$ref": "#/$defs/RetrievalFilters"
+        },
+        "max_chunks": {
+          "default": 10,
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Max Chunks",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "workspace_id",
+        "query",
+        "purpose"
+      ],
+      "title": "RetrievalQuery",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-qa.retrieval-result.v1",
+      "default": "agentic-qa.retrieval-result.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "query": {
+      "$ref": "#/$defs/RetrievalQuery"
+    },
+    "chunks": {
+      "items": {
+        "$ref": "#/$defs/RetrievalCandidate"
+      },
+      "title": "Chunks",
+      "type": "array"
+    },
+    "provenance": {
+      "$ref": "#/$defs/RetrievalProvenance"
+    },
+    "content_sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Content Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "query",
+    "chunks",
+    "provenance",
+    "content_sha256"
+  ],
+  "title": "RetrievalResult",
+  "type": "object"
+}

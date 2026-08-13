@@ -61,12 +61,24 @@ class RequirementRule(StrictModel):
     state_transitions: list[StateTransition] = Field(default_factory=list)
     conflicts_with: list[str] = Field(default_factory=list)
     pending_questions: list[str] = Field(default_factory=list)
+    decision_factors: dict[str, list[str]] = Field(default_factory=dict)
+    cause_effects: dict[str, list[str]] = Field(default_factory=dict)
+    configurations: dict[str, list[str]] = Field(default_factory=dict)
+    negative_constraints: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def require_evidence_for_confirmed_rule(self) -> RequirementRule:
         if self.evidence_level == EvidenceLevel.CONFIRMED and not self.source_refs:
             raise ValueError(f"confirmed rule {self.rule_id} requires source_refs")
         return self
+
+    @field_validator("decision_factors", "configurations")
+    @classmethod
+    def validate_factor_values(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
+        for name, values in value.items():
+            if not name.strip() or len(values) < 2 or len(values) != len(set(values)):
+                raise ValueError("test-design factors require a name and two unique values")
+        return value
 
 
 class RequirementCatalog(StrictModel):
@@ -121,10 +133,35 @@ class RiskItem(StrictModel):
         min_length=1,
         description="Array of separate test coverage intents; never return one prose string.",
     )
+    requirement_risk: int | None = Field(default=None, ge=0, le=3)
+    impact_radius: int | None = Field(default=None, ge=0, le=3)
+    historical_defect: int | None = Field(default=None, ge=0, le=2)
+    critical_business_flow: int | None = Field(default=None, ge=0, le=2)
+    factor_evidence: dict[
+        Literal[
+            "requirement_risk",
+            "impact_radius",
+            "historical_defect",
+            "critical_business_flow",
+        ],
+        list[str],
+    ] = Field(default_factory=dict)
+
+    @property
+    def factor_total(self) -> int | None:
+        values = (
+            self.requirement_risk,
+            self.impact_radius,
+            self.historical_defect,
+            self.critical_business_flow,
+        )
+        return sum(values) if all(item is not None for item in values) else None
 
 
 class RiskCatalog(StrictModel):
-    schema_version: Literal["agentic-qa.risk-catalog.v1"] = "agentic-qa.risk-catalog.v1"
+    schema_version: Literal["agentic-qa.risk-catalog.v1", "agentic-qa.risk-catalog.v2"] = (
+        "agentic-qa.risk-catalog.v1"
+    )
     risks: list[RiskItem] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -132,7 +169,43 @@ class RiskCatalog(StrictModel):
         ids = [risk.risk_id for risk in self.risks]
         if len(ids) != len(set(ids)):
             raise ValueError("risk IDs must be unique")
+        if self.schema_version.endswith(".v2"):
+            for risk in self.risks:
+                if risk.factor_total is None:
+                    raise ValueError(f"risk v2 {risk.risk_id} requires all four score factors")
+                expected = (
+                    RiskLevel.P0
+                    if risk.factor_total >= 8
+                    else RiskLevel.P1
+                    if risk.factor_total >= 6
+                    else RiskLevel.P2
+                    if risk.factor_total >= 3
+                    else RiskLevel.P3
+                )
+                if risk.priority != expected:
+                    raise ValueError(f"risk v2 {risk.risk_id} priority does not match score")
+                values = {
+                    "requirement_risk": risk.requirement_risk,
+                    "impact_radius": risk.impact_radius,
+                    "historical_defect": risk.historical_defect,
+                    "critical_business_flow": risk.critical_business_flow,
+                }
+                missing = [
+                    key
+                    for key, score in values.items()
+                    if score and not risk.factor_evidence.get(key)
+                ]
+                if missing:
+                    raise ValueError(
+                        f"risk v2 {risk.risk_id} has unsupported non-zero factors: {missing}"
+                    )
         return self
+
+
+class RiskCatalogV2(RiskCatalog):
+    """Current write contract; RiskCatalog remains the strict legacy/current reader."""
+
+    schema_version: Literal["agentic-qa.risk-catalog.v2"] = "agentic-qa.risk-catalog.v2"
 
 
 class TestCase(StrictModel):
@@ -221,8 +294,13 @@ class CoverageMapping(StrictModel):
 
 
 class TestCaseSet(StrictModel):
-    schema_version: Literal["agentic-qa.test-case-set.v1"] = "agentic-qa.test-case-set.v1"
+    schema_version: Literal["agentic-qa.test-case-set.v1", "agentic-qa.test-case-set.v2"] = (
+        "agentic-qa.test-case-set.v1"
+    )
     requirement_catalog_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    risk_catalog_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    test_design_plan_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    retrieval_ids: list[str] = Field(default_factory=list)
     cases: list[TestCase] = Field(min_length=1)
     coverage: list[CoverageMapping] = Field(min_length=1)
 
@@ -231,6 +309,24 @@ class TestCaseSet(StrictModel):
         case_ids = [case.case_id for case in self.cases]
         if len(case_ids) != len(set(case_ids)):
             raise ValueError("test case IDs must be unique")
+        if self.schema_version.endswith(".v2"):
+            if not all(
+                (self.requirement_catalog_hash, self.risk_catalog_hash, self.test_design_plan_hash)
+            ):
+                raise ValueError("test-case-set v2 requires requirement, risk, and design hashes")
+            normalized: set[str] = set()
+            for case in self.cases:
+                identity = "|".join(
+                    [
+                        ",".join(sorted(case.rule_ids)),
+                        case.title.casefold().strip(),
+                        *[item.casefold().strip() for item in case.steps],
+                        *[item.casefold().strip() for item in case.assertions],
+                    ]
+                )
+                if identity in normalized:
+                    raise ValueError("test-case-set v2 contains a normalized duplicate case")
+                normalized.add(identity)
         known_cases = set(case_ids)
         coverage_rules: set[str] = set()
         for mapping in self.coverage:
@@ -250,6 +346,12 @@ class TestCaseSet(StrictModel):
                         "but the case does not declare that rule"
                     )
         return self
+
+
+class TestCaseSetV2(TestCaseSet):
+    """Current write contract; TestCaseSet retains v1 read compatibility."""
+
+    schema_version: Literal["agentic-qa.test-case-set.v2"] = "agentic-qa.test-case-set.v2"
 
 
 class TestCasePatch(StrictModel):
